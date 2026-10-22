@@ -4,7 +4,7 @@ import sys
 import traceback
 from logging.handlers import RotatingFileHandler
 
-from common.log_redaction import redact as _redact
+from core.log_redaction import redact as _redact
 
 
 class _SecretFilter(logging.Filter):

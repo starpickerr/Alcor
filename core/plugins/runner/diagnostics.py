@@ -3,7 +3,7 @@ import json
 import logging
 import sys
 
-from common.log_redaction import redact
+from core.log_redaction import redact
 
 
 class DiagnosticHandler(logging.Handler):

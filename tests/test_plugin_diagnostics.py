@@ -65,3 +65,21 @@ def test_diagnostic_stream_caps_invalid_frames_and_handles_utf8_chunks(caplog):
         assert len(stream.pending) < 32768
     finally:
         logger.removeHandler(caplog.handler)
+
+
+def test_mcp_failed_tool_records_summary_without_arguments_or_response_body(monkeypatch, caplog):
+    import pytest
+    from agent.tools.mcp.mcp_client import McpClient
+    client = McpClient({'name': 'email'})
+    # The network seam returns a real MCP error result; logging and exception
+    # conversion remain production behavior.
+    monkeypatch.setattr(client, '_send_request', lambda *args, **kwargs: {'result': {'isError': True,
+        'content': [{'type': 'text', 'text': 'PRIVATE_RESPONSE_BODY'}]}})
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger='log'), pytest.raises(RuntimeError):
+            client.call_tool_result('fetch_messages', {'password': 'PRIVATE_ARGUMENT'})
+        assert '[MCP:email]' in caplog.text and 'fetch_messages' in caplog.text and 'failed' in caplog.text
+        assert 'PRIVATE_RESPONSE_BODY' not in caplog.text and 'PRIVATE_ARGUMENT' not in caplog.text
+    finally:
+        logger.removeHandler(caplog.handler)

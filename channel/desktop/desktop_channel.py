@@ -7989,8 +7989,8 @@ class LogsHandler:
                 with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
                     lines = f.readlines()
                 tail_lines = lines[-200:]
-                from common.log import _redact
-                chunk = _redact(''.join(tail_lines))
+                from core.log_redaction import redact_lines
+                chunk = redact_lines(''.join(tail_lines))
                 payload = json.dumps({"type": "init", "content": chunk}, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode('utf-8')
             except Exception as e:
@@ -8005,7 +8005,7 @@ class LogsHandler:
                     while time.time() < deadline:
                         line = f.readline()
                         if line:
-                            payload = json.dumps({"type": "line", "content": _redact(line)}, ensure_ascii=False)
+                            payload = json.dumps({"type": "line", "content": redact_lines(line)}, ensure_ascii=False)
                             yield f"data: {payload}\n\n".encode('utf-8')
                         else:
                             yield b": keepalive\n\n"
@@ -8038,8 +8038,8 @@ class LogsDownloadHandler:
             logger.error(f"[DesktopChannel] Log download error: {e}")
             raise web.internalerror()
 
-        from common.log import _redact
-        data = _redact(data.decode('utf-8', errors='replace')).encode('utf-8')
+        from core.log_redaction import redact_lines
+        data = redact_lines(data.decode('utf-8', errors='replace')).encode('utf-8')
         # Timestamped name so multiple downloads don't overwrite each other.
         fname = f"stella-{time.strftime('%Y%m%d-%H%M%S')}.log"
         web.header('Content-Type', 'text/plain; charset=utf-8')

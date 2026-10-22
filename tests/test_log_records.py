@@ -56,6 +56,25 @@ def test_structured_shell_records_preserve_metadata_and_timestamp(tmp_path):
     assert query_logs(tmp_path, since='2026-10-23T00:00:00Z')['entries'] == []
 
 
+def test_structured_messages_are_decoded_before_redacting_quoted_secrets(tmp_path):
+    from common.log_records import query_logs
+    (tmp_path / 'run.log').write_text(json.dumps({'level': 'ERROR', 'source': 'renderer',
+        'message': 'password="several secret words"', 'detail': 'token="another private phrase"'}) + '\n')
+    page = query_logs(tmp_path)
+    text = json.dumps(page)
+    assert 'secret words' not in text and 'private phrase' not in text
+    assert page['entries'][0]['source'] == 'renderer'
+
+
+def test_long_structured_entry_keeps_source_before_truncating_details(tmp_path):
+    from common.log_records import query_logs
+    (tmp_path / 'run.log').write_text(json.dumps({'level': 'ERROR', 'source': 'renderer',
+        'message': '中' * 16000, 'location': 'App.tsx:1'}) + '\n')
+    entry = query_logs(tmp_path)['entries'][0]
+    assert entry['source'] == 'renderer' and entry['level'] == 'ERROR'
+    assert len(entry['detail']) <= 16384
+
+
 def test_scan_bounds_and_partial_last_line(tmp_path, monkeypatch):
     from common import log_records
     monkeypatch.setattr(log_records, 'MAX_SCAN_BYTES', 1000)

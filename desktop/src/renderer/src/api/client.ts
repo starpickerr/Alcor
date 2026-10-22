@@ -1,4 +1,5 @@
 import type { DataSnapshot, DataRecords, DataCommandResult, DataResources, DataResourceContent } from './dataTypes'
+import type { LogPage, LogQuery } from '../pages/log-viewer/logTypes'
 import type { McpServerInfo } from '../types'
 import type {
   ConfigData,
@@ -1383,6 +1384,14 @@ class ApiClient {
 
   createLogStream(): EventSource {
     return new EventSource(this.withToken(`${this.baseUrl}/api/logs`))
+  }
+
+  async queryLogs(query: LogQuery, signal?: AbortSignal): Promise<LogPage> {
+    const parameters = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value) parameters.set(key, value) })
+    const data = await this.request<LogPage & ApiResult>(`/api/logs/entries?${parameters}`, { signal })
+    if (data.status !== 'success') throw new Error(data.message || 'Unable to read logs')
+    return data
   }
 
   // Full run.log as a downloadable attachment. Carries the token in the query

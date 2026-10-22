@@ -33,3 +33,14 @@ def test_legacy_download_redacts_existing_logs(tmp_path, monkeypatch):
     monkeypatch.setattr(desktop, 'get_data_root', lambda: str(tmp_path))
     with patch.object(desktop, '_require_auth'), patch.object(desktop.web, 'header'):
         assert desktop.LogsDownloadHandler().GET() == b'password=[REDACTED]\n'
+
+
+def test_legacy_download_redacts_each_structured_line(tmp_path, monkeypatch):
+    records = [{'level': 'ERROR', 'message': 'password="first private phrase"'},
+               {'level': 'ERROR', 'message': 'token="second private phrase"'}]
+    (tmp_path / 'run.log').write_text(''.join(json.dumps(row) + '\n' for row in records))
+    monkeypatch.setattr(desktop, 'get_data_root', lambda: str(tmp_path))
+    with patch.object(desktop, '_require_auth'), patch.object(desktop.web, 'header'):
+        exported = desktop.LogsDownloadHandler().GET().decode()
+    assert 'private phrase' not in exported
+    assert len(exported.splitlines()) == 2

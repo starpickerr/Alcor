@@ -284,6 +284,17 @@ class McpClient:
             return []
 
     def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        started = time.monotonic()
+        try:
+            result = self._call_tool_result(name, arguments, cancel_event, meta=meta)
+        except Exception as exc:
+            logger.warning('[MCP:%s] tool=%s failed (%s)', self.name, name, type(exc).__name__)
+            raise
+        logger.info('[MCP:%s] tool=%s completed duration_ms=%d', self.name, name,
+                    (time.monotonic() - started) * 1000)
+        return result
+
+    def _call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
         params = {"name": name, "arguments": arguments}
         if meta is not None:
             params["_meta"] = meta

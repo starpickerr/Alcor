@@ -18,7 +18,9 @@ _TAG = re.compile(r'^\[(Plugin|MCP):([^]]+)\]')
 _DOMAINS = {'briefing': ('briefing',), 'tasks': ('todos', 'todo', 'tasks'), 'calendar': ('calendar', 'timezone'),
             'email': ('email', 'imap', 'mail'), 'elearning': ('elearning',), 'scheduler': ('scheduler', 'notification'),
             'knowledge': ('knowledge',), 'memory': ('memory', 'deepdream'), 'agent': ('agent', 'tool', 'subagent'),
-            'data': ('data',), 'security': ('security', 'permission', 'authorization')}
+            'data': ('data',), 'security': ('security', 'permission', 'authorization'),
+            'bills': ('bill', 'ledger'), 'models': ('model', 'llm', 'openai', 'anthropic'),
+            'channels': ('channel', 'feishu', 'telegram', 'wechat', 'dingtalk')}
 
 
 def _instant(value):
@@ -29,6 +31,8 @@ def _source(message, location):
     tag = _TAG.match(message)
     component = tag[1].lower() if tag else 'core'
     name = tag[2].lower().removeprefix('stella.') if tag else (message.split(']', 1)[0] + ' ' + location).lower()
+    if message.startswith('[DesktopChannel]'):
+        name = message.partition(']')[2].strip().split(' ', 1)[0].lower() + ' ' + name
     for source, prefixes in _DOMAINS.items():
         if any(prefix in name for prefix in prefixes):
             return source, component
@@ -36,7 +40,7 @@ def _source(message, location):
 
 
 def _parse(text):
-    text = _redact(text[:MAX_RECORD_BYTES])
+    text = _redact(text)
     first = text.split('\n', 1)[0]
     match, shell = _LINE.match(first), _SHELL.match(first)
     if match:
@@ -94,7 +98,9 @@ def _records(data, start):
             if len(records[-1][1]) < MAX_RECORD_BYTES:
                 records[-1][1] += '\n' + text[:MAX_RECORD_BYTES]
         else:
-            records.append([offset, text[:MAX_RECORD_BYTES]])
+            # JSON may escape each Unicode character into six ASCII bytes.
+            # Parse the bounded envelope before truncating its decoded fields.
+            records.append([offset, text[:MAX_RECORD_BYTES * 8] if text.startswith('{') else text[:MAX_RECORD_BYTES]])
         offset += len(raw)
     return records
 
