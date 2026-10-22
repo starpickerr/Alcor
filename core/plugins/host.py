@@ -142,7 +142,19 @@ def _managed_boundary(function):
                 if kwargs.get('data_handle') is None and self.manifest.get('data'):
                     from core.plugins.lifecycle import domain_data_handle
                     kwargs['data_handle'] = domain_data_handle(self.plugin_id, self.user_id)
-                result = admit(self, **kwargs)
+                from common.log import logger
+                try:
+                    result = admit(self, **kwargs)
+                except PermissionError:
+                    logger.warning('[Plugin:%s] method=%s rejected: permission_denied', self.plugin_id, kwargs.get('method'))
+                    raise
+                if result.get('status') in {'failed', 'unknown'}:
+                    code = (result.get('error') or {}).get('code', result['status'])
+                    logger.warning('[Plugin:%s] method=%s outcome=%s code=%s', self.plugin_id,
+                                   kwargs.get('method'), result['status'], str(code)[:80])
+                value = result.get('value')
+                if isinstance(value, dict) and value.get('state') == 'failed':
+                    logger.warning('[Plugin:%s] method=%s business operation failed', self.plugin_id, kwargs.get('method'))
                 from core.security.service import SecurityService
                 from agent.protocol.cancel import AgentCancelledError
                 try:
@@ -589,13 +601,19 @@ class PluginSession:
                     self._stderr_thread.join(timeout=1)
 
     def _drain_stderr(self, process) -> None:
-        # Consume continuously. Never put arbitrary plugin output (credentials or
-        # giant lines) in host exceptions/logs; diagnostics record byte counts.
+        # Only the runner's bounded diagnostic envelopes may reach host logs.
+        # Raw stderr remains private and is counted for transport diagnostics.
         if process.stderr is None:
             return
+        from codecs import getincrementaldecoder
+        from core.plugins.diagnostics import DiagnosticStream
+        decoder = getincrementaldecoder('utf-8')(errors='replace')
+        diagnostics = DiagnosticStream(self.plugin_id)
+        read = getattr(process.stderr, 'read1', process.stderr.read)
         try:
-            while chunk := process.stderr.read(4096):
+            while chunk := read(4096):
                 self._stderr_bytes += len(chunk)
+                diagnostics.feed(decoder.decode(chunk))
         except (OSError, ValueError):
             return
 

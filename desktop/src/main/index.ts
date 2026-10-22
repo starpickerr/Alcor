@@ -8,6 +8,7 @@ import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, openDownload } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
+import { getRuntimeLog } from './runtime-log'
 import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
@@ -150,9 +151,12 @@ function createWindow() {
   // terminal because all renderer logs stay in the (closed) devtools.
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
+    if (pythonBackend) getRuntimeLog(pythonBackend.getDataDir()).event('renderer',
+      level >= 3 ? 'ERROR' : level === 2 ? 'WARNING' : 'INFO', message, `${sourceId}:${line}`)
   })
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error(`[renderer] did-fail-load ${code} ${desc} ${url}`)
+    if (pythonBackend) getRuntimeLog(pythonBackend.getDataDir()).event('renderer', 'ERROR', `Load failed (${code}): ${desc}`, url)
   })
 
   // Replay the backend's current state to a renderer that has just loaded.

@@ -6,6 +6,8 @@ without any external MCP SDK dependency.
 """
 
 import json
+import logging
+import re
 import contextvars
 import http.client
 import os
@@ -512,10 +514,17 @@ class McpClient:
 
     def _drain_stderr(self, stream):
         try:
-            for line in stream:
+            while line := stream.readline(16384):
+                if not line.endswith('\n') and len(line) >= 16384:
+                    while line and not line.endswith('\n'):
+                        line = stream.readline(16384)
+                    logger.warning('[MCP:%s] oversized diagnostic omitted', self.name)
+                    continue
                 line = line.strip()
                 if line:
-                    logger.warning(f"[MCP:{self.name}] stderr: {line}")
+                    level = re.match(r'^(?:\[)?(DEBUG|INFO|WARNING|ERROR|CRITICAL)(?:\]|:|\s)', line)
+                    logger.log(getattr(logging, level[1]) if level else logging.WARNING,
+                               '[MCP:%s] %s', self.name, line)
         except (OSError, ValueError):
             pass  # Shutdown may close a process stream while it is being read.
 

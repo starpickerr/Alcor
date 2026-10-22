@@ -1,6 +1,8 @@
 import { app, BrowserWindow, net, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
+import { getRuntimeLog } from './runtime-log'
 
 // Status payloads pushed to the renderer over the 'update-status' channel.
 // The renderer drives the NavRail badge + update panel from these.
@@ -121,6 +123,7 @@ function log(...parts: unknown[]) {
     .map((p) => (typeof p === 'string' ? p : safeStringify(p)))
     .join(' ')}`
   console.log(line)
+  getRuntimeLog(path.join(os.homedir(), '.stella')).event('updater', /error|failed/i.test(line) ? 'ERROR' : 'INFO', line)
   if (logFile) {
     try {
       fs.appendFileSync(logFile, line + '\n')
