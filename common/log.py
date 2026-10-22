@@ -31,14 +31,22 @@ def _log_path():
 
 
 def _reset_logger(log):
-    for handler in log.handlers:
+    for handler in list(log.handlers):
         handler.close()
         log.removeHandler(handler)
         del handler
     log.handlers.clear()
     log.propagate = False
+    if os.environ.get('STELLA_PLUGIN_ID'):
+        from core.plugins.runner.diagnostics import DiagnosticHandler
+        log.addHandler(DiagnosticHandler())
+        return  # The host is the only file writer, including standalone mode.
     # Borrow stdout. Wrapping its buffer transfers ownership and garbage
     # collection during reconfiguration can close the application's stdout.
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+    except (AttributeError, OSError, ValueError, TypeError):
+        pass  # Custom/captured streams may not support encoding configuration.
     console_handle = logging.StreamHandler(sys.stdout)
     console_handle.addFilter(_SecretFilter())
     console_handle.setFormatter(

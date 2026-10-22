@@ -55,6 +55,18 @@ def test_redaction_masks_quoted_secrets_and_url_credentials():
     assert 'two word secret' not in redacted and 'PRIVATE' not in redacted
 
 
+def test_stdout_unicode_under_ascii_environment(tmp_path):
+    import os
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, '-c',
+        'from common.log import logger, _reset_logger; import sys; _reset_logger(logger); '
+        'logger.info("中文日志"); assert not sys.stdout.closed'],
+        env={**os.environ, 'PYTHONIOENCODING': 'ascii', 'STELLA_DATA_DIR': str(tmp_path)}, capture_output=True)
+    assert '中文日志' in result.stdout.decode('utf-8')
+    assert not result.stderr
+
+
 def test_standalone_file_logging_rotates_and_shell_mode_has_no_file_writer(tmp_path, monkeypatch):
     from common.log import _reset_logger
     from logging.handlers import RotatingFileHandler

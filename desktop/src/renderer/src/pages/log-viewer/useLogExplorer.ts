@@ -20,6 +20,7 @@ export function useLogExplorer(baseUrl: string, query: string, levels: string, s
   const pendingOlder = useRef(false)
   const running = useRef(false)
   const pageRef = useRef(page)
+  const snapshotSince = useRef<string | undefined>(undefined)
   pageRef.current = page
 
   useEffect(() => {
@@ -36,7 +37,6 @@ export function useLogExplorer(baseUrl: string, query: string, levels: string, s
     lastRefresh.current = refreshKey
     let active = true
     const parameters: LogQuery = { q: search, levels, source, limit: '100' }
-    if (range) parameters.since = new Date(Date.now() - Number(range) * 60_000).toISOString()
 
     const load = async (older = false) => {
       request.current?.abort()
@@ -46,9 +46,11 @@ export function useLogExplorer(baseUrl: string, query: string, levels: string, s
       running.current = true
       setBusy(true)
       try {
+        const since = older ? snapshotSince.current : range ? new Date(Date.now() - Number(range) * 60_000).toISOString() : undefined
         const result = await apiClient.queryLogs({ ...parameters,
-          cursor: older ? pageRef.current.next_cursor || undefined : undefined }, controller.signal)
+          since, cursor: older ? pageRef.current.next_cursor || undefined : undefined }, controller.signal)
         if (!active || serial !== latest.current) return
+        if (!older) snapshotSince.current = since
         setPage(previous => older ? { ...result, entries: [...previous.entries,
           ...result.entries.filter(row => !previous.entries.some(old => old.id === row.id))].slice(0, 1000),
         sources: { ...previous.sources, ...result.sources } } : result)

@@ -28,7 +28,9 @@ def redact(message):
                     return value
                 return json.dumps(clean(row), ensure_ascii=False)
         except (ValueError, RecursionError):
-            pass
+            # A damaged JSON envelope may contain escaped quoted credentials.
+            # Plain-text fallback cannot safely determine their boundary.
+            return '[Malformed structured diagnostic omitted]'
     message = _QUERY.sub(r'\1[REDACTED]', message)
     message = _BEARER.sub('Bearer [REDACTED]', message)
     message = _SK.sub('sk-[REDACTED]', message)

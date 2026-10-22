@@ -1,6 +1,7 @@
 """Log workbench interactions use deterministic API fixtures, never user logs."""
 import json
 import os
+from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -72,8 +73,10 @@ with sync_playwright() as playwright:
     page.screenshot(path='/tmp/stella-logs-details.png', full_page=True)
     page.keyboard.press('Escape')
     page.get_by_label('日志级别').select_option('')
-    page.get_by_role('button', name='恢复实时更新').click()
+    with page.expect_response(lambda response: '/api/logs/entries' in response.url):
+        page.get_by_role('button', name='恢复实时更新').click()
     expect(page.get_by_text('邮箱采集完成，新增 12 条记录', exact=True)).to_be_visible()
+    expect(page.locator('[aria-busy="true"]')).to_have_count(0)
     page.get_by_role('button', name='暂停实时更新').click()
     before = len(requests)
     page.wait_for_timeout(3300)
@@ -110,6 +113,19 @@ with sync_playwright() as playwright:
     expect(dark.get_by_label('Search logs')).to_be_visible()
     assert dark.evaluate("document.documentElement.classList.contains('dark')")
     dark.screenshot(path='/tmp/stella-logs-dark.png', full_page=True)
+    dark.clock.install()
+    dark.get_by_label('Time range').select_option('15')
+    expect(dark.get_by_text('简报事务同步失败', exact=True)).to_be_visible()
+    initial_since = requests[-1]['since'][0]
+    dark.clock.fast_forward(60_000)
+    dark.wait_for_function('!document.querySelector("[aria-busy=true]")')
+    current_since = requests[-1]['since'][0]
+    assert (datetime.fromisoformat(current_since) - datetime.fromisoformat(initial_since)).total_seconds() >= 59
+    dark.get_by_role('button', name='Pause live updates').click()
+    dark.clock.fast_forward(60_000)
+    dark.get_by_role('button', name='Load older logs').click()
+    expect(dark.get_by_text('更早的邮箱日志', exact=True)).to_be_visible()
+    assert requests[-1]['since'][0] == current_since
     dark.close()
     assert not errors, errors
     print('PASS logs: search, severity/source, detail, pause, history, export, failure/recovery, desktop/mobile')

@@ -108,3 +108,56 @@ def test_missing_files_symlinks_and_expired_cursor(tmp_path):
     (tmp_path / 'run.log').unlink()
     with pytest.raises(ValueError, match='history'):
         query_logs(tmp_path, cursor=cursor)
+
+
+@pytest.mark.parametrize('structured', [True, False])
+def test_oversized_structured_secret_is_never_exposed(tmp_path, structured):
+    from common.log_records import query_logs
+    message = 'password="first PRIVATE phrase ' + 'x' * 200000 + '"'
+    data = json.dumps({'level': 'ERROR', 'message': message}) + '\n' if structured else line('ERROR', message)
+    (tmp_path / 'run.log').write_text(data)
+    assert 'PRIVATE' not in json.dumps(query_logs(tmp_path))
+    assert query_logs(tmp_path, query='PRIVATE')['entries'] == []
+
+
+def test_window_boundary_does_not_split_traceback(tmp_path, monkeypatch):
+    from common import log_records
+    older = line('ERROR', 'original failure') + 'Traceback (most recent call last):\n' + '  中文失败()\n' * 20 + 'ValueError: bad\n'
+    newest = line('INFO', 'newest') + '  ' + '中' * 100 + '\n'
+    (tmp_path / 'run.log').write_text(older + newest)
+    boundary = len((line('ERROR', 'original failure') + 'Traceback (most recent call last):\n').encode()) + 3
+    monkeypatch.setattr(log_records, 'MAX_SCAN_BYTES', len((older + newest).encode()) - boundary)
+    first = log_records.query_logs(tmp_path)
+    assert [row['message'] for row in first['entries']] == ['newest']
+    second = log_records.query_logs(tmp_path, cursor=first['next_cursor'])
+    assert len(second['entries']) == 1
+    assert second['entries'][0]['level'] == 'ERROR'
+    assert 'ValueError: bad' in second['entries'][0]['detail']
+
+
+@pytest.mark.parametrize('ending', ['\n', ''])
+def test_oversized_line_keeps_older_history_reachable(tmp_path, monkeypatch, ending):
+    from common import log_records
+    monkeypatch.setattr(log_records, 'MAX_SCAN_BYTES', 1024)
+    (tmp_path / 'run.log').write_text(line('INFO', 'older') + 'x' * 2049 + ending)
+    cursor, messages = '', []
+    for _ in range(5):
+        page = log_records.query_logs(tmp_path, cursor=cursor)
+        messages.extend(row['message'] for row in page['entries'])
+        if not page['next_cursor']:
+            break
+        assert page['next_cursor'] != cursor
+        cursor = page['next_cursor']
+    assert 'older' in messages
+
+
+@pytest.mark.skipif(__import__('os').name == 'nt', reason='POSIX FIFO')
+def test_fifo_is_skipped_without_blocking(tmp_path):
+    import os
+    import subprocess
+    import sys
+    os.mkfifo(tmp_path / 'run.log')
+    result = subprocess.run([sys.executable, '-c',
+        'from common.log_records import query_logs; import sys; assert query_logs(sys.argv[1])["entries"] == []', str(tmp_path)],
+        capture_output=True, timeout=3)
+    assert result.returncode == 0, result.stderr

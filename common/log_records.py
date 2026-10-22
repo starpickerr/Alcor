@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat as stat_module
 
 from common.log import _redact
 
@@ -94,13 +95,16 @@ def _records(data, start):
         text = raw.decode('utf-8', errors='replace').rstrip('\r\n')
         continuation = (text.startswith((' ', '\t', 'Traceback ', 'During handling ', 'The above exception'))
                         or bool(re.match(r'^[\w.]+(?:Error|Exception):', text)) or not text)
-        if continuation and records:
-            if len(records[-1][1]) < MAX_RECORD_BYTES:
-                records[-1][1] += '\n' + text[:MAX_RECORD_BYTES]
+        if continuation:
+            # A window can start inside a traceback. Leave that record for the
+            # next page, whose end is the first complete record's start.
+            if records and len(records[-1][1]) < MAX_RECORD_BYTES:
+                records[-1][1] += '\n' + _redact(text)[:MAX_RECORD_BYTES]
         else:
-            # JSON may escape each Unicode character into six ASCII bytes.
-            # Parse the bounded envelope before truncating its decoded fields.
-            records.append([offset, text[:MAX_RECORD_BYTES * 8] if text.startswith('{') else text[:MAX_RECORD_BYTES]])
+            # The read is bounded by MAX_SCAN_BYTES. Redact the complete raw
+            # line before applying display limits, including JSON envelopes.
+            safe = _redact(text)
+            records.append([offset, safe if text.lstrip().startswith('{') else safe[:MAX_RECORD_BYTES]])
         offset += len(raw)
     return records
 
@@ -125,11 +129,13 @@ def query_logs(root, *, query='', levels='', source='', since='', cursor='', lim
         path = Path(root) / ('run.log' + suffix)
         try:
             # Log files are a fixed allowlist. Never follow symlinks into data.
-            flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+            flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
             if path.is_symlink():
                 continue
             with os.fdopen(os.open(path, flags), 'rb') as stream:
                 stat = os.fstat(stream.fileno())
+                if not stat_module.S_ISREG(stat.st_mode):
+                    continue
                 identity = [stat.st_dev, stat.st_ino]
                 if tuple(identity) in seen:
                     continue
@@ -142,6 +148,7 @@ def query_logs(root, *, query='', levels='', source='', since='', cursor='', lim
                         raise ValueError('Log history changed; refresh the view')
                 end = before[2] if before and identity == before[:2] else stat.st_size
                 start = max(0, end - remaining)
+                scan_start = start
                 if start:
                     stream.seek(start - 1)
                     partial = stream.read(1) != b'\n'
@@ -152,7 +159,8 @@ def query_logs(root, *, query='', levels='', source='', since='', cursor='', lim
                 scanned += len(data)
                 remaining -= len(data)
                 if partial:
-                    skip = data.find(b'\n') + 1
+                    newline = data.find(b'\n')
+                    skip = newline + 1 if newline >= 0 else len(data)
                     data, start = data[skip:], start + skip
                 records = _records(data, start)
         except (FileNotFoundError, PermissionError, IsADirectoryError):
@@ -180,6 +188,9 @@ def query_logs(root, *, query='', levels='', source='', since='', cursor='', lim
                             sources=dict(sources), scanned_bytes=scanned)
         if remaining <= 0:
             truncated = True
+            # Oversized/unfinished lines may yield no records at all. Progress
+            # still needs a cursor, otherwise all older history is unreachable.
+            last_cursor = _cursor(identity, records[0][0] if records else scan_start)
             break
     if not found_cursor:
         raise ValueError('Log history expired; refresh the view')

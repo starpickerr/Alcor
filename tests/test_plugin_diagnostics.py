@@ -15,8 +15,11 @@ def test_real_worker_logs_and_failed_results_reach_host(tmp_path, caplog):
         'version': '1.0.0', 'hostApi': '^1.0.0', 'runtime': {'kind': 'python', 'entry': 'main.py', 'abi': 'cp312'},
         'permissions': [{'capability': 'sample.read', 'required': True}], 'contributes': {'services': ['stella.sample.logs@1']}}))
     (package / 'main.py').write_text('''import logging, sys
+from common.log import logger
 SERVICE_DESCRIPTORS = [{'contract':'stella.sample.logs@1','methods':[{'name':'run','effect':'query','permissions':['sample.read']}]}]
 def handle_invoke(params):
+    assert not any(isinstance(handler, logging.FileHandler) for handler in logger.handlers)
+    logger.info('common worker diagnostic')
     print('RAW_STDERR_PRIVATE', file=sys.stderr)
     logging.getLogger('sample').info('phase ready token=PRIVATE_TOKEN')
     return {'status':'failed','sideEffects':'none','error':{'code':'invalid_argument','message':'BUSINESS_BODY_PRIVATE'}}
@@ -30,6 +33,7 @@ def handle_invoke(params):
             session.dispose()  # join stderr drain before inspecting records
         text = caplog.text
         assert 'phase ready' in text and '[Plugin:stella.sample.logs]' in text
+        assert 'common worker diagnostic' in text
         assert 'invalid_argument' in text and 'run' in text
         assert 'PRIVATE_TOKEN' not in text and 'RAW_STDERR_PRIVATE' not in text and 'BUSINESS_BODY_PRIVATE' not in text
     finally:

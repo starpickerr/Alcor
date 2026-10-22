@@ -3,7 +3,28 @@ import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { RuntimeLog } from '../desktop/src/main/runtime-log.ts'
+
+test('structured renderer secrets are decoded before disk redaction', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'stella-log-'))
+  try {
+    const log = new RuntimeLog(directory)
+    log.event('renderer', 'ERROR', JSON.stringify({ message: 'password="first PRIVATE phrase"', token: 'PRIVATE' }))
+    assert.ok(!readFileSync(path.join(directory, 'run.log'), 'utf8').includes('PRIVATE'))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('desktop skips a FIFO without blocking the main process', { skip: process.platform === 'win32' }, () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'stella-log-'))
+  try {
+    execFileSync('mkfifo', [path.join(directory, 'run.log')])
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e',
+      `import { RuntimeLog } from ${JSON.stringify(new URL('../desktop/src/main/runtime-log.ts', import.meta.url).href)}; new RuntimeLog(${JSON.stringify(directory)}).event('shell','INFO','ready')`], { timeout: 3000 })
+    assert.equal(result.error, undefined)
+    assert.equal(result.status, 0, result.stderr?.toString())
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
 
 test('shell log rotates with bounded retention and redacts before disk', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'stella-log-'))
