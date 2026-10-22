@@ -8,6 +8,7 @@ import http from 'http'
 import net from 'net'
 import { randomBytes } from 'crypto'
 import { findDevelopmentPython } from './python-runtime'
+import { getRuntimeLog, RuntimeLog } from './runtime-log'
 
 // The installed app and source checkout use the same writable state.
 const STELLA_DATA_DIR = path.join(os.homedir(), '.stella')
@@ -113,7 +114,7 @@ export class PythonBackend extends EventEmitter {
   // We captured that stderr already, but never wrote it anywhere durable, so the
   // "open log folder" button showed a stale run.log with no trace of the crash.
   // Mirroring here closes that gap without touching the Python side.
-  private logStream: fs.WriteStream | null = null
+  private logStream: RuntimeLog | null = null
   // The failure that put us in 'error', kept so it can be fetched later. The
   // renderer subscribes to 'backend-status' only after React mounts, which is
   // hundreds of milliseconds after launch — every error raised before that
@@ -201,16 +202,8 @@ export class PythonBackend extends EventEmitter {
   private openLogStream(dataDir: string): void {
     this.closeLogStream()
     try {
-      fs.mkdirSync(dataDir, { recursive: true })
-      const logPath = path.join(dataDir, 'run.log')
-      // Append across launches without truncating previous diagnostics.
-      this.logStream = fs.createWriteStream(logPath, { flags: 'a' })
-      // A logging error must never crash the app; drop the stream instead.
-      this.logStream.on('error', () => {
-        this.logStream = null
-      })
-      const stamp = new Date().toISOString()
-      this.logStream.write(`\n[SHELL][${stamp}] --- launching backend (stdout/stderr mirrored below) ---\n`)
+      this.logStream = getRuntimeLog(dataDir)
+      this.logStream.event('shell', 'INFO', 'Launching backend')
     } catch {
       this.logStream = null
     }
@@ -228,7 +221,7 @@ export class PythonBackend extends EventEmitter {
       this.openLogStream(this.getDataDir())
     }
     try {
-      this.logStream?.write(`[SHELL][${new Date().toISOString()}] ${line}\n`)
+      this.logStream?.event('shell', 'INFO', line)
     } catch {
       // ignore — logging must never break startup
     }

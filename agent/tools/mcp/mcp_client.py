@@ -6,6 +6,8 @@ without any external MCP SDK dependency.
 """
 
 import json
+import logging
+import re
 import contextvars
 import http.client
 import os
@@ -287,6 +289,17 @@ class McpClient:
             return []
 
     def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        started = time.monotonic()
+        try:
+            result = self._call_tool_result(name, arguments, cancel_event, meta=meta)
+        except Exception as exc:
+            logger.warning('[MCP:%s] tool=%s failed (%s)', self.name, name, type(exc).__name__)
+            raise
+        logger.info('[MCP:%s] tool=%s completed duration_ms=%d', self.name, name,
+                    (time.monotonic() - started) * 1000)
+        return result
+
+    def _call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
         from core.security.mcp_runtime import check_mcp
         check_mcp(self)
         params = {"name": name, "arguments": arguments}
@@ -524,10 +537,17 @@ class McpClient:
 
     def _drain_stderr(self, stream):
         try:
-            for line in stream:
+            while line := stream.readline(16384):
+                if not line.endswith('\n') and len(line) >= 16384:
+                    while line and not line.endswith('\n'):
+                        line = stream.readline(16384)
+                    logger.warning('[MCP:%s] oversized diagnostic omitted', self.name)
+                    continue
                 line = line.strip()
                 if line:
-                    logger.warning(f"[MCP:{self.name}] stderr: {line}")
+                    level = re.match(r'^(?:\[)?(DEBUG|INFO|WARNING|ERROR|CRITICAL)(?:\]|:|\s)', line)
+                    logger.log(getattr(logging, level[1]) if level else logging.WARNING,
+                               '[MCP:%s] %s', self.name, line)
         except (OSError, ValueError):
             pass  # Shutdown may close a process stream while it is being read.
 

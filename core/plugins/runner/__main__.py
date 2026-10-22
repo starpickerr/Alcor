@@ -269,6 +269,8 @@ def main() -> int:
     protocol_out = sys.stdout.buffer
     host_api.configure(stdin, protocol_out)
     sys.stdout = _StdoutToStderr()  # type: ignore[assignment]
+    from core.plugins.runner.diagnostics import configure
+    configure()
     while True:
         try:
             request = read_frame(stdin)
