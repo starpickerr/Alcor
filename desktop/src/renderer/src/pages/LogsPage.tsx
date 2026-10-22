@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Activity, AlertCircle, ArrowDown, ChevronRight, Download, FileSearch, Layers, Pause, Play, RefreshCw, Search, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Activity, AlertCircle, ArrowDown, Check, ChevronRight, Copy, Download, FileSearch, Layers, Pause, Play, RefreshCw, Search, X } from 'lucide-react'
 import { getLang } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import LogDetails from './log-viewer/LogDetails'
@@ -22,12 +22,30 @@ export default function LogsPage({ baseUrl }: { baseUrl: string }) {
   const [source, setSource] = useState('')
   const [range, setRange] = useState('')
   const [selected, setSelected] = useState<LogEntry | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState('')
+  const copiedTimer = useRef<number | null>(null)
   const { page, live, setLive, busy, error, updated, refresh, loadMore } = useLogExplorer(baseUrl, query, level, source, range)
   const sources = [...new Set([...Object.keys(sourceNames), ...Object.keys(page.sources)])]
   const errors = page.entries.filter(row => ['ERROR', 'CRITICAL'].includes(row.level)).length
   const warnings = page.entries.filter(row => row.level === 'WARNING').length
   const filtered = Boolean(query || level || source || range)
   const clear = () => { setQuery(''); setLevel(''); setSource(''); setRange('') }
+  const toggleDetails = (row: LogEntry) => {
+    if (selected?.id === row.id) setSelected(null)
+    else { setSelected(row); setLive(false) }
+  }
+  const copyLog = async (row: LogEntry) => {
+    try {
+      await navigator.clipboard.writeText(row.detail)
+      setCopiedId(row.id)
+      setCopyError('')
+      if (copiedTimer.current) window.clearTimeout(copiedTimer.current)
+      copiedTimer.current = window.setTimeout(() => setCopiedId(current => current === row.id ? null : current), 2000)
+    } catch {
+      setCopyError(c('复制失败，可以打开详情后手动选择文本。', 'Unable to copy. Select the text in the details.'))
+    }
+  }
   const exportRows = () => {
     const blob = new Blob([page.entries.map(row => JSON.stringify(row)).join('\n') + '\n'], { type: 'application/x-ndjson' })
     const url = URL.createObjectURL(blob)
@@ -89,20 +107,29 @@ export default function LogsPage({ baseUrl }: { baseUrl: string }) {
               <span role="status" className="flex items-center gap-1.5 text-xs text-content-tertiary"><Activity size={12} />{error ? c('连接异常', 'Connection issue') : !updated ? c('正在连接', 'Connecting') : !live ? c('实时更新已暂停', 'Live updates paused') : c('每 3 秒更新', 'Updates every 3 seconds')}</span>
             </div>
             {error && <div role="alert" className="flex items-start gap-2 border-b border-default bg-danger-soft px-4 py-3 text-sm text-danger"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="min-w-0 break-words">{error} <button type="button" onClick={refresh} className="ml-2 font-medium underline">{c('重试', 'Retry')}</button></span></div>}
+            {copyError && <p role="status" className="border-b border-default px-4 py-2 text-sm text-danger">{copyError}</p>}
             <div className="grid grid-cols-[minmax(0,1fr)_64px_18px] gap-3 border-b border-default bg-surface-2 px-4 py-2.5 text-xs text-content-tertiary sm:grid-cols-[82px_72px_104px_minmax(0,1fr)_18px]" aria-hidden="true">
               <span>{c('时间', 'Time')}<span className="sm:hidden"> / {c('消息', 'Message')}</span></span><span>{c('级别', 'Level')}</span><span className="hidden sm:block">{c('功能', 'Feature')}</span><span className="hidden sm:block">{c('消息', 'Message')}</span><span />
             </div>
             <div className="min-h-48 flex-1 overflow-y-auto" aria-busy={busy}>
-              {page.entries.length ? <ol>{page.entries.map(row => <li key={row.id} className="border-b border-default last:border-b-0" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 56px' }}>
-                <button type="button" aria-label={c('查看日志详情', 'Inspect log')} aria-describedby={`log-${row.id}`} onClick={() => { setSelected(row); setLive(false) }}
-                  className="group grid min-h-14 w-full grid-cols-[minmax(0,1fr)_64px_18px] items-center gap-x-3 gap-y-2 px-4 py-3 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:grid-cols-[82px_72px_104px_minmax(0,1fr)_18px]">
-                  <time className="col-start-1 row-start-1 text-xs tabular-nums text-content-tertiary sm:col-auto sm:row-auto" dateTime={row.timestamp || undefined} title={row.timestamp}>{time(row.timestamp, en)}</time>
-                  <span className={`col-start-2 row-start-1 w-fit rounded px-1.5 py-1 text-xs font-medium sm:col-auto sm:row-auto ${levelStyle(row.level)}`}>{levelNames[row.level]?.[en ? 1 : 0] || row.level}</span>
-                  <span className="hidden truncate text-xs text-content-secondary sm:block">{sourceName(row.source, en)}</span>
-                  <span id={`log-${row.id}`} className="col-span-2 col-start-1 row-start-2 min-w-0 sm:col-auto sm:row-auto sm:col-span-1"><span className="block truncate text-sm text-content">{row.message || c('空消息', 'Empty message')}</span><span className="mt-1 block text-xs text-content-tertiary sm:hidden">{sourceName(row.source, en)}</span></span>
-                  <ChevronRight size={15} className="col-start-3 row-start-1 text-content-tertiary group-hover:text-accent sm:col-auto sm:row-auto" />
-                </button>
-              </li>)}</ol> : <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center"><FileSearch size={30} className="text-content-tertiary" /><p className="text-sm font-medium text-content">{busy ? c('正在读取日志…', 'Reading logs…') : error ? c('暂时无法读取日志', 'Logs are unavailable') : filtered ? c('没有符合条件的日志', 'No matching logs') : c('还没有运行日志', 'No logs yet')}</p><p className="max-w-sm text-xs leading-relaxed text-content-tertiary">{filtered ? c('换个关键词或放宽筛选条件，也可以继续加载更早记录。', 'Try another search, broaden your filters or load older entries.') : c('运行功能后，这里会显示可用的诊断记录。', 'Available diagnostics appear here as features run.')}</p>{filtered && <button type="button" className="text-sm text-accent hover:underline" onClick={clear}>{c('重置筛选', 'Reset filters')}</button>}</div>}
+              {page.entries.length ? <ol>{page.entries.map(row => {
+                const open = selected?.id === row.id
+                const copied = copiedId === row.id
+                return <li key={row.id} className={`group relative border-b border-default last:border-b-0 ${open ? 'bg-surface-2' : ''}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 56px' }}>
+                <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_64px_18px] items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-surface-2 sm:grid-cols-[82px_72px_104px_minmax(0,1fr)_18px]">
+                  <button type="button" aria-label={c('查看日志详情', 'Inspect log')} aria-expanded={open} aria-describedby={`log-${row.id}`} onClick={() => toggleDetails(row)}
+                    className="absolute inset-0 z-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" />
+                  <time className="pointer-events-none col-start-1 row-start-1 text-xs tabular-nums text-content-tertiary sm:col-auto sm:row-auto" dateTime={row.timestamp || undefined} title={row.timestamp}>{time(row.timestamp, en)}</time>
+                  <span className={`pointer-events-none col-start-2 row-start-1 w-fit rounded px-1.5 py-1 text-xs font-medium sm:col-auto sm:row-auto ${levelStyle(row.level)}`}>{levelNames[row.level]?.[en ? 1 : 0] || row.level}</span>
+                  <span className="pointer-events-none hidden truncate text-xs text-content-secondary sm:block">{sourceName(row.source, en)}</span>
+                  <span id={`log-${row.id}`} className="relative z-10 col-span-2 col-start-1 row-start-2 flex min-w-0 items-center gap-2 pointer-events-none sm:col-auto sm:row-auto sm:col-span-1">
+                    <span className="min-w-0"><span className="block truncate text-sm text-content">{row.message || c('空消息', 'Empty message')}</span><span className="mt-1 block truncate text-xs text-content-tertiary sm:hidden">{sourceName(row.source, en)}</span></span>
+                    <button type="button" aria-label={c('复制日志', 'Copy log')} onClick={() => void copyLog(row)}
+                      className="pointer-events-auto inline-flex shrink-0 items-center gap-1 rounded-btn px-1.5 py-1 text-xs text-accent hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? c('已复制', 'Copied') : c('复制', 'Copy')}</button>
+                  </span>
+                  <ChevronRight size={15} className="pointer-events-none col-start-3 row-start-1 text-content-tertiary group-hover:text-accent sm:col-auto sm:row-auto" />
+                </div>
+              </li>})}</ol> : <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center"><FileSearch size={30} className="text-content-tertiary" /><p className="text-sm font-medium text-content">{busy ? c('正在读取日志…', 'Reading logs…') : error ? c('暂时无法读取日志', 'Logs are unavailable') : filtered ? c('没有符合条件的日志', 'No matching logs') : c('还没有运行日志', 'No logs yet')}</p><p className="max-w-sm text-xs leading-relaxed text-content-tertiary">{filtered ? c('换个关键词或放宽筛选条件，也可以继续加载更早记录。', 'Try another search, broaden your filters or load older entries.') : c('运行功能后，这里会显示可用的诊断记录。', 'Available diagnostics appear here as features run.')}</p>{filtered && <button type="button" className="text-sm text-accent hover:underline" onClick={clear}>{c('重置筛选', 'Reset filters')}</button>}</div>}
               {page.next_cursor && page.entries.length < 1000 && <div className="flex justify-center border-t border-default px-4 py-4"><button type="button" className={button} disabled={busy} onClick={loadMore}><ArrowDown size={14} />{c('加载更早日志', 'Load older logs')}</button></div>}
             </div>
             <footer className="flex shrink-0 flex-wrap justify-between gap-2 border-t border-default px-4 py-3 text-xs text-content-tertiary">
