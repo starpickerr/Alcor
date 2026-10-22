@@ -139,7 +139,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
                                         session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
                                         execution_session_id=owner_session_id), scheduled_permission_scope(
-                                            task.get("run_permission_mode")):
+                                            task):
                         plan = _handler_plan(task, task_store, agent_id)
                         action_type = plan["handler"]
                         channel_type = plan["channel_type"]
@@ -690,23 +690,23 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     tool_call_id = uuid.uuid4().hex
     try:
         from agent.runtime.tool_invocation import scheduled_permission_scope
-        with identity_scope(run_id=run_id, session_id=source_session,
+        with identity_scope(agent_id=agent_id or identity.agent_id, run_id=run_id, session_id=source_session,
                             task_id=str(task["id"]), execution_session_id=source_session), scheduled_permission_scope(
-                                task.get("run_permission_mode")):
+                                task):
+            tool = ToolManager().create_tool(tool_name)
+            if not tool:
+                error = f"Tool '{tool_name}' not found"
+                record.transition(run_id, 'failed', error)
+                logger.warning('[Scheduler] Scheduled tool not found: %s', tool_name)
+                return ExecutionOutcome('failed', error)
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
                 session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
-                noninteractive=True)
+                noninteractive=True, tool=tool)
             if denial:
                 record.event(run_id, "permission_denied")
                 record.transition(run_id, "failed", denial)
                 logger.warning("[Permission] Scheduled deny tool=%s: %s", tool_name, denial)
                 return ExecutionOutcome("failed", denial)
-            tool = ToolManager().create_tool(tool_name)
-            if not tool:
-                error = f"Tool '{tool_name}' not found"
-                record.transition(run_id, "failed", error)
-                logger.warning("[Scheduler] Scheduled tool not found: %s", tool_name)
-                return ExecutionOutcome("failed", error)
             from agent.runtime.tool_invocation import execution_workspace
             cwd, _ = execution_workspace(source_session, agent_id, _resolve_working_dir(agent_id=agent_id))
             setter = getattr(tool, "set_cwd", None)

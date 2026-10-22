@@ -130,18 +130,17 @@ def test_ownership_is_scoped_to_agent_and_user(tmp_path):
 
 def test_run_permission_only_settable_by_user_origin(tmp_path):
     db = tmp_path / "automation.db"
-    denied = _call(db, "create_task", task=_task(run_permission_mode="full-access"), origin="agent")
-    assert denied["status"] == "failed" and "只有用户" in denied["error"]["message"]
-    invalid = _call(db, "create_task", task=_task(run_permission_mode="root"), origin="user")
-    assert invalid["error"]["code"] == "invalid_argument"
+    with pytest.raises((ValueError, PermissionError)):
+        _call(db, "create_task", task=_task(run_permission_mode="full-access"), origin="agent")
+    with pytest.raises(ValueError):
+        _call(db, "create_task", task=_task(run_permission_mode="root"), origin="user")
     ok = _ok(db, "create_task", task=_task(run_permission_mode="read-only"), origin="user")
     assert ok["run_permission_mode"] == "read-only"
     inherit = _ok(db, "update_task", task_id="t1", patch={"run_permission_mode": "inherit"}, resolved={},
                   origin="user")
-    assert "run_permission_mode" not in inherit
-    agent_attempt = _call(db, "update_task", task_id="t1", patch={"run_permission_mode": "full-access"},
-                          resolved={}, origin="agent")
-    assert agent_attempt["status"] == "failed"
+    assert inherit['run_policy']['filesystem_mode'] == 'read-only'
+    with pytest.raises((ValueError, PermissionError)):
+        _call(db, "update_task", task_id="t1", patch={"run_permission_mode": "full-access"}, resolved={}, origin="agent")
 
 
 def test_update_rules_linked_guard_allowed_fields_and_next_run(tmp_path):
@@ -290,7 +289,7 @@ def test_application_scheduler_routes_through_plugin_and_core_lease_still_works(
         scheduler.get("missing")
     with pytest.raises(ValueError):
         scheduler.update("t1", {"bogus": 1}, agent_id=AGENT)
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, PermissionError)):
         scheduler.update("t1", {"run_permission_mode": "full-access"}, agent_id=AGENT, origin="agent")
     with pytest.raises(ValueError):
         scheduler.enable("t1", "yes")
@@ -316,7 +315,7 @@ def test_facade_update_matches_legacy_mutations_for_route_changes(tmp_path, iden
              "action": {"content": "更新"}}
     expected = legacy.update("t1", patch, agent_id=AGENT)
     got = plugin.update("t1", patch, agent_id=AGENT)
-    volatile = {"updated_at", "next_run_at"}
+    volatile = {"updated_at", "next_run_at", "run_policy_revision"}
     assert {k: v for k, v in got.items() if k not in volatile} == {
         k: v for k, v in expected.items() if k not in volatile}
     for service in (legacy, plugin):

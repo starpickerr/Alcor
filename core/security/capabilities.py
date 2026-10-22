@@ -74,6 +74,8 @@ def authorization(policy, descriptor):
     if descriptor.operation == 'unknown':
         return (operations or {}).get('system_execute', 'confirm')
     if operations is None:
+        if descriptor.filesystem and descriptor.source == 'builtin' and descriptor.operation in {'read', 'write'}:
+            return 'allow'  # File mode is the default grant for ordinary file tools.
         return 'deny'
     return operations.get(descriptor.operation, 'confirm' if descriptor.operation in {'delete', 'external_send', 'system_execute'} else 'deny')
 

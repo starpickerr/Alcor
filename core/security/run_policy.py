@@ -43,7 +43,7 @@ def from_legacy(value):
             capabilities['builtin:' + name] = {'read': rules['workspace_read']}
         for name in ('write', 'edit', 'skill'):
             capabilities['builtin:' + name] = {'write': rules['workspace_write']}
-        capabilities['builtin:bash'] = {'system_execute': rules['shell']}
+        capabilities['builtin:bash'] = {'system_execute': rules['shell'], 'external_send': rules['high_risk'], 'delete': sensitive}
         capabilities['builtin:subagent'] = {'system_execute': rules['managed']}
         capabilities['builtin:send'] = {'external_send': rules['high_risk']}
         capabilities['builtin:browser'] = {'read': rules['external'], 'external_send': rules['high_risk']}

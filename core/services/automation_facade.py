@@ -66,8 +66,8 @@ class AutomationPluginFacade:
             action, route = self._host._route_action(task.get("action") or {}, notification_route, agent_id)
             task["action"] = action
             task["notification_route"] = route
-        self._call("create_task", task=task, origin=origin)
-        return task
+        created = self._call("create_task", task=task, origin=origin)
+        return self._with_delivery_status(created)
 
     def update(self, task_id, patch, *, agent_id=None, origin="user"):
         original = self._call("get_task", task_id=task_id)

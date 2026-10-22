@@ -277,13 +277,14 @@ def test_desktop_persists_run_permission_and_reload_keeps_it(tmp_path):
     task_id = created["task"]["id"]
     assert created["task"]["run_permission_mode"] == "full-access"
     store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
-    assert store.get_task(task_id)["run_permission_mode"] == "full-access"
+    from agent.scheduler.mutations import SchedulerMutations
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'full-access'
     updated = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "read-only"})
     assert updated["status"] == "success", updated
-    assert store.get_task(task_id)["run_permission_mode"] == "read-only"
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'read-only'
     inherited = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "inherit"})
     assert inherited["status"] == "success", inherited
-    assert "run_permission_mode" not in store.get_task(task_id)
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'read-only'
 
 
 def test_old_task_without_permission_field_stays_inherited(tmp_path):
@@ -315,12 +316,13 @@ def test_shared_mutation_refuses_agent_elevation(tmp_path):
         mutations.create(task, origin="agent")
     assert store.get_task("agent-task") is None
     saved = mutations.create({key: value for key, value in task.items() if key != "run_permission_mode"}, origin="agent")
-    assert "run_permission_mode" not in saved
+    assert saved['run_policy']['filesystem_mode'] == 'read-only'
     user = mutations.create({**task, "id": "user-task"}, origin="user")
     assert user["run_permission_mode"] == "full-access"
-    with pytest.raises(ValueError, match="运行权限"):
-        mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
-    assert store.get_task("user-task")["run_permission_mode"] == "full-access"
+    reduced = mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
+    assert reduced['run_policy']['filesystem_mode'] == 'workspace-write'
+    with pytest.raises((ValueError, PermissionError)):
+        mutations.update("user-task", {"run_permission_mode": "full-access"}, origin="agent")
 
 
 def test_create_is_exposed_by_desktop_controls():

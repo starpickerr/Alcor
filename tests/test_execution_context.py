@@ -81,7 +81,7 @@ def test_workspace_service_keeps_explicit_project_and_automation_private_root(wo
     project_store.set_project_dir('output', str(project), 'alpha')
     with identity_scope(agent_id='alpha', session_id='transcript', execution_session_id='output', task_id='daily'):
         context = WorkspaceService.context()
-        assert context.root == project
+        assert context.root == work / 'automations/alpha/daily'
         assert context.private_root == work / 'automations/alpha/daily'
         assert not work.exists()
 

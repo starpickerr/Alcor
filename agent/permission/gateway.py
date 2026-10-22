@@ -59,6 +59,7 @@ class PolicyDecision:
     resource: str
     trace: tuple[str, ...]
     request_id: str | None = None
+    approval_used: bool = False
 
     @property
     def allowed(self) -> bool:
@@ -253,6 +254,7 @@ class SecurityGateway:
         reserve_for_waiter: bool = False,
         create_pending: bool = True,
         capability_descriptor=None,
+        inherited_approval: bool = False,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -566,6 +568,8 @@ class SecurityGateway:
         elif "deny" in required.values():
             refused = next(name for name, value in required.items() if value == "deny")
             kind, reason = DecisionKind.DENY, f"Policy denied {operation} on {resource_kind.value} ({resource}); required rule {refused}."
+        elif inherited_approval:
+            kind, reason = DecisionKind.ALLOW, 'Approved operation retained by its Core service adapter.'
         elif not create_pending and (selected == "confirm" or "confirm" in required.values()):
             kind, reason = DecisionKind.CONFIRM, "Authorization required. Adjust the policy and rerun this task manually; it will not resume automatically."
         elif selected == "confirm" or "confirm" in required.values():
@@ -574,8 +578,10 @@ class SecurityGateway:
                 claim = _claims.get(approval_request_id) if approval_request_id else None
                 if claim and claim[0] == key and claim[1] >= time.time():
                     del _claims[approval_request_id]
+                    approval_used = True
                     kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
                 elif _approved.pop(key, 0) >= time.time():
+                    approval_used = True
                     kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
                 else:
                     reserved_id = next((rid for rid, claim in _claims.items()
@@ -610,7 +616,7 @@ class SecurityGateway:
         from common.log import _redact
         safe_trace = tuple(_redact(value) for value in trace + (f"Decision: {kind.value}",))
         result = PolicyDecision(kind, _redact(reason), resource_kind, operation, risk, resource,
-                                safe_trace, locals().get("request_id"))
+                                safe_trace, locals().get("request_id"), locals().get('approval_used', False))
         try:
             from agent.permission.audit import record
             record(agent=agent_id, conversation=session_id, project=project_dir, tool=tool_name,

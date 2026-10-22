@@ -51,6 +51,8 @@ class SchedulerMutations:
         return [self._with_delivery_status(task) for task in self.store.list_tasks()]
 
     def _with_delivery_status(self, task):
+        from core.security.task_policy import describe_task
+        task = describe_task(task, getattr(self.store, 'agent_id', None))
         route = task.get("notification_route")
         if isinstance(route, dict):
             task = {**task, "notification_route": load_saved_route(route)}
@@ -78,8 +80,11 @@ class SchedulerMutations:
             action, route = self._route_action(task.get("action") or {}, notification_route, agent_id)
             task["action"] = action
             task["notification_route"] = route
+        from core.security.task_policy import prepare_task_policy
+        task, change = prepare_task_policy(task, agent_id=agent_id or getattr(self.store, 'agent_id', None), origin=origin)
         self.store.add_task(task)
-        return task
+        change.apply()
+        return self._with_delivery_status(task)
 
     def resolve_delivery_updates(self, original, patch, agent_id=None):
         """Host-side part of an update: destination, route and conversation scope.
@@ -136,12 +141,17 @@ class SchedulerMutations:
             raise ValueError("请在关联事务中修改提醒时间和渠道")
         if not isinstance(patch, dict):
             raise ValueError("task update must be an object")
-        allowed = {"name", "enabled", "schedule", "action", "notification_route", "run_permission_mode"}
+        allowed = {"name", "enabled", "schedule", "action", "notification_route", "run_permission_mode", "run_policy"}
         if set(patch) - allowed:
             raise ValueError("unsupported scheduler update fields")
         updates = {key: patch[key] for key in ("name", "enabled", "schedule") if key in patch}
-        if "run_permission_mode" in patch:
-            updates["run_permission_mode"] = normalize_run_permission(patch["run_permission_mode"], origin=origin)
+        change = None
+        if 'run_permission_mode' in patch or 'run_policy' in patch:
+            from core.security.task_policy import prepare_task_policy
+            authority_input = {key: value for key, value in original.items() if key not in {'run_policy', 'run_permission_mode'}}
+            candidate, change = prepare_task_policy({**authority_input, **patch}, agent_id=agent_id or getattr(self.store, 'agent_id', None),
+                                                     origin=origin, creating=False)
+            updates.update({name: candidate[name] for name in ('run_policy_version', 'run_policy_revision')})
         updates.update(self.resolve_delivery_updates(original, patch, agent_id))
         if "schedule" in patch or "next_run_at" not in original:
             from agent.scheduler import SchedulerService
@@ -151,6 +161,8 @@ class SchedulerMutations:
                 raise ValueError("Cannot calculate next run time")
             updates["next_run_at"] = next_run.isoformat()
         self.store.update_task(task_id, updates)
+        if change is not None:
+            change.apply()
         return self.get(task_id)
 
     def delete(self, task_id):
@@ -158,6 +170,8 @@ class SchedulerMutations:
         if task.get("linked_todo_id"):
             raise ValueError("请在关联事务中修改或删除提醒时间")
         self.store.delete_task(task_id)
+        from core.security.task_policy import revoke_task_policy
+        revoke_task_policy(task_id, getattr(self.store, 'agent_id', None))
         return task
 
     def enable(self, task_id, enabled):

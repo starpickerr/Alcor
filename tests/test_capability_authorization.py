@@ -76,3 +76,23 @@ def test_policy_revision_invalidates_unused_approval():
         from core.security.run_policy import save_run_policy
         save_run_policy('session', 'revision', {'filesystem_mode': 'read-only'}, expected_revision=policy['policy_revision'])
         assert permission_denial('revision_mcp_test', {}, noninteractive=True)
+
+
+def test_approved_business_operation_reaches_service_once_without_approving_other_resources(todos_plugin):
+    from agent.permission.gateway import SecurityGateway
+    from agent.runtime.tool_invocation import permission_denial, invocation_scope
+    first = todos_plugin.create_todo({'title': 'approved target'})
+    second = todos_plugin.create_todo({'title': 'unapproved target'})
+    set_policy('approved-service', 'read-only', {'plugin:stella.tasks': {
+        'read': 'allow', 'write': 'allow', 'delete': 'confirm'}})
+    with identity_scope(session_id='approved-service'):
+        arguments = {'action': 'delete', 'id': first['id']}
+        assert permission_denial('todos', arguments)
+        request = next(row for row in SecurityGateway.pending() if row['session'] == 'approved-service')
+        assert SecurityGateway.approve(request['id'])
+        assert permission_denial('todos', arguments) is None
+        with invocation_scope('approved-call'):
+            todos_plugin.delete_todo(first['id'])
+            with pytest.raises(PermissionError):
+                todos_plugin.delete_todo(second['id'])
+        assert todos_plugin.get_todo(second['id'])['title'] == 'unapproved target'

@@ -488,6 +488,25 @@ class PluginSession:
             if skip_authz or self._method_effects[(contract, method)] != 'query':
                 raise PermissionError('authorization probes require an authorized query')
             return {'status': 'succeeded', 'sideEffects': 'none'}
+        task_policy_change = None
+        task_agent_id = (data_handle or {}).get('agentId') or agent_id
+        if self.plugin_id == 'stella.automation' and method in {'create_task', 'update_task', 'validate_task'}:
+            input_payload = dict(input_payload)
+            from core.security.task_policy import trusted_user_edit, prepare_task_policy
+            policy_origin = 'user' if trusted_user_edit(input_payload.get('origin', 'user')) else 'agent'
+            input_payload['origin'] = policy_origin
+            if method == 'create_task':
+                input_payload['task'], task_policy_change = prepare_task_policy(input_payload['task'],
+                    agent_id=task_agent_id, origin=policy_origin)
+            elif method == 'update_task':
+                patch = dict(input_payload.get('patch') or {})
+                for field in ('run_policy_version', 'run_policy_revision'):
+                    patch.pop(field, None)
+                if 'run_policy' in patch or 'run_permission_mode' in patch:
+                    prepared_task, task_policy_change = prepare_task_policy({'id': input_payload['task_id'], **patch},
+                        agent_id=task_agent_id, origin=policy_origin, creating=False)
+                    patch = {key: value for key, value in prepared_task.items() if key != 'id'}
+                input_payload['patch'] = patch
         context = build_host_context(
             user_id=self.user_id,
             instance_id=self.instance_id,
@@ -537,7 +556,18 @@ class PluginSession:
             with invocation_purpose_scope(purpose):
                 result = self._rpc("plugin.invoke", invoke_params, timeout_ms=remaining_invocation_seconds() * 1000)
         try:
-            return validate_operation_result(result)
+            result = validate_operation_result(result)
+            if result['status'] == 'succeeded' and self.plugin_id == 'stella.automation':
+                from core.security.task_policy import describe_task, revoke_task_policy
+                if task_policy_change is not None:
+                    task_policy_change.apply()
+                if method == 'delete_task':
+                    revoke_task_policy(input_payload['task_id'], task_agent_id)
+                elif method in {'create_task', 'get_task', 'update_task', 'enable_task'}:
+                    result['value'] = describe_task(result['value'], task_agent_id)
+                elif method == 'list_tasks':
+                    result['value'] = [describe_task(task, task_agent_id) for task in result['value']]
+            return result
         except ContractError as exc:
             raise PluginHostError(str(exc)) from exc
 

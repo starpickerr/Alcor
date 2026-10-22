@@ -376,8 +376,24 @@ def intersect(current: dict, ceiling: dict) -> dict:
             scopes = parent_scopes if not scopes or "*" in scopes else [scope for scope in scopes if scope in parent_scopes]
         connections[name] = {"allowed": parent.get("allowed", True) and child.get("allowed", True),
                              "scopes": scopes}
-    return {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
-            "connections": connections}
+    result = {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
+              "connections": connections}
+    if 'capabilities' in current or 'capabilities' in ceiling:
+        from core.security.capabilities import CapabilityDescriptor, authorization
+        from core.security.run_policy import OPERATIONS, from_legacy
+        current = current if 'capabilities' in current else from_legacy(current)
+        ceiling = ceiling if 'capabilities' in ceiling else from_legacy(ceiling)
+        grants = {}
+        for name in set(current['capabilities']) | set(ceiling['capabilities']):
+            source = name.split(':', 1)[0]
+            grants[name] = {operation: min((authorization(current, CapabilityDescriptor(name, source, operation)),
+                                           authorization(ceiling, CapabilityDescriptor(name, source, operation))), key=order.get)
+                            for operation in OPERATIONS}
+        modes = ['read-only', 'workspace-write', 'full-access']
+        result.update(capabilities=grants, filesystem_mode=min((current.get('filesystem_mode', 'read-only'),
+                      ceiling.get('filesystem_mode', 'read-only')), key=modes.index),
+                      policy_revision=max(current.get('policy_revision', 1), ceiling.get('policy_revision', 1)))
+    return result
 
 
 def describe(policy: dict, language: str = "zh", workspace: str | None = None,

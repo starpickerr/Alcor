@@ -17,7 +17,6 @@ _tool_call_id = ContextVar("stella_tool_call_id", default=None)
 _shell_expansion = ContextVar("stella_shell_expansion", default=None)
 _browser_file_expansion = ContextVar("stella_browser_file_expansion", default=None)
 _permission_limit = ContextVar("stella_permission_limit", default=None)
-_scheduled_permission = ContextVar("stella_scheduled_permission", default=None)
 
 
 class ApprovalRejectedError(Exception):
@@ -39,16 +38,13 @@ def approved_browser_file(url: str) -> str | None:
 
 
 @contextmanager
-def scheduled_permission_scope(mode):
-    """Apply one task's explicit preset for this run, then restore the caller."""
-    if mode not in {"read-only", "workspace-write", "full-access"}:
-        yield
-        return
-    token = _scheduled_permission.set(mode)
-    try:
-        yield
-    finally:
-        _scheduled_permission.reset(token)
+def scheduled_permission_scope(task):
+    """Resolve a task's independent policy; later calls recheck its live revision."""
+    from common.runtime_identity import current_identity
+    from core.security.task_policy import initialize_scheduled_policy
+    if not isinstance(task, dict):
+        task = {'id': current_identity().task_id, 'run_permission_mode': task}
+    yield initialize_scheduled_policy(task)
 
 
 @contextmanager
@@ -71,8 +67,9 @@ def permission_limit_scope(policy: dict, roots: tuple[str, ...]):
 def invocation_scope(tool_call_id):
     token = _tool_call_id.set(tool_call_id)
     from core.execution.context import execution_scope
+    from core.security.approvals import approved_invocation
     try:
-        with execution_scope():
+        with execution_scope(), approved_invocation():
             yield
     finally:
         _tool_call_id.reset(token)
@@ -103,11 +100,8 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
         mode = global_mode()
         cwd, roots = execution_workspace(session_id, agent_id, workspace)
     scope_session_id = identity.execution_session_id or session_id
-    project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id else None
+    project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id and not identity.task_id else None
     policy = resolve(mode, project_dir=project_dir, session_id=scope_session_id, agent_id=agent_id)
-    override = _scheduled_permission.get()
-    if override:
-        policy = {**policy, "preset": override, "base_preset": override, "rules": {}}
     limit = _permission_limit.get()
     if limit:
         from agent.permission.security_policy import intersect
@@ -125,7 +119,7 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     binding = (identity.user_id, identity.run_id, agent_id, session_id, project_dir,
                cwd, tuple(roots), accounts, tuple(allowlist or ()),
                grant_version(), json.dumps(policy, sort_keys=True, ensure_ascii=False))
-    return mode, kwargs, binding
+    return policy.get('filesystem_mode', mode), kwargs, binding
 
 
 def _permission_denial(
@@ -150,6 +144,8 @@ def _permission_denial(
     instance shared with an interactive turn.
     """
     try:
+        from core.security.approvals import clear_pending, inherited, remember
+        clear_pending()
         _shell_expansion.set(None)
         _browser_file_expansion.set(None)
         from common.runtime_identity import current_identity
@@ -164,8 +160,12 @@ def _permission_denial(
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
         capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
+        from core.security.capabilities import describe_tool
+        descriptor = capability_descriptor or describe_tool(tool_name, arguments)
+        inherited_approval = inherited(descriptor, binding, arguments)
         decision = SecurityGateway.check(mode, tool_name, arguments,
                                          capability_descriptor=capability_descriptor,
+                                         inherited_approval=inherited_approval,
                                          create_pending=not noninteractive, **check_kwargs)
         if decision.kind is DecisionKind.CONFIRM and wait_for_approval:
             def policy_now_allows():
@@ -221,6 +221,8 @@ def _permission_denial(
                             identity.task_id, identity.run_id)) and
                            decision.kind is DecisionKind.CONFIRM)
         if decision.allowed or owner_confirmed:
+            if decision.approval_used:
+                remember(descriptor, binding, arguments)
             if not tool_enabled(tool_name, **capability_scope):
                 return f'Tool {tool_name} is disabled.'
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
