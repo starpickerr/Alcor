@@ -8,7 +8,7 @@ from agent.permission.security_policy import (MODE_DEFINITIONS, copy_custom, def
 from agent.workspace import project_store, session_prefs
 
 
-def test_chat_mode_switch_updates_shared_project_policy(tmp_path, monkeypatch):
+def test_chat_mode_switch_keeps_project_peer_policy_independent(tmp_path, monkeypatch):
     from channel.desktop import desktop_channel as channel
     import config as config_module
 
@@ -34,7 +34,7 @@ def test_chat_mode_switch_updates_shared_project_policy(tmp_path, monkeypatch):
     assert result["status"] == "success", result
     assert result["permission"]["mode"] == "full-access"
     peer = resolve("read-only", project_dir=str(project), session_id="chat-b", global_value=settings["security_policy"])
-    assert effective_mode(peer) == "full-access"
+    assert effective_mode(peer) == "read-only"
     assert peer["connections"]["email"]["allowed"] is False
     assert peer["extra_roots"] == [str(tmp_path / "authorized")]
     assert settings["security_policy"]["preset"] == "read-only"
@@ -156,7 +156,7 @@ def test_global_policy_rejects_custom_preset():
                         "rules": {"network": "deny"}}, global_policy=True)
 
 
-def test_global_policy_switch_strips_legacy_custom_fields(tmp_path, monkeypatch):
+def test_default_template_switch_keeps_legacy_restrictions_and_original_backup(tmp_path, monkeypatch):
     """Old installs stored custom global defaults; switching to a product preset must succeed."""
     from agent.permission import center as security_center
     import config as config_module
@@ -183,13 +183,12 @@ def test_global_policy_switch_strips_legacy_custom_fields(tmp_path, monkeypatch)
         "rules": {},
         "connections": {"browser": {"allowed": False}},
     })
-    assert saved == {
-        "preset": "read-only",
-        "rules": {},
-        "connections": {"browser": {"allowed": False}},
-    }
+    assert saved['filesystem_mode'] == 'read-only'
+    assert saved['rules']['network'] == 'deny'
+    assert saved['connections']['browser']['allowed'] is False
+    assert security_center.global_policy() == saved
     assert "base_preset" not in saved
-    assert live["security_policy"]["preset"] == "read-only"
+    assert live["security_policy"]["preset"] == "custom"
 
 
 def test_project_policy_ignores_later_global_default_change(tmp_path, monkeypatch):
@@ -372,7 +371,8 @@ def test_security_api_persists_real_policy_and_returns_no_secret(tmp_path, monke
     monkeypatch.setattr(security_center, "_env_path", lambda: tmp_path / "missing.env")
     saved = json.loads(channel.SecurityPolicyHandler().POST())
     assert saved["status"] == "success"
-    assert json.loads(config_file.read_text())["security_policy"]["preset"] == "read-only"
+    assert security_center.global_policy()['filesystem_mode'] == 'read-only'
+    assert json.loads(config_file.read_text())['web_password'] == 'TOPSECRET'
     overview = json.loads(channel.SecurityCenterHandler().GET())
     assert overview["global_policy"]["preset"] == "read-only"
     assert rule(overview["global_policy"], "workspace_write") == "deny"
@@ -431,10 +431,12 @@ def test_global_policy_save_failure_keeps_live_state(tmp_path, monkeypatch):
     live = {"security_policy": {"preset": "approval", "rules": {}, "connections": {}}}
     monkeypatch.setattr(config_module, "conf", lambda: live)
     monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
-    monkeypatch.setattr(security_center, "_write_config", lambda *_: (_ for _ in ()).throw(OSError("disk full")))
+    before = security_center.global_policy()
+    monkeypatch.setattr('core.security.policy_store.RunPolicyStore.update', lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
     with pytest.raises(OSError, match="disk full"):
         security_center.save_global_policy({"preset": "project-full", "rules": {}})
     assert live["security_policy"]["preset"] == "approval"
+    assert security_center.global_policy() == before
 
 
 def test_corrupt_scoped_stores_fail_closed_and_report_error(tmp_path, monkeypatch):
@@ -449,7 +451,8 @@ def test_corrupt_scoped_stores_fail_closed_and_report_error(tmp_path, monkeypatc
     (tmp_path / "projects.json").unlink()
     (tmp_path / "session_prefs.json").write_text("{broken", encoding="utf-8")
     policy = resolve("workspace-write", session_id="corrupt-session")
-    assert policy["error"] == "Conversation security preferences are invalid."
+    assert policy['migration_status'] == 'needs_confirmation'
+    assert 'restricted' in policy['error']
     assert all(value == "deny" for value in effective_rules(policy).values())
 
 
@@ -598,6 +601,9 @@ def test_live_tool_gate_uses_project_and_conversation_context(tmp_path, monkeypa
             "preset": "custom", "base_preset": "workspace-write",
             "rules": {"network": "allow"}, "connections": {},
         })
+        assert permission_denial("web_fetch", {"url": "https://example.com"}, agent=LiveAgent())
+        from agent.permission.center import save_conversation_policy
+        save_conversation_policy('live-session', {'rules': {'network': 'allow'}})
         assert permission_denial("web_fetch", {"url": "https://example.com"}, agent=LiveAgent()) is None
 
 

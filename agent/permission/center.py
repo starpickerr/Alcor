@@ -16,55 +16,48 @@ _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 
 
 def global_policy() -> dict:
-    from config import conf
-    raw = conf().get("security_policy")
-    return resolve(global_mode(), global_value=raw)
+    from core.security.run_policy import default_template, gateway_policy
+    return gateway_policy(default_template())
 
 
 def save_global_policy(value: dict) -> dict:
-    from config import conf, get_data_root, read_config_template
-    clean = validate_patch(value, global_policy=True)
-    current = conf()
-    path = Path(get_data_root()) / "config.json"
-    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-    data["security_policy"] = clean
-    _write_config(path, data)
-    current["security_policy"] = clean
-    record(operation="update", resource="global policy", decision="policy_change", reason="Global security policy updated.")
-    return clean
+    from core.security.run_policy import default_template, gateway_policy, save_run_policy, validate_policy
+    current = default_template()
+    if 'filesystem_mode' in value or 'capabilities' in value:
+        clean = validate_policy(value)
+    else:
+        legacy = validate_patch(value, global_policy=True)
+        clean = {'filesystem_mode': legacy.get('preset', current['filesystem_mode'])}
+        clean.update({key: legacy[key] for key in ('connections', 'extra_roots') if key in legacy})
+    saved = save_run_policy('template', 'default', clean,
+                            expected_revision=value.get('policy_revision', current['policy_revision']))
+    record(operation="update", resource="new subject template", decision="policy_change", reason="New subject defaults updated.")
+    return gateway_policy(saved)
 
 
 def save_conversation_policy(session: str, value: dict | None, agent: str | None = None) -> dict:
-    """Use the same project or standalone policy for every human-facing editor."""
-    from agent.workspace import project_store, session_prefs
-    from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
-
-    patch = validate_patch(value) if value is not None else {}
-    project = project_store.get_project_dir(session, agent)
-    roots = patch.get("extra_roots")
-    fields = {key: patch[key] for key in ("preset", "base_preset", "rules", "connections") if key in patch}
-    if project and fields:
-        previous = project_store.get_security_policy(project)
-        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
-        saved = project_store.set_security_policy(project, snapshot_policy({**retained, **fields}))
-        migrate_project_conversation_policies(project)
-        if roots is not None:
-            session_prefs.set_prefs(session, agent, security_policy={"extra_roots": roots})
-        record(operation="update", resource="project policy", project=project, conversation=session,
-               decision="policy_change", reason="Project security policy updated from a project conversation.")
-    elif project:
-        saved = {"extra_roots": roots} if roots is not None else {}
-        session_prefs.set_prefs(session, agent, security_policy=saved or None)
-        record(operation="update", resource="conversation policy", conversation=session,
-               decision="policy_change", reason="Conversation authorized paths updated.")
+    """Update one conversation, independently of other chats in its project."""
+    from core.security.run_policy import gateway_policy, resolve_run_policy, save_run_policy, validate_policy
+    current = resolve_run_policy(session, agent)
+    legacy_rules = None
+    if value is None:
+        from core.security.run_policy import default_template
+        template = default_template()
+        patch = {key: template[key] for key in ('filesystem_mode', 'capabilities', 'connections', 'extra_roots')}
+    elif 'filesystem_mode' in value or 'capabilities' in value:
+        patch = validate_policy(value)
     else:
-        previous = session_prefs.get_prefs(session, agent).get("security_policy") or {}
-        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
-        saved = snapshot_policy({**retained, **patch}) if patch else {}
-        session_prefs.set_prefs(session, agent, security_policy=saved or None)
-        record(operation="update", resource="conversation policy", conversation=session,
-               decision="policy_change", reason="Standalone conversation security policy updated.")
-    return saved
+        legacy = validate_patch(value)
+        legacy_rules = legacy.get('rules')
+        patch = {key: legacy[key] for key in ('connections', 'extra_roots') if key in legacy}
+        if 'preset' in legacy:
+            patch['filesystem_mode'] = legacy.get('base_preset', 'workspace-write') if legacy['preset'] == 'custom' else legacy['preset']
+    saved = save_run_policy('session', session, patch, agent_id=agent,
+                            expected_revision=value.get('policy_revision', current['policy_revision']) if value else current['policy_revision'],
+                            legacy_rules=legacy_rules)
+    record(operation='update', resource='conversation policy', conversation=session,
+           decision='policy_change', reason='Independent conversation RunPolicy updated.')
+    return gateway_policy(saved)
 
 
 def _write_config(path: Path, data: dict) -> None:

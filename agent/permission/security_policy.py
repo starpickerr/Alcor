@@ -137,10 +137,18 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ValueError("security policy must be an object")
     value = _migrate_legacy(value)
-    unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"}
+    run_fields = {'filesystem_mode', 'capabilities', 'policy_revision', 'migration_status'}
+    unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"} - run_fields
     if unknown:
         raise ValueError(f"unknown security policy fields: {', '.join(sorted(unknown))}")
     result = {}
+    if any(key in value for key in run_fields - {'migration_status'}):
+        from core.security.run_policy import validate_policy
+        result.update(validate_policy({key: value[key] for key in run_fields - {'migration_status'} if key in value}))
+    if 'migration_status' in value:
+        if value['migration_status'] not in {'complete', 'needs_confirmation'}:
+            raise ValueError('invalid policy migration status')
+        result['migration_status'] = value['migration_status']
     if "preset" in value:
         if value["preset"] not in PRESETS:
             raise ValueError("unknown security preset")
@@ -217,7 +225,7 @@ def _load_global(mode: str, global_value: dict | None) -> dict:
                 "connections": {}, "error": "Global security policy is invalid."}
 
 
-def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
+def _legacy_resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
             agent_id: str | None = None, global_value: dict | None = None) -> dict:
     """Complete project or standalone-conversation policies win; global is only the default seed."""
     global_base = _load_global(mode, global_value)
@@ -275,6 +283,19 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
                 return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                         "connections": {}, "error": "Conversation security policy is invalid."}
     return global_base
+
+
+def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
+            agent_id: str | None = None, global_value: dict | None = None) -> dict:
+    """Resolve the independent subject snapshot; projects only select files."""
+    from common.runtime_identity import current_identity
+    from core.security.run_policy import gateway_policy, resolve_run_policy
+    identity = current_identity()
+    seed = None
+    if global_value is not None:
+        seed = _legacy_resolve(mode, project_dir=project_dir, session_id=session_id,
+                               agent_id=agent_id, global_value=global_value)
+    return gateway_policy(resolve_run_policy(session_id, agent_id, task_id=identity.task_id, seed=seed))
 
 
 def migrate_project_conversation_policies(project_dir: str, *, global_value: dict | None = None,
