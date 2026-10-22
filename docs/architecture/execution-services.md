@@ -36,11 +36,11 @@ flowchart LR
 | --- | --- |
 | 普通会话 | `work/sessions/<agent>/<session>`，外部通道 ID 沿用安全编码 |
 | 定时任务私有文件 | `work/automations/<agent>/<task>`，更换输出或 transcript 会话不改变私有根 |
-| 明确绑定项目 | 沿用已有项目绑定；项目消失时停止，不回退到个人目录 |
+| 对话明确绑定项目 | 沿用已有项目绑定；项目消失时停止，不回退到个人目录；任务根独立 |
 | 共享文件 | 继续使用逐文件共享与撤销，不授予父目录访问 |
 | 旧 Work 文件 | 保留原位；继续使用显式复制，不移动或覆盖旧文件 |
 
-定时任务的 `execution_session_id`、输出对话和 Agent transcript 仍各司其职。旧任务明确选择的项目继续生效；任务专属 private_root 仍与源会话私有目录分离。读取源对话的文本上下文不授予其私有文件权限。原任务数据库、运行记录与投递重试不迁移。
+定时任务的 `execution_session_id`、输出对话和 Agent transcript 仍各司其职。任务始终使用独立持久工作区，来源项目不替换任务根；旧任务的实际权限迁移为独立 RunPolicy。读取源对话的文本上下文不授予其私有文件权限。原任务数据库、运行记录与投递重试不迁移。
 
 ## 插件、Agent 与 Model 边界
 
@@ -58,12 +58,12 @@ MCP 调用在启动等待、授权、实际传输和结果释放处检查同一�
 
 已有账单、事务、日程、简报、知识、记忆、自动化、Agent Hub 的 `domain_data_handle` 保持原路径与迁移机制；没有全库搬迁，也不重签或扩大旧 Grant。通用插件私有目录、账单/事务/日程/Agent Hub 原始存储加入统一文件与 shell 保护清单；简报及自动化数据库和 SQLite sidecar 也受保护。插件私有目录的祖先路径与 Work 私有路径均检查符号链接，避免通过目录别名绕过所有权。知识目录仍保留用户文档语义。
 
-这是宿主授权、契约及数据所有权边界。现有 Python worker 与 Core 运行在同一 OS 用户下；本次没有把 worker 改造成抵抗恶意原生代码的 OS 沙箱。签名/包选择/能力启停和原平台隔离限制仍适用。
+这是宿主授权、契约及数据所有权边界。第三方插件和本地 MCP 默认经实际 OS 隔离启动（macOS Seatbelt / Linux bubblewrap），隔离不可用则拒绝。用户明确选择的受信任运行绑定包/启动内容摘要，撤销后停止进程。第一方信任由 Core 固定包来源及完整摘要校验确定，独立进程本身不被视为沙箱。
 
-四个当前权限预设保持 `read-only`、`workspace-write`、`full-access`、`custom`；旧策略继续按原快照迁移。Full Access 不绕过托管私有数据、其他会话目录、凭据或 OS 授权。
+文件与命令权限只提供 `read-only`、`workspace-write`、`full-access`。历史 Custom 迁移为对应模式、操作能力和必要兼容限制。对话与任务各自持有 RunPolicy；项目只共享文件，默认模板只影响新建主体。Full Access 不绕过资源授权、托管私有数据、其他会话目录、凭据或 OS 授权。
 
 ## 决策与验收入口
 
-本次选择增量服务协调和兼容适配，而非一次性搬迁状态或替换所有权限存储。依据是现有数据服务与插件授权已运行，用户要求兼容旧数据与四种预设。后果是布局兼容适配器和既有 Grant 存储保留；新增消费者应走公开服务，不直接依赖物理数据库路径。
+权限统一为 RunPolicy、Capability Authorization 和 Resource Grants，Security Service 协调既有 Gateway、PluginAuthorizationStore 和 Data Service。原授权数据库承载新增策略、资源与迁移表，避免同一关系多处维护；账号、凭据和业务存储不搬迁。布局兼容适配器和既有有效 Grant 保留；新增消费者应走公开服务，不直接依赖物理数据库路径。
 
 测试入口：`tests/test_execution_context.py`、`test_service_boundaries.py`、`test_plugin_core_invoke.py`、`test_data_resources.py`，并结合现有 workspace/scheduler/security/plugin/MCP 回归。Data 资源细节见[数据服务](data-service.md)，现有平台与权限模式限制见[权限模式](../security-permission-modes.md)。
