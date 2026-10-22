@@ -26,6 +26,10 @@ OPERATIONS = {
 }
 
 
+class ManagedMcpConfig(dict):
+    """Core factory provenance; a user JSON field cannot create this type."""
+
+
 def configurations(manager):
     if os.environ.get("STELLA_MANAGED_MCP", "1") == "0":
         return []
@@ -80,7 +84,7 @@ def configurations(manager):
                     "tool", "elearning"
                 )
             configs.append(
-                {
+                ManagedMcpConfig({
                     "name": domain,
                     "type": "stdio",
                     "command": command,
@@ -112,7 +116,7 @@ def configurations(manager):
                     "settingsUrl": "/" + domain,
                     "toolOperations": dict(OPERATIONS[domain]),
                     "filesystemTools": ['sync_files'] if domain == 'elearning' else [],
-                }
+                })
             )
         return configs
 

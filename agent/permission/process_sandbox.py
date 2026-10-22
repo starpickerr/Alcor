@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 import json
 import os
 import shutil
@@ -76,13 +77,20 @@ def revoke_share_processes(share_id: str) -> None:
                 _stop_process(process)
 
 
+def sandbox_executable():
+    name = 'sandbox-exec' if sys.platform == 'darwin' else 'bwrap'
+    found = shutil.which(name)
+    standard = '/usr/bin/' + name
+    return found or (standard if os.path.isfile(standard) and os.access(standard, os.X_OK) else None)
+
+
 def capability() -> dict:
     """Probe actual launch ability, not just whether a binary is on PATH."""
     if sys.platform == "darwin":
-        executable = shutil.which("sandbox-exec")
+        executable = sandbox_executable()
         probe = [executable, "-p", "(version 1) (allow default)", "/usr/bin/true"] if executable else None
     elif sys.platform.startswith("linux"):
-        executable = shutil.which("bwrap")
+        executable = sandbox_executable()
         probe = ([executable, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc",
                   "--dev-bind", "/dev", "/dev", "--", "/bin/true"] if executable else None)
     else:
@@ -113,6 +121,7 @@ def _protected_paths() -> tuple[list[str], list[str]]:
     folders = sorted(protected_credential_folders())
     folders.append(str(user_root() / 'briefing' / 'elearning-sessions'))
     folders.append(str(shared_root() / "skills"))
+    folders.append(str(user_root()))
     return files, folders
 
 
@@ -153,10 +162,16 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
     if sys.platform == "darwin":
         permissions = ""
         if constrained:
-            permissions = "(deny file-write*) " + " ".join(
+            read_roots = [cwd, *roots, *(policy.get('extra_roots') or []), temp_dir,
+                          '/System', '/usr', '/bin', '/sbin', '/Library', '/private/etc', sys.prefix, sys.base_prefix,
+                          str(Path(__file__).resolve().parents[2] / 'core')]
+            permissions += '(deny file-read*) (allow file-read-metadata) (allow file-read* (literal "/")) '
+            permissions += ' '.join(f'(allow file-read* (subpath {_seatbelt_literal(path)}))' for path in read_roots)
+            permissions += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random")) '
+            permissions += "(deny file-write*) " + " ".join(
                 f"(allow file-write* (subpath {_seatbelt_literal(path)}))" for path in write_roots)
             if approved_target:
-                permissions += f" (allow file-write* (literal {_seatbelt_literal(approved_target)}))"
+                permissions += f" (allow file-read* file-write* (literal {_seatbelt_literal(approved_target)}))"
         if rule(policy, "network") == "deny":
             permissions += " (deny network*)"
         work = os.path.realpath(context.work_root)
@@ -175,15 +190,20 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
             if row["access"] == "write" or row["owner_session"] == context.session_id:
                 private_rules.append(f"(allow file-write* (literal {file_path}))")
         profile = f"(version 1) (allow default) {permissions} {protected} {' '.join(private_rules)}"
-        argv = [shutil.which("sandbox-exec"), "-p", profile, "/bin/sh", "-c", command]
+        argv = [sandbox_executable(), "-p", profile, "/bin/sh", "-c", command]
     else:
-        executable = shutil.which("bwrap")
+        executable = sandbox_executable()
         isolation = ["--unshare-pid"]
         if rule(policy, "network") == "deny":
             isolation.append("--unshare-net")
         if constrained:
-            argv = [executable, "--die-with-parent", *isolation, "--ro-bind", "/", "/", "--proc", "/proc",
+            argv = [executable, "--die-with-parent", *isolation, "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev"]
+            read_roots = [cwd, *roots, *(policy.get('extra_roots') or []),
+                          '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', sys.prefix, sys.base_prefix,
+                          str(Path(__file__).resolve().parents[2] / 'core')]
+            for path in dict.fromkeys(os.path.realpath(path) for path in read_roots if os.path.exists(path)):
+                argv.extend(['--ro-bind', path, path])
             for path in write_roots:
                 argv.extend(["--bind", path, path])
             if approved_target:

@@ -77,6 +77,47 @@ def test_delegation_is_an_external_capability_and_respects_read_only():
     assert not SecurityGateway.check('read-only', 'agent_hub', {'action': 'submit', 'goal': 'task'})
 
 
+def test_external_cli_inherits_parent_filesystem_ceiling(tmp_path, monkeypatch):
+    import json
+    import sys
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    monkeypatch.setenv('OPENAI_API_KEY', 'synthetic-host-secret')
+    secret = tmp_path / 'owner-private.txt'
+    secret.write_text('OWNER_PRIVATE')
+    outside = tmp_path / 'outside.txt'
+    fake = tmp_path / 'codex'
+    fake.write_text(f'''#!{sys.executable}
+import json, os
+from pathlib import Path
+result = {{'host_secret': 'OPENAI_API_KEY' in os.environ}}
+try: result['read'] = Path({str(secret)!r}).read_text()
+except OSError: result['read'] = 'denied'
+try: Path({str(outside)!r}).write_text('escaped'); result['write'] = 'allowed'
+except OSError: result['write'] = 'denied'
+print(json.dumps(result))
+''')
+    fake.chmod(0o755)
+    config = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
+        'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
+    save_run_policy('session', 'parent', {'filesystem_mode': 'read-only', 'capabilities': {
+        'plugin:stella.agent-hub': {'read': 'allow', 'write': 'allow', 'system_execute': 'allow'}}})
+    with identity_scope(session_id='parent'):
+        tool = AgentHubTool()
+        result = tool.execute(action='submit', goal='probe', provider_config_id=config['providerConfigId'])
+        assert result.status == 'success', result.result
+        eid = result.result['executionId']
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            status = tool._status(eid)
+            if status['execution']['status'] in {'succeeded', 'failed'}:
+                break
+            time.sleep(.02)
+        assert status['execution']['status'] == 'succeeded', status
+        assert json.loads(status['artifacts'][0]['text']) == {'read': 'denied', 'write': 'denied', 'host_secret': False}
+    assert not outside.exists()
+
+
 @pytest.mark.parametrize('local_id', ['codex-app-server', 'cursor-acp'])
 def test_unfinished_protocol_modes_are_blocked_not_ready(local_id, tmp_path):
     import sys
@@ -132,15 +173,15 @@ def test_cli_completion_does_not_leave_descendants(tmp_path):
     import os
     import signal
     import sys
-    pid_file = tmp_path / 'child.pid'
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen({str(pid_file)!r},"w").write(str(p.pid))\nprint("complete")\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("child.pid","w").write(str(p.pid))\nprint("complete")\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
     tool = AgentHubTool()
     result = tool.execute(action='submit', goal='test', provider_config_id=row['providerConfigId'])
     assert result.status == 'success', result.result
+    pid_file = Path(tool._execution_service().get(result.result['executionId'])['workspacePath']) / 'child.pid'
     child = None
     try:
         deadline = time.monotonic() + 5
@@ -165,14 +206,14 @@ def test_worker_crash_reaps_owned_cli_groups(tmp_path):
     import os
     import signal
     import sys
-    pid_file = tmp_path / 'children.json'
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen({str(pid_file)!r},"w").write(json.dumps([os.getpid(),p.pid]))\ntime.sleep(30)\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("children.json","w").write(json.dumps([os.getpid(),p.pid]))\ntime.sleep(30)\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
     result = AgentHubTool().execute(action='submit', goal='test', provider_config_id=row['providerConfigId'])
     assert result.status == 'success'
+    pid_file = Path(AgentHubTool()._execution_service().get(result.result['executionId'])['workspacePath']) / 'children.json'
     pids = []
     try:
         deadline = time.monotonic() + 3

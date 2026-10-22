@@ -1,0 +1,74 @@
+"""Restrict untrusted extensions to runtime code and their private storage."""
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import sys
+
+from agent.permission.process_sandbox import SandboxUnavailable, capability, sandbox_executable
+
+
+@dataclass(frozen=True)
+class ExtensionPlan:
+    argv: list[str]
+    cwd: str
+    env: dict
+    state: dict
+
+
+def prepare_extension(command, package, storage, env, *, trusted=False, writable=True,
+                      read_roots=(), executable_reads=(), network=False):
+    package, storage = Path(package).resolve(), Path(storage).resolve()
+    storage.mkdir(parents=True, exist_ok=True, mode=0o700)
+    storage.chmod(0o700)
+    clean = {key: str(value) for key, value in env.items() if not key.startswith(('LD_', 'DYLD_', 'PYTHON')) and
+             key not in {'NODE_OPTIONS', 'NODE_PATH', 'BASH_ENV', 'ENV'}}
+    core = Path(__file__).resolve().parents[2]
+    clean['PYTHONPATH'] = str(core)
+    clean['PYTHONDONTWRITEBYTECODE'] = '1'
+    if trusted:
+        return ExtensionPlan(list(command), str(storage), clean,
+                             {'mode': 'trusted', 'reason': 'This digest is trusted to use the host runtime.'})
+    state = capability()
+    if state['status'] != 'enabled':
+        raise SandboxUnavailable(state['reason'])
+    private_home = storage / '.home'
+    temporary = storage / '.tmp'
+    private_home.mkdir(exist_ok=True, mode=0o700)
+    temporary.mkdir(exist_ok=True, mode=0o700)
+    clean.update(HOME=str(private_home), USERPROFILE=str(private_home), TMPDIR=str(temporary), TMP=str(temporary),
+                 TEMP=str(temporary), XDG_CACHE_HOME=str(private_home), XDG_CONFIG_HOME=str(private_home),
+                 PYTHONDONTWRITEBYTECODE='1')
+    # Core chooses import roots; no caller import injection survives.
+    roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/Library', '/private/etc',
+             sys.prefix, sys.base_prefix, str(core / 'core'), str(package), *map(str, read_roots)) if Path(path).exists()]
+    if sys.platform == 'darwin':
+        def literal(path):
+            return json.dumps(str(path), ensure_ascii=False)
+        # dyld opens the root directory during launch; this literal does not
+        # grant descendants (which remain subject to the exact read roots).
+        profile = '(version 1) (deny default) (allow process-fork process-exec sysctl-read) (allow signal (target self)) (allow file-read-metadata) (allow file-read* (literal "/")) '
+        if network:
+            profile += '(allow network*) '
+        profile += ' '.join(f'(allow file-read* (subpath {literal(path)}))' for path in roots)
+        profile += f' (allow file-read* (literal {literal(core)}))'
+        profile += f' (allow file-read* (subpath {literal(storage)}))'
+        profile += ' '.join(f'(allow file-write* (subpath {literal(path)}))'
+                            for path in ([storage] if writable else [private_home, temporary]))
+        profile += ' '.join(f'(allow file-read* (literal {literal(Path(path).resolve())}))' for path in executable_reads)
+        profile += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))'
+        argv = [sandbox_executable(), '-p', profile, *command]
+    else:
+        argv = [sandbox_executable(), '--die-with-parent', '--unshare-all', '--new-session']
+        if network:
+            argv += ['--share-net']
+        for path in dict.fromkeys(roots):
+            argv += ['--ro-bind', str(path), str(path)]
+        for path in executable_reads:
+            argv += ['--ro-bind', str(Path(path).resolve()), str(Path(path).resolve())]
+        argv += ['--bind' if writable else '--ro-bind', str(storage), str(storage)]
+        if not writable:
+            for path in (private_home, temporary):
+                argv += ['--bind', str(path), str(path)]
+        argv += ['--proc', '/proc', '--dev', '/dev',
+                 '--chdir', str(storage), '--', *command]
+    return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'reason': 'OS file and network isolation enabled.'})

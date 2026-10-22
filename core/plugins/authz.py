@@ -185,8 +185,10 @@ class PluginAuthorizationStore:
                    and row.consumer_plugin_id == consumer_plugin_id for row in grants.values()):
                 inherited = None
             parent = grants.get(grant_ref)
-            if parent and (parent.revoked or parent.plugin_id != plugin_id or parent.user_id != user_id):
-                inherited = None
+            if parent and (parent.revoked or parent.plugin_id != plugin_id or parent.user_id != user_id or
+                           (purpose not in parent.purposes and 'any' not in parent.purposes) or
+                           (parent.valid_until is not None and _expiry(parent.valid_until) <= now)):
+                raise PermissionError('scoped grant parent is no longer valid')
             candidates = [grant for grant in grants.values() if grant.parent_ref == grant_ref and
                           grant.plugin_id == plugin_id and grant.user_id == user_id and
                           (grant.consumer_plugin_id == consumer_plugin_id or

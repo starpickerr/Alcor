@@ -11,6 +11,7 @@ def integration(tmp_path, monkeypatch):
     from core.services.email_facade import EmailMcpFacade
     from agent.tools.tool_manager import ToolManager
     from tests.test_managed_mcp_domains import fake_config
+    from core.mcp.managed import ManagedMcpConfig
 
     monkeypatch.setenv("STELLA_MANAGED_MCP", "1")
     monkeypatch.setitem(conf(), "agent_permission_mode", "full-access")
@@ -20,11 +21,11 @@ def integration(tmp_path, monkeypatch):
         {"preset": "full-access", "rules": {}, "connections": {}},
     )
     manager = ToolManager()
-    config = {
+    config = ManagedMcpConfig({
         **fake_config("email", tmp_path / "email"),
         "agentTools": ["list_accounts", "list_sources", "fetch_messages"],
         "settingsUrl": "/email",
-    }
+    })
     config['args'][config['args'].index('--user-id') + 1] = 'local-default'
     monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
     was_enabled = manager._mcp_enabled(config)
@@ -198,7 +199,11 @@ def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
         "command": str(root / "MCP/email-mcp/.venv/bin/python"),
         "args": [str(Path(__file__).parent / "fixtures/generic_data_mcp.py")],
         "timeout": 10,
+        "toolOperations": {'accounts': 'read', 'messages': 'read'},
     }
+    from core.security.run_policy import save_run_policy, default_template
+    save_run_policy('template', 'default', {'filesystem_mode': 'full-access', 'capabilities': {
+        **default_template()['capabilities'], 'mcp:generic-source': {'read': 'allow'}}})
     monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
     monkeypatch.setitem(conf(), "agent_permission_mode", "full-access")
     monkeypatch.setitem(
@@ -263,6 +268,9 @@ def test_default_registered_consumer_delivers_sdk_records_to_real_briefing_worke
     service, _, _ = integration
     source = service.list_sources()[0]
     sub = service.subscribe(source["id"], "briefing")
+    from core.security.resource_grants import ResourceGrantStore
+    ResourceGrantStore().issue(user_id='local-default', subject='plugin:stella.briefing',
+        resource={'kind': 'folder', 'id': source['account_id']}, operations=['read'])
     service.sync(
         source["id"], {"since": "2026-09-08T00:00:00Z", "until": "2026-09-10T00:00:00Z"}
     )

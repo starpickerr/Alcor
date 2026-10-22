@@ -143,6 +143,7 @@ def test_session_uses_resolved_command(monkeypatch, tmp_path):
     fake = tmp_path / "runner"
     fake.write_text("")
     monkeypatch.setenv("STELLA_PLUGIN_RUNNER", str(fake))
+    monkeypatch.setattr('core.security.extension_sandbox.capability', lambda: {'status': 'enabled'})
     seen: dict[str, list[str]] = {}
 
     def fake_popen(cmd, **kwargs):
@@ -153,7 +154,8 @@ def test_session_uses_resolved_command(monkeypatch, tmp_path):
     session = PluginSession(ALPHA, source_label="sample", registry=PluginRegistry())
     with pytest.raises(RuntimeError, match="stop"):
         session.start()
-    assert seen["cmd"] == [str(fake)]
+    assert seen['cmd'][-1] == str(fake)
+    assert seen['cmd'][0] != str(fake)
 
 
 # --------------------------------------------------------------------------
@@ -316,7 +318,8 @@ def test_frozen_runner_runs_alpha_without_system_python(frozen_runner, tmp_path,
         started = session.start()
         assert started["initialize"]["pluginId"] == "stella.sample.alpha"
         assert session._proc is not None
-        assert session._proc.args == [str(frozen_runner)]
+        assert session._proc.args[-1] == str(frozen_runner)
+        assert session.sandbox_state['mode'] == 'isolated'
         assert "-m" not in session._proc.args
         result = session.invoke("ping", {"echo": 7})
         assert result["status"] == "succeeded"
@@ -324,9 +327,9 @@ def test_frozen_runner_runs_alpha_without_system_python(frozen_runner, tmp_path,
         assert result["value"]["echo"] == 7
     finally:
         session.dispose()
-    # Nothing under STELLA_DATA_DIR/HOME: no app init, watcher, scheduler, run-record recovery.
-    assert not (tmp_path / "data").exists()
-    assert not (tmp_path / "home").exists()
+    # The sandbox creates only private runtime storage, never application state.
+    assert not list((tmp_path / 'data').rglob('executions.db'))
+    assert not list((tmp_path / 'data').rglob('tasks.json'))
 
 
 def test_frozen_runner_sibling_discovery(frozen_runner, tmp_path):
@@ -349,6 +352,7 @@ def test_worker_does_not_inherit_host_credentials(monkeypatch):
     monkeypatch.setenv("STELLA_DESKTOP_INTERNAL_TOKEN", "test-management-token")
     monkeypatch.setenv("IMAP_PASSWORD", "test-mail-secret")
     monkeypatch.setenv("PYTHONPATH", "/untrusted/site-packages")
+    monkeypatch.setattr('core.security.extension_sandbox.capability', lambda: {'status': 'enabled'})
     captured = {}
 
     def capture(command, **kwargs):
@@ -362,4 +366,4 @@ def test_worker_does_not_inherit_host_credentials(monkeypatch):
     assert "OPENAI_API_KEY" not in captured
     assert "STELLA_DESKTOP_INTERNAL_TOKEN" not in captured
     assert "IMAP_PASSWORD" not in captured
-    assert "PYTHONPATH" not in captured
+    assert captured['PYTHONPATH'] == str(REPO)

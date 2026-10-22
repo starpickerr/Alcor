@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import uuid
+import weakref
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from contextlib import nullcontext
@@ -31,6 +32,16 @@ from core.plugins.registry import ContributionSnapshot, PluginRegistry
 
 class PluginHostError(RuntimeError):
     pass
+
+
+_LIVE_SESSIONS = weakref.WeakSet()
+
+
+def revoke_runtime_trust(user_id, plugin_id, digest):
+    for session in list(_LIVE_SESSIONS):
+        if (session.user_id, session.plugin_id, session.package_digest) == (user_id, plugin_id, digest) and session.sandbox_state.get('mode') == 'trusted':
+            session.sandbox_state = {'mode': 'unavailable', 'reason': 'Runtime trust was revoked; restart in isolation.'}
+            session.dispose()
 
 
 class PluginOutcomeUnknown(PluginHostError):
@@ -188,6 +199,19 @@ class PluginSession:
         self._method_permissions: dict[tuple[str, str], frozenset[str]] = {}
         self._method_effects: dict[tuple[str, str], str] = {}
         self._method_operations: dict[tuple[str, str], str] = {}
+        self._method_descriptors = {}
+        self.sandbox_state = {'mode': 'unavailable', 'reason': 'Worker has not started.'}
+        _LIVE_SESSIONS.add(self)
+
+    def _check_runtime(self):
+        if self.sandbox_state.get('mode') == 'unavailable':
+            raise PermissionError(self.sandbox_state['reason'])
+        from core.security.runtime_trust import plugin_trusted
+        if (_digest_tree(self.plugin_root) != self.package_digest or
+                self.sandbox_state.get('mode') == 'trusted' and not plugin_trusted(
+                    self.plugin_root, self.plugin_id, self.package_digest, self.user_id)):
+            self.dispose()
+            raise PermissionError('Runtime trust or package digest changed; restart the worker')
 
     @property
     def is_running(self) -> bool:
@@ -250,13 +274,21 @@ class PluginSession:
             if env.get("STELLA_ALLOW_REPO_IMPORT") not in {"1", "true", "yes"}:
                 env.pop("STELLA_REPO_ROOT", None)
             cmd = self._runner_command or resolve_runner_command(python_executable=self._python)
+            from core.security.extension_sandbox import prepare_extension
+            from core.security.runtime_trust import plugin_trusted
+            from core.plugins.storage import private_data_handle
+            storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
+            plan = prepare_extension(cmd, self.plugin_root, storage, env, trusted=plugin_trusted(
+                self.plugin_root, self.plugin_id, self.package_digest, self.user_id),
+                read_roots=[Path(cmd[0]).resolve().parent])
+            self.sandbox_state = plan.state
             self._proc = subprocess.Popen(
-                cmd,
+                plan.argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=str(Path(os.environ.get("STELLA_RUNNER_CWD") or Path.cwd())),
-                env=env,
+                cwd=plan.cwd,
+                env=plan.env,
                 start_new_session=True,
             )
             process = self._proc
@@ -303,6 +335,7 @@ class PluginSession:
                         for method in svc.get("methods") or []:
                             from core.security.capabilities import method_operation
                             self._method_operations[(contract, method['name'])] = method_operation(method)
+                            self._method_descriptors[(contract, method['name'])] = dict(method)
                             perms.update(method.get("permissions") or [])
                             self._method_permissions[(contract, method["name"])] = frozenset(method.get("permissions") or [])
                             self._method_effects[(contract, method["name"])] = method.get("effect", "unknown")
@@ -393,9 +426,15 @@ class PluginSession:
     ) -> dict[str, Any]:
         from common.runtime_identity import current_identity
 
+        self._check_runtime()
         identity = current_identity()
         if identity.user_id and identity.user_id != self.user_id:
             raise PermissionError("plugin session user identity mismatch")
+        if data_handle is not None:
+            if (data_handle.get('namespace') not in (None, self.plugin_id) or
+                    data_handle.get('userId') not in (None, '', self.user_id) or
+                    identity.agent_id and data_handle.get('agentId') not in (None, '', identity.agent_id)):
+                raise PermissionError('Host data handle identity does not match the worker execution')
         # A compatibility gateway cannot erase the real tool/job caller.
         from core.plugins.caller import (current_caller_origin, current_delegation,
                                          current_invocation_deadline, remaining_invocation_seconds,
@@ -472,6 +511,7 @@ class PluginSession:
                 )
             # Overlay existing conversation/tool permission path when agent/tool origin.
             if origin in {"tool", "job"}:
+                from core.security.capabilities import method_operation
                 denial = _conversation_permission_denial(
                     contract=contract,
                     method=method,
@@ -480,7 +520,7 @@ class PluginSession:
                     input_payload=input_payload,
                     noninteractive=origin == "job",
                     effect=self._method_effects[(contract, method)],
-                    operation=self._method_operations[(contract, method)],
+                    operation=method_operation(self._method_descriptors[(contract, method)], input_payload),
                 )
                 if denial:
                     raise PermissionError(denial)
@@ -556,6 +596,7 @@ class PluginSession:
             with invocation_purpose_scope(purpose):
                 result = self._rpc("plugin.invoke", invoke_params, timeout_ms=remaining_invocation_seconds() * 1000)
         try:
+            self._check_runtime()
             result = validate_operation_result(result)
             if result['status'] == 'succeeded' and self.plugin_id == 'stella.automation':
                 from core.security.task_policy import describe_task, revoke_task_policy

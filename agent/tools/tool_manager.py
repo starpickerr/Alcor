@@ -548,6 +548,9 @@ class ToolManager:
                 metadata,
                 purpose,
             )
+        else:
+            from core.security.service import SecurityService
+            SecurityService.authorize_connection(server_name, tool.capability_descriptor.operation)
         if not self._mcp_admitted(server_name, generation):
             raise PermissionError("MCP connection was replaced")
         # Cache consumers need the same current authorization and admission
@@ -566,6 +569,8 @@ class ToolManager:
             raise PermissionError(denial)
         if cfg.get('settingsUrl') == '/' + server_name:
             check(server_name, method, arguments, current.user_id or 'local-default', metadata, purpose)
+        else:
+            SecurityService.authorize_connection(server_name, tool.capability_descriptor.operation)
         import json
 
         structured = result.get("structuredContent")
@@ -656,6 +661,9 @@ class ToolManager:
                     if cfg.get('settingsUrl') == '/' + name:
                         tool._managed_invoke = lambda method, arguments, cancel, n=name: self.call_mcp_tool(
                             n, method, arguments, cancel_event=cancel)
+                    else:
+                        from core.security.service import SecurityService
+                        tool._resource_check = lambda n=name, op=tool.capability_descriptor.operation: SecurityService.authorize_connection(n, op)
                     try:
                         from core.mcp.managed import LOCAL_READS
                         local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS

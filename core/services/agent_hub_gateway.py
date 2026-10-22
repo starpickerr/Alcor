@@ -216,6 +216,14 @@ def invoke_agent_hub(
     }
     if execution is not None:
         handle["executionTask"] = dict(params["task"])
+    if method in {'provider_start', 'probe_provider', 'select_provider'}:
+        from core.security.delegated_runtime import prepare_delegated
+        from core.plugins.storage import private_data_handle
+        providers = invoke_ok('list_providers', {}, db_path=db_path, agent_id=agent_id, owner_user_id=owner_user_id)
+        binaries = [row.get('binaryPath') for row in providers]
+        workspace = execution['workspacePath'] if execution else private_data_handle(PLUGIN_ID,
+            session.user_id, ensure=True)['dataDir']
+        handle['executionSandbox'] = prepare_delegated(workspace, binaries)
     payload = dict(params)
     idem = payload.pop("idempotencyKey", None)
     return session.invoke_contract(

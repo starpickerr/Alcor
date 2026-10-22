@@ -186,7 +186,9 @@ def test_dispose_interrupts_an_inflight_worker_with_long_deadline(tmp_path, regi
     import time
     from core.plugins.authz import PluginAuthorizationStore
 
-    marker = tmp_path / "entered"
+    from core.plugins.storage import private_data_handle
+    marker = Path(private_data_handle('stella.sample.alpha', 'local-default', ensure=True)['dataDir']) / 'entered'
+    marker.unlink(missing_ok=True)
     root = _runtime_fixture(tmp_path, f'''import time
 from pathlib import Path
 def handle(method, params):

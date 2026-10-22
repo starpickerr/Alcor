@@ -43,6 +43,9 @@ class McpTool(BaseTool):
             return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
+            resource_check = getattr(self, '_resource_check', None)
+            if resource_check is not None:
+                resource_check()
             managed = getattr(self, '_managed_invoke', None)
             if managed is not None:
                 import json
@@ -53,6 +56,10 @@ class McpTool(BaseTool):
                 result = self.client.call_tool(self.remote_name, params, cancel_event=self.cancel_event)
             if self.is_cancelled():
                 return ToolResult.fail("MCP call cancelled")
+            if not self.is_available():
+                return ToolResult.fail('MCP authorization changed during the call; result discarded.')
+            if resource_check is not None:
+                resource_check()
             return ToolResult.success(result)
         except Exception as e:
             logger.error(f"[McpTool] server={self.server_name} tool={self.name} error: {e}")

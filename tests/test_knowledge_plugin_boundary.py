@@ -238,6 +238,9 @@ def test_memory_restore_serializes_with_a_second_worker_write(tmp_path):
     data.mkdir()
     (data / 'MEMORY.md').write_text('before')
     sessions = [PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore()) for _ in range(2)]
+    from core.security.runtime_trust import RuntimeTrustStore
+    RuntimeTrustStore().set(user_id=sessions[0].user_id, kind='plugin', identifier=sessions[0].plugin_id,
+                           digest=sessions[0].package_digest, trusted=True)
     outcomes = []
     def call(session, method, **values):
         return session.invoke_contract(contract='stella.memory@1', method=method, input_payload=values,
@@ -417,6 +420,9 @@ def test_partial_memory_restore_reports_unknown_and_can_resume(tmp_path):
     (root / 'MEMORY.md').write_text('before-a')
     (root / 'memory/b.md').write_text('before-b')
     session = PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore())
+    from core.security.runtime_trust import RuntimeTrustStore
+    RuntimeTrustStore().set(user_id=session.user_id, kind='plugin', identifier=session.plugin_id,
+                           digest=session.package_digest, trusted=True)
     try:
         session.start()
         session.authz.issue(grant_ref='restore', plugin_id='stella.memory',user_id=session.user_id,

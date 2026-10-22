@@ -49,6 +49,7 @@ def from_legacy(value):
         capabilities['builtin:browser'] = {'read': rules['external'], 'external_send': rules['high_risk']}
         for name in ('apple', 'env_config', 'data_manage'):
             capabilities['builtin:' + name] = {'read': rules['workspace_read'], 'write': rules['workspace_write'], 'delete': sensitive}
+        capabilities['builtin:env_config']['write'] = rules['high_risk']
         for domain in ('email', 'elearning'):
             capabilities['mcp:' + domain] = {'read': rules['external'], 'write': rules['workspace_write'], 'delete': sensitive}
         return {'filesystem_mode': mode, 'capabilities': capabilities,

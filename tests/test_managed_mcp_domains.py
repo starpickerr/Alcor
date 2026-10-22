@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from agent.tools.mcp.mcp_client import McpClient
+from core.mcp.managed import ManagedMcpConfig, OPERATIONS
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,7 +16,7 @@ def server_config(domain, data):
         ROOT / "MCP" / ("fudan-elearning-mcp" if domain == "elearning" else "email-mcp")
     )
     python = ROOT / "MCP/fudan-elearning-mcp/.venv/bin/python"
-    return {
+    return ManagedMcpConfig({
         "name": domain,
         "type": "stdio",
         "command": str(python),
@@ -27,7 +28,8 @@ def server_config(domain, data):
             "test-user",
         ],
         "timeout": 10,
-    }
+        "toolOperations": OPERATIONS[domain],
+    })
 
 
 @pytest.mark.parametrize(
@@ -468,13 +470,13 @@ def test_independent_frozen_mcp_artifact_protocol(tmp_path, domain):
     )
     if not executable.is_file():
         pytest.skip("Independent Server build required for artifact smoke")
-    config = {
+    config = ManagedMcpConfig({
         "name": domain,
         "type": "stdio",
         "command": str(executable),
         "args": ["--data-dir", str(tmp_path / domain)],
         "timeout": 90,
-    }
+    })
     client = McpClient(config)
     try:
         assert client.initialize()

@@ -152,6 +152,9 @@ class EnvConfig(BaseTool):
         action = args.get("action")
         key = args.get("key")
         value = args.get("value")
+        if isinstance(key, str) and (key.startswith(('STELLA_', 'LD_', 'DYLD_', 'PYTHON', 'NODE_')) or
+                                    key in {'PATH', 'HOME', 'USERPROFILE', 'BASH_ENV', 'ENV', 'TMPDIR', 'TMP', 'TEMP'}):
+            return ToolResult.fail('Host runtime configuration must be changed through native settings.')
         if key is not None and (not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{1,79}", key)):
             return ToolResult.fail("Error: invalid credential name")
         if value is not None and (not isinstance(value, str) or "\n" in value or "\r" in value):

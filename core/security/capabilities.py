@@ -40,8 +40,14 @@ def describe_tool(name, arguments):
     action = str(arguments.get('action') or '').lower()
     if name in _BUSINESS:
         operation = 'delete' if action in _DELETE else 'read' if action in _READ else 'write' if action in _WRITE else 'unknown'
-        if name == 'agent_hub' and action in {'start', 'run', 'execute'}:
+        if name == 'todos' and action == 'status':
+            operation = 'write'
+        if name == 'agent_hub' and action in {'start', 'run', 'execute', 'submit', 'continue'}:
             operation = 'system_execute'
+        if name == 'agent_hub' and action == 'providers':
+            operation = 'read'
+        if name == 'agent_hub' and action == 'cancel':
+            operation = 'write'
         return CapabilityDescriptor('plugin:stella.' + _BUSINESS[name], 'plugin', operation)
     for domain in ('memory', 'knowledge'):
         if name.startswith(domain + '_'):
@@ -80,12 +86,19 @@ def authorization(policy, descriptor):
     return operations.get(descriptor.operation, 'confirm' if descriptor.operation in {'delete', 'external_send', 'system_execute'} else 'deny')
 
 
-def method_operation(method):
+def method_operation(method, arguments=None):
     operation = method.get('operation', 'unknown')
     if operation not in OPERATIONS | {'unknown'}:
         raise ValueError('invalid service method operation')
     if operation == 'read' and method.get('effect') != 'query':
         raise ValueError('mutating service method cannot declare read')
+    cases = method.get('operationCases')
+    if cases is not None:
+        if (not isinstance(cases, dict) or any(not isinstance(key, str) or value not in OPERATIONS for key, value in cases.items())
+                or 'read' in cases.values() and method.get('effect') != 'query'):
+            raise ValueError('invalid service operation cases')
+        if arguments is not None:
+            return cases.get(arguments.get('action'), 'unknown')
     return operation
 
 

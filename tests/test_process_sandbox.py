@@ -36,6 +36,40 @@ def test_project_command_cannot_write_outside_actual_sandbox(tmp_path):
     assert not outside.exists()
 
 
+@pytest.mark.skipif(sys.platform not in ('darwin', 'linux'), reason='sandbox backend unavailable')
+def test_workspace_shell_cannot_read_ungranted_outside_file(tmp_path):
+    if process_sandbox.capability()['status'] != 'enabled':
+        pytest.skip('OS sandbox not available')
+    work = tmp_path / 'workspace'
+    work.mkdir()
+    secret = tmp_path / 'owner-private.txt'
+    secret.write_text('PRIVATE_OWNER')
+    env = os.environ.copy()
+    plan = process_sandbox.prepare(f'/bin/cat "{secret}"', str(work), [str(work)], default_policy(), env)
+    result = _run(plan, str(work), env)
+    assert result.returncode != 0
+    assert 'PRIVATE_OWNER' not in result.stdout
+
+
+@pytest.mark.skipif(sys.platform not in ('darwin', 'linux'), reason='sandbox backend unavailable')
+def test_full_access_shell_cannot_read_raw_business_database(tmp_path, monkeypatch):
+    if process_sandbox.capability()['status'] != 'enabled':
+        pytest.skip('OS sandbox not available')
+    data = tmp_path / 'user-data'
+    data.mkdir()
+    secret = data / 'tasks.sqlite'
+    secret.write_text('BUSINESS_BODY')
+    monkeypatch.setattr('common.state_dir.user_root', lambda *args, **kwargs: data)
+    work = tmp_path / 'workspace'
+    work.mkdir()
+    env = os.environ.copy()
+    plan = process_sandbox.prepare(f'/bin/cat "{secret}"', str(work), [str(work)],
+        {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
+    result = _run(plan, str(work), env)
+    assert result.returncode != 0
+    assert 'BUSINESS_BODY' not in result.stdout
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt-specific Unicode paths")
 def test_seatbelt_can_write_unicode_project_only(tmp_path):
     if process_sandbox.capability()["status"] != "enabled":

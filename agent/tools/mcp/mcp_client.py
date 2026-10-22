@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 import socket
+import weakref
 import urllib.request
 import urllib.error
 from typing import Optional
@@ -26,6 +27,7 @@ from common.log import logger
 _STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
 _CANCEL_SOCKET_TIMEOUT = 5
 _HTTP_REQUEST = contextvars.ContextVar('mcp_http_request', default=None)
+LIVE_CLIENTS = weakref.WeakSet()
 
 
 class _HttpRequest:
@@ -209,6 +211,9 @@ class McpClient:
 
         # stdio state
         self._proc: Optional[subprocess.Popen] = None
+        self.sandbox_state = {'mode': 'unavailable', 'reason': 'Local runtime has not started.'}
+        self._runtime_key = None
+        LIVE_CLIENTS.add(self)
         self._read_queue: queue.Queue = queue.Queue()
 
         # SSE state
@@ -282,6 +287,8 @@ class McpClient:
             return []
 
     def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        from core.security.mcp_runtime import check_mcp
+        check_mcp(self)
         params = {"name": name, "arguments": arguments}
         if meta is not None:
             params["_meta"] = meta
@@ -290,6 +297,7 @@ class McpClient:
         if response.get('error'):
             raise RuntimeError((response['error'] or {}).get('message','MCP request failed'))
         result=response.get('result',{})
+        check_mcp(self)
         if result.get('isError'):
             raise RuntimeError('\n'.join(item.get('text','') for item in result.get('content',[]) if item.get('type')=='text') or 'MCP tool failed')
         return result
@@ -422,20 +430,24 @@ class McpClient:
         if not self._command_allowed(command):
             return False
 
-        args = self.config.get("args", [])
         env = self._build_stdio_env(self.config.get("env", None))
+        from core.security.mcp_runtime import prepare_mcp
+        plan, self._runtime_key = prepare_mcp(self.config, env)
+        self.sandbox_state = plan.state
 
         with self._lifecycle_lock:
             if self._closed:
                 return False
             process = self._proc = subprocess.Popen(
-                [command] + list(args),
+                plan.argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
-                env=env,
+                env=plan.env,
+                cwd=plan.cwd,
+                start_new_session=True,
             )
         logger.debug(f"[MCP:{self.name}] stdio process started (pid={process.pid})")
 

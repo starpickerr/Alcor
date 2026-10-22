@@ -61,6 +61,21 @@ def check(domain, method, arguments, user, metadata, purpose=None):
     grant = DEFAULT_AUTHZ.get(ref)
     children = DEFAULT_AUTHZ.scoped_grants(user, plugin_id=plugin_id)
     if grant is None and not children:
+        from common.runtime_identity import current_identity
+        from core.execution.context import current_execution_context
+        identity = current_identity()
+        active = current_execution_context()
+        if identity.session_id or identity.task_id or current_consumer_plugin() or active and active.origin in {'tool', 'job'}:
+            from core.security.service import SecurityService
+            from core.mcp.managed import OPERATIONS
+            if user != (identity.user_id or 'local-default'):
+                raise PermissionError('resource user identity mismatch')
+            resources = invocation_resources(plugin_id, method, arguments, user, metadata)
+            grant_resources = ([{'kind': 'connection', 'id': 'mcp:' + domain}]
+                              if resources == [{'kind': 'user', 'id': user}] else resources)
+            for resource in grant_resources:
+                SecurityService.authorize_resource(resource, OPERATIONS[domain].get(method, 'unknown'))
+            return {'resourceScope': {'userId': user, 'resources': resources}}
         return None
     from common.runtime_identity import current_identity
 

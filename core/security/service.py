@@ -7,6 +7,50 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
+    def authorize_resource(resource, operation, *, purpose=None):
+        """The trusted execution identity, rather than tool input, selects grants."""
+        from common.runtime_identity import current_identity
+        from core.security.resource_grants import ResourceGrantStore
+        from core.plugins.caller import current_invocation_purpose, current_consumer_plugin
+        identity = current_identity()
+        user = identity.user_id or 'local-default'
+        from agent.registry import get_agent_registry
+        agent = identity.agent_id or get_agent_registry().default_agent_id
+        if identity.task_id:
+            subject = f'task:{agent}:{identity.task_id}'
+            purpose = 'background'
+        elif identity.session_id:
+            subject = f'session:{agent}:{identity.session_id}'
+        elif current_consumer_plugin():
+            subject = 'plugin:' + current_consumer_plugin()
+        else:
+            subject = f'user:{user}'
+        SecurityService.check_execution()
+        from agent.permission.audit import record
+        import uuid
+        labels = dict(event='resource_access', tool='resource_grant', resource=resource['kind'],
+                      operation=operation, operation_id=uuid.uuid4().hex)
+        try:
+            grant = ResourceGrantStore().check(user_id=user, subject=subject, resource=resource,
+                operation=operation, purpose=purpose or current_invocation_purpose() or 'interactive')
+        except PermissionError:
+            record(**labels, decision='deny', reason='Resource scope is not authorized or was revoked.')
+            raise
+        record(**labels, decision='allow', reason='Live resource scope authorized.')
+        return grant
+
+    @staticmethod
+    def authorize_connection(server, operation):
+        from common.runtime_identity import current_identity
+        from core.plugins.caller import current_consumer_plugin, current_delegation
+        from core.execution.context import current_execution_context
+        identity = current_identity()
+        active = current_execution_context()
+        if (identity.session_id or identity.task_id or current_consumer_plugin() or current_delegation() or
+                active and active.origin in {'tool', 'job'}):
+            return SecurityService.authorize_resource({'kind': 'connection', 'id': 'mcp:' + server}, operation)
+
+    @staticmethod
     def legacy_connection_restrictions(connection):
         """Connection revocations remain live while old grants are migrated."""
         from config import conf
