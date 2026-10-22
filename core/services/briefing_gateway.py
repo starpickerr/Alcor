@@ -126,17 +126,20 @@ def invoke_briefing(
         handle["sourceDirectory"] = source_directory
     payload = dict(params)
     idem = payload.pop("idempotencyKey", None)
-    return session.invoke_contract(
-        contract=CONTRACT,
-        method=method,
-        input_payload=payload,
-        origin="system",
-        grant_ref=user_grant_ref(_GRANT_REF),
-        permissions=("briefing.write",) if write else ("briefing.read",),
-        purpose="interactive",
-        idempotency_key=idem or (uuid.uuid4().hex if write else None),
-        data_handle=handle,
-    )
+    from core.security.briefing_peers import briefing_peer_workflow
+
+    with briefing_peer_workflow(method):
+        return session.invoke_contract(
+            contract=CONTRACT,
+            method=method,
+            input_payload=payload,
+            origin="system",
+            grant_ref=user_grant_ref(_GRANT_REF),
+            permissions=("briefing.write",) if write else ("briefing.read",),
+            purpose="interactive",
+            idempotency_key=idem or (uuid.uuid4().hex if write else None),
+            data_handle=handle,
+        )
 
 
 @serialized_gateway
