@@ -205,6 +205,9 @@ def merge(base: dict, patch: dict) -> dict:
         result.setdefault(key, {}).update(deepcopy(patch.get(key) or {}))
     if "extra_roots" in patch:
         result["extra_roots"] = list(patch["extra_roots"])
+    for key in ('filesystem_mode', 'capabilities', 'policy_revision', 'migration_status'):
+        if key in patch:
+            result[key] = deepcopy(patch[key])
     return result
 
 

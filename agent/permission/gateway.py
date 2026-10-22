@@ -33,6 +33,7 @@ class ResourceKind(str, Enum):
     EXTERNAL = "external"
     SYSTEM = "system"
     CREDENTIAL = "credential"
+    SERVICE = "service"
 
 
 class DecisionKind(str, Enum):
@@ -100,7 +101,7 @@ _mcp_filesystem_write: dict[str, bool] = {}
 
 
 def register_tool(tool_name: str, capability: Capability, *, connection: str | None = None,
-                  read_only: bool = False, filesystem_write: bool = False) -> None:
+                  read_only: bool = False, filesystem_write: bool = False, descriptor=None) -> None:
     if not _SAFE_NAME.fullmatch(tool_name) or not isinstance(capability, Capability):
         raise ValueError("invalid tool declaration")
     with _lock:
@@ -110,6 +111,11 @@ def register_tool(tool_name: str, capability: Capability, *, connection: str | N
             if connection.startswith("mcp:"):
                 _mcp_readonly[tool_name] = read_only
                 _mcp_filesystem_write[tool_name] = filesystem_write
+    from core.security.capabilities import CapabilityDescriptor, register
+    if descriptor is not None:
+        register(tool_name, descriptor)
+    elif connection and connection.startswith('mcp:'):
+        register(tool_name, CapabilityDescriptor(connection + '/' + tool_name, 'mcp', 'unknown', filesystem_write))
 
 
 def declared_capability(tool_name: str) -> Optional[Capability]:
@@ -212,12 +218,13 @@ def _trusted_skill_init(command: str, cwd: str | None) -> bool:
 
 
 def _fingerprint(tool_name: str, arguments: Mapping[str, Any], session_id: Optional[str], project: str | None,
-                 agent_id: str | None, cwd: str | None, scope: Scope) -> str:
+                 agent_id: str | None, cwd: str | None, scope: Scope, policy=None, descriptor=None) -> str:
     from common.runtime_identity import current_identity
     from agent.workspace.shares import grant_version
     identity = current_identity()
     payload = json.dumps([identity.user_id, agent_id, session_id, identity.run_id, project,
-                          cwd, scope.write_roots, scope.extra_roots, grant_version(), tool_name, arguments],
+                          cwd, scope.write_roots, scope.extra_roots, grant_version(), tool_name, arguments,
+                          policy, str(descriptor)],
                          sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -245,6 +252,7 @@ class SecurityGateway:
         approval_request_id: str | None = None,
         reserve_for_waiter: bool = False,
         create_pending: bool = True,
+        capability_descriptor=None,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -257,6 +265,9 @@ class SecurityGateway:
                 "shell", "git", "network", "install", "background", "external", "high_risk")},
                       "connections": {}}
         args = arguments if isinstance(arguments, Mapping) else {}
+        from core.security.capabilities import describe_tool
+        descriptor = capability_descriptor or describe_tool(tool_name, args)
+        canonical = 'capabilities' in policy
         action = str(args.get("action") or "").lower()
         operation = action or ("write" if tool_name in ("write", "edit") else "read" if declared == Capability.READ else "execute")
         resource_kind = ResourceKind.EXTERNAL if declared == Capability.EXTERNAL else ResourceKind.SYSTEM if tool_name == "bash" else ResourceKind.USER_WORKSPACE
@@ -432,6 +443,9 @@ class SecurityGateway:
                 risk, policy_key = "L1", "workspace_write"
             else:
                 hard_reason = "Unknown Apple action; the tool did not run."
+        elif canonical and descriptor.source == 'plugin':
+            resource_kind, resource = ResourceKind.SERVICE, descriptor.capability_id
+            risk, policy_key = ('L0', 'managed') if descriptor.operation == 'read' else ('L1', 'managed')
         elif tool_name in _LOCAL_ACTIONS:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]
@@ -492,6 +506,8 @@ class SecurityGateway:
             resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "external_api", "L2", "network"
             event = "external_access"
 
+        if capability_descriptor is not None and descriptor.source == 'plugin':
+            declared = Capability.EXTERNAL
         if capability is not None and (not isinstance(capability, Capability) or capability != declared):
             hard_reason = "Unknown or mismatched capability; the tool did not run."
         elif declared is None or mode not in MODES:
@@ -503,6 +519,9 @@ class SecurityGateway:
         connection = _connections.get(tool_name, resource if resource in ("github", "external_api") else tool_name if resource_kind == ResourceKind.EXTERNAL else "")
         connections = policy.get('connections', {})
         grants = [connections.get(connection, {})]
+        if canonical:
+            from core.security.service import SecurityService
+            grants.extend(SecurityService.legacy_connection_restrictions(connection))
         # A protocol migration cannot erase the user's existing connection denial/scopes.
         if connection in {'mcp:email', 'mcp:elearning'}:
             grants.append(connections.get(connection.removeprefix('mcp:'), {}))
@@ -513,12 +532,30 @@ class SecurityGateway:
                 requested = str(args.get('scope') or (operation if operation not in ('execute','read') else 'read'))
                 if requested not in grant['scopes']:
                     hard_reason = f'Connection {connection} does not grant scope {requested}.'
-        if resource_kind == ResourceKind.EXTERNAL and policy_key != "external":
+        if resource_kind == ResourceKind.EXTERNAL and policy_key != "external" and not canonical:
             prerequisites.append("external")
-        if risk == "L3" and policy_key != "high_risk":
+        if risk == "L3" and policy_key != "high_risk" and (not canonical or descriptor.filesystem):
             prerequisites.append("high_risk")
         selected = rule(policy, policy_key)
         required = {name: rule(policy, name) for name in prerequisites}
+        if canonical:
+            from core.security.capabilities import authorization, CapabilityDescriptor
+            if tool_name == 'bash' and (_PUBLISH.search(str(args.get('command') or '')) or _BULK_DELETE.search(str(args.get('command') or ''))):
+                descriptor = CapabilityDescriptor(descriptor.capability_id, descriptor.source,
+                    'external_send' if _PUBLISH.search(str(args.get('command') or '')) else 'delete', True)
+                required['system_execute'] = (policy['capabilities'].get('builtin:bash') or {}).get('system_execute', 'deny')
+            operation = descriptor.operation
+            granted = authorization(policy, descriptor)
+            if descriptor.filesystem:
+                required['capability:' + descriptor.operation] = granted
+                if _mcp_filesystem_write.get(tool_name, False):
+                    required['workspace_write'] = rule(policy, 'workspace_write')
+            else:
+                required = {name: rule(policy, name) for name in (policy_key, *prerequisites)
+                            if name in (policy.get('rules') or {})}
+                selected = granted
+                policy_key = descriptor.capability_id + '/' + descriptor.operation
+                risk = 'L0' if operation == 'read' else 'L1' if operation == 'write' else 'L3'
         trace = (f"Action: {operation}", f"Resource classification: {resource_kind.value} ({resource})",
                  f"Risk evaluation: {risk}", f"Policy: {policy_key}={selected}") + tuple(
                      f"Required policy: {name}={value}" for name, value in required.items())
@@ -532,7 +569,7 @@ class SecurityGateway:
         elif not create_pending and (selected == "confirm" or "confirm" in required.values()):
             kind, reason = DecisionKind.CONFIRM, "Authorization required. Adjust the policy and rerun this task manually; it will not resume automatically."
         elif selected == "confirm" or "confirm" in required.values():
-            key = _fingerprint(tool_name, args, session_id, project_dir, agent_id, cwd, scope)
+            key = _fingerprint(tool_name, args, session_id, project_dir, agent_id, cwd, scope, policy, descriptor)
             with _lock:
                 claim = _claims.get(approval_request_id) if approval_request_id else None
                 if claim and claim[0] == key and claim[1] >= time.time():

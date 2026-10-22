@@ -47,6 +47,10 @@ def from_legacy(value):
         capabilities['builtin:subagent'] = {'system_execute': rules['managed']}
         capabilities['builtin:send'] = {'external_send': rules['high_risk']}
         capabilities['builtin:browser'] = {'read': rules['external'], 'external_send': rules['high_risk']}
+        for name in ('apple', 'env_config', 'data_manage'):
+            capabilities['builtin:' + name] = {'read': rules['workspace_read'], 'write': rules['workspace_write'], 'delete': sensitive}
+        for domain in ('email', 'elearning'):
+            capabilities['mcp:' + domain] = {'read': rules['external'], 'write': rules['workspace_write'], 'delete': sensitive}
         return {'filesystem_mode': mode, 'capabilities': capabilities,
                 'legacy_restrictions': {name: setting for name, setting in rules.items() if setting != PRESETS[mode][name]},
                 'connections': deepcopy(policy.get('connections') or {}),

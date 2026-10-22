@@ -187,6 +187,7 @@ class PluginSession:
         self._service_permissions: dict[str, frozenset[str]] = {}
         self._method_permissions: dict[tuple[str, str], frozenset[str]] = {}
         self._method_effects: dict[tuple[str, str], str] = {}
+        self._method_operations: dict[tuple[str, str], str] = {}
 
     @property
     def is_running(self) -> bool:
@@ -292,6 +293,7 @@ class PluginSession:
             self._service_permissions = {}
             self._method_permissions = {}
             self._method_effects = {}
+            self._method_operations = {}
             if isinstance(services_desc, list) and services_desc and isinstance(services_desc[0], dict):
                 for svc in services_desc:
                     contract = svc.get("contract")
@@ -299,6 +301,8 @@ class PluginSession:
                         service_ids.append(contract)
                         perms: set[str] = set()
                         for method in svc.get("methods") or []:
+                            from core.security.capabilities import method_operation
+                            self._method_operations[(contract, method['name'])] = method_operation(method)
                             perms.update(method.get("permissions") or [])
                             self._method_permissions[(contract, method["name"])] = frozenset(method.get("permissions") or [])
                             self._method_effects[(contract, method["name"])] = method.get("effect", "unknown")
@@ -476,6 +480,7 @@ class PluginSession:
                     input_payload=input_payload,
                     noninteractive=origin == "job",
                     effect=self._method_effects[(contract, method)],
+                    operation=self._method_operations[(contract, method)],
                 )
                 if denial:
                     raise PermissionError(denial)
@@ -711,45 +716,13 @@ def _conversation_permission_denial(
     input_payload: Mapping[str, Any] | None = None,
     noninteractive: bool = False,
     effect: str | None = None,
+    operation: str | None = None,
 ) -> str | None:
-    try:
-        from agent.runtime.tool_invocation import permission_denial
-    except Exception:
-        return "Plugin conversation permission adapter unavailable"
-    domain = contract.split("@", 1)[0].rsplit(".", 1)[-1]
-    domain = {"tasks": "todos", "automation": "scheduler"}.get(domain, domain)
-    actions = {
-        "bills": {"create_ledger": "add", "update_ledger": "update", "delete_ledger": "delete",
-                  "list_ledger": "list", "get_ledger": "get"},
-        "todos": {"create_todo": "create", "update_todo": "update", "delete_todo": "delete",
-                  "complete_todo": "complete", "complete_checklist_item": "complete",
-                  "change_todo_status": "status", "move_todo": "move",
-                  "list_todos": "list", "get_todo": "get"},
-        "calendar": {"create_event": "create", "update_event": "update", "delete_event": "delete",
-                     "list_events": "list", "get_event": "get"},
-        "briefing": {"update_action": "decide", "start_briefing": "run", "complete_briefing": "run",
-                     "update_item_status": "item_status", "create_rule": "add_rule",
-                     "create_action_rule": "add_rule", "delete_action_rule": "delete_rule",
-                     "update_preferences": "set_preferences"},
-        "scheduler": {"create_task": "create", "update_task": "create", "delete_task": "delete",
-                      "set_enabled": "enable"},
-    }
-    if domain in {'memory', 'knowledge'}:
-        tool = domain + ('_search' if method == 'search' else '_get' if effect == 'query' else '_write')
-        return permission_denial(tool, dict(input_payload or {}), agent_id=agent_id,
-            session_id=session_id, noninteractive=noninteractive)
-    action = actions.get(domain, {}).get(method)
-    if action is None and effect not in {None, "query"}:
-        # Unknown mutations must never fall through the gateway's read default.
-        action = {"todos": "update", "calendar": "update", "bills": "update",
-                  "briefing": "run", "scheduler": "create"}.get(domain)
-        if action is None:
-            return "No conversation permission mapping for plugin mutation"
-    action = action or method
-    arguments = dict(input_payload or {})
-    arguments["action"] = action
-    return permission_denial(domain, arguments, agent_id=agent_id, session_id=session_id,
-                             noninteractive=noninteractive)
+    from core.security.service import SecurityService
+    plugin_id = contract.split('@', 1)[0]
+    return SecurityService.authorize_operation('plugin:' + plugin_id, operation or 'unknown',
+        {'method': method, 'input': dict(input_payload or {})}, agent_id=agent_id,
+        session_id=session_id, noninteractive=noninteractive)
 
 
 def _digest_tree(root: Path) -> str:

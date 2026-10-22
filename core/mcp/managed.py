@@ -14,6 +14,17 @@ PUBLIC_TOOLS = {
     "email": ["list_accounts", "list_sources", "fetch_messages"],
 }
 
+# Core-owned semantics for the bundled adapters; remote annotations are hints.
+OPERATIONS = {
+    'email': {**{name: 'read' for name in ('list_accounts', 'list_sources', 'get_account', 'list_folders',
+        'test_connection', 'fetch_messages', 'get_cursors')},
+        **{name: 'write' for name in ('save_account', 'set_cursors', 'reset_cursors')}, 'delete_account': 'delete'},
+    'elearning': {**{name: 'read' for name in ('get_settings', 'get_file_sync_settings', 'list_courses', 'fetch',
+        'list_files', 'fetch_source', 'get_cursors', 'test_connection')},
+        **{name: 'write' for name in ('save_settings', 'save_file_sync_settings', 'sync_files', 'set_cursors', 'drain_audit_events')},
+        'delete_settings': 'delete'},
+}
+
 
 def configurations(manager):
     if os.environ.get("STELLA_MANAGED_MCP", "1") == "0":
@@ -99,6 +110,8 @@ def configurations(manager):
                     "timeout": 600,
                     "agentTools": PUBLIC_TOOLS[domain],
                     "settingsUrl": "/" + domain,
+                    "toolOperations": dict(OPERATIONS[domain]),
+                    "filesystemTools": ['sync_files'] if domain == 'elearning' else [],
                 }
             )
         return configs

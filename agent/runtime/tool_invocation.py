@@ -141,6 +141,7 @@ def _permission_denial(
     cancel_event=None,
     tool=None,
     user_action: bool = False,
+    capability_descriptor=None,
 ) -> Optional[str]:
     """Return a refusal reason, resolving the current mode at call time.
 
@@ -162,7 +163,9 @@ def _permission_denial(
             return f'Tool {tool_name} is disabled.'
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
+        capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
         decision = SecurityGateway.check(mode, tool_name, arguments,
+                                         capability_descriptor=capability_descriptor,
                                          create_pending=not noninteractive, **check_kwargs)
         if decision.kind is DecisionKind.CONFIRM and wait_for_approval:
             def policy_now_allows():
@@ -173,7 +176,7 @@ def _permission_denial(
                 if fresh_binding[:-1] != binding[:-1] or fresh_binding[-1] == binding[-1]:
                     return False
                 return SecurityGateway.check(fresh_mode, tool_name, arguments,
-                                             create_pending=False, **fresh_kwargs).allowed
+                                             capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs).allowed
 
             outcome = SecurityGateway.wait_for_decision(
                 decision.request_id, cancel_event, policy_allows=policy_now_allows)
@@ -181,10 +184,10 @@ def _permission_denial(
                 mode, fresh_kwargs, fresh_binding = _current_authorization(
                     agent, agent_id, session_id, workspace, wait_for_approval)
                 if fresh_binding[:-1] != binding[:-1] or not SecurityGateway.check(
-                        mode, tool_name, arguments, create_pending=False, **fresh_kwargs).allowed:
+                        mode, tool_name, arguments, capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs).allowed:
                     raise ApprovalRejectedError("权限或工作区在执行前再次变化，本轮已停止。")
                 decision = SecurityGateway.check(mode, tool_name, arguments,
-                                                 create_pending=False, **fresh_kwargs)
+                                                 capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs)
             elif outcome == "approved":
                 if cancel_event is not None and cancel_event.is_set():
                     from agent.protocol.cancel import AgentCancelledError
@@ -196,7 +199,7 @@ def _permission_denial(
                 if fresh_binding != binding:
                     raise ApprovalRejectedError("审批期间工作区或授权范围已变化，本轮已停止。")
                 decision = SecurityGateway.check(mode, tool_name, arguments,
-                                                 approval_request_id=decision.request_id, **fresh_kwargs)
+                                                 capability_descriptor=capability_descriptor, approval_request_id=decision.request_id, **fresh_kwargs)
                 if cancel_event is not None and cancel_event.is_set():
                     from agent.protocol.cancel import AgentCancelledError
                     raise AgentCancelledError("cancelled while waiting for approval")

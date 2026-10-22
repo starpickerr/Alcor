@@ -503,6 +503,7 @@ class ToolManager:
         if tool is None:
             from agent.tools.mcp.mcp_tool import McpTool
             from agent.permission.gateway import Capability, register_tool
+            from core.security.capabilities import mcp_descriptor
 
             tool = McpTool(client, schema, server_name)
             tool._capability_settings = self.capability_settings
@@ -513,7 +514,10 @@ class ToolManager:
                 Capability.READ if local_read else Capability.EXTERNAL,
                 connection=f"mcp:{server_name}",
                 read_only=tool.read_only,
+                descriptor=mcp_descriptor(server_name, method, cfg),
             )
+        from core.security.capabilities import mcp_descriptor
+        tool.capability_descriptor = mcp_descriptor(server_name, method, cfg)
         from agent.runtime.tool_invocation import permission_denial
         from core.mcp.managed import native_user_action
 
@@ -641,10 +645,12 @@ class ToolManager:
                 agent_tools = cfg.get('agentTools')
                 tools = []
                 from agent.permission.gateway import Capability, register_tool
+                from core.security.capabilities import mcp_descriptor
                 for schema in schemas:
                     if not schema.get('name') or (agent_tools is not None and schema['name'] not in agent_tools):
                         continue
                     tool = McpTool(client, schema, name)
+                    tool.capability_descriptor = mcp_descriptor(name, schema['name'], cfg)
                     tool._capability_settings = self.capability_settings
                     tool._admission_check = lambda n=name, g=generation: self._mcp_admitted(n, g)
                     if cfg.get('settingsUrl') == '/' + name:
@@ -654,7 +660,8 @@ class ToolManager:
                         from core.mcp.managed import LOCAL_READS
                         local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS
                         register_tool(tool.name, Capability.READ if local_read else Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only,
-                                      filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning')
+                                      filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning',
+                                      descriptor=mcp_descriptor(name, schema['name'], cfg))
                     except ValueError:
                         continue
                     tools.append(tool)

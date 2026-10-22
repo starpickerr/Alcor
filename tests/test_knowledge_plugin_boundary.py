@@ -467,15 +467,18 @@ def test_memory_service_refuses_a_symlinked_content_directory(tmp_path):
         service.get_content('secret.md')
 
 
-def test_domain_queries_preserve_search_and_read_permission_distinction(monkeypatch):
+def test_domain_queries_use_capability_operations_independent_of_tool_aliases():
     from core.plugins.host import _conversation_permission_denial
-    seen = []
-    monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial', lambda tool, args, **kw: seen.append(tool))
-    for domain in ('memory', 'knowledge'):
-        for method in ('search', 'read', 'write'):
-            _conversation_permission_denial(contract=f'stella.{domain}@1', method=method,
-                agent_id='agent', session_id='session', effect='domainWrite' if method == 'write' else 'query')
-    assert seen == ['memory_search', 'memory_get', 'memory_write', 'knowledge_search', 'knowledge_get', 'knowledge_write']
+    from core.security.run_policy import save_run_policy
+    from common.runtime_identity import identity_scope
+    save_run_policy('session', 'service-reader', {'filesystem_mode': 'full-access',
+        'capabilities': {'plugin:stella.memory': {'read': 'allow'}, 'plugin:stella.knowledge': {'read': 'allow'}}})
+    with identity_scope(session_id='service-reader'):
+        for domain in ('memory', 'knowledge'):
+            for method, operation in [('search', 'read'), ('read', 'read'), ('write', 'write')]:
+                denial = _conversation_permission_denial(contract=f'stella.{domain}@1', method=method,
+                    operation=operation, agent_id=None, session_id='service-reader')
+                assert (denial is None) is (operation == 'read')
 
 
 def test_model_service_rejects_request_overrides_and_undeclared_callbacks(tmp_path):

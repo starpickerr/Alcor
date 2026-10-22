@@ -7,6 +7,24 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
+    def legacy_connection_restrictions(connection):
+        """Connection revocations remain live while old grants are migrated."""
+        from config import conf
+        values = (conf().get('security_policy') or {}).get('connections') or {}
+        names = [connection]
+        if connection in {'mcp:email', 'mcp:elearning'}:
+            names.append(connection.removeprefix('mcp:'))
+        return [values[name] for name in names if name in values]
+
+    @staticmethod
+    def authorize_operation(capability_id, operation, arguments, *, source='plugin', **kwargs):
+        from hashlib import sha256
+        from core.security.capabilities import CapabilityDescriptor
+        descriptor = CapabilityDescriptor(capability_id, source, operation)
+        name = 'service_' + sha256(capability_id.encode()).hexdigest()[:20]
+        return SecurityService.authorize_tool(name, arguments, capability_descriptor=descriptor, **kwargs)
+
+    @staticmethod
     def check_execution():
         from core.execution.context import current_execution_context
         from core.workspace.service import WorkspaceService
