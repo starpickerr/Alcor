@@ -35,6 +35,8 @@ Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付
 
 Core 内置简报采集在 `BriefingPipeline._fetch_source` 内进入短暂的可信采集范围，保持 `stella.briefing` 消费者身份。仅邮箱 `fetch_messages`、eLearning `fetch_source` 和日程 `list_events` 可复用安装/启用时已签发的同用户、同用途的所有者默认读取 Grant；不会创建或改写持久授权。已有任何简报消费者授权时，以其范围、用途、有效期和撤销状态为准，不回退到所有者默认值。所有者默认 Grant 的限制和撤销仍生效；公开插件回调、其他消费者和写操作不能继承该范围。外部连接与功能消费关系继续独立检查。实现位于 `core/security/source_collection.py` 与 `PluginAuthorizationStore.check_scoped`，验收覆盖 `test_briefing_source_authorization.py`、真实邮箱/eLearning MCP 和托管日程插件测试。
 
+原生简报的事务/日历协作由 `core/services/briefing_gateway.py` 单独绑定根操作，`core/security/briefing_peers.py` 只允许该操作所需的第一层 peer callback 复用同用户、同用途的所有者默认 Grant：详情读取限关联对象，目标选择限列表；用户决策和 outbox 投影可执行查重、删除记录检查、创建、提醒配置及事实同步。该范围在 gateway 返回时清除，直接调用 worker、第三方消费者、多层委托及其他业务方法不能继承；创建简报和读取详情不能借此写入事务或日历。实时授权仍由原 `check_scoped` 执行，显式简报消费者策略优先，撤销、有效期及资源限制不变，不新增持久 Grant。验收见 `tests/test_briefing_peer_authorization.py`，覆盖真实三个 worker、幂等创建、投影、提醒、拒绝与恢复和用户/调用链隔离。
+
 主侧边栏「数据」依次提供总览、信息源、数据使用、数据存储，默认进入总览。总览参考安全页的卡片摘要，说明其他三页职责并展示真实数量与状态；信息源按服务聚合实际注册来源、所有者和可用性，多个邮箱共用一个 Email 卡片，点击卡片进入原有配置页。桌面资源预览与独立配置按钮已移除。数据使用编辑功能对象与信息源的消费关系，不展示任务、Agent 或执行过程。原生 API 包括 `/api/data`、`/api/data/resources`、兼容的 `/api/data/records` 和 `/api/data/command`。邮箱及 eLearning 的账号、课程选择与保存目录表单集中于 `/data/sources/email`、`/data/sources/elearning`；旧 `/email`、`/elearning` 兼容跳转。安全中心「数据访问」保留连接、资源及外传策略，显示并编辑迁移前授权（沿用原授权库，原生用户操作、所有权及 revision 校验）。数据页没有独立授权表单，来源启用只表示在数据服务中使用该来源。
 
 ## 功能消费关系与存储位置
