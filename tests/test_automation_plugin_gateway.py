@@ -20,10 +20,12 @@ USER = "u1"
 
 @pytest.fixture(autouse=True)
 def _cleanup(monkeypatch):
+    from common.runtime_identity import identity_scope
     monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN", "1")
     monkeypatch.setenv("STELLA_AUTOMATION_PLUGIN_ROOT", str(WORKSPACE_ROOT.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))
-    yield
+    with identity_scope(user_id=USER):
+        yield
     automation_gateway.shutdown_automation_session()
 
 
@@ -119,8 +121,13 @@ def test_crud_and_structured_failures(tmp_path):
 def test_ownership_is_scoped_to_agent_and_user(tmp_path):
     db = tmp_path / "automation.db"
     _ok(db, "create_task", task=_task(), origin="user")
-    other = automation_gateway.invoke_automation(
-        "list_tasks", {"enabled_only": False}, db_path=db, agent_id=AGENT, owner_user_id="someone-else")
+    from common.runtime_identity import identity_scope
+    with pytest.raises(PermissionError, match='data handle'):
+        automation_gateway.invoke_automation('list_tasks', {'enabled_only': False},
+            db_path=db, agent_id=AGENT, owner_user_id='someone-else')
+    with identity_scope(user_id='someone-else'):
+        other = automation_gateway.invoke_automation(
+            "list_tasks", {"enabled_only": False}, db_path=db, agent_id=AGENT, owner_user_id="someone-else")
     assert other["value"] == []
     wrong_owner = _call(db, "create_task", task=_task("t9", owner_user_id="intruder"), origin="user")
     assert wrong_owner["status"] == "failed"
@@ -394,7 +401,7 @@ def test_commit_automation_package_and_invoke_service(tmp_path):
     op = store.commit(op.operation_id)
     assert op.stage == PackageStage.COMMITTED
     current = store.current_package("stella.automation")
-    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY)
+    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, user_id=USER)
     try:
         assert session.start()["initialize"]["pluginId"] == "stella.automation"
         handle = {"dbPath": str(tmp_path / "a.db"), "agentId": AGENT, "userId": ""}

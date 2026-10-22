@@ -92,6 +92,7 @@ def default_template():
 
 
 def resolve_run_policy(session_id=None, agent_id=None, task_id=None, seed=None):
+    from core.security.migration import PermissionMigration
     from common.runtime_identity import current_identity
     identity = current_identity()
     task_id = task_id or identity.task_id
@@ -110,6 +111,8 @@ def resolve_run_policy(session_id=None, agent_id=None, task_id=None, seed=None):
         initial = _seed(seed)
     elif kind == 'task':
         initial = _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
+    elif PermissionMigration().verify()['status'] == 'applied':
+        initial = default_template()
     else:
         from agent.permission.policy import global_mode
         from agent.permission.security_policy import _legacy_resolve
@@ -141,6 +144,10 @@ def save_run_policy(subject_kind, subject_id, policy, *, agent_id=None, expected
     def change(current):
         base = current or _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
         base = deepcopy(base)
+        if base.get('migration_status') == 'needs_confirmation' and 'filesystem_mode' in clean and 'capabilities' in clean:
+            # Replacing an untranslatable policy requires a complete explicit
+            # choice; ordinary edits continue to preserve valid legacy denies.
+            base['legacy_restrictions'] = {}
         if 'filesystem_mode' in clean and clean['filesystem_mode'] != base['filesystem_mode']:
             for name in ('workspace_read', 'workspace_write', 'workspace_outside', 'shell', 'git', 'install', 'background'):
                 base.get('legacy_restrictions', {}).pop(name, None)

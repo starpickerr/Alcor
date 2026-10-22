@@ -329,8 +329,8 @@ def test_legacy_conversation_permission_is_migrated_once(tmp_path, monkeypatch):
     assert rule(prefs["security_policy"], "workspace_write") == "deny"
     assert prefs["model"] == "existing-model"
     stored = json.loads(path.read_text())["sessions"]["default::old"]
-    assert "permission" not in stored
-    assert stored["security_policy"]["preset"] == "custom"
+    assert stored['permission'] == 'read-only'
+    assert 'security_policy' not in stored  # Original migration input stays recoverable.
 
 
 def test_trusted_skill_initializer_requires_dedicated_flow(tmp_path, monkeypatch):
@@ -416,10 +416,12 @@ def test_full_access_overview_keeps_enabled_sandbox_status(tmp_path, monkeypatch
 
 
 def test_shell_does_not_inherit_backend_secret(tmp_path, monkeypatch):
+    import shlex
+    import sys
     from agent.tools.bash.bash import Bash
     monkeypatch.setenv("TEST_SECRET_TOKEN", "TOPSECRET")
     tool = Bash({"cwd": str(tmp_path), "safety_mode": False})
-    result = tool.execute({"command": "python3 -c 'import os; print(os.getenv(\"TEST_SECRET_TOKEN\", \"missing\"))'"})
+    result = tool.execute({"command": shlex.quote(sys.executable) + " -c 'import os; print(os.getenv(\"TEST_SECRET_TOKEN\", \"missing\"))'"})
     assert result.status == "success"
     assert "missing" in str(result.result)
     assert "TOPSECRET" not in str(result.result)

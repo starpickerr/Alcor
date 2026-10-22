@@ -102,3 +102,68 @@ class ResourceGrantStore(RunPolicyStore):
             if row['revision'] != expected_revision:
                 raise ValueError('resource grant revision changed; refresh and retry')
             self._write(db, {**row, 'revoked': True, 'revision': row['revision'] + 1})
+
+    @staticmethod
+    def _restrictions(db):
+        db.execute('''CREATE TABLE IF NOT EXISTS resource_restrictions (
+            user TEXT NOT NULL, subject TEXT NOT NULL, connection TEXT NOT NULL,
+            revision INTEGER NOT NULL, body TEXT NOT NULL, original TEXT NOT NULL,
+            PRIMARY KEY(user,subject,connection))''')
+
+    def connection_restrictions(self, *, user_id, subjects, connections):
+        with self.transaction() as db:
+            self._restrictions(db)
+            return [json.loads(row[0]) for row in db.execute('SELECT body,subject,connection FROM resource_restrictions WHERE user=?',
+                (user_id,)) if row[1] in subjects and row[2] in connections]
+
+    def connection_revision(self, *, user_id, connection):
+        names = {connection}
+        if connection in {'mcp:email', 'mcp:elearning'}:
+            names.add(connection.removeprefix('mcp:'))
+        with self.transaction() as db:
+            self._restrictions(db)
+            return sum(row[1] for row in db.execute('SELECT connection,revision FROM resource_restrictions WHERE user=? AND subject=?',
+                (user_id, 'user:' + user_id)) if row[0] in names)
+
+    def update_owned_connection(self, *, user_id, connection, policy, expected_revision):
+        from agent.permission.security_policy import validate_patch
+        policy = validate_patch({'connections': {connection: policy}})['connections'][connection]
+        names = {connection}
+        if connection in {'mcp:email', 'mcp:elearning'}:
+            names.add(connection.removeprefix('mcp:'))
+        with self.transaction() as db:
+            self._restrictions(db)
+            revision = sum(row[1] for row in db.execute('SELECT connection,revision FROM resource_restrictions WHERE user=? AND subject=?',
+                (user_id, 'user:' + user_id)) if row[0] in names)
+            if type(expected_revision) is not int or expected_revision != revision:
+                raise ValueError('Connection authorization revision changed; refresh and retry')
+            for name in names:
+                db.execute('DELETE FROM resource_restrictions WHERE user=? AND subject=? AND connection=?', (user_id, 'user:' + user_id, name))
+            body = json.dumps(policy, sort_keys=True)
+            db.execute('INSERT INTO resource_restrictions VALUES (?,?,?,?,?,?)',
+                (user_id, 'user:' + user_id, connection, revision + 1, body, body))
+
+    def set_connection_restriction(self, *, user_id, subject, connection, policy):
+        from agent.permission.security_policy import validate_patch
+        policy = validate_patch({'connections': {connection: policy}})['connections'][connection]
+        body = json.dumps(policy, sort_keys=True)
+        with self.transaction() as db:
+            self._restrictions(db)
+            db.execute('''INSERT INTO resource_restrictions VALUES (?,?,?,1,?,?)
+                ON CONFLICT(user,subject,connection) DO UPDATE SET body=excluded.body,revision=resource_restrictions.revision+1''',
+                       (user_id, subject, connection, body, body))
+
+    def check_legacy_container(self, *, user_id, subject, connection, operation, purpose):
+        """Only a migration-created all-owned container can authorize descendants.
+
+        Ordinary connection grants allow connection operations, not account bodies.
+        The caller must first bind the server's real user and resolve its public metadata.
+        """
+        with self.transaction() as db:
+            rows = self._rows(db)
+            for row in rows.values():
+                if (row['user_id'] == user_id and row['subject'] == subject and row['resource'] ==
+                        {'kind': 'connection', 'id': connection} and row.get('legacy_scope') == 'all_owned_resources'
+                        and operation in row['operations'] and purpose in row['purposes'] and self._valid(row, rows)):
+                    return row
+        raise PermissionError('resource grant denied; authorize the resource and retry')

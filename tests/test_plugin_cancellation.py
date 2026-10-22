@@ -30,7 +30,6 @@ def handle_invoke(params):
 
 def test_cancel_reaches_active_worker_and_next_invocation_is_not_cancelled(tmp_path):
     from core.plugins.cancellation import cancellation_scope
-    started = tmp_path / 'started'
     event = threading.Event()
     def stop():
         deadline = time.monotonic() + 5
@@ -39,6 +38,9 @@ def test_cancel_reaches_active_worker_and_next_invocation_is_not_cancelled(tmp_p
         if started.exists():
             event.set()
     session = PluginSession(package(tmp_path / 'plugin'), source_label='test', registry=PluginRegistry())
+    from pathlib import Path
+    from core.plugins.storage import private_data_handle
+    started = Path(private_data_handle(session.plugin_id, session.user_id, ensure=True)['dataDir']) / 'started'
     stopper = threading.Thread(target=stop)
     try:
         session.start()

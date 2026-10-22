@@ -413,6 +413,17 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
+def _bootstrap_permission_policies():
+    from core.security.migration import ensure_migrated
+    try:
+        result = ensure_migrated()
+        logger.info('[Security] Permission migration status=%s', result['status'])
+    except (ValueError, OSError, RuntimeError) as error:
+        # The authenticated recovery UI remains available. Policy edits still
+        # require a successful migration; legacy resolution retains restrictions.
+        logger.error('[Security] Permission migration requires recovery (%s)', type(error).__name__)
+
+
 def _bootstrap_default_plugins():
     """Install default first-party plugins and activate domain env flags (desktop)."""
     if not DESKTOP_MODE:
@@ -589,6 +600,7 @@ def run():
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
         _scaffold_subagent_assets()
+        _bootstrap_permission_policies()
         _bootstrap_default_plugins()
 
         # Kick off MCP server loading in the background so first-message

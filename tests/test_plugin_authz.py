@@ -153,26 +153,23 @@ def test_permission_adapter_failure_is_closed(monkeypatch):
                                            agent_id="a1", session_id="s1")
 
 
-@pytest.mark.parametrize("contract,method,tool,action", [
-    ("stella.tasks@1", "create_todo", "todos", "create"),
-    ("stella.calendar@1", "create_event", "calendar", "create"),
-    ("stella.briefing@1", "update_action", "briefing", "decide"),
-    ("stella.automation@1", "create_task", "scheduler", "create"),
+@pytest.mark.parametrize('contract,method', [
+    ('stella.tasks@1', 'create_todo'), ('stella.calendar@1', 'create_event'),
+    ('stella.briefing@1', 'update_action'), ('stella.automation@1', 'create_task'),
 ])
-def test_plugin_method_maps_to_existing_permission_action(monkeypatch, contract, method, tool, action):
+def test_plugin_method_forwards_trusted_operation_without_tool_name_guessing(monkeypatch, contract, method):
     from core.plugins.host import _conversation_permission_denial
     captured = []
-
-    def check(name, arguments, **kwargs):
-        captured.append((name, arguments, kwargs))
-        return "denied"
-
-    monkeypatch.setattr("agent.runtime.tool_invocation.permission_denial", check)
-    assert _conversation_permission_denial(contract=contract, method=method, agent_id="a", session_id="s",
-                                           input_payload={"payload": {"title": "example"}}, noninteractive=True)
-    assert captured[0][0] == tool
-    assert captured[0][1]["action"] == action
-    assert captured[0][2]["noninteractive"] is True
+    def check(identifier, operation, arguments, **kwargs):
+        captured.append((identifier, operation, arguments, kwargs))
+        return 'denied'
+    monkeypatch.setattr('core.security.service.SecurityService.authorize_operation', check)
+    assert _conversation_permission_denial(contract=contract, method=method, agent_id='a', session_id='s',
+        input_payload={'payload': {'title': 'example'}}, noninteractive=True, operation='write')
+    assert captured[0][0] == 'plugin:' + contract.split('@')[0]
+    assert captured[0][1] == 'write'
+    assert captured[0][2] == {'method': method, 'input': {'payload': {'title': 'example'}}}
+    assert captured[0][3]['noninteractive'] is True
 
 
 def test_revocation_is_visible_to_a_fresh_python_process(tmp_path):

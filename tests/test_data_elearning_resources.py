@@ -14,8 +14,8 @@ def integration(tmp_path, monkeypatch):
     monkeypatch.setitem(conf(), 'agent_permission_mode', 'full-access')
     monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {}, 'connections': {}})
     manager = ToolManager()
-    config = {**fake_config('elearning', tmp_path / 'elearning'),
-              'agentTools': ['list_courses', 'fetch', 'list_files', 'sync_files'], 'settingsUrl': '/elearning'}
+    config = fake_config('elearning', tmp_path / 'elearning')
+    config.update(agentTools=['list_courses', 'fetch', 'list_files', 'sync_files'], settingsUrl='/elearning')
     config['args'][config['args'].index('--user-id') + 1] = 'local-default'
     monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [config])
     was_enabled = manager._mcp_enabled(config)
@@ -36,6 +36,7 @@ def test_real_elearning_resource_catalog_read_and_account_binding(integration):
     service, manager = integration
     source = service.discover()['sources'][0]
     assert source['provider'] == 'elearning' and 'isolated-secret' not in str(source)
+    assert source['config']['course_ids'] == ['42']
     page = service.resources(source['id'])
     assert {'course', 'announcement', 'assignment', 'file'} <= {row['kind'] for row in page['resources']}
     for resource in page['resources']:
@@ -58,7 +59,14 @@ def test_agent_reads_global_sources_without_feature_selection_and_connection_can
     source = service.discover()['sources'][0]
     # Feature consumption is separate from normal Agent access.
     UsageService(service).set('stella.briefing', source['id'], False)
+    from core.security.resource_grants import ResourceGrantStore
+    from agent.registry import get_agent_registry
     for session in ['first', 'second']:
+        subject = f'session:{get_agent_registry().default_agent_id}:{session}'
+        for resource in [{'kind': 'connection', 'id': 'mcp:elearning'},
+                         {'kind': 'course', 'id': source['config']['account_id'] + ':42'}]:
+            ResourceGrantStore().issue(user_id='local-default', subject=subject, resource=resource,
+                                       operations=['read'], purposes=['interactive'])
         with identity_scope(session_id=session), execution_scope(origin='tool'):
             resources = service.resources(source['id'])['resources']
             assignment = next(row for row in resources if row['kind'] == 'assignment')
@@ -221,6 +229,9 @@ def test_data_usage_activates_real_legacy_owner_and_controls_briefing(integratio
     UsageService(service).set('stella.briefing', source['id'], True)
     sources = elearning_sources()
     assert len(sources) == 1
+    from core.security.resource_grants import ResourceGrantStore
+    ResourceGrantStore().issue(user_id='local-default', subject='plugin:stella.briefing',
+        resource={'kind': 'course', 'id': source['config']['account_id'] + ':42'}, operations=['read'], purposes=['background'])
     # The old owner still gates fetch_source with its compatibility flag.
     assert manager.call_mcp_tool('elearning', 'get_settings', {}, host=True)['enabled']
     assert sources[0].fetch({}).items

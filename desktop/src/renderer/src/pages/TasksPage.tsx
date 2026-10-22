@@ -7,6 +7,9 @@ import { useSessionStore } from '../store/sessionStore'
 import type { SchedulerTask, TaskSchedule, TaskAction, NotificationRoute } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 import PageHeader from '../components/PageHeader'
+import RunPolicyEditor, { PolicyFields } from '../components/RunPolicyEditor'
+import type { RunPolicy, CapabilityEntry } from '../api/client'
+import { ResourceAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
 import { PROACTIVE_CHANNELS, notificationChannelError } from './taskChannel'
 
 interface TasksPageProps {
@@ -19,7 +22,7 @@ const permissionLabel = (mode: SchedulerTask['run_permission_mode'] | 'inherit' 
   if (mode === 'read-only') return 'task_permission_read_only' as const
   if (mode === 'workspace-write') return 'task_permission_workspace_write' as const
   if (mode === 'full-access') return 'task_permission_full_access' as const
-  return 'task_permission_inherit' as const
+  return 'task_permission_unconfirmed' as const
 }
 
 const scheduleSummary = (s: TaskSchedule): string => {
@@ -226,7 +229,17 @@ const TaskEditModal: React.FC<{
   const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
-  const [runPermission, setRunPermission] = useState<NonNullable<SchedulerTask['run_permission_mode']> | 'inherit'>(task?.run_permission_mode || 'inherit')
+  const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', capabilities: {}, policy_revision: 0 })
+  const [permissionCatalog, setPermissionCatalog] = useState<CapabilityEntry[]>([])
+  const [permissionError, setPermissionError] = useState('')
+  const [resourceOpen, setResourceOpen] = useState(false)
+  useEffect(() => {
+    if (!isCreate) return
+    let cancelled = false
+    apiClient.getRunPolicy('template', 'default').then(result => { if (!cancelled) setPermissionCatalog(result.capabilities) })
+      .catch(cause => { if (!cancelled) setPermissionError(cause instanceof Error ? cause.message : String(cause)) })
+    return () => { cancelled = true }
+  }, [isCreate])
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -370,7 +383,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           session_id: sessionId,
-          run_permission_mode: runPermission,
+          run_policy: { filesystem_mode: newPolicy.filesystem_mode, capabilities: newPolicy.capabilities },
           ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -380,7 +393,6 @@ const TaskEditModal: React.FC<{
           enabled,
           schedule: buildSchedule(),
           action: buildAction(),
-          run_permission_mode: runPermission,
           ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -466,18 +478,10 @@ const TaskEditModal: React.FC<{
         <Toggle checked={enabled} onChange={setEnabled} />
       </div>
 
-      <Field label={t('task_run_permission')}>
-        <Dropdown
-          value={runPermission}
-          onChange={(value) => setRunPermission(value as NonNullable<SchedulerTask['run_permission_mode']> | 'inherit')}
-          options={[
-            { value: 'inherit', label: t('task_permission_inherit') },
-            { value: 'read-only', label: t('task_permission_read_only') },
-            { value: 'workspace-write', label: t('task_permission_workspace_write') },
-            { value: 'full-access', label: t('task_permission_full_access') },
-          ]}
-        />
-      </Field>
+      {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'This task has its own policy and persistent workspace. Background sensitive operations require preauthorization.' : '任务使用独立权限和持久工作区。后台敏感操作需要在此预授权。'}</p>
+        {permissionError && <p role="alert" className="mb-3 text-sm text-danger">{permissionError}</p>}
+        <PolicyFields value={newPolicy} onChange={setNewPolicy} catalog={permissionCatalog} disabled={saving} />
+      </div>}
 
       <Field label={t('task_schedule_type')}>
         <Dropdown
@@ -594,6 +598,13 @@ const TaskEditModal: React.FC<{
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
       </fieldset>
+      {!isCreate && task && <div className="mt-6 space-y-5 border-t border-default pt-5">
+        <h3 className="text-sm font-semibold">{getLang() === 'en' ? 'Independent task permissions' : '任务独立权限'}</h3>
+        {task.last_error && <p role="alert" className="text-xs text-danger">{task.last_error}</p>}
+        <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Save permission changes here, then use Run now to retry a denied task.' : '在此保存权限修改，再使用“立即执行”重试被拒绝的任务。')}</p>
+        <RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} />
+        <details onToggle={event => setResourceOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{getLang() === 'en' ? 'Resource grants' : '特定资源授权'}</summary>{resourceOpen && <div className="mt-4"><ResourceAuthorizationPanel preferredSubject={task.id} /></div>}</details>
+      </div>}
     </Modal>
   )
 }

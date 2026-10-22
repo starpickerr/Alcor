@@ -283,7 +283,11 @@ def test_closed_mcp_client_cannot_reinitialize(monkeypatch):
 def test_mcp_disable_terminates_a_real_process_during_initialize(tmp_path, monkeypatch):
     import sys
 
-    marker = tmp_path / "initializing"
+    from hashlib import sha256
+    from common.state_dir import user_root
+    from common.runtime_identity import identity_scope
+    with identity_scope(user_id='alice'):
+        marker = user_root() / 'mcp-runtime' / sha256(b'Documents').hexdigest() / 'initializing'
     script = tmp_path / "slow_mcp.py"
     script.write_text(
         "import sys,time\nfrom pathlib import Path\nfor line in sys.stdin:\n Path(sys.argv[1]).touch()\n time.sleep(30)\n"
@@ -702,6 +706,10 @@ def test_stdio_drainers_keep_process_streams_when_shutdown_interleaves(monkeypat
     )
     monkeypatch.setattr(mcp_client.subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(client, "_command_allowed", lambda command: True)
+    # This test exercises stream/shutdown ordering with a fake Popen. OS launch
+    # and isolation are covered by the real process tests, not this transport stub.
+    monkeypatch.setattr('core.security.mcp_runtime.prepare_mcp', lambda config, env: (
+        SimpleNamespace(argv=['not-run'], env=env, cwd=None, state={'mode': 'isolated'}), None))
     errors = []
 
     class ImmediateThread:

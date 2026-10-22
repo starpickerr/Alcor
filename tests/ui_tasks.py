@@ -3,7 +3,7 @@
 import json
 import os
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -54,6 +54,21 @@ def backend(route):
         )]
     elif path == '/api/todos/reminders/uncertain':
         data['reminders'] = []
+    elif path == '/api/security/run-policy':
+        if route.request.method == 'POST':
+            body = json.loads(route.request.post_data or '{}')
+            subject = body['subject']
+            policy = {**body['policy'], 'policy_revision': body['policy']['policy_revision'] + 1}
+            for task in tasks:
+                if task['id'] == subject:
+                    task['run_permission_mode'] = policy['filesystem_mode']
+                    task['run_policy'] = policy
+        else:
+            subject = parse_qs(urlparse(route.request.url).query).get('subject', ['default'])[0]
+            task = next((task for task in tasks if task['id'] == subject), {})
+            policy = task.get('run_policy') or {'filesystem_mode': task.get('run_permission_mode') or 'read-only', 'capabilities': {}, 'policy_revision': 1}
+        data.update(policy=policy, capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True}],
+                    migration_status='complete', compatibility_restrictions={})
     elif route.request.method == 'POST' and path == '/api/scheduler/update':
         body = json.loads(route.request.post_data or '{}')
         for task in tasks:
@@ -106,16 +121,19 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('客户端', exact=True)).to_be_visible()
         expect(page.get_by_text('微信', exact=True)).to_have_count(0)
         editor.get_by_role('button', name='取消').click()
-        expect(page.get_by_text('沿用绑定对话').first).to_be_visible()
+        expect(page.get_by_text('权限待确认').first).to_be_visible()
         page.get_by_text('Standalone digest').click()
         editor = page.get_by_role('dialog')
-        editor.get_by_role('button', name='沿用绑定对话').click()
-        page.get_by_text('完全访问', exact=True).click()
-        editor.get_by_role('button', name='保存').click()
+        expect(editor.get_by_label('文件与命令权限')).to_have_value('read-only')
+        assert editor.get_by_label('文件与命令权限').locator('option').count() == 3
+        editor.get_by_label('文件与命令权限').select_option('full-access')
+        editor.get_by_role('button', name='保存权限', exact=True).click()
+        expect(editor.get_by_role('status').filter(has_text='权限已保存')).to_be_visible()
+        editor.get_by_role('button', name='保存', exact=True).click()
         expect(editor).to_be_hidden()
         expect(page.get_by_text('完全访问')).to_be_visible()
         page.get_by_text('Standalone digest').click()
-        expect(page.get_by_role('dialog').get_by_role('button', name='完全访问')).to_be_visible()
+        expect(page.get_by_role('dialog').get_by_label('文件与命令权限')).to_have_value('full-access')
         page.once('dialog', lambda popup: popup.accept())
         page.get_by_role('dialog').get_by_role('button', name='立即执行').click()
         page.get_by_role('dialog').get_by_role('button', name='取消').click()

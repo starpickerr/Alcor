@@ -48,13 +48,14 @@ def test_scheduled_runs_keep_one_task_root_without_source_file_access(roots):
     assert not roots.exists()
 
 
-def test_scheduled_project_uses_execution_binding_not_transcript_id(roots, tmp_path):
+def test_scheduled_project_keeps_its_private_task_root(roots, tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     project_store.set_project_dir("source", str(project), "alpha")
     with identity_scope(agent_id="alpha", session_id="scheduler_daily", task_id="daily",
                         execution_session_id="source"):
-        assert execution_workspace("scheduler_daily", "alpha") == (str(project), [str(project)])
+        task_root = str(roots / 'automations' / 'alpha' / 'daily')
+        assert execution_workspace("scheduler_daily", "alpha") == (task_root, [task_root])
 
 
 def test_missing_bound_project_stops_runtime_and_file_panel(roots, tmp_path):

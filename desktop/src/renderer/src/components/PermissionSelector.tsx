@@ -1,93 +1,67 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { Check, Eye, Loader2, Shield, SlidersHorizontal } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, Eye, Loader2, Shield, ArrowLeft } from 'lucide-react'
 import apiClient from '../api/client'
-import type { SecurityPolicy } from '../api/client'
+import type { FileMode } from '../api/client'
 import { getLang } from '../i18n'
 import ComposerChip from './ComposerChip'
+import RunPolicyEditor from './RunPolicyEditor'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 
-type Mode = 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-type BaseMode = Exclude<Mode, 'custom'>
-const icons: Record<Mode, React.ReactNode> = {
-  'read-only': <Eye size={13} />, 'workspace-write': <Shield size={13} />,
-  'full-access': <Shield size={13} />, custom: <SlidersHorizontal size={13} />,
+const labels: Record<FileMode, { zh: string; en: string }> = {
+  'read-only': { zh: '只读', en: 'Read Only' },
+  'workspace-write': { zh: '工作区写入', en: 'Workspace Write' },
+  'full-access': { zh: '完全访问', en: 'Full Access' },
 }
-const PermissionSelector: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+
+export default function PermissionSelector({ sessionId }: { sessionId: string }) {
   const en = getLang() === 'en'
-  const cfg = useSessionSettingsStore(s => s.sessionId === sessionId ? s.cfg : null)
-  const loading = useSessionSettingsStore(s => s.loading)
-  const storeError = useSessionSettingsStore(s => s.error)
-  const openMenu = useSessionSettingsStore(s => s.openMenu)
-  const setOpenMenu = useSessionSettingsStore(s => s.setOpenMenu)
-  const apply = useSessionSettingsStore(s => s.apply)
-  const refresh = useSessionSettingsStore(s => s.refresh)
-  const [localError, setLocalError] = useState('')
+  const cfg = useSessionSettingsStore(state => state.sessionId === sessionId ? state.cfg : null)
+  const open = useSessionSettingsStore(state => state.openMenu === 'permission')
+  const setOpenMenu = useSessionSettingsStore(state => state.setOpenMenu)
+  const refresh = useSessionSettingsStore(state => state.refresh)
+  const storeError = useSessionSettingsStore(state => state.error)
+  const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
-  const state = cfg?.permission
-  const definitions = state?.mode_definitions || []
-  const mode = state?.mode
-  const open = openMenu === 'permission'
+  const [error, setError] = useState('')
+  const generation = useRef(0)
+  useEffect(() => { generation.current++; setEditing(false); setBusy(false); setError('') }, [sessionId])
   useEffect(() => { if (open) void refresh(sessionId) }, [open, refresh, sessionId])
-  const close = useCallback(() => { setOpenMenu(null) }, [setOpenMenu])
-  const definition = (id: Mode) => definitions.find(row => row.id === id)
-  const name = (id: Mode) => definition(id)?.name[en ? 'en' : 'zh'] || id
-  const applyPolicy = async (policy: SecurityPolicy | null) => {
+  const close = useCallback(() => setOpenMenu(null), [setOpenMenu])
+  const mode = cfg?.permission.policy.filesystem_mode || (cfg?.permission.mode === 'custom' ? cfg.permission.base_preset : cfg?.permission.mode)
+  const name = (value: FileMode) => labels[value][en ? 'en' : 'zh']
+  const select = async (next: FileMode) => {
     if (busy) return
-    setBusy(true)
-    setLocalError('')
+    const token = generation.current
+    setBusy(true); setError('')
     try {
-      const ok = await apply(sessionId, { security_policy: policy })
-      if (ok) close()
-    } finally { setBusy(false) }
-  }
-  const select = (next: Mode) => {
-    if (!state) return
-    if (next === 'custom') {
-      const base: BaseMode = state.base_preset
-        || (state.mode && state.mode !== 'custom' ? state.mode : 'workspace-write')
-      void applyPolicy({ preset: 'custom', base_preset: base, rules: { ...state.rules } })
-      return
-    }
-    void applyPolicy({ preset: next })
-  }
-  const saveDefault = async (target: 'project' | 'global') => {
-    if (!state || (target === 'project' && !state.project)) return
-    setBusy(true); setLocalError('')
-    try {
-      const policy: SecurityPolicy = { preset: mode, rules: mode === 'custom' ? state.rules : {} }
-      if (mode === 'custom') policy.base_preset = state.base_preset
-      const result = await apiClient.saveSecurityPolicy(target, policy,
-        target === 'project' ? { project: state.project! } : {})
-      if (result.status !== 'success') throw new Error(result.message || (en ? 'Save failed' : '保存失败'))
+      const current = await apiClient.getRunPolicy('session', sessionId)
+      if (token !== generation.current) return
+      await apiClient.saveRunPolicy('session', sessionId, { ...current.policy, filesystem_mode: next })
+      if (token !== generation.current) return
       await refresh(sessionId); close()
-    } catch (cause) { setLocalError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
+    } catch (cause) { if (token === generation.current) setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { if (token === generation.current) setBusy(false) }
   }
-  return <div id="permission-selector-chip"><ComposerChip icon={mode ? icons[mode] : <Loader2 size={13} />}
-    label={mode ? name(mode) : (loading ? (en ? 'Loading access…' : '正在加载权限…') : (en ? 'Access unavailable' : '权限状态不可用'))}
-    tip={state ? `${state.source} · ${state.authorized_roots.join(', ')}` : (en ? 'Access state could not be verified' : '无法确认有效权限')}
-    open={open} onToggle={() => { if (open) close(); else { setOpenMenu('permission'); void refresh(sessionId) } }} onClose={close}>
-    <div className="w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-2 space-y-2">
-      <div className="px-1 text-xs text-content-secondary">{state?.project ? (en ? 'Current project' : '当前项目') : (en ? 'Current conversation' : '当前对话')}</div>
-      {state?.project && <p className="px-1 text-xs text-content-tertiary">{en ? 'Changes apply to other conversations in this project.' : '切换将同步此项目的其他对话。'}</p>}
-      {(storeError || localError || state?.error) && <p role="alert" className="px-2 text-xs text-danger">{storeError || localError || state?.error}</p>}
-      {state && <>
-        {definitions.map(item => <button key={item.id} type="button" disabled={busy} aria-pressed={mode === item.id} onClick={() => select(item.id)}
-          className={`w-full flex gap-2 rounded-btn p-2 text-left hover:bg-surface-2 ${mode === item.id ? 'bg-accent-soft text-accent' : 'text-content'}`}>
-          <span className="mt-0.5">{icons[item.id]}</span><span className="flex-1 min-w-0">
-            <span className="block text-sm font-medium">{item.name[en ? 'en' : 'zh']}</span>
-            <span className="block text-xs text-content-secondary">{item.description[en ? 'en' : 'zh']}</span>
-          </span>{mode === item.id && <Check size={14} />}
+  return <div id="permission-selector-chip"><ComposerChip icon={!mode ? <Loader2 size={13} /> : mode === 'read-only' ? <Eye size={13} /> : <Shield size={13} />}
+    label={mode ? name(mode) : (en ? 'Loading permissions…' : '正在读取权限…')}
+    tip={en ? 'Files and commands for this conversation' : '此对话的文件与命令权限'}
+    menuClassName="w-[min(26rem,calc(100vw-2rem))] max-h-[70vh]"
+    open={open} onToggle={() => { if (open) close(); else { setEditing(false); setOpenMenu('permission') } }} onClose={close}>
+    <div className="min-w-0 space-y-3 p-2">
+      {editing ? <>
+        <button type="button" onClick={() => setEditing(false)} className="flex min-h-8 items-center gap-1 text-xs text-accent"><ArrowLeft size={13} />{en ? 'Conversation permissions' : '对话权限'}</button>
+        <RunPolicyEditor kind="session" subject={sessionId} onSaved={() => { void refresh(sessionId) }} />
+      </> : <>
+        <div className="px-1"><h3 className="text-sm font-semibold text-content">{en ? 'Files and commands' : '文件与命令权限'}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-content-secondary">{en ? 'Applies to this conversation. Project conversations share files and keep independent permissions.' : '仅作用于此对话。项目内对话共享文件，各自保存权限。'}</p></div>
+        {(error || storeError || cfg?.permission.error) && <p role="alert" className="text-xs text-danger">{error || storeError || cfg?.permission.error}</p>}
+        {(Object.keys(labels) as FileMode[]).map(value => <button key={value} type="button" disabled={busy || !cfg} aria-pressed={mode === value} onClick={() => void select(value)}
+          className={`flex min-h-10 w-full items-center justify-between rounded-btn px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent ${mode === value ? 'bg-accent-soft text-accent' : 'text-content hover:bg-surface-2'}`}>
+          {name(value)}{mode === value && <Check size={14} />}
         </button>)}
-        <div className="border-t border-default pt-2 flex flex-wrap gap-2 text-xs">
-          <button type="button" disabled={busy} onClick={() => void applyPolicy(null)} className="text-accent disabled:opacity-40">{en ? 'Restore inheritance' : '恢复继承'}</button>
-          <button type="button" disabled={!state.project || busy} title={!state.project ? (en ? 'Open a project first' : '请先打开项目') : undefined}
-            onClick={() => void saveDefault('project')} className="text-accent disabled:opacity-40">{en ? 'Set project default' : '设为项目默认'}</button>
-          <button type="button" disabled={busy} onClick={() => void saveDefault('global')} className="text-accent disabled:opacity-40">{en ? 'Set global default' : '设为全局默认'}</button>
-        </div>
-        {!state.project && <p className="text-xs text-content-tertiary">{en ? 'Project default is available after opening a project.' : '打开项目后才能设置项目默认权限。'}</p>}
+        <div className="border-t border-default pt-2"><button type="button" onClick={() => setEditing(true)} className="min-h-10 w-full rounded-btn px-3 text-left text-sm text-accent hover:bg-surface-2">{en ? 'Manage conversation capabilities' : '管理此对话能力'}</button>
+          <a href="#/security" className="block rounded-btn px-3 py-2 text-xs text-content-secondary hover:text-content">{en ? 'Resource grants and default template' : '资源授权与默认模板'}</a></div>
       </>}
     </div>
   </ComposerChip></div>
 }
-export default PermissionSelector

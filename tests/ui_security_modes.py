@@ -2,7 +2,7 @@
 
 import json
 import os
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -23,16 +23,28 @@ saved = []
 secret_saves = []
 project_chat = [False]
 project_mode = ["full-access"]
+policies = {name: {'filesystem_mode': 'workspace-write', 'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'deny'}}, 'policy_revision': 1} for name in ('default', 'project-chat')}
+policies['project-chat']['filesystem_mode'] = 'full-access'
 
 
 def backend(route):
     path = urlparse(route.request.url).path
     data = {'status': 'success'}
-    if route.request.method == 'POST' and path == '/api/security/policy':
-        body = json.loads(route.request.post_data or '{}')
-        saved.append(body)
-        if project_chat[0] and body.get('target') in ('conversation', 'project'):
-            project_mode[0] = body['policy']['preset']
+    if path == '/api/security/run-policy':
+        if route.request.method == 'POST':
+            body = route.request.post_data_json
+            saved.append(body)
+            policies[body['subject']] = {**body['policy'], 'policy_revision': policies[body['subject']]['policy_revision'] + 1}
+            subject = body['subject']
+        else:
+            subject = parse_qs(urlparse(route.request.url).query)['subject'][0]
+        data.update(policy=policies.setdefault(subject, dict(policies['default'])), capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True, 'enabled': True}], migration_status='complete', compatibility_restrictions={})
+    elif path == '/api/security/resources':
+        data.update(grants=[], subjects=[], available=[], inherited=[{'id': 'legacy-course', 'server': 'elearning', 'consumer': 'stella.briefing', 'revoked': False, 'scoped': True, 'capabilities': ['elearning.read'], 'methods': ['fetch'], 'resources': [{'kind': 'course', 'id': 'account:42'}], 'purposes': ['interactive'], 'valid_until': None, 'revision': 1}])
+    elif path == '/api/security/runtime-trust':
+        data.update(runtimes=[], isolation={'status': 'enabled', 'reason': 'OS isolation'})
+    elif path == '/api/security/migration':
+        data.update(verification={'status': 'applied', 'valid': True}, preview={'pending': 0, 'needs_confirmation': 0, 'fingerprint': 'test'})
     if path == '/api/health':
         data = {'status': 'ok'}
     elif path == '/auth/check':
@@ -141,7 +153,7 @@ with sync_playwright() as playwright:
         connections_card = page.get_by_role('heading', name='外部连接', exact=True).locator('xpath=..')
         expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
         overview_links = [
-            ('默认权限', 'permissions', '默认权限'),
+            ('新建对话默认模板', 'permissions', '新建对话默认模板'),
             ('后台任务权限', 'background', '后台任务权限'),
             ('外部连接', 'connections', '连接与访问'),
             ('凭据', 'secrets', '服务凭据'),
@@ -156,7 +168,8 @@ with sync_playwright() as playwright:
             expect(page).to_have_url(url + '/#/security?tab=' + target)
             expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
             if target == 'connections':
-                assert page.locator('section h3').all_text_contents() == ['邮箱', 'GitHub MCP', 'GitHub']
+                expect(page.get_by_role('heading', name='特定资源授权')).to_be_visible()
+                page.get_by_text('保留的连接授权', exact=True).click()
                 expect(page.get_by_test_id('mcp-grant-legacy-course')).to_be_visible()
             if target == 'privacy':
                 expect(page.get_by_test_id('mcp-grant-legacy-course')).to_have_count(0)
@@ -164,14 +177,14 @@ with sync_playwright() as playwright:
                 page.reload(wait_until='networkidle')
                 expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
             page.go_back(wait_until='networkidle')
-            expect(page.get_by_role('heading', name='默认权限', exact=True).get_by_role('link')).to_be_visible()
+            expect(page.get_by_role('heading', name='新建对话默认模板', exact=True).get_by_role('link')).to_be_visible()
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.set_viewport_size({'width': 1280, 'height': 1280})
-            page.get_by_role('heading', name='默认权限', exact=True).evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
+            page.get_by_role('heading', name='新建对话默认模板', exact=True).evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview.png', full_page=True, animations='disabled')
         page.set_viewport_size({'width': 640, 'height': 900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-        narrow_title = page.get_by_role('heading', name='默认权限').get_by_role('link')
+        narrow_title = page.get_by_role('heading', name='新建对话默认模板').get_by_role('link')
         expect(narrow_title).to_be_visible()
         assert narrow_title.bounding_box()['height'] <= 44
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
@@ -180,17 +193,24 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
-        default_card = page.get_by_role('heading', name='默认权限').locator('xpath=..')
+        default_card = page.get_by_role('heading', name='新建对话默认模板').locator('xpath=..')
         expect(default_card).to_be_visible()
-        expect(default_card.get_by_role('button', name='只读')).to_be_visible()
-        expect(default_card.get_by_role('button', name='自定义')).to_have_count(0)
+        assert default_card.get_by_label('文件与命令权限').locator('option').count() == 3
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-permissions.png', full_page=True, animations='disabled')
+            page.set_viewport_size({'width': 390, 'height': 844})
+            page.get_by_role('button', name='收起侧栏').click()
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-permissions-mobile.png', full_page=True, animations='disabled')
+            page.set_viewport_size({'width': 1280, 'height': 900})
+            page.get_by_role('button', name='展开侧栏').click()
         before = len(saved)
-        default_card.get_by_role('button', name='完全访问').click()
-        expect(page.get_by_role('button', name='启用完全访问')).to_have_count(0)
-        assert len(saved) > before and saved[-1]['policy']['preset'] == 'full-access'
-        assert not any(item.get('policy', {}).get('preset') == 'custom' for item in saved)
-        expect(page.get_by_role('heading', name='项目权限')).to_be_visible()
-        for tab, heading in [('后台任务权限', '后台任务权限'), ('外部连接', '连接与访问'),
+        default_card.get_by_label('文件与命令权限').select_option('full-access')
+        default_card.get_by_role('button', name='保存权限', exact=True).click()
+        expect(default_card.get_by_role('status')).to_contain_text('权限已保存')
+        assert len(saved) > before and saved[-1]['policy']['filesystem_mode'] == 'full-access'
+        expect(page.get_by_role('heading', name='项目权限')).to_have_count(0)
+        for tab, heading in [('后台任务权限', '后台任务权限'), ('资源授权', '连接与访问'),
                              ('安全活动', '安全活动'), ('数据访问', '数据访问')]:
             page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
             expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
@@ -212,7 +232,7 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='收起侧栏').click()
         expect(page.get_by_role('complementary')).to_have_css('width', '56px')
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='总览', exact=True).click()
-        mobile_title = page.get_by_role('heading', name='默认权限').get_by_role('link')
+        mobile_title = page.get_by_role('heading', name='新建对话默认模板').get_by_role('link')
         expect(mobile_title).to_be_visible()
         assert mobile_title.bounding_box()['height'] <= 44
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -266,15 +286,15 @@ with sync_playwright() as playwright:
         }""")
         chip = page.locator('#permission-selector-chip')
         expect(chip.locator('.composer-chip-label')).to_have_text('完全访问')
-        project_card = page.get_by_role('heading', name='项目权限', exact=True).locator('xpath=..')
-        for label in ['只读', '工作区写入', '完全访问', '自定义']:
-            chip.locator('.composer-chip-label').click()
-            chip.get_by_role('button', name=label + ' ' + {'只读':'读取', '工作区写入':'写入', '完全访问':'放宽', '自定义':'调整'}[label], exact=True).click()
-            expect(chip.locator('.composer-chip-label')).to_have_text(label)
-            expect(project_card.get_by_role('button', name=label + ' ' + {'只读':'读取', '工作区写入':'写入', '完全访问':'放宽', '自定义':'调整'}[label], exact=True)).to_have_attribute('aria-pressed', 'true')
-        project_card.get_by_role('button', name='工作区写入 写入', exact=True).click()
-        project_card.get_by_role('button', name='保存权限', exact=True).click()
-        expect(chip.locator('.composer-chip-label')).to_have_text('工作区写入')
+        chip.get_by_role('button').first.click()
+        expect(chip.get_by_text('自定义', exact=True)).to_have_count(0)
+        expect(chip.get_by_text('仅作用于此对话。项目内对话共享文件，各自保存权限。', exact=True)).to_be_visible()
+        chip.get_by_role('button', name='管理此对话能力', exact=True).click()
+        chip.get_by_label('文件与命令权限').select_option('workspace-write')
+        chip.get_by_role('button', name='保存权限', exact=True).click()
+        expect(chip.get_by_role('status')).to_contain_text('权限已保存')
+        chip.get_by_role('button', name='对话权限', exact=True).click()
+        chip.get_by_role('button').first.click()
         # A save finishing after switching chats must refresh the new chat.
         race = page.evaluate("""async () => {
           const {default: api} = await import('/src/api/client.ts')
@@ -282,8 +302,9 @@ with sync_playwright() as playwright:
           const {mountPermissionSelector} = await import('/src/__test__/PermissionSelectorHarness.tsx')
           const originalGet = api.getSessionSettings, originalSave = api.updateSessionSettings
           const previous = await originalGet.call(api, 'project-chat')
-          const next = {...previous, permission: {...previous.permission, mode: 'read-only', preset: 'read-only'}}
+          const next = {...previous, permission: {...previous.permission, mode: 'read-only', preset: 'read-only', policy: {...previous.permission.policy, filesystem_mode: 'read-only'}}}
           let finishSave, finishLoad
+          const trace = []; const stopTrace = store.subscribe(state => trace.push({session: state.sessionId, loading: state.loading}))
           const saving = new Promise(resolve => {finishSave = resolve})
           const loading = new Promise(resolve => {finishLoad = resolve})
           api.updateSessionSettings = () => saving
@@ -296,10 +317,10 @@ with sync_playwright() as playwright:
             finishLoad(next)
             await mount
             await Promise.resolve()
-            return store.getState().sessionId
-          } finally {api.getSessionSettings = originalGet; api.updateSessionSettings = originalSave}
+            return {session: store.getState().sessionId, trace}
+          } finally {stopTrace(); api.getSessionSettings = originalGet; api.updateSessionSettings = originalSave}
         }""")
-        assert race == 'next-chat', race
+        assert race['session'] == 'next-chat', race
         expect(chip.locator('.composer-chip-label')).to_have_text('只读')
         # Clearing a conversation must also invalidate an in-flight response.
         cleared = page.evaluate("""async () => {

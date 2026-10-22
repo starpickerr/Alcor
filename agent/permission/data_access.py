@@ -3,12 +3,15 @@
 from agent.permission.gateway import Capability, register_tool
 from agent.runtime.tool_invocation import permission_denial
 from core.mcp.managed import native_user_action
+from core.security.capabilities import CapabilityDescriptor
 
 
 def authorize(operation, source_id):
     readonly = operation == "metadata"
     name = "data_inspect" if readonly else "data_manage"
-    register_tool(name, Capability.READ if readonly else Capability.WORKSPACE_WRITE)
+    descriptor = CapabilityDescriptor('builtin:data_manage', 'builtin',
+        'read' if readonly else 'delete' if operation == 'delete' else 'write')
+    register_tool(name, Capability.READ if readonly else Capability.WORKSPACE_WRITE, descriptor=descriptor)
     reason = permission_denial(
         name,
         {"action": operation, "source_id": source_id},

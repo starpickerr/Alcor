@@ -143,7 +143,8 @@ def test_overdue_before_eight_waits_until_today_and_ordinary_tasks_keep_grace_pe
 
 
 def test_silent_tool_dispatch_has_no_delivery_and_propagates_errors(monkeypatch):
-    task = {"id": "briefing", "action": {"type": "tool_call", "call_name": "briefing", "silent": True}}
+    task = {"id": "briefing", "action": {"type": "tool_call", "call_name": "briefing", "silent": True,
+        "tool_params": {"action": "create"}}}
     tool = SimpleNamespace(execute_tool=lambda params: ToolResult.success("saved"))
     monkeypatch.setattr(ToolManager, "create_tool", lambda self, name: tool)
     monkeypatch.setattr("channel.channel_factory.create_channel", lambda *args: pytest.fail("silent task must not send"))

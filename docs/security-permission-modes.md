@@ -1,36 +1,49 @@
-# Permission modes and execution boundary
+# 权限与执行边界
 
-## Request path
+对话和定时任务共用 RunPolicy，分别保存独立快照。项目只决定共享工作区，不覆盖对话权限。安全中心的默认模板只影响新建对话；新建定时任务默认 Read Only，并明确选择业务能力。用户从界面直接管理业务时使用已认证用户身份，不借用聊天权限。
 
-Chat tool calls enter `AgentStreamExecutor`, direct tool calls enter `BaseTool`, and scheduled calls enter `scheduler.integration`. Each calls `permission_denial` before executing a tool. It resolves the current RuntimeIdentity, project, session preference, global policy, working directory, roots, tool allowlist, and account allowlist. `SecurityGateway` classifies the operation, applies all relevant rules, records an audit decision, and either allows, denies, or creates an interactive one-use approval. After approval, the waiting call resolves the inputs again and stops if any binding changed. The original call then resumes once. Subagents inherit a rule and root ceiling from the parent run.
+## 三个授权维度
 
-The desktop Security Center and chat composer use the backend's `mode_definitions`; they save global, project, and conversation differences through the existing stores. A conversation without a project uses the user's `work` directory. Agent memory, skills, credentials, and scheduler state remain in their existing state directories.
-
-## Modes and migration
-
-| Mode | Normal work | Scope outside the workspace |
+| 配置 | 作用 | 不包含的授权 |
 | --- | --- | --- |
-| `read-only` | Authorized reads run; unauthorized writes are denied | Deny |
-| `workspace-write` | Create, change and delete in the current workspace | Confirm |
-| `full-access` | Ordinary file and shell limits are relaxed; other chats' private Work, managed data, credentials and Apple grants stay blocked | Allow; important external and destructive actions still require confirmation |
-| `custom` | Saved rule snapshot copied from the effective mode | Determined by saved rules |
+| 文件与命令权限 | Read Only、Workspace Write、Full Access | 插件调用、外部账号、其他私有工作区 |
+| Agent 可用能力 | 内置工具、插件和 MCP 的具体操作 | 目标账号或数据源的访问 |
+| 特定资源授权 | 主体、目标资源、操作、用途、有效期及撤销版本 | 自动提升文件模式或其他能力 |
 
-Fresh installs use `workspace-write`. Stored `approval` becomes a Custom snapshot of its confirm-on-write rules. Stored `project-full` is Workspace Write. `strict`, `standard`, and a bare legacy `custom` name remain exact custom snapshots. A damaged policy fails closed and reports an error. Corrupt project or conversation stores fail closed rather than silently resetting their contents.
+Read Only 允许读取授权工作区，限制直接文件写入和命令执行。取得事务 write 能力后仍可经事务服务创建事务。允许管理仅包含 read/write；delete、external_send、system_execute 分别审批或预授权。Full Access 放宽普通文件和命令限制，凭据、托管业务数据、其他私有空间及 Apple 系统授权继续受保护。
 
-## Process and browser enforcement
+`core/security/policy_store.py` 在原 authorization.sqlite 中保存用户、Agent、主体及 revision；`run_policy.py` 维护快照。UI 的模板、对话与任务编辑器使用同一 `/api/security/run-policy` 接口，携带 revision，过期修改拒绝覆盖。任务业务记录持有预期策略版本；跨存储提交中断时拒绝执行，需要用户修复。旧项目权限 API 拒绝写入。
 
-On macOS, shell foreground and background processes use Seatbelt to restrict writes to authorized roots and a dedicated temporary directory. An approved outside file opens only that exact path for one call. Protected credential and control paths are denied for reads and writes. On Linux, bubblewrap mounts the filesystem read-only in constrained modes, binds authorized writable roots, and masks protected paths. Both backends probe actual launch ability; if unavailable, shell execution fails with a clear error. Windows reports unavailable and does not claim process isolation. Child processes inherit the OS boundary and receive the existing filtered environment.
+## 调用与委托
 
-The browser gate separately checks navigation, local files, and interactions. A context route checks requests, redirects, and subrequests against the cloud metadata guard and current file scope. Browser interaction and unknown MCP side effects require confirmation. MCP public tool names include a server identity, so identical remote names cannot share a policy identity.
+`SecurityService` 协调可信身份、能力可用性、RunPolicy、工作区、资源、审批和审计。Gateway 继续提供决策与交互审批。插件方法从服务契约取得操作分类；模型的名称、annotations 和身份参数不能授予权限。未知 MCP 操作在交互式执行时要求明确审批，后台需要 system_execute 预授权。
 
-## Operational limits
+一次性审批绑定当前用户、Agent、会话/任务、完整策略版本、能力、操作和目标。受控 Core 服务适配可保留同一次已批准操作；MCP 同时要求参数一致。子 Agent 和 Agent Hub 使用父运行的权限上限。后台无审批弹窗或自动重试，缺少权限会记录失败原因，调整后手动重新运行。
 
-- Seatbelt currently enforces **writes** outside the workspace and protects known credential and control paths. It does not provide a general read-only mount view of every unrelated macOS directory. Linux's read-only root mount likewise allows reading ordinary unrelated files. The gateway checks paths used through file tools and browser local navigation; shell scripts can read unrelated ordinary files that are not protected paths.
-- Linux's exact one-file outside grant requires that the target already exists. Creating a new outside file needs an explicit directory grant; the sandbox refuses to widen a one-file approval into a directory grant.
-- Running background processes retain their launch sandbox. Changing a policy governs later tool calls and does not retroactively stop a process already started. Background process query and stop operations check the recorded owner.
-- DNS is checked before browser requests, but IP addresses are not pinned between DNS resolution and connection. Browser DNS rebinding remains a network boundary limitation.
-- Scheduled calls that need approval stop with `pending_approval`. They create no reusable approval token or automatic retry. The user must adjust policy and manually rerun the task, which creates a new recorded run.
+ResourceGrantStore 与既有 PluginAuthorizationStore/Data Service 授权由同一服务协调。连接开关是限制条件，不是账号正文的授权。授权父项被撤销或过期，子授权立即失效；调用前及返回数据前重新核验。
 
-## Verification
+## 插件、MCP 与命令隔离
 
-Run `conda run --no-capture-output -n Stella python scripts/quality_check.py full --report /tmp/stella-quality-report.md` from the repository root. Checks run with temporary HOME and STELLA_DATA_DIR. The process sandbox tests execute a real project write and a blocked outside write when the platform backend is available.
+第三方插件和本地 MCP 默认使用实际 OS 隔离：macOS Seatbelt、Linux bubblewrap。运行时只开放代码、私有配置/缓存和 Core 明确提供的资源；隔离不可用时拒绝启动。第一方信任必须通过 Core 固定目录的完整包摘要校验，不能由名称或自定义 catalog 声明。
+
+用户可以对当前包/本地启动内容摘要明确选择受信任运行。受信任代码具有宿主文件和网络访问能力；内容变化使选择失效，撤销会停止受信任进程。安全中心显示实际运行模式，未运行状态不宣称已经隔离。远程 MCP 标为远程连接。
+
+文件工具和受限命令共同限制未授权的工作区外读取/写入。命令子进程继承边界，外部 Agent CLI 使用 Core 生成的沙箱计划。无隔离平台不回退为无限制启动。Windows 当前报告不可用，需用户明确选择适用的受信任运行。
+
+## 迁移、核对与恢复
+
+应用启动及首次原生权限编辑前，迁移读取旧权限元数据，冻结已有对话/任务的实际策略，事务性写入统一授权库。预览不改策略；输入变化会拒绝旧预览；重复迁移幂等。原配置、账号凭据和业务存储保留原位。旧 Custom 的有效限制与明确 deny 继续保留，用户重新授予相应能力后业务权限独立生效。损坏策略进入待确认并保持保守限制，用户保存完整的三模式/能力选择后完成确认。
+
+历史连接限制转入资源存储。既有 scoped grants 及撤销记录继续作为原授权关系的权威来源。仅已有执行主体和经完整性校验的原生简报消费者可得到等价历史连接范围；此类授权明确标为“连接下全部自有资源”，可撤销并替换为指定资源。新建 Full Access 对话不会得到这些历史资源授权。
+
+安全中心可核对、应用、验证和恢复迁移。恢复仅撤回未被修改的迁移 RunPolicy 快照；后续策略编辑会阻止恢复。资源授权与撤销记录留在统一存储，避免恢复时复活已撤销授权；资源设置需用户单独调整。损坏的连接元数据保留备份并按拒绝迁移，可从资源页面修复。
+
+## 已知边界与验证
+
+- macOS 的真实文件/网络/进程探针及隔离测试只使用临时合成数据。本次未连接真实账号或对真实数据执行迁移。
+- Linux/Windows 的平台分支需在对应平台验证；当前机器的测试不能证明其实际运行效果。
+- 已启动普通命令保留启动时的边界；后续权限修改影响新调用，不重新塑形其 OS 沙箱。受信任扩展撤销另有停止进程机制。
+- Linux 单文件写入授权要求目标存在；创建新文件需要明确目录授权。
+- 浏览器请求校验 DNS，但不固定 DNS 解析与连接之间的地址，存在 DNS rebinding 边界限制。
+
+测试从 Core 通过 `scripts/run_isolated.py` 执行，使用临时 HOME/STELLA_DATA_DIR；权限、迁移、委托及平台回归入口为 tests/test_run_policy.py、test_capability_authorization.py、test_task_run_policy.py、test_resource_grants.py、test_extension_sandbox.py、test_permission_control.py、test_permission_migration.py。浏览器入口为 ui_run_policy.py、ui_security_modes.py、ui_tasks.py。

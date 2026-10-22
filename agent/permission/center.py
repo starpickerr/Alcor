@@ -21,6 +21,8 @@ def global_policy() -> dict:
 
 
 def save_global_policy(value: dict) -> dict:
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
     from core.security.run_policy import default_template, gateway_policy, save_run_policy, validate_policy
     current = default_template()
     if 'filesystem_mode' in value or 'capabilities' in value:
@@ -37,6 +39,8 @@ def save_global_policy(value: dict) -> dict:
 
 def save_conversation_policy(session: str, value: dict | None, agent: str | None = None) -> dict:
     """Update one conversation, independently of other chats in its project."""
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
     from core.security.run_policy import gateway_policy, resolve_run_policy, save_run_policy, validate_policy
     current = resolve_run_policy(session, agent)
     legacy_rules = None
@@ -288,6 +292,18 @@ def connections(policy: dict | None = None) -> list[dict]:
                 grant['scopes']=sorted(set(old_scopes) & set(current)) if current and '*' not in current else list(old_scopes)
                 if current and '*' not in current and not grant['scopes']:
                     grant['allowed']=False
+        from core.security.migration import resource_authority_migrated
+        if resource_authority_migrated():
+            from core.security.service import SecurityService
+            from core.security.resource_grants import ResourceGrantStore
+            from common.runtime_identity import current_identity
+            restrictions = SecurityService.legacy_connection_restrictions(key)
+            grant = {'allowed': all(row.get('allowed', True) for row in restrictions), 'scopes': []}
+            sets = [set(row['scopes']) for row in restrictions if row.get('scopes') and '*' not in row['scopes']]
+            if sets:
+                scopes = set.intersection(*sets)
+                grant.update(scopes=sorted(scopes), allowed=grant['allowed'] and bool(scopes))
+            value['revision'] = ResourceGrantStore().connection_revision(user_id=current_identity().user_id or 'local-default', connection=key)
         policy_scopes = grant.get("scopes")
         value.update({
             "allowed": grant.get("allowed", True),
@@ -329,6 +345,16 @@ def describe_task_permission(task: dict) -> dict:
         "execution_project_dir": project,
         "run_permission_mode": explicit if explicit in {"read-only", "workspace-write", "full-access"} else None,
     }
+    from core.security.run_policy import subject_key
+    from core.security.policy_store import RunPolicyStore
+    policy = RunPolicyStore().get(subject_key('task', str(task.get('id') or ''), task.get('owner_agent_id')))
+    if task.get('run_policy_version') == 1 and (not policy or task.get('run_policy_revision') != policy['policy_revision']):
+        return {**base, 'effective_mode': None, 'permission_source': 'independent', 'unknown': True,
+                'policy_error': 'Task policy is missing or changed; repair permissions before rerunning.'}
+    if policy:
+        return {**base, 'effective_mode': policy['filesystem_mode'], 'permission_source': 'independent',
+                'unknown': policy.get('migration_status') == 'needs_confirmation',
+                'policy_error': 'Legacy permissions need confirmation.' if policy.get('migration_status') == 'needs_confirmation' else None}
     if explicit in {"read-only", "workspace-write", "full-access"}:
         return {**base, "effective_mode": explicit, "permission_source": "independent", "unknown": False,
                 "policy_error": None}
@@ -384,18 +410,11 @@ def background_task_summary(tasks: list[dict] | None = None) -> dict:
 
 
 def overview(session_id: str | None = None, agent_id: str | None = None) -> dict:
-    from agent.workspace import project_store, session_prefs
+    from agent.workspace import project_store
     project = project_store.get_project_dir(session_id, agent_id) if session_id else None
     mode = global_mode()
     effective = resolve(mode, project_dir=project, session_id=session_id, agent_id=agent_id)
-    project_patch = project_store.get_security_policy(project) if project else {}
-    conversation_patch = session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {}
-    if project:
-        source = "project"
-    elif conversation_patch:
-        source = "session"
-    else:
-        source = "global"
+    source = "independent" if session_id else "template"
     from core.workspace.service import resolve_context
     work_root = str(resolve_context(session_id, agent_id).root)
     from agent.permission.gateway import SecurityGateway
@@ -431,15 +450,14 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
         data_access = {"available":False,"resources":[],"external_transfers":[]}
     return {
         "global_policy": global_policy(), "effective_policy": effective,
-        "effective_mode": effective_mode(effective), "effective_rules": effective_rules(effective),
-        "policy_source": source, "mode_definitions": MODE_DEFINITIONS,
+        "effective_mode": effective.get("filesystem_mode", effective_mode(effective)), "effective_rules": effective_rules(effective),
+        "policy_source": source, "mode_definitions": [row for row in MODE_DEFINITIONS if row['id'] != 'custom'],
         "authorized_roots": [work_root, *(effective.get("extra_roots") or [])],
         "policy_error": effective.get("error"),
         "process_isolation": isolation,
-        "project": project, "project_policy": project_patch,
-        "projects": [{**item, "policy": project_store.get_security_policy(item["path"])}
-                     for item in project_store.list_known_projects()],
-        "conversation_policy": conversation_patch,
+        "project": project, "project_policy": {},
+        "projects": project_store.list_known_projects(),
+        "conversation_policy": effective if session_id else {},
         "connections": all_connections, "secrets": all_secrets,
         "background_tasks": task_rows,
         "privacy": privacy, "data_access":data_access,

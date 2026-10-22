@@ -7,7 +7,7 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
-    def authorize_resource(resource, operation, *, purpose=None):
+    def authorize_resource(resource, operation, *, purpose=None, legacy_connection=None):
         """The trusted execution identity, rather than tool input, selects grants."""
         from common.runtime_identity import current_identity
         from core.security.resource_grants import ResourceGrantStore
@@ -31,8 +31,15 @@ class SecurityService:
         labels = dict(event='resource_access', tool='resource_grant', resource=resource['kind'],
                       operation=operation, operation_id=uuid.uuid4().hex)
         try:
-            grant = ResourceGrantStore().check(user_id=user, subject=subject, resource=resource,
-                operation=operation, purpose=purpose or current_invocation_purpose() or 'interactive')
+            args = dict(user_id=user, subject=subject, operation=operation,
+                        purpose=purpose or current_invocation_purpose() or 'interactive')
+            store = ResourceGrantStore()
+            try:
+                grant = store.check(resource=resource, **args)
+            except PermissionError:
+                if not legacy_connection:
+                    raise
+                grant = store.check_legacy_container(connection=legacy_connection, **args)
         except PermissionError:
             record(**labels, decision='deny', reason='Resource scope is not authorized or was revoked.')
             raise
@@ -51,13 +58,28 @@ class SecurityService:
             return SecurityService.authorize_resource({'kind': 'connection', 'id': 'mcp:' + server}, operation)
 
     @staticmethod
-    def legacy_connection_restrictions(connection):
-        """Connection revocations remain live while old grants are migrated."""
-        from config import conf
-        values = (conf().get('security_policy') or {}).get('connections') or {}
+    def legacy_connection_restrictions(connection, *, session_id=None, agent_id=None):
+        """The migration adapter stops reading legacy config after authority moves."""
         names = [connection]
         if connection in {'mcp:email', 'mcp:elearning'}:
             names.append(connection.removeprefix('mcp:'))
+        from core.security.migration import resource_authority_migrated
+        if resource_authority_migrated():
+            from common.runtime_identity import current_identity
+            from agent.registry import get_agent_registry
+            from core.security.resource_grants import ResourceGrantStore
+            identity = current_identity()
+            user = identity.user_id or 'local-default'
+            agent = identity.agent_id or agent_id or get_agent_registry().default_agent_id
+            subjects = ['user:' + user]
+            if identity.task_id:
+                subjects.append(f'task:{agent}:{identity.task_id}')
+            elif identity.session_id or session_id:
+                subjects.append(f'session:{agent}:{identity.session_id or session_id}')
+            return ResourceGrantStore().connection_restrictions(user_id=user, subjects=subjects, connections=names)
+        from config import conf
+        policy = conf().get('security_policy')
+        values = policy.get('connections', {}) if isinstance(policy, dict) else {}
         return [values[name] for name in names if name in values]
 
     @staticmethod
@@ -80,7 +102,10 @@ class SecurityService:
 
     @staticmethod
     def authorize_tool(tool_name, arguments, **kwargs):
-        from agent.runtime.tool_invocation import _permission_denial
+        try:
+            from agent.runtime.tool_invocation import _permission_denial
+        except ImportError:
+            return 'Permission validation is unavailable; the operation did not run.'
         context = SecurityService.check_execution()
         from common.runtime_identity import current_identity
         from core.plugins.caller import current_invocation_purpose

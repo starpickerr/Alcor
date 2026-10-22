@@ -197,13 +197,18 @@ def test_explicit_canonical_policy_edit_replaces_the_legacy_alias(env, monkeypat
     monkeypatch.setattr(
         "agent.permission.center.connections", lambda: [{"id": "mcp:email"}]
     )
+    from core.security.migration import ensure_migrated
+    from core.security.resource_grants import ResourceGrantStore
+    from core.security.service import SecurityService
+    ensure_migrated()
+    revision = ResourceGrantStore().connection_revision(user_id='local-default', connection='mcp:email')
     response = call(
         desktop.SecurityConnectionsHandler,
-        body={"id": "mcp:email", "allowed": True, "scopes": ["read"]},
+        body={"id": "mcp:email", "allowed": True, "scopes": ["read"], "revision": revision},
     )
     assert response["status"] == "success"
-    assert conf()["security_policy"]["connections"]["mcp:email"]["allowed"] is True
-    assert "email" not in conf()["security_policy"]["connections"]
+    assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
+    assert conf()['security_policy']['connections'] == {'email': {'allowed': False, 'scopes': []}}
 
 
 def test_disjoint_legacy_scopes_never_display_as_unrestricted(env, monkeypatch):
@@ -244,7 +249,7 @@ def test_native_briefing_dispatch_checks_the_consumer_grant(env, monkeypatch):
         plugin_id="stella.email",
         user_id="local-default",
         capabilities=[],
-        purposes=["read"],
+        purposes=["read", "interactive"],
     )
     for consumer in ["stella.email", "stella.briefing"]:
         authz.issue_scoped(

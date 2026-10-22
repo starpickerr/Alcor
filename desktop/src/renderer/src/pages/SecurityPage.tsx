@@ -2,20 +2,20 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck, RefreshCw, ChevronRight, SlidersHorizontal, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
-import type { InheritedMcpGrant, SecurityActivityCounts, SecurityCenterState, SecurityPolicy, SecurityRecord } from '../api/client'
+import type { SecurityActivityCounts, SecurityCenterState, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
 import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
+import RunPolicyEditor from '../components/RunPolicyEditor'
+import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
 import {
   commonCredentials,
-  ruleGroups,
   securityCopy,
   securityReason,
   securityResource,
-  securityRuleName,
   securitySecretName,
   securityTrace,
 } from './securityLocale'
@@ -51,8 +51,6 @@ const permissionSourceLabel = (
   if (source === 'unspecified') return copy.backgroundSourceUnspecified
   return copy.backgroundSourceUnknown
 }
-const DEFAULT_PRESETS = ['read-only', 'workspace-write', 'full-access'] as const
-const SCOPED_PRESETS = ['read-only', 'workspace-write', 'full-access', 'custom'] as const
 const card = 'min-w-0 rounded-card border border-default bg-surface p-5 sm:p-6'
 const overviewCard = `${card} shadow-sm`
 const metricValue = 'text-3xl font-semibold tracking-tight tabular-nums leading-none'
@@ -62,38 +60,6 @@ const input =
 const action =
   'min-h-10 shrink-0 rounded-btn bg-accent text-accent-contrast px-4 py-2 text-sm font-medium hover:bg-accent-hover disabled:bg-surface-2 disabled:text-content-tertiary focus-visible:outline-2 focus-visible:outline-accent'
 const faded = 'text-sm leading-relaxed text-content-secondary'
-
-const McpGrantEditor: React.FC<{ grant: InheritedMcpGrant; busy: boolean; onSave: (value: Parameters<typeof apiClient.updateMcpAccess>[0]) => void }> = ({ grant, busy, onSave }) => {
-  const en = getLang() === 'en'
-  const [allowed, setAllowed] = useState(!grant.revoked)
-  const [purposes, setPurposes] = useState(grant.purposes.join(', '))
-  const [resources, setResources] = useState(JSON.stringify(grant.resources, null, 2))
-  const [expiry, setExpiry] = useState(grant.valid_until || '')
-  const [error, setError] = useState('')
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault()
-    try {
-      const parsed: unknown = JSON.parse(resources)
-      if (!Array.isArray(parsed) || parsed.some(row => !row || typeof row.kind !== 'string' || typeof row.id !== 'string')) throw new Error(en ? 'Invalid resource list' : '资源列表格式错误')
-      if (!window.confirm(en ? 'Apply these authorization changes?' : '确认应用此授权范围？')) return
-      setError('')
-      onSave({ id: grant.id, revision: grant.revision, revoked: !allowed, purposes: purposes.split(',').map(value => value.trim()).filter(Boolean), resources: parsed, valid_until: expiry || null })
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-  }
-  const state = grant.revoked ? (en ? 'Revoked' : '已撤销') : grant.valid_until && Date.parse(grant.valid_until) <= Date.now() ? (en ? 'Expired' : '已过期') : (en ? 'Active' : '有效')
-  return <form onSubmit={submit} data-testid={'mcp-grant-' + grant.id} className="space-y-3 border-t border-default py-4 text-sm">
-    <div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{grant.server} · {grant.consumer || (en ? 'Parent authorization' : '父级授权')}</span><span>{state}</span></div>
-    <p className="break-all text-content-secondary">{[...grant.capabilities, ...grant.methods].join(' · ')}</p>
-    <label className="flex items-center gap-2"><input type="checkbox" checked={allowed} disabled={busy} onChange={event => setAllowed(event.target.checked)} />{en ? 'Allow this authorization' : '允许使用此授权'}</label>
-    <details><summary className="cursor-pointer text-accent">{en ? 'Scope and validity' : '使用范围与有效期'}</summary><div className="mt-3 grid gap-3">
-      <label className="grid gap-1">{en ? 'Purposes (comma separated)' : '用途（英文逗号分隔）'}<input className={input} value={purposes} disabled={busy} onChange={event => setPurposes(event.target.value)} /></label>
-      {grant.scoped && <><label className="grid gap-1">{en ? 'Resource references (JSON)' : '资源引用（JSON）'}<textarea className={input} rows={3} value={resources} disabled={busy} onChange={event => setResources(event.target.value)} /></label>
-      <label className="grid gap-1">{en ? 'Expiry (ISO date with timezone; empty for no expiry)' : '到期时间（含时区的 ISO 日期，留空为不限时）'}<input className={input} placeholder="2026-12-31T23:59:59+08:00" value={expiry} disabled={busy} onChange={event => setExpiry(event.target.value)} /></label></>}
-    </div></details>
-    {error && <p role="alert" className="text-danger">{error}</p>}
-    <button className={action} disabled={busy} type="submit">{en ? 'Save authorization' : '保存授权'}</button>
-  </form>
-}
 
 const SectionTitle: React.FC<{ icon: LucideIcon; to?: string; children: React.ReactNode }> = ({ icon: Icon, to, children }) => {
   const title = <>
@@ -117,56 +83,6 @@ const OverviewMetrics: React.FC<{ items: { label: string; value: React.ReactNode
     </div>)}
   </dl>
 )
-
-const PolicyEditor: React.FC<{
-  policy: SecurityPolicy
-  definitions: SecurityCenterState['mode_definitions']
-  copy: ReturnType<typeof securityCopy>
-  busy: boolean
-  inherit: boolean
-  onSave: (patch: SecurityPolicy) => void
-  onCancel?: () => void
-}> = ({ policy, definitions, copy, busy, inherit, onSave, onCancel }) => {
-  const initialBase = policy.base_preset || (policy.preset === 'custom' ? 'workspace-write' : policy.preset) || 'workspace-write'
-  const [base, setBase] = useState(initialBase)
-  const [rules, setRules] = useState<Record<string, 'allow' | 'confirm' | 'deny'>>({ ...(policy.rules || {}) })
-  useEffect(() => {
-    setBase(policy.base_preset || (policy.preset === 'custom' ? 'workspace-write' : policy.preset) || 'workspace-write')
-    setRules({ ...(policy.rules || {}) })
-  }, [policy])
-  const baseRules = definitions.find(row => row.id === base)?.rules || {}
-  const differences = Object.keys(rules).filter(name => rules[name] !== baseRules[name]).length
-  return <div className="space-y-4">
-    <label className="block text-sm">{getLang() === 'en' ? 'Base mode' : '基础方案'}
-      <select className={`${input} block mt-1 w-full`} value={base}
-        onChange={event => setBase(event.target.value as typeof base)}>
-        {definitions.filter(row => row.id !== 'custom').map(row => <option key={row.id} value={row.id}>{row.name[getLang() === 'en' ? 'en' : 'zh']}</option>)}
-      </select></label>
-    <p className="text-xs text-content-secondary">{getLang() === 'en' ? `${differences} differences` : `${differences} 项差异`}</p>
-    {ruleGroups.map(group => <section key={group.id}>
-      <h3 className="text-xs font-semibold text-content-secondary mb-1">{copy.groups[group.id]}</h3>
-      <div className="divide-y divide-default">{group.rules.map(name => <label key={name} className="py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <span><span className="block text-sm font-medium">{copy.rules[name].name}</span><span className="block text-xs text-content-secondary">{copy.rules[name].help}</span></span>
-        <select aria-label={copy.rules[name].name} disabled={busy} className={`${input} w-full sm:w-44`}
-          value={rules[name] || (inherit ? '' : baseRules[name])}
-          onChange={event => setRules(value => {
-            const next = { ...value }
-            if (event.target.value) next[name] = event.target.value as 'allow' | 'confirm' | 'deny'
-            else delete next[name]
-            return next
-          })}>
-          {inherit && <option value="">{copy.decisions.inherit}</option>}
-          <option value="allow">{copy.decisions.allow}</option><option value="confirm">{copy.decisions.confirm}</option><option value="deny">{copy.decisions.deny}</option>
-        </select>
-      </label>)}</div>
-    </section>)}
-    <div className="flex flex-wrap gap-3 text-sm">
-      <button type="button" className="text-accent" onClick={() => setRules({ ...baseRules })}>{getLang() === 'en' ? 'Restore base' : '恢复基础方案'}</button>
-      <button type="button" onClick={() => { setRules({ ...(policy.rules || {}) }); onCancel?.() }}>{getLang() === 'en' ? 'Cancel' : '取消'}</button>
-      <button type="button" disabled={busy} className={action} onClick={() => onSave({ preset: 'custom', base_preset: base, rules })}>{getLang() === 'en' ? 'Save custom' : '保存自定义'}</button>
-    </div>
-  </div>
-}
 
 const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const copy = securityCopy(getLang())
@@ -199,14 +115,10 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [selectedProject, setSelectedProject] = useState('')
-  const [extraRoot, setExtraRoot] = useState('')
   const [secretName, setSecretName] = useState('')
   const [customSecretName, setCustomSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
-  const [projectDraft, setProjectDraft] = useState<SecurityPolicy | null>(null)
-  const [conversationDraft, setConversationDraft] = useState<SecurityPolicy | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -229,11 +141,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       setToolCatalog(tools)
       setPending(confirmations as typeof pending)
       setError('')
-      setSelectedProject((previous) =>
-        state.projects.some((item) => item.path === previous)
-          ? previous
-          : state.project || state.projects[0]?.path || '',
-      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.saveFailed)
     }
@@ -264,19 +171,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       setBusy(false)
     }
   }
-  const saveGlobal = (patch: SecurityPolicy) => {
-    if (!center) return Promise.resolve(false)
-    // Global defaults only store product presets. Do not carry legacy custom
-    // fields (base_preset / rule overrides) from an older global snapshot.
-    return mutate(() =>
-      apiClient.saveSecurityPolicy('global', {
-        preset: patch.preset,
-        rules: {},
-        connections: patch.connections || center.global_policy.connections || {},
-      }),
-    )
-  }
-  const project = center?.projects.find((item) => item.path === selectedProject)
   const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
   const requestedSecret = new URLSearchParams(location.search).get('secret') || ''
   useEffect(() => { setSecretName(requestedSecret); setSecretValue('') }, [requestedSecret])
@@ -285,113 +179,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
     ...(center?.secrets.map(item => item.name) || []),
     ...(secretName && secretName !== 'other' ? [secretName] : []),
   ])]
-  useEffect(() => {
-    setProjectDraft(project ? { ...project.policy, rules: { ...(project.policy.rules || {}) } } : null)
-  }, [project?.path, project?.policy])
-  useEffect(() => {
-    if (!center) return
-    const policy = center.project ? center.project_policy : center.conversation_policy
-    setConversationDraft({ ...policy, rules: { ...(policy.rules || {}) } })
-  }, [center?.project, center?.project_policy, center?.conversation_policy])
-  const saveProject = (patch: SecurityPolicy) => {
-    if (!project) return Promise.resolve(false)
-    return mutate(() =>
-      apiClient.saveSecurityPolicy(
-        'project',
-        patch.preset === 'custom' ? patch : { preset: patch.preset, rules: {}, connections: patch.connections || {} },
-        { project: project.path, session: sid || undefined },
-      ),
-      center?.project ? copy.projectAffectsAll : copy.saved,
-    )
-  }
-  const saveConversation = (patch: SecurityPolicy) => {
-    if (!sid || !center) return Promise.resolve(false)
-    const targetPolicy =
-      patch.preset === 'custom' ? patch : { preset: patch.preset, rules: {}, connections: patch.connections || {} }
-    return mutate(
-      () => apiClient.saveSecurityPolicy('conversation', targetPolicy, { session: sid }),
-      center.project ? copy.projectAffectsAll : copy.saved,
-    )
-  }
-  const renderScopedPresets = (
-    draft: SecurityPolicy | null,
-    setDraft: (value: SecurityPolicy) => void,
-    onSave: (patch: SecurityPolicy) => void | Promise<boolean>,
-    help: string,
-  ) => {
-    if (!draft || !center) return null
-    const active = draft.preset === 'custom' ? 'custom' : draft.preset
-    return (
-      <div className="mt-4 space-y-4">
-        <p className={faded}>{help}</p>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-2">
-          {center.mode_definitions
-            .filter((entry) => (SCOPED_PRESETS as readonly string[]).includes(entry.id))
-            .map((entry) => (
-              <button
-                type="button"
-                key={entry.id}
-                disabled={busy}
-                onClick={() => {
-                  if (entry.id === 'custom') {
-                    const base = draft.base_preset || (draft.preset !== 'custom' ? draft.preset : 'workspace-write')
-                    const baseRules =
-                      center.mode_definitions.find((row) => row.id === base)?.rules || center.effective_rules
-                    setDraft({
-                      preset: 'custom',
-                      base_preset: base,
-                      rules: { ...(Object.keys(draft.rules || {}).length ? draft.rules : baseRules) },
-                      connections: draft.connections || {},
-                      extra_roots: draft.extra_roots,
-                    })
-                    return
-                  }
-                  setDraft({ preset: entry.id, rules: {}, connections: draft.connections || {}, extra_roots: draft.extra_roots })
-                }}
-                aria-pressed={active === entry.id}
-                className={`px-4 py-3 rounded-btn text-left border min-h-24 ${active === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
-              >
-                <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
-                <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
-                  {entry.description[getLang() === 'en' ? 'en' : 'zh']}
-                </span>
-              </button>
-            ))}
-        </div>
-        {draft.preset === 'custom' ? (
-          <PolicyEditor
-            policy={draft}
-            definitions={center.mode_definitions}
-            copy={copy}
-            busy={busy}
-            inherit={false}
-            onSave={(patch) => {
-              void onSave(patch)
-            }}
-            onCancel={() => void load()}
-          />
-        ) : (
-          <button type="button" disabled={busy} className={action} onClick={() => void onSave(draft)}>
-            {copy.savePermission}
-          </button>
-        )}
-      </div>
-    )
-  }
-  const overrideSummary = (policy: SecurityPolicy) => {
-    const entries = Object.entries(policy.rules || {})
-    return entries.length ? (
-      <div className="flex flex-wrap gap-2 mt-3">
-        {entries.map(([name, value]) => (
-          <span key={name} className="rounded-btn bg-surface-2 px-2.5 py-1 text-xs text-content-secondary">
-            {securityRuleName(copy, name)} · {copy.decisions[value]}
-          </span>
-        ))}
-      </div>
-    ) : (
-      <p className={`${faded} mt-3`}>{copy.noOverrides}</p>
-    )
-  }
   const eventList = (items: SecurityRecord[]) =>
     items.length ? (
       <div className="divide-y divide-default">
@@ -551,7 +338,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                       ]} />
                       {taskSummary.modes && (
                         <div className="mt-5 border-t border-default pt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs leading-5 text-content-secondary">
-                          {(['read-only', 'workspace-write', 'full-access', 'custom'] as const).map((mode) => (
+                          {(['read-only', 'workspace-write', 'full-access'] as const).map((mode) => (
                             <span key={mode}>
                               {modeLabel(copy, mode)} <span className="font-medium tabular-nums text-content">{taskSummary.modes?.[mode] ?? 0}</span>
                             </span>
@@ -645,131 +432,17 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               </div>
               )
             })()}
-            {tab === 'permissions' && (
-              <div className="space-y-5">
-                <section className={card}>
-                  <h2 className={heading}>{copy.presetsTitle}</h2>
-                  <p className={`${faded} mt-1`}>{copy.presetsHelp}</p>
-                  {(center.global_policy.preset === 'custom' || center.global_policy.base_preset) && (
-                    <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{copy.presetsLegacyCustom}</p>
-                  )}
-                  <div className="mt-4 grid sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {center.mode_definitions
-                      .filter((entry) => (DEFAULT_PRESETS as readonly string[]).includes(entry.id))
-                      .map((entry) => (
-                      <button
-                        type="button"
-                        key={entry.id}
-                        disabled={busy}
-                        onClick={() => {
-                          void saveGlobal({ preset: entry.id, rules: {} })
-                        }}
-                        aria-pressed={center.global_policy.preset === entry.id}
-                        className={`px-4 py-3 rounded-btn text-left border min-h-28 ${center.global_policy.preset === entry.id ? 'border-accent bg-accent-soft' : 'border-default hover:bg-surface-2'}`}
-                      >
-                        <span className="font-semibold text-sm">{entry.name[getLang() === 'en' ? 'en' : 'zh']}</span>
-                        {entry.id === 'workspace-write' && (
-                          <span className="ml-2 text-xs text-accent">{copy.recommended}</span>
-                        )}
-                        <span className="block text-xs text-content-secondary mt-2 leading-relaxed">
-                          {entry.description[getLang() === 'en' ? 'en' : 'zh']}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                <section className={card}>
-                  <h2 className={heading}>{copy.projectsTitle}</h2>
-                  <p className={`${faded} mt-1 mb-3`}>{copy.projectsHelp}</p>
-                  <select
-                    aria-label={copy.selectProject}
-                    className={`${input} w-full`}
-                    value={selectedProject}
-                    onChange={(event) => setSelectedProject(event.target.value)}
-                  >
-                    <option value="">{copy.selectProject}</option>
-                    {center.projects.map((item) => (
-                      <option key={item.path} value={item.path}>
-                        {item.name} · {item.path}
-                      </option>
-                    ))}
-                  </select>
-                  {project ? (
-                    <>
-                      {overrideSummary(project.policy)}
-                      {renderScopedPresets(projectDraft, setProjectDraft, saveProject, copy.projectSharedHelp)}
-                    </>
-                  ) : (
-                    <p className={`${faded} mt-3`}>{copy.noProject}</p>
-                  )}
-                </section>
-                {sid && (
-                  <section className={card}>
-                    <h2 className={heading}>{copy.conversationTitle}</h2>
-                    <p className={`${faded} mt-2`}>{copy.conversationHelp}</p>
-                    <p className="text-xs text-content-tertiary mt-1 break-all">
-                      {center.project || copy.defaultWorkspace}
-                    </p>
-                    {overrideSummary(center.project ? center.project_policy : center.conversation_policy)}
-                    {renderScopedPresets(
-                      conversationDraft,
-                      setConversationDraft,
-                      saveConversation,
-                      center.project ? copy.projectSharedHelp : copy.standaloneConversationHelp,
-                    )}
-                    <label className="block text-sm mt-4">
-                      {copy.extraRoot}
-                      <span className="block text-xs text-content-secondary mt-1">{copy.extraRootHelp}</span>
-                      <div className="flex gap-2 mt-2">
-                        <input
-                          className={`${input} flex-1`}
-                          value={extraRoot}
-                          onChange={(event) => setExtraRoot(event.target.value)}
-                          placeholder={copy.pathPlaceholder}
-                        />
-                        <button
-                          disabled={busy || !extraRoot.trim()}
-                          className={action}
-                          onClick={() => {
-                            const base = center.project ? center.project_policy : center.conversation_policy
-                            void saveConversation({
-                              ...base,
-                              extra_roots: [
-                                ...(center.conversation_policy.extra_roots || []),
-                                extraRoot.trim(),
-                              ],
-                            })
-                            setExtraRoot('')
-                          }}
-                        >
-                          {copy.add}
-                        </button>
-                      </div>
-                    </label>
-                    {(center.conversation_policy.extra_roots || []).map((root) => (
-                      <div key={root} className="flex justify-between items-center text-sm mt-2">
-                        <span className="break-all">{root}</span>
-                        <button
-                          disabled={busy}
-                          className="text-danger"
-                          onClick={() => {
-                            const base = center.project ? center.project_policy : center.conversation_policy
-                            void saveConversation({
-                              ...base,
-                              extra_roots: (center.conversation_policy.extra_roots || []).filter(
-                                (item) => item !== root,
-                              ),
-                            })
-                          }}
-                        >
-                          {copy.remove}
-                        </button>
-                      </div>
-                    ))}
-                  </section>
-                )}
-              </div>
-            )}
+            {tab === 'permissions' && <div className="space-y-6">
+              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Default template for new conversations' : '新建对话默认模板'}</h2>
+                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'Changes affect new conversations only. Scheduled tasks start with Read Only and their own capability grants.' : '仅影响新建对话，已有对话保持独立权限。新建定时任务默认只读，并单独选择所需能力。'}</p>
+                <RunPolicyEditor kind="template" subject="default" />
+              </section>
+              {sid && <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Current conversation' : '当前对话'}</h2>
+                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'Project conversations share a workspace and keep independent permissions.' : '项目内对话共享工作区，运行权限独立保存。'}</p>
+                <RunPolicyEditor kind="session" subject={sid} />
+              </section>}
+              <PermissionMigrationPanel />
+            </div>}
             {tab === 'background' && (
               <section className={card}>
                 <h2 className={heading}>{copy.backgroundTitle}</h2>
@@ -845,6 +518,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             )}
             {tab === 'connections' && (
               <div className="space-y-3">
+                <div className={card}><ResourceAuthorizationPanel /></div>
+
                 <div>
                   <h2 className={heading}>{copy.connectionsTitle}</h2>
                   <p className={`${faded} mt-1`}>{copy.connectionsHelp}</p>
@@ -902,6 +577,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                               connection.id,
                               !connection.allowed,
                               connection.scopes,
+                              connection.revision,
                             ),
                           )
                         }
@@ -911,11 +587,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     )}
                   </section>
                 ))}
-                {(center.data_access?.inherited_grants || []).length > 0 && <section className={card}>
-                  <h2 className={heading}>{getLang() === 'en' ? 'Inherited MCP authorizations' : 'MCP 迁移授权'}</h2>
-                  <p className={`${faded} mt-1`}>{getLang() === 'en' ? 'Existing scopes are preserved. Connection and permission policies still apply.' : '保留迁移前的授权范围；连接开关和统一权限策略仍然生效。'}</p>
-                  {center.data_access?.inherited_grants?.map(grant => <McpGrantEditor key={grant.id + ':' + grant.revision} grant={grant} busy={busy} onSave={value => { void mutate(() => apiClient.updateMcpAccess(value), copy.saved) }} />)}
-                </section>}
               </div>
             )}
             {tab === 'secrets' && (
@@ -1057,7 +728,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </section>
               </div>
             )}
-            {tab === 'plugins' && <PluginSettings baseUrl={baseUrl} authorizationOnly pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} />}
+            {tab === 'plugins' && <div className="space-y-6"><div className={card}><RuntimeAuthorizationPanel /></div><PluginSettings baseUrl={baseUrl} authorizationOnly pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} /></div>}
             {tab === 'activity' && (
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">

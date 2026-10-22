@@ -188,7 +188,7 @@ class PluginAuthorizationStore:
             if parent and (parent.revoked or parent.plugin_id != plugin_id or parent.user_id != user_id or
                            (purpose not in parent.purposes and 'any' not in parent.purposes) or
                            (parent.valid_until is not None and _expiry(parent.valid_until) <= now)):
-                raise PermissionError('scoped grant parent is no longer valid')
+                raise PermissionError('scoped grant denied: parent is no longer valid')
             candidates = [grant for grant in grants.values() if grant.parent_ref == grant_ref and
                           grant.plugin_id == plugin_id and grant.user_id == user_id and
                           (grant.consumer_plugin_id == consumer_plugin_id or

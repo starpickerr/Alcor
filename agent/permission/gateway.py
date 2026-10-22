@@ -520,10 +520,14 @@ class SecurityGateway:
             hard_reason = "Account is outside the current scope; the tool did not run."
         connection = _connections.get(tool_name, resource if resource in ("github", "external_api") else tool_name if resource_kind == ResourceKind.EXTERNAL else "")
         connections = policy.get('connections', {})
+        from core.security.migration import resource_authority_migrated
+        migrated_resources = canonical and resource_authority_migrated()
+        if migrated_resources:
+            connections = {}
         grants = [connections.get(connection, {})]
         if canonical:
             from core.security.service import SecurityService
-            grants.extend(SecurityService.legacy_connection_restrictions(connection))
+            grants.extend(SecurityService.legacy_connection_restrictions(connection, session_id=session_id, agent_id=agent_id))
         # A protocol migration cannot erase the user's existing connection denial/scopes.
         if connection in {'mcp:email', 'mcp:elearning'}:
             grants.append(connections.get(connection.removeprefix('mcp:'), {}))

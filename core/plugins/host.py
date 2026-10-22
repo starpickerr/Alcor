@@ -278,6 +278,7 @@ class PluginSession:
             from core.security.runtime_trust import plugin_trusted
             from core.plugins.storage import private_data_handle
             storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
+            self._storage_directory = storage
             plan = prepare_extension(cmd, self.plugin_root, storage, env, trusted=plugin_trusted(
                 self.plugin_root, self.plugin_id, self.package_digest, self.user_id),
                 read_roots=[Path(cmd[0]).resolve().parent])
@@ -590,7 +591,7 @@ class PluginSession:
             # A timed-out mutation may have committed, so invalidate before dispatch.
             default_store().bump_source_revision(self.plugin_id, self.user_id)
         from core.plugins.cancellation import worker_cancellation_handle
-        with worker_cancellation_handle() as cancellation_path:
+        with worker_cancellation_handle(directory=self._storage_directory) as cancellation_path:
             if cancellation_path:
                 invoke_params.setdefault('_hostDataHandle', {})['cancellationPath'] = cancellation_path
             with invocation_purpose_scope(purpose):

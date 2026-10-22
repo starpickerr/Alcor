@@ -41,6 +41,15 @@ class _IdAware(BaseTool):
 
 
 def _executor(tool):
+    # These synthetic tools only emit test results. Declare and authorize their
+    # read operation explicitly; unknown production tools remain conservative.
+    from core.security.capabilities import CapabilityDescriptor, register
+    from core.security.run_policy import default_template, save_run_policy
+    identifier = 'builtin:' + tool.name
+    register(tool.name, CapabilityDescriptor(identifier, 'builtin', 'read'))
+    template = default_template()
+    save_run_policy('template', 'default', {'capabilities': {**template['capabilities'], identifier: {'read': 'allow'}}})
+
     events = []
     executor = object.__new__(AgentStreamExecutor)
     executor.tools = {tool.name: tool}

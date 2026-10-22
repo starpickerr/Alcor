@@ -74,7 +74,8 @@ def check(domain, method, arguments, user, metadata, purpose=None):
             grant_resources = ([{'kind': 'connection', 'id': 'mcp:' + domain}]
                               if resources == [{'kind': 'user', 'id': user}] else resources)
             for resource in grant_resources:
-                SecurityService.authorize_resource(resource, OPERATIONS[domain].get(method, 'unknown'))
+                SecurityService.authorize_resource(resource, OPERATIONS[domain].get(method, 'unknown'),
+                    purpose='background' if purpose == 'background' else None, legacy_connection='mcp:' + domain)
             return {'resourceScope': {'userId': user, 'resources': resources}}
         return None
     from common.runtime_identity import current_identity

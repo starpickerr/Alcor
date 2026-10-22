@@ -2048,6 +2048,10 @@ class DesktopChannel(ChatChannel):
             '/api/security/activity', 'SecurityActivityHandler',
             '/api/security/center', 'SecurityCenterHandler',
             '/api/security/policy', 'SecurityPolicyHandler',
+            '/api/security/run-policy', 'SecurityRunPolicyHandler',
+            '/api/security/migration', 'SecurityMigrationHandler',
+            '/api/security/resources', 'SecurityResourceGrantsHandler',
+            '/api/security/runtime-trust', 'SecurityRuntimeTrustHandler',
             '/api/security/connections', 'SecurityConnectionsHandler',
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
@@ -6144,29 +6148,141 @@ class SecurityCenterHandler:
             return _api_reject("Security", error)
 
 
+def _permission_control():
+    from core.security.control import PermissionControl
+    def tasks(agent):
+        from application.api import Application
+        from common.runtime_identity import identity_scope
+        with identity_scope(agent_id=agent):
+            return Application.scheduler(_scheduler_store())
+    return PermissionControl(task_service=tasks)
+
+
+class SecurityRunPolicyHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        params = web.input(kind='template', subject='default', agent='')
+        try:
+            return json.dumps({'status': 'success', **_permission_control().read(
+                params.kind, params.subject, params.agent or None)}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permissions', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            if set(body) - {'kind', 'subject', 'agent', 'policy'}:
+                raise ValueError('Invalid permission control fields')
+            return json.dumps({'status': 'success', **_permission_control().save(body.get('kind'),
+                body.get('subject'), body.get('policy'), body.get('agent'))}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permissions', error)
+
+
+class SecurityMigrationHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.control import require_owner
+        from core.security.migration import PermissionMigration
+        try:
+            require_owner()
+            migration = PermissionMigration()
+            return json.dumps({'status': 'success', 'preview': migration.preview(), 'verification': migration.verify()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permission migration', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.security.control import require_owner
+        from core.security.migration import PermissionMigration
+        try:
+            require_owner()
+            body = json.loads(web.data() or b'{}')
+            migration = PermissionMigration()
+            if body.get('action') == 'apply':
+                result = migration.apply(body.get('fingerprint'))
+            elif body.get('action') == 'recover':
+                result = migration.recover()
+            elif body.get('action') == 'verify':
+                result = migration.verify()
+            else:
+                raise ValueError('Invalid permission migration action')
+            return json.dumps({'status': 'success', 'migration': result}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permission migration', error)
+
+
+class SecurityResourceGrantsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.control import ResourceControl
+        try:
+            return json.dumps({'status': 'success', **ResourceControl().inventory()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Resource authorization', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.security.control import ResourceControl
+        try:
+            body = json.loads(web.data() or b'{}')
+            action = body.pop('action', None)
+            control = ResourceControl()
+            if action == 'issue':
+                control.issue(body)
+            elif action == 'revoke' and set(body) == {'grant_id', 'revision'}:
+                control.revoke(body['grant_id'], body['revision'])
+            else:
+                raise ValueError('Invalid resource authorization action')
+            return json.dumps({'status': 'success', **control.inventory()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Resource authorization', error)
+
+
+class SecurityRuntimeTrustHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.control import RuntimeControl
+        try:
+            return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Execution environment', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.security.control import RuntimeControl
+        try:
+            return json.dumps({'status': 'success', **RuntimeControl().save(json.loads(web.data() or b'{}'))}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Execution environment', error)
+
+
 class SecurityPolicyHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.audit import record
         from agent.permission.center import save_global_policy, overview
-        from agent.permission.security_policy import validate_patch
-        from agent.workspace import project_store
         try:
             body = json.loads(web.data() or b"{}")
             target = body.get("target")
             policy = body.get("policy")
-            from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
             if target == "global":
                 saved = save_global_policy(policy)
             elif target == "project":
-                path = str(body.get("project") or "")
-                if not path:
-                    raise ValueError("project path required")
-                saved = project_store.set_security_policy(path, snapshot_policy(validate_patch(policy)))
-                migrate_project_conversation_policies(path)
-                record(operation="update", resource="project policy", project=path, decision="policy_change",
-                       reason="Project security policy updated.")
+                raise ValueError("Projects share workspace files; edit each conversation's independent permissions")
             elif target == "conversation":
                 session = str(body.get("session") or "")
                 if not session:
@@ -6185,38 +6301,17 @@ class SecurityConnectionsHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import save_global_policy, connections
-        from agent.permission.security_policy import LEGACY_PRESETS, default_policy, validate_patch
-        from config import conf, get_data_root, read_config_template
+        from agent.permission.center import connections
+        from core.security.control import ResourceControl
         try:
-            body = json.loads(web.data() or b"{}")
-            connection_id = str(body.get("id") or "")
-            if connection_id not in {item["id"] for item in connections()}:
-                raise ValueError("unknown connection")
-            allowed = body.get("allowed")
-            if not isinstance(allowed, bool):
-                raise ValueError("allowed must be a boolean")
-            stored = dict(conf().get("security_policy") or default_policy())
-            stored.setdefault("connections", {})[connection_id] = {"allowed": allowed,
-                "scopes": [str(item) for item in body.get("scopes", [])] if isinstance(body.get("scopes", []), list) else []}
-            if connection_id in {'mcp:email','mcp:elearning'}:
-                # An explicit edit replaces the compatibility alias. Merely
-                # displaying the new connection must never erase a denial.
-                stored['connections'].pop(connection_id.removeprefix('mcp:'),None)
-            legacy = stored.get("preset") == "custom" or stored.get("preset") in LEGACY_PRESETS
-            if legacy:
-                clean = validate_patch(stored, global_policy=False)
-                path = __import__("pathlib").Path(get_data_root()) / "config.json"
-                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-                data["security_policy"] = clean
-                from agent.permission.center import _write_config
-                _write_config(path, data)
-                conf()["security_policy"] = clean
-            else:
-                save_global_policy(stored)
-            return json.dumps({"status": "success", "connections": connections()}, ensure_ascii=False)
-        except ValueError as error:
-            return _api_reject("Security", error)
+            body = json.loads(web.data() or b'{}')
+            connection = body.get('id')
+            if connection not in {row['id'] for row in connections()}:
+                raise ValueError('Unknown connection')
+            ResourceControl().set_connection(connection, body.get('allowed'), body.get('scopes', []), body.get('revision'))
+            return json.dumps({'status': 'success', 'connections': connections()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Connection resources', error)
 
 
 class SecuritySecretsHandler:
@@ -6406,6 +6501,8 @@ class SchedulerHandler:
             }
             if "run_permission_mode" in body:
                 task["run_permission_mode"] = body.get("run_permission_mode")
+            if 'run_policy' in body:
+                task['run_policy'] = body['run_policy']
             store = _scheduler_store()
             next_run = SchedulerService(store, lambda _t: None)._calculate_next_run(task, now)
             if not next_run:
@@ -6497,7 +6594,7 @@ class SchedulerUpdateHandler:
             
             from application import Application
             patch = {key: body[key] for key in (
-                "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode")
+                "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode", "run_policy")
                      if key in body}
             task = Application.scheduler(store).update(
                 task_id, patch, agent_id=current_identity().agent_id, origin="user")
@@ -7701,10 +7798,8 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     project_dir = project_store.get_project_dir(session_id, agent_id)
     effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
     global_policy = resolve(global_permission)
-    project_policy = project_store.get_security_policy(project_dir) if project_dir else {}
-    session_policy = prefs.get("security_policy") or {}
-    layers = [name for name, patch in (("project", project_policy), ("session", session_policy)) if patch]
-    source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
+    source = "independent"
+    modes = [row for row in MODE_DEFINITIONS if row['id'] != 'custom']
     from agent.permission.process_sandbox import capability
     isolation = capability()
     if effective_mode(effective_policy) == "full-access":
@@ -7724,16 +7819,16 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "source": source,
             "preset": effective_policy["preset"],
             "global_preset": global_policy["preset"],
-            "mode": effective_mode(effective_policy),
+            "mode": effective_policy.get("filesystem_mode", effective_mode(effective_policy)),
             "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
             "rules": effective_rules(effective_policy),
             "policy": effective_policy,
-            "mode_definitions": MODE_DEFINITIONS,
+            "mode_definitions": modes,
             "authorized_roots": [_get_workspace_root(session_id, agent_id), *(effective_policy.get("extra_roots") or [])],
             "project": project_dir,
             "error": effective_policy.get("error"),
             "process_isolation": isolation,
-            "presets": [row["id"] for row in MODE_DEFINITIONS],
+            "presets": [row["id"] for row in modes],
         },
     }
 

@@ -65,6 +65,10 @@ def verify(mid, handle):
     return {'verified': False, 'schemaVersion': 1}
 ''')
     management = ManagementStore(tmp_path / 'packages')
+    from core.security.runtime_trust import RuntimeTrustStore
+    from core.plugins.package_ops import _sha256_tree
+    RuntimeTrustStore().set(user_id='local-default', kind='plugin', identifier='stella.bills',
+                           digest=_sha256_tree(package), trusted=True)
     with pytest.raises(RuntimeError, match='verification'):
         MigrationCoordinator(management).run(package, user_id='local-default',
                                              data_handle={'dbPath': str(data), 'namespace': 'stella.bills'})

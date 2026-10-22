@@ -215,9 +215,11 @@ def _load_global(mode: str, global_value: dict | None) -> dict:
     if global_value is None:
         from config import conf
         global_value = conf().get("security_policy")
-    if not isinstance(global_value, dict):
+    if global_value is None:
         return legacy_policy(mode)
     try:
+        if not isinstance(global_value, dict):
+            raise ValueError('invalid global policy')
         # Existing installs may still store a custom global snapshot; read it, but
         # validate_patch(..., global_policy=True) rejects new custom defaults.
         if global_value.get("preset") == "custom" or global_value.get("preset") in LEGACY_PRESETS:

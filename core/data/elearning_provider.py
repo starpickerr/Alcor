@@ -39,7 +39,8 @@ class ElearningProvider:
             return []
         account = settings['account_id']
         return [{'id': 'mcp:elearning:' + stable_id(account), 'name': 'eLearning',
-                 'kind': 'elearning', 'config': {'account_id': account},
+                 'kind': 'elearning', 'config': {'account_id': account,
+                     'course_ids': [course for course in settings.get('courses', []) if isinstance(course, str) and course.isdigit()]},
                  'default_usage': {'stella.briefing': bool(settings.get('enabled'))},
                  'storage_locations': [{'name': {'zh': '课程文件', 'en': 'Course files'}, 'path': settings.get('file_sync_root', '')}],
                  'resource_kinds': ['course', 'announcement', 'assignment', 'quiz', 'grade', 'file'],

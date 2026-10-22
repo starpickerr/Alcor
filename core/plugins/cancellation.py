@@ -26,14 +26,14 @@ def check_cancelled():
 
 
 @contextmanager
-def worker_cancellation_handle():
+def worker_cancellation_handle(*, directory=None):
     events = _EVENTS.get()
     if not events:
         yield None
         return
     check_cancelled()
-    with TemporaryDirectory(prefix='stella-invocation-') as directory:
-        path = Path(directory) / 'cancel'
+    with TemporaryDirectory(prefix='stella-invocation-', dir=directory) as invocation_directory:
+        path = Path(invocation_directory) / 'cancel'
         path.touch(mode=0o600)
         done = threading.Event()
         def monitor():
