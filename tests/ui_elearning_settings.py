@@ -27,6 +27,12 @@ source_enabled = [True]
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     data = {"status": "success"}
     if path == "/api/health":
         data = {"status": "ok"}
@@ -103,9 +109,9 @@ with sync_playwright() as p:
             selectDirectory:async()=>'/Users/starpickerr/Desktop/课程资料'};""")
         page.route("http://127.0.0.1:9876/**", backend)
         page.goto(URL + "/#/elearning", wait_until="networkidle")
-        expect(page).to_have_url(URL + '/#/data/sources/elearning')
-        expect(page.get_by_role('link', name='返回数据', exact=True)).to_be_visible()
-        expect(page.locator('aside').get_by_role('button', name='数据', exact=True)).to_have_class(re.compile('bg-accent-soft'))
+        expect(page).to_have_url(URL + '/#/skills/mcp/elearning?section=configuration')
+        expect(page.get_by_role('link', name='返回原页面', exact=True)).to_be_visible()
+        expect(page.locator('aside').get_by_role('button', name='能力', exact=True)).to_have_class(re.compile('bg-accent-soft'))
         root = page.get_by_role("textbox", name="课件保存目录", exact=True)
         expect(root).to_have_value("/initial")
         expect(

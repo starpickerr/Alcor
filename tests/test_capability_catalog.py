@@ -8,6 +8,7 @@ import pytest
 @pytest.fixture
 def catalog(tmp_path):
     from core.capabilities.catalog import CapabilityCatalog
+    from core.plugins.package_ops import _sha256_tree
     package = tmp_path / 'package'
     package.mkdir()
     (package / 'README.md').write_text('# Fixture plugin\n\nReal package documentation.')
@@ -15,8 +16,8 @@ def catalog(tmp_path):
               'intent': 'enabled', 'state': 'stopped', 'generation': 0, 'services': [],
               'manifest': {'description': 'Plugin description', 'contributes': {'tools': ['fixture.tool']}},
               'digest': 'a' * 64, 'contributes': {}, 'error': None}
-    manager = SimpleNamespace(inventory=lambda user: [plugin],
-        packages=SimpleNamespace(current_package=lambda name: {'path': str(package)}))
+    manager = SimpleNamespace(inventory=lambda user: [{**plugin, 'digest': _sha256_tree(package)}],
+        packages=SimpleNamespace(current_package=lambda name: {'path': str(package), 'digest': _sha256_tree(package)}))
     skill = SimpleNamespace(get_skills_config=lambda: {'review': {'name': 'review', 'description': 'Review changes',
         'source': 'custom', 'enabled': True}},
         get_skill=lambda name: SimpleNamespace(skill=SimpleNamespace(content='# Review\nCheck changes.')))
@@ -145,3 +146,14 @@ def test_http_plugin_store_failure_does_not_hide_builtin_inventory(monkeypatch, 
     assert result['items'][0]['id'] == 'read'
     assert 'plugins' in result['errors']
     assert 'DO_NOT_EXPOSE' not in json.dumps(result)
+
+
+def test_package_selection_change_cannot_read_docs_under_old_metadata(catalog, tmp_path):
+    from core.plugins.package_ops import _sha256_tree
+    service, package = catalog
+    replacement = tmp_path / 'replacement'
+    replacement.mkdir()
+    (replacement / 'README.md').write_text('DO_NOT_EXPOSE replacement package')
+    service.plugin_manager.packages.current_package = lambda name: {'path':str(replacement), 'digest':_sha256_tree(replacement)}
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert 'DO_NOT_EXPOSE' not in json.dumps(detail)

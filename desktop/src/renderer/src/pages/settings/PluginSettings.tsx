@@ -56,6 +56,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
       .pluginRequest<{ plugins: PluginRow[] }>('runtime')
       .then((data) => {
         if (cancelled) return
+        if (!Array.isArray(data.plugins)) throw new Error(getLang() === 'zh' ? '无法读取插件目录，请重试。' : 'Could not read the plugin inventory. Retry.')
         setRows(data.plugins)
         setSelected((value) => {
           if (pluginId && data.plugins.some((item) => item.pluginId === pluginId)) return pluginId
@@ -86,7 +87,11 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
     void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
-        if (!cancelled) setDescriptors(result)
+        if (cancelled) return
+        if (!Array.isArray(result) || result.some(item => !Array.isArray(item.categories) || !Array.isArray(item.fields))) {
+          throw new Error(getLang() === 'zh' ? '无法读取插件配置，请重试。' : 'Could not read plugin settings. Retry.')
+        }
+        setDescriptors(result)
       })
       .catch((err) => {
         if (!cancelled) setError(String(err))
@@ -112,6 +117,9 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
       })
       .then((snapshot) => {
         if (!cancelled) {
+          if (!snapshot || !Number.isInteger(snapshot.revision) || !snapshot.values || typeof snapshot.values !== 'object' || Array.isArray(snapshot.values)) {
+            throw new Error(getLang() === 'zh' ? '插件配置响应无效，请重新读取。' : 'Invalid plugin settings response. Reload it.')
+          }
           setDrafts((previous) =>
             previous[draftKey] ? previous : { ...previous, [draftKey]: { snapshot, values: snapshot.values } },
           )

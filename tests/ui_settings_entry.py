@@ -12,6 +12,12 @@ test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     data = {'status': 'success'}
     if path == '/api/health':
         data = {'status': 'ok'}
@@ -96,11 +102,11 @@ with sync_playwright() as playwright:
             expect(page.get_by_text(label, exact=True).first).to_be_visible()
 
         nav.get_by_role('button', name='能力').click()
-        plugin = page.get_by_role('article', name='简报')
-        plugin.get_by_role('link', name='设置', exact=True).click()
-        expect(page).to_have_url(test_url + '/#/skills?tab=plugins&view=settings&plugin=stella.briefing')
+        page.get_by_role('link', name='简报', exact=True).click()
+        page.get_by_role('tab', name='配置', exact=True).click()
+        expect(page).to_have_url(test_url + '/#/skills/plugins/stella.briefing?section=configuration')
         expect(categories.get_by_role('button', name='简报', exact=True)).to_have_count(0)
-        expect(page.get_by_role('tab', name='插件', exact=True)).to_have_attribute('aria-selected', 'true')
+        expect(page.get_by_role('tab', name='配置', exact=True)).to_have_attribute('aria-selected', 'true')
         expect(page.get_by_role('button', name='添加邮箱')).to_have_count(0)
         expect(page.get_by_role('link', name='管理信息源', exact=True)).to_have_attribute('href', '#/data?section=sources')
         page.get_by_role('link', name='返回原页面').click()

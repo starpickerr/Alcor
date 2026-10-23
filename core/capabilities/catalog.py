@@ -116,7 +116,9 @@ class CapabilityCatalog:
                 current = self.plugin_manager.packages.current_package(identifier)
                 if current:
                     try:
-                        detail['overview'] = _document(current['path']) or detail['description']
+                        from core.plugins.package_ops import _sha256_tree
+                        if current.get('digest') == row['digest'] and _sha256_tree(Path(current['path'])) == row['digest']:
+                            detail['overview'] = _document(current['path']) or detail['description']
                     except OSError:
                         pass
             # Contract contributions are metadata, not a reason to start workers.

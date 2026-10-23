@@ -82,7 +82,7 @@ HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resou
 
 eLearning 的目录按课程和方法分别检查权限，未授权课程或文件方法不会阻断其他已授权资源；完全没有可读取资源权限时明确拒绝。历史课程内容通过原 Server 的查询窗口读取，文件由原 Server 提供元数据和上游链接，不将二进制伪装成正文。查看目录不推进简报消费游标，也不自动缓存正文、建立知识索引或加入模型上下文。简报继续使用同一 MCP 的既有后台消费接口，保留独立游标与现有历史数据。
 
-课程文件同步是来源所有者的真实操作，入口为数据页的 eLearning 配置区。`POST /api/data/elearning/sync-files` 经 `DataController.owner_operation` 选择唯一且仍存在的来源，再由 `DataService.owner_operation` 检查启用状态、账号、操作白名单和调用后的来源 revision；停用或配置变化时拒绝返回成功结果。接口严格转发现有 `sync_files` 参数，拒绝路径和身份注入；目录、课程范围、文件写权限、下载 manifest、防覆盖及重复执行仍由现有 MCP 与 Security 校验。用户必须先保存目录，界面才允许按需同步；修改过的本地文件保留。该操作与 Core 采集记录的同步、缓存清理和上游删除分开，没有新增自动下载任务或授权开关。
+课程文件同步是来源所有者的真实操作，入口为能力详情的 eLearning 配置标签（数据页信息源卡片直接进入此处）。`POST /api/data/elearning/sync-files` 经 `DataController.owner_operation` 选择唯一且仍存在的来源，再由 `DataService.owner_operation` 检查启用状态、账号、操作白名单和调用后的来源 revision；停用或配置变化时拒绝返回成功结果。接口严格转发现有 `sync_files` 参数，拒绝路径和身份注入；目录、课程范围、文件写权限、下载 manifest、防覆盖及重复执行仍由现有 MCP 与 Security 校验。用户必须先保存目录，界面才允许按需同步；修改过的本地文件保留。该操作与 Core 采集记录的同步、缓存清理和上游删除分开，没有新增自动下载任务或授权开关。
 
 ## 全局原生接口与验证
 
