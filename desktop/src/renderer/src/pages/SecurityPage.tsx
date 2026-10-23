@@ -7,7 +7,7 @@ import { getLang } from '../i18n'
 import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
 import RunPolicyEditor from '../components/RunPolicyEditor'
-import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
+import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
@@ -26,10 +26,10 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'permissions', 'background', 'connections', 'secrets', 'activity', 'privacy', 'plugins'] as const
+const tabs = ['overview', 'permissions', 'connections', 'secrets', 'activity', 'privacy', 'plugins'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
-  overview: ShieldCheck, permissions: SlidersHorizontal, background: Clock3,
+  overview: ShieldCheck, permissions: SlidersHorizontal,
   connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
 }
 
@@ -41,16 +41,6 @@ const modeLabel = (
   return (copy.presets as Record<string, { name: string }>)[mode]?.name || mode
 }
 
-const permissionSourceLabel = (
-  copy: ReturnType<typeof securityCopy>,
-  source: string | undefined,
-) => {
-  if (source === 'independent') return copy.backgroundSourceIndependent
-  if (source === 'project') return copy.backgroundSourceProject
-  if (source === 'conversation') return copy.backgroundSourceConversation
-  if (source === 'unspecified') return copy.backgroundSourceUnspecified
-  return copy.backgroundSourceUnknown
-}
 const card = 'min-w-0 rounded-card border border-default bg-surface p-5 sm:p-6'
 const overviewCard = `${card} shadow-sm`
 const metricValue = 'text-3xl font-semibold tracking-tight tabular-nums leading-none'
@@ -90,9 +80,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const requestedTab = new URLSearchParams(location.search).get('tab')
-  const tab: Tab = (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
+  const tab: Tab = requestedTab === 'background' ? 'permissions' : (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
   const setTab = (next: Tab) => navigate(next === 'overview' ? '/security' : `/security?tab=${next}`)
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
+  useEffect(() => {
+    if (requestedTab === 'background') navigate('/security?tab=permissions#background-tasks', { replace: true })
+    if (location.hash === '#background-tasks' && center) document.getElementById('background-tasks')?.scrollIntoView({ block: 'start' })
+  }, [requestedTab, navigate, location.hash, center])
   const [records, setRecords] = useState<SecurityRecord[]>([])
   const [availableEvents, setAvailableEvents] = useState<SecurityRecord[]>([])
   const [activityCounts, setActivityCounts] = useState<SecurityActivityCounts | null>(null)
@@ -326,7 +320,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={overviewCard}>
-                  <SectionTitle icon={Clock3} to="/security?tab=background">{copy.overviewBackgroundTitle}</SectionTitle>
+                  <SectionTitle icon={Clock3} to="/security?tab=permissions#background-tasks">{copy.overviewBackgroundTitle}</SectionTitle>
                   {!taskSummary || taskSummary.available === false ? (
                     <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
                   ) : (
@@ -433,89 +427,24 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )
             })()}
             {tab === 'permissions' && <div className="space-y-6">
-              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Default template for new conversations' : '新建对话默认模板'}</h2>
-                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'Changes affect new conversations only. Scheduled tasks start with Read Only and their own capability grants.' : '仅影响新建对话，已有对话保持独立权限。新建定时任务默认只读，并单独选择所需能力。'}</p>
+              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Default permissions' : '默认权限设置'}</h2>
+                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'All three modes can use MCP, plugins, skills and built-in tools. The mode limits each operation. Applies to new conversations; existing conversations keep their own mode.' : '三种模式均可调用 MCP、插件、Skill 和内置工具，操作受所选模式限制。默认设置仅影响新建对话，已有对话保持独立权限。'}</p>
                 <RunPolicyEditor kind="template" subject="default" />
               </section>
-              {sid && <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Current conversation' : '当前对话'}</h2>
-                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'Project conversations share a workspace and keep independent permissions.' : '项目内对话共享工作区，运行权限独立保存。'}</p>
-                <RunPolicyEditor kind="session" subject={sid} />
-              </section>}
-              <PermissionMigrationPanel />
-            </div>}
-            {tab === 'background' && (
-              <section className={card}>
+              <section id="background-tasks" className={`${card} scroll-mt-6`}>
                 <h2 className={heading}>{copy.backgroundTitle}</h2>
-                <p className={`${faded} mt-1`}>{copy.backgroundHelp}</p>
-                {(center.background_tasks || []).length === 0 ? (
-                  <p className={`${faded} mt-4`}>{copy.backgroundEmpty}</p>
-                ) : (
-                  <div className="mt-4 divide-y divide-default">
-                    {(center.background_tasks || []).map((task) => (
-                      <div key={task.id} className="py-4 space-y-3 text-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                          <div>
-                            <p className="font-medium">{task.name}</p>
-                            <p className="text-content-secondary mt-1">
-                              {task.enabled ? copy.backgroundEnabled : copy.backgroundPaused}
-                              {' · '}
-                              {permissionSourceLabel(copy, task.permission_source)}
-                              {' · '}
-                              {task.unknown
-                                ? copy.backgroundSourceUnknown
-                                : modeLabel(copy, task.effective_mode)}
-                            </p>
-                            <p className="text-xs text-content-secondary mt-1">
-                              {task.conversation_mode === 'source'
-                                ? copy.backgroundContextSource
-                                : task.conversation_mode === 'reuse'
-                                  ? copy.backgroundContextReuse
-                                  : task.conversation_mode === 'new'
-                                    ? copy.backgroundContextNew
-                                    : copy.backgroundSourceUnspecified}
-                            </p>
-                            {task.policy_error && (
-                              <p className="text-xs text-danger mt-1">{task.policy_error}</p>
-                            )}
-                          </div>
-                          <label className="text-xs text-content-secondary shrink-0">
-                            {copy.backgroundSavePermission}
-                            <select
-                              className={`${input} block mt-1`}
-                              disabled={busy}
-                              value={task.run_permission_mode || 'inherit'}
-                              onChange={(event) => {
-                                const value = event.target.value
-                                if (!window.confirm(copy.backgroundConfirmChange)) {
-                                  event.target.value = task.run_permission_mode || 'inherit'
-                                  return
-                                }
-                                void mutate(
-                                  () =>
-                                    apiClient.updateTask(task.id, {
-                                      run_permission_mode: value as 'read-only' | 'workspace-write' | 'full-access' | 'inherit',
-                                    }),
-                                  copy.saved,
-                                )
-                              }}
-                            >
-                              <option value="inherit">
-                                {task.unknown || !task.effective_mode
-                                  ? copy.backgroundInheritUnknown
-                                  : copy.backgroundInheritLabel(modeLabel(copy, task.effective_mode))}
-                              </option>
-                              <option value="read-only">{copy.presets['read-only'].name}</option>
-                              <option value="workspace-write">{copy.presets['workspace-write'].name}</option>
-                              <option value="full-access">{copy.presets['full-access'].name}</option>
-                            </select>
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className={`${faded} mt-2`}>{getLang() === 'en' ? 'Each task has its own mode and starts with Read Only. Background runs cannot wait for confirmation; use Full Access for operations that require it.' : '每个任务独立选择权限，新建任务默认只读。后台无法等待确认；需要此类操作时，请选择完全访问。'}</p>
+                {(center.background_tasks || []).length === 0 ? <p className={`${faded} mt-4`}>{copy.backgroundEmpty}</p> :
+                  <div className="mt-4 divide-y divide-default">{(center.background_tasks || []).map(task => <details key={`${task.owner_agent_id || ''}:${task.id}`} className="py-4">
+                    <summary className="cursor-pointer rounded-btn text-sm focus-visible:outline-2 focus-visible:outline-accent">
+                      <span className="font-medium">{task.name}</span>
+                      <span className="ml-3 text-content-secondary">{task.enabled ? copy.backgroundEnabled : copy.backgroundPaused}{' · '}{task.unknown ? copy.backgroundSourceUnknown : modeLabel(copy, task.effective_mode)}</span>
+                    </summary>
+                    {task.policy_error && <p className="mt-2 text-sm text-danger">{task.policy_error}</p>}
+                    <div className="mt-4"><RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} onSaved={() => { void load() }} /></div>
+                  </details>)}</div>}
               </section>
-            )}
+            </div>}
             {tab === 'connections' && (
               <div className="space-y-3">
                 <div className={card}><ResourceAuthorizationPanel /></div>
@@ -728,7 +657,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 </section>
               </div>
             )}
-            {tab === 'plugins' && <div className="space-y-6"><div className={card}><RuntimeAuthorizationPanel /></div><PluginSettings baseUrl={baseUrl} authorizationOnly pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} /></div>}
+            {tab === 'plugins' && <div className="space-y-6"><div className={card}><RuntimeAuthorizationPanel /></div><PluginSettings baseUrl={baseUrl} pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} /></div>}
             {tab === 'activity' && (
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">

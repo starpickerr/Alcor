@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { ChevronDown } from 'lucide-react'
 import Tooltip from './Tooltip'
 
@@ -34,6 +34,22 @@ const ComposerChip: React.FC<ComposerChipProps> = ({
   children,
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!open || !menuRef.current) return
+    const menu = menuRef.current
+    const place = () => {
+      menu.style.transform = ''
+      const rect = menu.getBoundingClientRect()
+      const shift = rect.right > window.innerWidth - 8 ? window.innerWidth - 8 - rect.right : rect.left < 8 ? 8 - rect.left : 0
+      menu.style.transform = `translateX(${shift}px)`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(menu)
+    window.addEventListener('resize', place)
+    return () => { observer.disconnect(); window.removeEventListener('resize', place) }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -64,7 +80,7 @@ const ComposerChip: React.FC<ComposerChipProps> = ({
       </Tooltip>
 
       {open && (
-        <div
+        <div ref={menuRef}
           className={`absolute bottom-full mb-1.5 max-h-[380px] overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5 ${
             align === 'end' ? 'right-0' : 'left-0'
           } ${menuClassName || 'w-80'}`}

@@ -63,7 +63,7 @@ export type AuthorizationRule = 'allow' | 'confirm' | 'deny'
 export type CapabilityOperations = Partial<Record<Operation, AuthorizationRule>>
 export interface RunPolicy {
   filesystem_mode: FileMode
-  capabilities: Record<string, CapabilityOperations>
+  capabilities?: Record<string, CapabilityOperations>
   policy_revision: number
   extra_roots?: string[]
   connections?: SecurityPolicy['connections']
@@ -136,6 +136,7 @@ export interface SecurityCenterState extends ApiResult {
 }
 
 export interface SecurityBackgroundTask {
+  owner_agent_id?: string
   id: string
   name: string
   enabled: boolean

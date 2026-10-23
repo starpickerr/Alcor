@@ -118,7 +118,7 @@ with sync_playwright() as playwright:
             page.goto(test_url + '/#/settings?tab=' + old, wait_until='networkidle')
             expect(page).to_have_url(test_url + '/#' + new)
         page.goto(test_url + '/#/skills?tab=plugins&view=settings&plugin=stella.tasks', wait_until='networkidle')
-        expect(page.get_by_role('link', name='管理插件授权', exact=True)).to_have_attribute('href', '#/security?tab=plugins&plugin=stella.tasks')
+        expect(page.get_by_role('link', name='管理插件授权', exact=True)).to_have_count(0)
         expect(page.get_by_role('button', name='权限与授权', exact=True)).to_have_count(0)
         expect(page.get_by_role('link', name='打开事务页面', exact=True)).to_be_visible()
         page.goto(test_url + '/#/general', wait_until='networkidle')

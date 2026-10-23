@@ -1,46 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiClient } from '../../api/client'
-import { Link } from 'react-router-dom'
 import { getLang, t } from '../../i18n'
-import { Grant, Method, PluginRow, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
-import { Btn, Dropdown, Group, Modal, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
+import { PluginRow, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
+import { Dropdown, Group, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
 import { hasPluginDomainPanel, PluginDomainPanel } from './PluginDomainPanels'
 
 type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conflict?: boolean }
-type Request = {
-  requestId: string
-  consumerPluginId: string
-  capability: string
-  purpose: string
-  resources: { kind: string; id: string }[]
-  methods: string[]
-}
-
 type Props = {
   baseUrl: string
-  authorizationOnly?: boolean
   pluginId?: string | null
   onPluginChange?: (pluginId: string) => void
 }
 
 /** Same shell as General / Assistant: one column of Group cards, no nested sidebar. */
-export default function PluginSettings({ baseUrl, pluginId, onPluginChange, authorizationOnly = false }: Props) {
+export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
   const [selected, setSelected] = useState('')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
   const [section, setSection] = useState('domain')
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
-  const [methods, setMethods] = useState<Method[]>([])
-  const [grants, setGrants] = useState<Grant[]>([])
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [capability, setCapability] = useState('')
-  const [consumer, setConsumer] = useState('')
-  const [purpose, setPurpose] = useState('interactive')
-  const [resourceKind, setResourceKind] = useState('user')
-  const [resourceIds, setResourceIds] = useState('')
-  const [request, setRequest] = useState<Request | null>(null)
 
   const row = rows.find((item) => item.pluginId === selected)
   const available = row?.intent === 'enabled' && !['maintenance', 'failed'].includes(row.state)
@@ -51,17 +32,16 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
   const draftKey = `${selected}/${section}`
   const draft = drafts[draftKey]
   const fields = category?.descriptor.fields.filter((field) => field.category === category.id) || []
-  const showDomain = !authorizationOnly && !!selected && hasPluginDomainPanel(selected)
+  const showDomain = !!selected && hasPluginDomainPanel(selected)
 
   const sectionOptions = useMemo(() => {
     const options: { value: string; label: string }[] = []
-    if (authorizationOnly) return [{ value: 'permissions', label: t('settings_plugin_grants_tab') }]
     if (showDomain) options.push({ value: 'domain', label: t('settings_plugin_domain_tab') })
     for (const item of categories) {
       options.push({ value: `${item.descriptor.id}/${item.id}`, label: item.title })
     }
     return options
-  }, [showDomain, categories, authorizationOnly])
+  }, [showDomain, categories])
 
   const selectPlugin = (next: string) => {
     setSelected(next)
@@ -99,14 +79,10 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
     if (!selected) return
     let cancelled = false
     setDescriptors([])
-    setMethods([])
-    setGrants([])
     setError('')
     setMessage('')
-    setConsumer(selected)
-    setResourceKind('user')
-    setSection(authorizationOnly ? 'permissions' : hasPluginDomainPanel(selected) ? 'domain' : '')
-    if (!authorizationOnly) void apiClient
+    setSection(hasPluginDomainPanel(selected) ? 'domain' : '')
+    void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
         if (!cancelled) setDescriptors(result)
@@ -114,31 +90,10 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
       .catch((err) => {
         if (!cancelled) setError(String(err))
       })
-    if (authorizationOnly) void apiClient
-      .pluginRequest<Grant[]>('authorization', { action: 'list', pluginId: selected })
-      .then((result) => {
-        if (!cancelled) setGrants(result)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err))
-      })
-    if (authorizationOnly && available) {
-      void apiClient
-        .pluginRequest<{ methods: Method[] }[]>('authorization', { action: 'describe', pluginId: selected })
-        .then((services) => {
-          if (cancelled) return
-          const all = services.flatMap((service) => service.methods)
-          setMethods(all)
-          setCapability(all[0]?.permissions[0] || '')
-        })
-        .catch((err) => {
-          if (!cancelled) setError(String(err))
-        })
-    }
     return () => {
       cancelled = true
     }
-  }, [selected, available, authorizationOnly])
+  }, [selected, available])
 
   useEffect(() => {
     if (sectionOptions.length && !sectionOptions.some(option => option.value === section)) setSection(sectionOptions[0].value)
@@ -180,10 +135,6 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
     } finally {
       setBusy(false)
     }
-  }
-
-  async function reloadGrants() {
-    setGrants(await apiClient.pluginRequest<Grant[]>('authorization', { action: 'list', pluginId: selected }))
   }
 
   async function save() {
@@ -235,33 +186,6 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
     })
   }
 
-  async function propose() {
-    if (!row) return
-    await run(async () => {
-      const resources =
-        resourceKind === 'user'
-          ? [{ kind: 'user', id: row.userId }]
-          : resourceIds
-              .split('\n')
-              .map((id) => id.trim())
-              .filter(Boolean)
-              .map((id) => ({ kind: resourceKind, id }))
-      setRequest(
-        await apiClient.pluginRequest<Request>('authorization', {
-          action: 'request',
-          pluginId: selected,
-          spec: {
-            consumerPluginId: consumer,
-            capability,
-            resources,
-            purpose,
-            methods: methods.filter((method) => method.permissions.includes(capability)).map((method) => method.name),
-          },
-        }),
-      )
-    })
-  }
-
   const edit = (name: string, value: unknown) =>
     setDrafts((previous) => ({
       ...previous,
@@ -273,27 +197,9 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
     label: item.name,
     hint: item.version || item.pluginId,
   }))
-  const capabilityOptions = [...new Set(methods.flatMap((method) => method.permissions))].map((value) => ({
-    value,
-    label: value,
-  }))
-  const consumerOptions = rows
-    .filter((item) => item.intent === 'enabled')
-    .map((item) => ({ value: item.pluginId, label: item.name }))
-  const purposeOptions = [
-    { value: 'interactive', label: t('settings_plugin_purpose_interactive') },
-    { value: 'background', label: t('settings_plugin_purpose_background') },
-  ]
-  const resourceOptions = [
-    { value: 'user', label: t('settings_plugin_resource_user') },
-    ...(selected === 'stella.email' ? [{ value: 'folder', label: t('settings_plugin_resource_folder') }] : []),
-    ...(selected === 'stella.elearning' ? [{ value: 'course', label: t('settings_plugin_resource_course') }] : []),
-  ]
-
   return (
     <div className="space-y-8">
-      {!authorizationOnly && selected && <Link className="inline-block text-sm text-accent" to={`/security?tab=plugins&plugin=${encodeURIComponent(selected)}`}>{getLang() === 'zh' ? '管理插件授权' : 'Manage plugin authorization'}</Link>}
-      <Group title={t('settings_plugin_picker_label')} description={authorizationOnly ? t('settings_plugin_grants_hint') : getLang() === 'zh' ? '管理插件功能与配置。访问授权统一在安全中心管理。' : 'Configure plugin behavior. Manage access in Security.'}>
+      <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
         {!rows.length ? (
           <Row label={t('settings_plugin_empty')} />
         ) : (
@@ -335,119 +241,6 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
         <div className="space-y-8">
           <PluginDomainPanel pluginId={selected} />
         </div>
-      )}
-
-      {authorizationOnly && section === 'permissions' && row && (
-        <>
-          <Group title={t('settings_plugin_grants_title')} description={t('settings_plugin_grants_hint')}>
-            {!available && (
-              <Row label={t('settings_plugin_unavailable')} hint={t('settings_plugin_unavailable_hint')} />
-            )}
-            {!grants.length && (
-              <Row label={t('settings_plugin_no_grants')} hint={t('settings_plugin_no_grants_hint')} />
-            )}
-            {grants.map((grant) => (
-              <Row
-                key={grant.grantId}
-                label={grant.capability}
-                hint={
-                  <>
-                    <span>
-                      {grant.purpose === 'background'
-                        ? t('settings_plugin_purpose_background')
-                        : t('settings_plugin_purpose_interactive')}
-                    </span>
-                    <span className="block mt-1 break-all">
-                      {t('settings_plugin_consumer')}: {grant.consumerPluginId}
-                    </span>
-                    <span className="block mt-0.5 break-all">
-                      {t('settings_plugin_scope')}:{' '}
-                      {grant.resources.map((resource) => `${resource.kind}: ${resource.id}`).join('；')}
-                    </span>
-                  </>
-                }
-                control={
-                  <button
-                    type="button"
-                    disabled={busy || grant.revoked}
-                    onClick={() =>
-                      void run(async () => {
-                        await apiClient.pluginRequest('authorization', { action: 'revoke', grantId: grant.grantId })
-                        await reloadGrants()
-                        setMessage(t('settings_plugin_revoked'))
-                      })
-                    }
-                    className={`h-8 px-3 rounded-btn text-sm cursor-pointer transition-colors disabled:opacity-50 ${
-                      grant.revoked
-                        ? 'border border-default text-content-tertiary'
-                        : 'border border-danger-border bg-danger-soft text-danger hover:bg-danger/15'
-                    }`}
-                  >
-                    {grant.revoked ? t('settings_plugin_revoked_label') : t('settings_plugin_revoke')}
-                  </button>
-                }
-              />
-            ))}
-          </Group>
-
-          {available && !!methods.length && (
-            <Group title={t('settings_plugin_request_title')} description={t('settings_plugin_request_hint')}>
-              <Row
-                label={t('settings_plugin_capability')}
-                control={
-                  <div className="w-56 max-w-full">
-                    <Dropdown value={capability} options={capabilityOptions} disabled={busy} onChange={setCapability} />
-                  </div>
-                }
-              />
-              <Row
-                label={t('settings_plugin_consumer')}
-                control={
-                  <div className="w-56 max-w-full">
-                    <Dropdown value={consumer} options={consumerOptions} disabled={busy} onChange={setConsumer} />
-                  </div>
-                }
-              />
-              <Row
-                label={t('settings_plugin_purpose')}
-                control={
-                  <div className="w-56 max-w-full">
-                    <Dropdown value={purpose} options={purposeOptions} disabled={busy} onChange={setPurpose} />
-                  </div>
-                }
-              />
-              <Row
-                label={t('settings_plugin_resource')}
-                control={
-                  <div className="w-56 max-w-full">
-                    <Dropdown value={resourceKind} options={resourceOptions} disabled={busy} onChange={setResourceKind} />
-                  </div>
-                }
-              />
-              {resourceKind !== 'user' && (
-                <Row label={t('settings_plugin_resource_ids')} hint={t('settings_plugin_resource_ids_hint')}>
-                  <textarea
-                    disabled={busy}
-                    value={resourceIds}
-                    onChange={(e) => setResourceIds(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 rounded-btn border border-strong bg-inset text-sm text-content placeholder:text-content-tertiary focus:outline-none focus:border-accent"
-                  />
-                </Row>
-              )}
-              <div className="px-4 py-3.5 flex justify-end">
-                <button
-                  type="button"
-                  disabled={busy || !capability}
-                  onClick={() => void propose()}
-                  className="h-8 px-4 rounded-btn bg-accent text-accent-contrast text-sm font-medium hover:bg-accent-hover cursor-pointer disabled:opacity-50"
-                >
-                  {t('settings_plugin_review_grant')}
-                </button>
-              </div>
-            </Group>
-          )}
-        </>
       )}
 
       {category && (
@@ -539,59 +332,6 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, auth
         </Group>
       )}
 
-      {message && section === 'permissions' && (
-        <p role="status" className="text-xs text-accent px-1">
-          {message}
-        </p>
-      )}
-
-      <Modal
-        open={!!request}
-        title={t('settings_plugin_approve_title')}
-        onClose={() => {
-          if (!busy) setRequest(null)
-        }}
-        footer={
-          <>
-            <Btn disabled={busy} onClick={() => setRequest(null)}>
-              {t('settings_plugin_cancel')}
-            </Btn>
-            <Btn
-              variant="primary"
-              disabled={busy || !request}
-              onClick={() =>
-                void run(async () => {
-                  if (!request) return
-                  await apiClient.pluginRequest('authorization', { action: 'approve', requestId: request.requestId })
-                  await reloadGrants()
-                  setRequest(null)
-                  setMessage(t('settings_plugin_approved'))
-                })
-              }
-            >
-              {t('settings_plugin_approve')}
-            </Btn>
-          </>
-        }
-      >
-        {request && (
-          <div className="space-y-3 text-sm text-content-secondary">
-            <p className="break-all text-content">
-              {`${t('settings_plugin_approve_allow')} ${request.consumerPluginId} · ${request.capability}（${
-                request.purpose === 'background'
-                  ? t('settings_plugin_purpose_background')
-                  : t('settings_plugin_purpose_interactive')
-              }）`}
-            </p>
-            <p className="break-all">
-              {request.resources.map((resource) => `${resource.kind}: ${resource.id}`).join('；')}
-            </p>
-            <p className="text-xs break-all">
-              {t('settings_plugin_methods')}: {request.methods.join('、')}
-            </p>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }

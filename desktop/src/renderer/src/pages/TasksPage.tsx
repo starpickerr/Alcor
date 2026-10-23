@@ -8,7 +8,7 @@ import type { SchedulerTask, TaskSchedule, TaskAction, NotificationRoute } from 
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 import PageHeader from '../components/PageHeader'
 import RunPolicyEditor, { PolicyFields } from '../components/RunPolicyEditor'
-import type { RunPolicy, CapabilityEntry } from '../api/client'
+import type { RunPolicy } from '../api/client'
 import { ResourceAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
 import { PROACTIVE_CHANNELS, notificationChannelError } from './taskChannel'
 
@@ -229,17 +229,8 @@ const TaskEditModal: React.FC<{
   const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
-  const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', capabilities: {}, policy_revision: 0 })
-  const [permissionCatalog, setPermissionCatalog] = useState<CapabilityEntry[]>([])
-  const [permissionError, setPermissionError] = useState('')
+  const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', policy_revision: 0 })
   const [resourceOpen, setResourceOpen] = useState(false)
-  useEffect(() => {
-    if (!isCreate) return
-    let cancelled = false
-    apiClient.getRunPolicy('template', 'default').then(result => { if (!cancelled) setPermissionCatalog(result.capabilities) })
-      .catch(cause => { if (!cancelled) setPermissionError(cause instanceof Error ? cause.message : String(cause)) })
-    return () => { cancelled = true }
-  }, [isCreate])
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -383,7 +374,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           session_id: sessionId,
-          run_policy: { filesystem_mode: newPolicy.filesystem_mode, capabilities: newPolicy.capabilities },
+          run_policy: { filesystem_mode: newPolicy.filesystem_mode },
           ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -478,9 +469,8 @@ const TaskEditModal: React.FC<{
         <Toggle checked={enabled} onChange={setEnabled} />
       </div>
 
-      {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'This task has its own policy and persistent workspace. Background sensitive operations require preauthorization.' : '任务使用独立权限和持久工作区。后台敏感操作需要在此预授权。'}</p>
-        {permissionError && <p role="alert" className="mb-3 text-sm text-danger">{permissionError}</p>}
-        <PolicyFields value={newPolicy} onChange={setNewPolicy} catalog={permissionCatalog} disabled={saving} />
+      {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'This task has its own policy and persistent workspace. Operations requiring confirmation need Full Access in background.' : '任务使用独立权限和持久工作区。后台无法等待确认，敏感操作需要完全访问。'}</p>
+        <PolicyFields value={newPolicy} onChange={setNewPolicy} disabled={saving} />
       </div>}
 
       <Field label={t('task_schedule_type')}>

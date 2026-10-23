@@ -81,21 +81,16 @@ with sync_playwright() as p:
     }""")
     one = page.get_by_test_id('policy-one')
     two = page.get_by_test_id('policy-two')
-    expect(one.get_by_label('文件与命令权限')).to_be_visible()
-    assert one.get_by_label('文件与命令权限').locator('option').count() == 3
-    one.get_by_label('文件与命令权限').select_option('read-only')
-    one.get_by_text('工作区外路径授权', exact=True).click()
-    one.get_by_label('额外授权目录（每行一个）').fill('/isolated/shared-files')
-    one.get_by_label('事务调用授权').select_option('manage')
+    expect(one.get_by_role('radiogroup', name='权限模式')).to_be_visible()
+    assert one.get_by_role('radio').count() == 3
+    expect(one.get_by_text('Agent 可用能力', exact=True)).to_have_count(0)
+    one.get_by_role('radio', name='只读', exact=True).check()
     one.get_by_role('button', name='保存权限', exact=True).click()
     expect(one.get_by_role('status')).to_contain_text('已保存')
-    assert saved[-1]['policy']['filesystem_mode'] == 'read-only'
-    assert saved[-1]['policy']['extra_roots'] == ['/isolated/shared-files']
-    assert saved[-1]['policy']['capabilities']['plugin:stella.tasks']['write'] == 'allow'
-    assert saved[-1]['policy']['capabilities']['plugin:stella.tasks']['delete'] == 'confirm'
-    expect(two.get_by_label('文件与命令权限')).to_have_value('workspace-write')
+    assert saved[-1]['policy'] == {'filesystem_mode': 'read-only', 'policy_revision': 1}
+    expect(two.get_by_role('radio', name='工作区写入', exact=True)).to_be_checked()
     reject[0] = True
-    one.get_by_label('文件与命令权限').select_option('full-access')
+    one.get_by_role('radio', name='完全访问', exact=True).check()
     one.get_by_role('button', name='保存权限', exact=True).click()
     expect(one.get_by_role('alert')).to_contain_text('权限版本已变化')
     page.screenshot(path='/tmp/stella-run-policy-desktop.png', full_page=True)
@@ -110,8 +105,8 @@ with sync_playwright() as p:
     chip.get_by_role('button').first.click()
     expect(chip.get_by_text('自定义', exact=True)).to_have_count(0)
     expect(chip.get_by_text('切换将同步此项目的其他对话。')).to_have_count(0)
-    chip.get_by_role('button', name='管理此对话能力', exact=True).click()
-    expect(chip.get_by_label('事务调用授权')).to_be_visible()
+    chip.get_by_role('button', name='设置对话权限', exact=True).click()
+    expect(chip.get_by_role('radiogroup', name='权限模式')).to_be_visible()
     page.evaluate("""async () => {
       const module = await import('/src/__test__/SecurityAuthorizationHarness.tsx'); module.mountSecurityAuthorizationTest()
     }""")
@@ -134,4 +129,4 @@ with sync_playwright() as p:
     expect(page.get_by_role('status').filter(has_text='运行选择已保存')).to_be_visible()
     assert runtime_choices[-1]['digest'] == 'a' * 64 and runtime_choices[-1]['trusted']
     browser.close()
-print('PASS: independent policies, three filesystem modes, manage excludes delete, revision error, desktop and narrow UI')
+print('PASS: independent policies, three filesystem modes, all capabilities follow mode, revision error, desktop and narrow UI')

@@ -79,7 +79,7 @@ def backend(route):
                 {'name': 'CUSTOM:c483bd9c', 'display_name': '灵算',
                  'source': 'custom model provider', 'configured': True},
                 {'name': 'CUSTOM:unnamed', 'source': 'custom model provider', 'configured': True},
-            ], pending=[], background_tasks=[],
+            ], pending=[], background_tasks=[{'id': 'task-one', 'name': '每日整理', 'owner_agent_id': 'default', 'enabled': True, 'permission_source': 'independent', 'effective_mode': 'read-only'}],
             privacy={'available': True, 'categories': [
                 {'id': 'conversations', 'name': {'zh': '对话记录', 'en': 'Conversations'}, 'bytes': 204800,
                  'path': '/isolated/conversations', 'retention': {'zh': '保留至删除', 'en': 'Until deleted'}, 'actions': []},
@@ -153,8 +153,8 @@ with sync_playwright() as playwright:
         connections_card = page.get_by_role('heading', name='外部连接', exact=True).locator('xpath=..')
         expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
         overview_links = [
-            ('新建对话默认模板', 'permissions', '新建对话默认模板'),
-            ('后台任务权限', 'background', '后台任务权限'),
+            ('新建对话默认模板', 'permissions', '默认权限设置'),
+            ('后台任务权限', 'permissions#background-tasks', '后台任务权限'),
             ('外部连接', 'connections', '连接与访问'),
             ('凭据', 'secrets', '服务凭据'),
             ('安全活动', 'activity', '安全活动'),
@@ -193,9 +193,20 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
-        default_card = page.get_by_role('heading', name='新建对话默认模板').locator('xpath=..')
+        default_card = page.get_by_role('heading', name='默认权限设置', exact=True).locator('xpath=..')
         expect(default_card).to_be_visible()
-        assert default_card.get_by_label('文件与命令权限').locator('option').count() == 3
+        assert default_card.get_by_role('radio').count() == 3
+        expect(page.get_by_text('Agent 可用能力', exact=True)).to_have_count(0)
+        expect(page.get_by_role('heading', name='当前对话', exact=True)).to_have_count(0)
+        expect(page.get_by_role('navigation', name='安全中心').get_by_role('button', name='后台任务权限', exact=True)).to_have_count(0)
+        page.get_by_text('每日整理', exact=True).click()
+        task_card = page.locator('#background-tasks')
+        expect(task_card.get_by_role('radio')).to_have_count(3)
+        task_card.get_by_role('radio', name='只读', exact=True).check()
+        task_card.get_by_role('button', name='保存权限', exact=True).click()
+        expect(task_card.get_by_role('status')).to_contain_text('已保存')
+        assert saved[-1]['kind'] == 'task' and saved[-1]['subject'] == 'task-one'
+        assert saved[-1]['agent'] == 'default'
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-permissions.png', full_page=True, animations='disabled')
             page.set_viewport_size({'width': 390, 'height': 844})
@@ -205,12 +216,12 @@ with sync_playwright() as playwright:
             page.set_viewport_size({'width': 1280, 'height': 900})
             page.get_by_role('button', name='展开侧栏').click()
         before = len(saved)
-        default_card.get_by_label('文件与命令权限').select_option('full-access')
+        default_card.get_by_role('radio', name='完全访问', exact=True).check()
         default_card.get_by_role('button', name='保存权限', exact=True).click()
         expect(default_card.get_by_role('status')).to_contain_text('权限已保存')
         assert len(saved) > before and saved[-1]['policy']['filesystem_mode'] == 'full-access'
         expect(page.get_by_role('heading', name='项目权限')).to_have_count(0)
-        for tab, heading in [('后台任务权限', '后台任务权限'), ('资源授权', '连接与访问'),
+        for tab, heading in [('资源授权', '连接与访问'),
                              ('安全活动', '安全活动'), ('数据访问', '数据访问')]:
             page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
             expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
@@ -289,8 +300,8 @@ with sync_playwright() as playwright:
         chip.get_by_role('button').first.click()
         expect(chip.get_by_text('自定义', exact=True)).to_have_count(0)
         expect(chip.get_by_text('仅作用于此对话。项目内对话共享文件，各自保存权限。', exact=True)).to_be_visible()
-        chip.get_by_role('button', name='管理此对话能力', exact=True).click()
-        chip.get_by_label('文件与命令权限').select_option('workspace-write')
+        chip.get_by_role('button', name='设置对话权限', exact=True).click()
+        chip.get_by_role('radio', name='工作区写入', exact=True).check()
         chip.get_by_role('button', name='保存权限', exact=True).click()
         expect(chip.get_by_role('status')).to_contain_text('权限已保存')
         chip.get_by_role('button', name='对话权限', exact=True).click()
