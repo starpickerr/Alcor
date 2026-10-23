@@ -32,7 +32,7 @@ def test_settings_retains_drafts_and_conflicts_without_plugin_permission_control
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={'width': 1080, 'height': 900})
             page.set_default_timeout(5000)
-            errors, calls, grants = [], [], []
+            errors, calls = [], []
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.add_init_script("localStorage.setItem('cow_auth_token', 'test-token'); localStorage.setItem('stella_lang', 'zh')")
             fields = [{'key': 'name', 'title': '名称', 'category': 'general', 'type': 'string'},

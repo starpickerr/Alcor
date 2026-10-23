@@ -149,6 +149,7 @@ with sync_playwright() as playwright:
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(url + '/#/security', wait_until='networkidle')
         expect(page.get_by_role('heading', name='安全中心')).to_be_visible()
+        expect(page.get_by_text('历史权限迁移与恢复', exact=True)).to_be_visible()
         expect(page.get_by_text('工作区写入', exact=True).first).to_be_visible()
         connections_card = page.get_by_role('heading', name='外部连接', exact=True).locator('xpath=..')
         expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
@@ -195,6 +196,7 @@ with sync_playwright() as playwright:
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
         default_card = page.get_by_role('heading', name='默认权限设置', exact=True).locator('xpath=..')
         expect(default_card).to_be_visible()
+        expect(page.get_by_text('历史权限迁移与恢复', exact=True)).to_have_count(0)
         assert default_card.get_by_role('radio').count() == 3
         expect(page.get_by_text('Agent 可用能力', exact=True)).to_have_count(0)
         expect(page.get_by_role('heading', name='当前对话', exact=True)).to_have_count(0)

@@ -7,7 +7,7 @@ import { getLang } from '../i18n'
 import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
 import RunPolicyEditor from '../components/RunPolicyEditor'
-import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
+import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
@@ -426,6 +426,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               </div>
               )
             })()}
+            {tab === 'overview' && <PermissionMigrationPanel />}
             {tab === 'permissions' && <div className="space-y-6">
               <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Default permissions' : '默认权限设置'}</h2>
                 <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'All three modes can use MCP, plugins, skills and built-in tools. The mode limits each operation. Applies to new conversations; existing conversations keep their own mode.' : '三种模式均可调用 MCP、插件、Skill 和内置工具，操作受所选模式限制。默认设置仅影响新建对话，已有对话保持独立权限。'}</p>
