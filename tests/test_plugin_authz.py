@@ -114,7 +114,7 @@ def test_durable_grant_instances_do_not_overwrite_each_other(tmp_path):
 def test_system_origin_cannot_hide_ambient_tool_identity(monkeypatch):
     from common.runtime_identity import identity_scope
 
-    session = PluginSession(Path("samples/plugins/alpha"), source_label="test", registry=PluginRegistry(),
+    session = PluginSession(Path("samples/plugins/alpha"), source_label="test", registry=PluginRegistry(), user_id="authz-owner",
                             authz=PluginAuthorizationStore())
     session.authz.issue(grant_ref="tool", plugin_id=session.plugin_id, user_id=session.user_id,
                         capabilities=["sample.ping"], purposes=["interactive", "tool", "job"])
@@ -127,7 +127,7 @@ def test_system_origin_cannot_hide_ambient_tool_identity(monkeypatch):
     monkeypatch.setattr("core.plugins.host._conversation_permission_denial", deny)
     try:
         session.start()
-        with identity_scope(agent_id="a1", session_id="s1"):
+        with identity_scope(user_id="authz-owner", agent_id="a1", session_id="s1"):
             with pytest.raises(PermissionError, match="conversation denied"):
                 session.invoke_contract(contract="stella.sample.alpha@1", method="ping", input_payload={},
                                         origin="system", grant_ref="tool")
@@ -243,7 +243,7 @@ def test_application_port_keeps_scheduled_identity(monkeypatch):
 def test_tool_origin_does_not_change_explicit_operation_purpose(monkeypatch):
     from common.runtime_identity import identity_scope
 
-    session = PluginSession(Path("samples/plugins/alpha"), source_label="test", registry=PluginRegistry(),
+    session = PluginSession(Path("samples/plugins/alpha"), source_label="test", registry=PluginRegistry(), user_id="authz-owner",
                             authz=PluginAuthorizationStore())
     session.authz.issue(grant_ref="read", plugin_id=session.plugin_id, user_id=session.user_id,
                         capabilities=["sample.ping"], purposes=["interactive"])
@@ -251,7 +251,7 @@ def test_tool_origin_does_not_change_explicit_operation_purpose(monkeypatch):
     monkeypatch.setattr("core.plugins.host._conversation_permission_denial", lambda **kw: checked.append(kw))
     try:
         session.start()
-        with identity_scope(agent_id="agent", session_id="session"):
+        with identity_scope(user_id="authz-owner", agent_id="agent", session_id="session"):
             result = session.invoke_contract(contract="stella.sample.alpha@1", method="ping", input_payload={},
                                              origin="system", grant_ref="read", purpose="interactive")
         assert result["status"] == "succeeded"

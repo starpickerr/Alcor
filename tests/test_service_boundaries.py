@@ -138,13 +138,13 @@ def test_plugin_ui_origin_cannot_hide_background_scope(work, monkeypatch):
     from core.plugins.host import PluginSession
     from core.plugins.registry import PluginRegistry
     authz = PluginAuthorizationStore()
-    session = PluginSession(Path('samples/plugins/alpha'), source_label='test', registry=PluginRegistry(), authz=authz)
+    session = PluginSession(Path('samples/plugins/alpha'), source_label='test', registry=PluginRegistry(), authz=authz, user_id='boundary-owner')
     authz.issue(grant_ref='interactive-only', plugin_id=session.plugin_id, user_id=session.user_id,
                 capabilities=['sample.ping'], purposes=['interactive'])
     monkeypatch.setattr('core.plugins.host._conversation_permission_denial', lambda **_: 'background denied')
     try:
         session.start()
-        with identity_scope(agent_id='alpha', session_id='output', task_id='daily'), execution_scope():
+        with identity_scope(user_id='boundary-owner', agent_id='alpha', session_id='output', task_id='daily'), execution_scope():
             with pytest.raises(PermissionError, match='purpose|background'):
                 session.invoke_contract(contract='stella.sample.alpha@1', method='ping', input_payload={},
                                         origin='ui', grant_ref='interactive-only')

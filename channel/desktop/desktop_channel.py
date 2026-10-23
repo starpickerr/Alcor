@@ -26,6 +26,7 @@ from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
+from channel.desktop.log_handlers import LogsEntriesHandler as LogsEntriesHandler
 from common import const
 from common import i18n
 from common.log import logger
@@ -8062,7 +8063,6 @@ class MessageDeleteHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
-from channel.desktop.log_handlers import LogsEntriesHandler
 
 
 class LogsHandler:

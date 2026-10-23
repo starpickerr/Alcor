@@ -62,7 +62,9 @@ class PluginResourceProvider:
                 input_payload=values, origin='system', grant_ref=user_grant_ref(gateway._GRANT_REF),
                 data_handle=domain_data_handle(self.plugin_id, plugin_user_id()), check_only=check_only)
             if result['status'] != 'succeeded':
-                raise RuntimeError((result.get('error') or {}).get('message', 'Resource owner read failed'))
+                error = result.get('error') or {}
+                exception = PermissionError if error.get('code') == 'permission_denied' else RuntimeError
+                raise exception(error.get('message', 'Resource owner read failed'))
             return result.get('value')
 
     def authorize(self, source, operation):

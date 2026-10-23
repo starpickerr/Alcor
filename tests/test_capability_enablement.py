@@ -710,6 +710,9 @@ def test_stdio_drainers_keep_process_streams_when_shutdown_interleaves(monkeypat
     # and isolation are covered by the real process tests, not this transport stub.
     monkeypatch.setattr('core.security.mcp_runtime.prepare_mcp', lambda config, env: (
         SimpleNamespace(argv=['not-run'], env=env, cwd=None, state={'mode': 'isolated'}), None))
+    # This transport fixture has no OS process/group; real descendant cleanup
+    # is verified with an actual MCP process in test_extension_sandbox.py.
+    monkeypatch.setattr('common.process_tree.stop_process_tree', lambda *args, **kwargs: None)
     errors = []
 
     class ImmediateThread:
