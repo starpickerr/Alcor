@@ -1,6 +1,6 @@
 # 权限重构验收记录
 
-适用范围：Core `172819f6` 与 Plugins `c3667a3` 之后的 permission-unification 分支。实现说明见[权限与执行边界](security-permission-modes.md)。最终安全审查结果和本地合并状态将继续补齐。
+适用范围：Core `172819f6` 与 Plugins `c3667a3` 之后的 permission-unification 分支。实现说明见[权限与执行边界](security-permission-modes.md)。独立审查、修复与限制见[最终审查记录](permission-unification-review.md)。
 
 ## 强制验收证据
 
@@ -14,7 +14,7 @@
 | 6 | 私有空间隔离、任务不借用项目根 | test_process_sandbox.py；test_run_policy.py::test_task_workspace_cannot_be_replaced_by_source_project |
 | 7 | 任务独立策略，模型不能持久提权 | test_task_run_policy.py，包含真实 automation Worker 路径 |
 | 8 | 插件/MCP 禁用前后复查、终止执行 | test_capability_enablement.py；test_extension_sandbox.py |
-| 9 | 未知 MCP 交互审批及后台预授权 | test_capability_authorization.py::test_unknown_mcp_requires_exact_approval_and_background_preauthorization |
+| 9 | 未知 MCP 交互审批及后台预授权 | test_capability_authorization.py::test_unknown_mcp_requires_exact_approval_and_background_preauthorization；test_resource_grants.py 的真实无映射 MCP 调用 |
 | 10 | 子 Agent / Agent Hub 受父上限约束 | test_subagent.py；test_task_run_policy.py；test_agent_hub_plugin_gateway.py |
 | 11 | 句柄/参数不能冒充用户或资源 | test_mcp_bound_resources.py；test_extension_sandbox.py::test_host_data_handle_cannot_replace_worker_user_or_namespace |
 | 12 | 插件/MCP 实际 OS 隔离、外部 CLI 沙箱 | test_extension_sandbox.py；test_plugin_runner_isolation.py；test_agent_hub_plugin_gateway.py |
@@ -35,12 +35,16 @@
 | Task 5 迁移/API/任务门禁 | 140 passed |
 | 真实资源/生命周期补充回归 | 62 passed |
 | Plugins 全部现有领域套件 | Bills 17、Briefing 23、Calendar 15、Tasks 46 passed（合计 101） |
-| Node 业务/UI 工具函数 | 20 passed |
+| Node 业务/UI 工具函数 | 24 passed（包含 runtimeLog 4 项） |
 | 完整桌面 build（含 renderer/main/typecheck） | PASS，保留现有 chunk 大小、vendor CSS 路径与 PostCSS 警告 |
 | Ruff / ESLint / UI 静态检查 | PASS（Core/Plugins Ruff、完整 ESLint、scripts/ui_check.py） |
-| Playwright | ui_run_policy.py、ui_security_modes.py、ui_tasks.py PASS；包含版本冲突、独立主体、资源撤销/恢复、受信任运行选择、凭据入口、桌面/窄屏/英文深色 |
-| Core 全量 | 2229 passed / 22 skipped / 5 warnings，165.30 秒；首轮暴露问题已逐项修复 |
-| 独立安全差异审查 | 待最终审查 |
+| Playwright | scripts/ui_check.py 全部 16 套 PASS，ui_run_policy.py 再次 PASS；日志专项 ui_logs.py PASS；包含嵌入式聊天、版本冲突、独立主体、资源撤销/恢复、受信任运行选择、凭据入口、桌面/窄屏/英文深色 |
+| Core 全量（最终实现 f788aaa6） | 2290 passed / 22 skipped / 5 warnings，197.03 秒；最终代码完整回归通过 |
+| 独立安全差异审查 | 唯一独立审查确认 8 Important、1 Minor；8 项均有 RED→GREEN 修复；最终验证补修聊天空值崩溃，保留 1 Minor，见审查记录 |
+
+跳过项已逐项复核：17 项缺少 PyInstaller 的冻结产物检查、3 项 Windows 集成检查、1 项需显式启用真实外部 Agent 的矩阵、1 项本地开发 Skill 脚本检查。本次 renderer/main 构建通过；没有构建冻结 Python 后端/安装包，不把这些跳过项记为通过。
+
+合并 develop 的日志更新后，保留完整日志工作台及日志采集；隔离 Worker 的日志桥导入和 MCP 后代停止问题已修复。最终静态检查整理动态路由导入，没有删减日志功能。开发 Agent 规范检查独立显示 SKIP（产品仓未包含本地规范），不计作通过。
 
 ## 数据与平台边界
 
@@ -50,4 +54,4 @@
 
 ## Git 与交付
 
-Core 与 Plugins 分别在专用任务分支提交。独立安全审查和最终回归通过后才合并本地 develop；不推送、不修改 main。原有 logging-workbench 分支以及任务外未跟踪副本保留。
+Core 与 Plugins 分别在 permission-unification 分支提交。Core 实现与审查修复截至 `f788aaa6`，Plugins 为 `6fd762c`；最终门禁通过。授权交付目标为两仓本地 develop，不推送、不修改 main。Core 先合入 develop `717966ef` 的 logging-workbench 更新再验证；已有 logging-workbench 分支和任务外未跟踪副本保留。

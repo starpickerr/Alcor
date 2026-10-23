@@ -24,6 +24,8 @@ def backend(route):
                                   auto_enabled=False, links=[], calendars=[], lists=[], conflicts=[])
     elif path in ('/api/calendar/categories', '/api/todos/categories'):
         data['categories'] = []
+    elif path == '/api/logs/entries':
+        data.update(entries=[], sources={}, next_cursor=None, truncated=False, scanned_bytes=0)
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.tasks', 'name': '事务', 'version': '1.0.0',
                             'firstParty': True, 'intent': 'enabled', 'state': 'ready'}]

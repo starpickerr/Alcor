@@ -12,21 +12,21 @@
 
 Read Only 允许读取授权工作区，限制直接文件写入和命令执行。取得事务 write 能力后仍可经事务服务创建事务。允许管理仅包含 read/write；delete、external_send、system_execute 分别审批或预授权。Full Access 放宽普通文件和命令限制，凭据、托管业务数据、其他私有空间及 Apple 系统授权继续受保护。
 
-`core/security/policy_store.py` 在原 authorization.sqlite 中保存用户、Agent、主体及 revision；`run_policy.py` 维护快照。UI 的模板、对话与任务编辑器使用同一 `/api/security/run-policy` 接口，携带 revision，过期修改拒绝覆盖。任务业务记录持有预期策略版本；跨存储提交中断时拒绝执行，需要用户修复。旧项目权限 API 拒绝写入。
+`core/security/policy_store.py` 在原 authorization.sqlite 中保存用户、Agent、主体及 revision；`run_policy.py` 维护快照。UI 的模板、对话与任务编辑器使用同一 `/api/security/run-policy` 接口，携带 revision，过期修改拒绝覆盖。任务业务记录持有预期策略版本；跨存储提交中断时拒绝执行；用户可在任务权限编辑器以 revision 0 对缺失策略进行 CAS 修复，旧修复请求不能覆盖新策略，模型不能执行该恢复。旧项目权限 API 拒绝写入。
 
 ## 调用与委托
 
-`SecurityService` 协调可信身份、能力可用性、RunPolicy、工作区、资源、审批和审计。Gateway 继续提供决策与交互审批。插件方法从服务契约取得操作分类；模型的名称、annotations 和身份参数不能授予权限。未知 MCP 操作在交互式执行时要求明确审批，后台需要 system_execute 预授权。
+`SecurityService` 协调可信身份、能力可用性、RunPolicy、工作区、资源、审批和审计。Gateway 继续提供决策与交互审批。插件方法从服务契约取得操作分类；模型的名称、annotations 和身份参数不能授予权限。未知 MCP 操作在交互式执行时要求明确审批，后台需要 system_execute 预授权。未知调用的连接资源授权也使用 system_execute，保留操作能力与连接资源两道校验。
 
-一次性审批绑定当前用户、Agent、会话/任务、完整策略版本、能力、操作和目标。受控 Core 服务适配可保留同一次已批准操作；MCP 同时要求参数一致。子 Agent 和 Agent Hub 使用父运行的权限上限。后台无审批弹窗或自动重试，缺少权限会记录失败原因，调整后手动重新运行。
+一次性审批绑定当前用户、Agent、会话/任务、完整策略版本、能力、操作和目标。受控 Core 服务适配可保留同一次已批准操作；MCP 同时要求参数一致。AgentHub 的选择器转换由 Core 绑定完整原请求和解析后的 provider/启动载荷，目标、嵌套参数和策略版本变化不能沿用批准。子 Agent 和 Agent Hub 使用父运行的权限上限；子 Agent 创建任务也要保留启动快照上限、文件工具限制、额外路径和旧明确拒绝。后台无审批弹窗或自动重试，缺少权限会记录失败原因，调整后手动重新运行。
 
-ResourceGrantStore 与既有 PluginAuthorizationStore/Data Service 授权由同一服务协调。连接开关是限制条件，不是账号正文的授权。授权父项被撤销或过期，子授权立即失效；调用前及返回数据前重新核验。
+ResourceGrantStore 与既有 PluginAuthorizationStore/Data Service 授权由同一服务协调。连接开关是限制条件，不是账号正文的授权。授权父项被撤销或过期，子授权立即失效；调用前及返回数据前重新核验。调用期间策略或授权变化会丢弃未释放正文，插件已提交的副作用仍按真实状态返回，不重复消耗一次审批。
 
 ## 插件、MCP 与命令隔离
 
 第三方插件和本地 MCP 默认使用实际 OS 隔离：macOS Seatbelt、Linux bubblewrap。运行时只开放代码、私有配置/缓存和 Core 明确提供的资源；隔离不可用时拒绝启动。第一方信任必须通过 Core 固定目录的完整包摘要校验，不能由名称或自定义 catalog 声明。
 
-用户可以对当前包/本地启动内容摘要明确选择受信任运行。受信任代码具有宿主文件和网络访问能力；内容变化使选择失效，撤销会停止受信任进程。安全中心显示实际运行模式，未运行状态不宣称已经隔离。远程 MCP 标为远程连接。
+用户可以对当前包/本地启动内容摘要明确选择受信任运行。受信任代码具有宿主文件和网络访问能力；内容变化使选择失效，撤销会停止受信任进程及普通后代。MCP 固定本地脚本和直接入口的摘要覆盖同包导入代码；无法固定实现的模块/eval/下载启动器或跨包 console entrypoint 必须使用隔离，或改用明确的本地脚本，不能复用不完整摘要的信任。安全中心显示实际运行模式，未运行状态不宣称已经隔离。远程 MCP 标为远程连接。
 
 文件工具和受限命令共同限制未授权的工作区外读取/写入。命令子进程继承边界，外部 Agent CLI 使用 Core 生成的沙箱计划。无隔离平台不回退为无限制启动。Windows 当前报告不可用，需用户明确选择适用的受信任运行。
 
