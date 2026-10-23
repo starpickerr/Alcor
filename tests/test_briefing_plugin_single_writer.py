@@ -10,7 +10,6 @@ from core.services import briefing_gateway
 
 def test_briefing_creates_and_recovers_todo_through_scoped_reverse_call(tmp_path, monkeypatch):
     from core.plugins import management
-    from core.plugins.authorization import AuthorizationService
     from core.services import todos_gateway, calendar_gateway, briefing_facade
     from common import state_dir
 
@@ -28,14 +27,6 @@ def test_briefing_creates_and_recovers_todo_through_scoped_reverse_call(tmp_path
         monkeypatch.setattr(gateway, 'DEFAULT_AUTHZ', authz)
     for name in ('briefing', 'todos', 'calendar'):
         monkeypatch.setattr(state_dir, name + '_db', lambda ensure=True, name=name: tmp_path / f'{name}.sqlite')
-    service = AuthorizationService(store, authz)
-    for domain in ('briefing', 'tasks', 'calendar'):
-        methods = service.describe(f'stella.{domain}', 'local-default')[0]['methods']
-        for capability in sorted({cap for method in methods for cap in method['permissions']}):
-            request = service.request(f'stella.{domain}', 'local-default', {'consumerPluginId':'stella.briefing',
-                'capability':capability, 'methods':[method['name'] for method in methods if capability in method['permissions']],
-                'resources':[{'kind':'user','id':'local-default'}], 'purpose':'interactive'})
-            service.approve('local-default', request['requestId'])
 
     def ok(method, **params):
         result = briefing_gateway.invoke_briefing(method, params, db_path=tmp_path / 'briefing.sqlite')
@@ -63,22 +54,16 @@ def test_briefing_creates_and_recovers_todo_through_scoped_reverse_call(tmp_path
         assert importlib.util.find_spec('agent.briefing.service') is None
         assert briefing_facade.BriefingPluginFacade().get_action_targets('todo', '作业')
         facade=briefing_facade.BriefingPluginFacade()
-        for grant in authz.scoped_grants('local-default',plugin_id='stella.tasks'):
-            if 'tasks.read' in grant.capabilities:
-                authz.revoke(grant.grant_ref)
+        store.set_intent('stella.tasks', 'local-default', 'disabled')
         protected=facade.get_briefing('brf-2026-10-18')
         receipt=protected['actions'][item_id]['todo']
         assert receipt['target_id']==first['target_id'] and receipt['state']=='succeeded'
         assert receipt['business']=={'id':first['target_id'],'unresolved':True,'access':'denied'}
         assert 'title' not in receipt['business']
         import pytest
-        with pytest.raises(Exception,match='scoped grant denied'):
+        with pytest.raises(Exception,match='disabled'):
             facade.get_action_targets('todo','作业')
-        methods=service.describe('stella.tasks','local-default')[0]['methods']
-        request=service.request('stella.tasks','local-default',{'consumerPluginId':'stella.briefing',
-            'capability':'tasks.read','methods':[method['name'] for method in methods if 'tasks.read' in method['permissions']],
-            'resources':[{'kind':'user','id':'local-default'}],'purpose':'interactive'})
-        service.approve('local-default',request['requestId'])
+        store.set_intent('stella.tasks', 'local-default', 'enabled')
         restored=facade.get_briefing('brf-2026-10-18')['actions'][item_id]['todo']
         assert restored['business']['title']=='完成作业'
         assert not restored['business'].get('unresolved')

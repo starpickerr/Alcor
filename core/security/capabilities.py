@@ -73,17 +73,23 @@ def describe_tool(name, arguments):
 
 
 def authorization(policy, descriptor):
-    grants = policy.get('capabilities') or {}
-    operations = grants.get(descriptor.capability_id)
-    if operations is None and descriptor.source == 'mcp':
-        operations = grants.get(descriptor.capability_id.split('/', 1)[0])
-    if descriptor.operation == 'unknown':
-        return (operations or {}).get('system_execute', 'confirm')
-    if operations is None:
-        if descriptor.filesystem and descriptor.source == 'builtin' and descriptor.operation in {'read', 'write'}:
-            return 'allow'  # File mode is the default grant for ordinary file tools.
+    """One Agent mode governs every capability source; no per-plugin grants."""
+    mode = policy.get('filesystem_mode') or policy.get('preset')
+    if mode == 'custom':
+        mode = policy.get('base_preset', 'read-only')
+    if policy.get('migration_status') == 'needs_confirmation' or policy.get('error'):
         return 'deny'
-    return operations.get(descriptor.operation, 'confirm' if descriptor.operation in {'delete', 'external_send', 'system_execute'} else 'deny')
+    if mode not in {'read-only', 'workspace-write', 'full-access'}:
+        return 'deny'
+    if descriptor.operation == 'read':
+        return 'allow'
+    if mode == 'read-only':
+        return 'deny'
+    if mode == 'full-access':
+        return 'allow'
+    if descriptor.operation == 'system_execute':
+        return 'allow' if descriptor.filesystem else 'confirm'
+    return 'allow' if descriptor.operation == 'write' else 'confirm'
 
 
 def method_operation(method, arguments=None):

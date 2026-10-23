@@ -146,9 +146,12 @@ def test_managed_install_does_not_issue_full_grant_when_worker_starts(tmp_path, 
         session = bills_gateway.ensure_bills_session()
         assert session.is_running
         assert authz.get(bills_gateway._GRANT_REF) is None
-        with pytest.raises(PermissionError, match='scoped grant denied'):
-            bills_gateway.invoke_bills('list_ledger', {'year': 2026, 'month': 10}, db_path=tmp_path / 'never.sqlite')
-        assert not (tmp_path / 'never.sqlite').exists()
+        result = bills_gateway.invoke_bills('list_ledger', {'year': 2026, 'month': 10}, db_path=tmp_path / 'bills.sqlite')
+        assert result['status'] == 'succeeded'
+        assert authz.get(bills_gateway._GRANT_REF) is None
+        store.set_intent('stella.bills', 'local-default', 'disabled')
+        with pytest.raises(PermissionError, match='disabled'):
+            bills_gateway.invoke_bills('list_ledger', {}, db_path=tmp_path / 'bills.sqlite')
     finally:
         bills_gateway.shutdown_bills_session()
 

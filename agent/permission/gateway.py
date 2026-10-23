@@ -549,7 +549,7 @@ class SecurityGateway:
             if tool_name == 'bash' and (_PUBLISH.search(str(args.get('command') or '')) or _BULK_DELETE.search(str(args.get('command') or ''))):
                 descriptor = CapabilityDescriptor(descriptor.capability_id, descriptor.source,
                     'external_send' if _PUBLISH.search(str(args.get('command') or '')) else 'delete', True)
-                required['system_execute'] = (policy['capabilities'].get('builtin:bash') or {}).get('system_execute', 'deny')
+                required['system_execute'] = authorization(policy, CapabilityDescriptor('builtin:bash', 'builtin', 'system_execute', True))
             operation = descriptor.operation
             granted = authorization(policy, descriptor)
             if descriptor.filesystem:

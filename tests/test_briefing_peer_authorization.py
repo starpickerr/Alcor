@@ -11,7 +11,6 @@ from core.plugins.authz import PluginAuthorizationStore
 def peers(tmp_path, monkeypatch, request):
     from common import state_dir
     from core.plugins import management
-    from core.plugins.first_party_grants import issue_required_grants_for_enabled_plugin
     from core.plugins.management import ManagementStore
     from core.plugins.package_ops import PackageStore
     from core.services import briefing_gateway, calendar_gateway, todos_gateway
@@ -33,8 +32,6 @@ def peers(tmp_path, monkeypatch, request):
             packages.prepare(op.operation_id)
             packages.commit(op.operation_id)
             store.set_intent(f'stella.{domain}', user, 'enabled')
-            issue_required_grants_for_enabled_plugin(plugin_id=f'stella.{domain}', user_id=user,
-                                                     package_root=root, authz=authz)
             monkeypatch.setattr(gateway, 'DEFAULT_AUTHZ', authz)
             monkeypatch.setattr(state_dir, name + '_db', lambda ensure=True, name=name: tmp_path / f'{name}.sqlite')
 
@@ -101,53 +98,20 @@ def test_default_owner_grants_allow_projection_and_sync(peers, background):
         assert receipt['business']['due_on'] == '2099-10-26'
 
 
-@pytest.mark.parametrize('restriction', ['read_revoked', 'write_revoked', 'expired', 'resource', 'purpose', 'parent', 'consumer'])
-def test_denials_preserve_policy_and_creation_recovers_after_restoration(peers, restriction):
+def test_obsolete_plugin_grant_does_not_block_native_workflow(peers):
+    peers.authz.issue(grant_ref='tasks-default-grant', plugin_id='stella.tasks', user_id=peers.user,
+        capabilities=[], purposes=[])
+    peers.authz.revoke('tasks-default-grant')
     item = peers.publish()['items'][0]['id']
-    ref = 'tasks-default-grant:interactive:tasks.' + ('write' if restriction == 'write_revoked' else 'read')
-    if restriction == 'consumer':
-        ref = 'explicit-consumer'
-        peers.authz.issue_scoped(grant_ref=ref, parent_ref='tasks-default-grant', plugin_id='stella.tasks',
-            user_id=peers.user, consumer_plugin_id='stella.briefing', capability='tasks.read',
-            methods=['get_todo'], resources=[{'kind': 'user', 'id': peers.user}], purpose='interactive')
-    elif restriction == 'parent':
-        ref = 'tasks-default-grant'
-        peers.authz.issue(grant_ref=ref, plugin_id='stella.tasks', user_id=peers.user,
-                         capabilities=[], purposes=[])
-        peers.authz.revoke(ref)
-    else:
-        changes = {'read_revoked': {'revoked': True}, 'write_revoked': {'revoked': True},
-                   'expired': {'valid_until': '2000-01-01T00:00:00Z'},
-                   'resource': {'resources': frozenset({'{"id":"other-user","kind":"user"}'})},
-                   'purpose': {'purposes': frozenset({'background'})}}[restriction]
-        peers.authz.update_owned(ref, user_id=peers.user, revision=1, **changes)
-    failed = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
-    assert failed['state'] == 'failed' and not failed['target_id'], failed
-    assert 'scoped grant denied' in failed['error']
-    if restriction == 'consumer':
-        # An explicit narrow policy must not fall back to any owner capability.
-        # Restoring access requires an explicit approval covering the workflow.
-        from core.plugins.authorization import AuthorizationService
-        from core.plugins.management import default_store
-        service = AuthorizationService(default_store(), peers.authz)
-        methods = service.describe('stella.tasks', peers.user)[0]['methods']
-        for capability in ('tasks.read', 'tasks.write'):
-            request = service.request('stella.tasks', peers.user, {'consumerPluginId': 'stella.briefing',
-                'capability': capability, 'methods': [row['name'] for row in methods if capability in row['permissions']],
-                'resources': [{'kind': 'user', 'id': peers.user}], 'purpose': 'interactive'})
-            service.approve(peers.user, request['requestId'])
-    else:
-        peers.authz.update_owned(ref, user_id=peers.user, revision=2, revoked=False, valid_until=None,
-            purposes=frozenset({'interactive'}), resources=frozenset({'{"id":"local-default","kind":"user"}'}))
-    restored = peers.ok('update_action', item_id=item, payload={'operation': 'retry', 'kind': 'todo'})
-    assert restored['state'] == 'succeeded', restored
+    receipt = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
+    assert receipt['state'] == 'succeeded', receipt
 
 
-def test_revoked_owner_reads_hide_enrichment_and_preserve_pending_projection(peers):
+def test_disabled_owner_hides_enrichment_and_preserves_pending_projection(peers, monkeypatch):
     item = peers.publish()['items'][0]['id']
     target = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})['target_id']
-    ref = 'tasks-default-grant:interactive:tasks.read'
-    peers.authz.revoke(ref)
+    from core.plugins.management import default_store
+    default_store().set_intent('stella.tasks', peers.user, 'disabled')
     receipt = peers.ok('get_briefing', briefing_id='brf-2026-10-22')['actions'][item]['todo']
     assert receipt['target_id'] == target and receipt['state'] == 'succeeded'
     assert receipt['business'] == {'id': target, 'unresolved': True, 'access': 'denied'}
@@ -156,11 +120,8 @@ def test_revoked_owner_reads_hide_enrichment_and_preserve_pending_projection(pee
     # Unchanged revisions can be acknowledged without another peer write.
     # A changed revision must stay pending when its write authorization is revoked.
     peers.publish(due='2099-10-26T08:00:00Z')
-    write_ref = 'tasks-default-grant:interactive:tasks.write'
-    peers.authz.revoke(write_ref)
     assert peers.ok('dispatch_outbox')['pending'] == 1
-    peers.authz.update_owned(ref, user_id=peers.user, revision=2, revoked=False)
-    peers.authz.update_owned(write_ref, user_id=peers.user, revision=2, revoked=False)
+    default_store().set_intent('stella.tasks', peers.user, 'enabled')
     assert peers.ok('dispatch_outbox')['pending'] == 0
     assert peers.ok('get_briefing', briefing_id='brf-2026-10-22')['actions'][item]['todo']['business']['title'] == '完成作业'
 
@@ -173,7 +134,7 @@ def test_nondefault_user_uses_only_its_own_owner_grants(peers):
     assert peers.authz.scoped_grants('local-default') == []
 
 
-def test_direct_worker_invocations_cannot_borrow_native_gateway_authority(peers):
+def test_native_worker_reads_need_no_plugin_grant(peers):
     from core.services import briefing_gateway
 
     peers.publish()
@@ -181,7 +142,7 @@ def test_direct_worker_invocations_cannot_borrow_native_gateway_authority(peers)
         contract='stella.briefing@1', method='get_action_targets', input_payload={'kind': 'todo', 'query': ''},
         origin='system', grant_ref='briefing-default-grant',
         data_handle={'dbPath': str(peers.path / 'briefing.sqlite'), 'namespace': 'stella.briefing'})
-    assert result['status'] == 'failed' and result['error']['code'] == 'permission_denied'
+    assert result['status'] == 'succeeded'
 
 
 def test_native_reminder_configuration_reaches_task_owner(peers):
@@ -278,13 +239,14 @@ def test_native_peer_authority_cannot_cross_caller_or_identity_boundaries(change
             authz.check_scoped(**scope)
 
 
-def test_background_does_not_borrow_interactive_owner_authorization(peers):
+def test_background_obeys_mode_while_native_ui_does_not(peers):
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
     from core.plugins.caller import caller_origin_scope
-
     peers.publish()
-    ref = 'tasks-default-grant:background:tasks.read'
-    peers.authz.revoke(ref)
-    with caller_origin_scope('scheduler'):
-        assert peers.ok('dispatch_outbox')['pending'] == 1
+    save_run_policy('session', 'briefing-readonly', {'filesystem_mode': 'read-only'})
+    with identity_scope(session_id='briefing-readonly'), caller_origin_scope('scheduler'):
+        with pytest.raises(PermissionError):
+            peers.call('dispatch_outbox')
     with caller_origin_scope('desktop'):
         assert peers.ok('dispatch_outbox')['pending'] == 0

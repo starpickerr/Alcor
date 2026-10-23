@@ -50,22 +50,8 @@ def describe_task(task, agent_id=None):
 
 
 def _check_delegation(candidate, ceiling):
-    from core.security.capabilities import CapabilityDescriptor, authorization
     if _MODES[candidate['filesystem_mode']] > _MODES[ceiling['filesystem_mode']]:
         raise PermissionError('Task filesystem permission exceeds the delegating run')
-    for capability, operations in candidate['capabilities'].items():
-        for operation, setting in operations.items():
-            descriptor = CapabilityDescriptor(capability, capability.split(':', 1)[0], operation)
-            if _ORDER[setting] > _ORDER[authorization(ceiling, descriptor)]:
-                raise PermissionError('Task capability permission exceeds the delegating run')
-    # Ordinary filesystem tools have implicit mode-based grants when omitted.
-    for name, operation in [('read', 'read'), ('ls', 'read'), ('search_files', 'read'),
-                            ('vision', 'read'), ('write', 'write'), ('edit', 'write'), ('skill', 'write')]:
-        if operation == 'write' and candidate['filesystem_mode'] == 'read-only':
-            continue  # The file-mode gate already denies every direct write.
-        descriptor = CapabilityDescriptor('builtin:' + name, 'builtin', operation, True)
-        if _ORDER[authorization(candidate, descriptor)] > _ORDER[authorization(ceiling, descriptor)]:
-            raise PermissionError('Task file capability permission exceeds the delegating run')
     for path in candidate.get('extra_roots') or []:
         real = os.path.realpath(path)
         if not any(os.path.commonpath((real, os.path.realpath(root))) == os.path.realpath(root)
@@ -114,11 +100,14 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
         if not creating and patch.get('policy_revision') is not None and patch['policy_revision'] != (current or {}).get('policy_revision', 0):
             raise ValueError('Task policy revision changed; refresh and retry')
         if trusted_user_edit(origin) and (current is None or current.get('migration_status') == 'needs_confirmation'):
-            if not {'filesystem_mode', 'capabilities'} <= patch.keys():
+            if 'filesystem_mode' not in patch:
                 raise ValueError('Task policy repair requires a complete explicit choice')
             base['legacy_restrictions'] = {}
             base['migration_status'] = 'complete'
         base.update(patch)
+        if trusted_user_edit(origin) and 'filesystem_mode' in patch:
+            base['legacy_restrictions'] = {}
+            base['migration_status'] = 'complete'
     if mode not in (None, '', 'inherit'):
         if mode not in _MODES:
             raise ValueError('invalid run permission mode')

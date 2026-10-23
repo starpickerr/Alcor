@@ -142,7 +142,7 @@ def test_unknown_mcp_real_call_uses_explicit_system_execute_resource(tmp_path, m
     script.write_text(Path('tests/fixtures/mcp_echo_server.py').read_text().replace('f"echo:{text}"', 'json.dumps(f"echo:{text}")'))
     config = {'name': 'opaque-real', 'command': sys.executable, 'args': [str(script)], 'timeout': 10}
     with identity_scope(user_id='opaque-owner', session_id='opaque-chat'):
-        save_run_policy('session', 'opaque-chat', {'filesystem_mode': 'full-access',
+        save_run_policy('session', 'opaque-chat', {'filesystem_mode': 'full-access' if preauthorized else 'workspace-write',
             'capabilities': {'mcp:opaque-real': {'system_execute': 'allow' if preauthorized else 'confirm'}}})
         manager = ToolManager()
         monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [config])

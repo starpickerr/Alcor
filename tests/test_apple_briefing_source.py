@@ -41,7 +41,6 @@ def test_native_calendar_collection_uses_managed_owner_grants_and_honors_revocat
     from core.execution.context import execution_scope
     from core.plugins import management
     from core.plugins.authz import PluginAuthorizationStore
-    from core.plugins.first_party_grants import issue_required_grants_for_enabled_plugin
     from core.plugins.management import ManagementStore
     from core.plugins.package_ops import PackageStore
     from core.services import calendar_gateway, calendar_facade
@@ -59,8 +58,6 @@ def test_native_calendar_collection_uses_managed_owner_grants_and_honors_revocat
     authz = PluginAuthorizationStore()
     monkeypatch.setattr(calendar_gateway, 'DEFAULT_AUTHZ', authz)
     monkeypatch.setattr(calendar_facade, '_db_path', lambda: tmp_path / 'calendar.db')
-    issue_required_grants_for_enabled_plugin(plugin_id='stella.calendar', user_id='local-default',
-        package_root=root, authz=authz)
     port = Application.port('calendar')
     port.create_event({'title': 'Upcoming meeting', 'start_at': '2026-10-10T09:00:00Z',
                        'end_at': '2026-10-10T10:00:00Z'})
@@ -70,9 +67,8 @@ def test_native_calendar_collection_uses_managed_owner_grants_and_honors_revocat
         with execution_scope(origin='job' if purpose == 'background' else 'ui'):
             return pipeline._fetch_source(adapter, '2026-10-09T00:00:00Z', '2026-10-10T00:00:00Z')
     assert [item.title for item in collect().items] == ['Upcoming meeting']
-    ref = f'calendar-default-grant:{purpose}:calendar.read'
-    authz.revoke(ref)
+    store.set_intent('stella.calendar', 'local-default', 'disabled')
     with pytest.raises(PermissionError):
         collect()
-    authz.update_owned(ref, user_id='local-default', revision=2, revoked=False)
+    store.set_intent('stella.calendar', 'local-default', 'enabled')
     assert collect().items

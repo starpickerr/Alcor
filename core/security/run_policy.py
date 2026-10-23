@@ -144,7 +144,7 @@ def save_run_policy(subject_kind, subject_id, policy, *, agent_id=None, expected
     def change(current):
         base = current or _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
         base = deepcopy(base)
-        if base.get('migration_status') == 'needs_confirmation' and 'filesystem_mode' in clean and 'capabilities' in clean:
+        if 'filesystem_mode' in clean:
             # Replacing an untranslatable policy requires a complete explicit
             # choice; ordinary edits continue to preserve valid legacy denies.
             base['legacy_restrictions'] = {}

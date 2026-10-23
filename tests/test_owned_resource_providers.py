@@ -53,7 +53,7 @@ def seed(domain, user):
 
 
 @pytest.mark.parametrize('domain', DOMAINS)
-def test_real_owner_resource_search_read_and_revocation(owners, tmp_path, domain):
+def test_real_owner_resource_search_read_and_revocation(owners, tmp_path, domain, monkeypatch):
     from core.data.owned_providers import PluginResourceProvider
     user, modules, authz = owners
     expected = seed(domain, user)
@@ -71,7 +71,7 @@ def test_real_owner_resource_search_read_and_revocation(owners, tmp_path, domain
     assert service.resources(source['id'], 'does-not-exist')['total'] == 0
     with service.store.connection() as db:
         assert db.execute('SELECT count(*) FROM records').fetchone()[0] == 0
-    authz.revoke(modules[domain]._GRANT_REF)
+    monkeypatch.setenv(f'STELLA_{"todos" if domain == "tasks" else domain.upper()}_PLUGIN'.replace('todos', 'TODOS'), '0')
     for operation in (lambda: service.resources(source['id']),
                       lambda: service.read_resource(source['id'], resource['id'])):
         with pytest.raises(PermissionError):
@@ -89,8 +89,8 @@ def test_owner_authorization_probe_does_not_invoke_business_method(owners, monke
         origin='system', grant_ref=todos_gateway._GRANT_REF, check_only=True,
         data_handle=domain_data_handle('stella.tasks', 'local-default'))
     assert result['status'] == 'succeeded' and 'plugin.invoke' not in calls
-    owners[2].revoke(todos_gateway._GRANT_REF)
-    with pytest.raises(PermissionError):
+    session.registry.revoke(session.plugin_id, session.generation)
+    with pytest.raises((PermissionError, LookupError)):
         session.invoke_contract(contract='stella.tasks@1', method='list_todos', input_payload={},
             origin='system', grant_ref=todos_gateway._GRANT_REF, check_only=True,
             data_handle=domain_data_handle('stella.tasks', 'local-default'))
@@ -111,7 +111,7 @@ def test_owner_revoked_during_read_cannot_return_body(owners, tmp_path, monkeypa
     def revoke_after_read(method, params, **kwargs):
         result = original(method, params, **kwargs)
         if method == 'plugin.invoke' and params.get('method') == 'get_todo':
-            owners[2].revoke(gateway._GRANT_REF)
+            monkeypatch.setenv('STELLA_TODOS_PLUGIN', '0')
         return result
 
     monkeypatch.setattr(session, '_rpc', revoke_after_read)
@@ -141,22 +141,12 @@ def test_owner_managed_methods_consumer_purpose_and_disable(owners, tmp_path, mo
     registry.register('tasks', PluginResourceProvider('tasks'))
     service = DataService(tmp_path / 'data.db', registry)
     source = service.discover()['sources'][0]
-    with pytest.raises(PermissionError):
-        service.resources(source['id'])
-    owners[2].issue_scoped(grant_ref='list', parent_ref=gateway._GRANT_REF,
-        plugin_id='stella.tasks', user_id='local-default', consumer_plugin_id='stella.tasks',
-        capability='tasks.read', methods=['list_todos'], resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
     resource = service.resources(source['id'])['resources'][0]
-    with pytest.raises(PermissionError):
-        service.read_resource(source['id'], resource['id'])
-    owners[2].issue_scoped(grant_ref='read', parent_ref=gateway._GRANT_REF,
-        plugin_id='stella.tasks', user_id='local-default', consumer_plugin_id='stella.tasks',
-        capability='tasks.read', methods=['get_todo'], resources=[{'kind': 'user', 'id': 'local-default'}], purpose='interactive')
     assert service.read_resource(source['id'], resource['id'])['content']['title'] == 'Owner task'
-    with consumer_plugin_scope('third.party'), pytest.raises(PermissionError):
-        service.read_resource(source['id'], resource['id'])
-    with identity_scope(task_id='scheduled-task'), pytest.raises(PermissionError):
-        service.resources(source['id'])
+    with consumer_plugin_scope('third.party'):
+        assert service.read_resource(source['id'], resource['id'])['content']['title'] == 'Owner task'
+    with identity_scope(task_id='scheduled-task'):
+        assert service.resources(source['id'])['total'] == 1
     store.set_intent('stella.tasks', 'local-default', 'disabled')
     with pytest.raises(PermissionError):
         service.read_resource(source['id'], resource['id'])

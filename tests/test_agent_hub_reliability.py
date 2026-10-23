@@ -100,11 +100,19 @@ print(json.dumps(result))
     fake.chmod(0o755)
     config = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
-    save_run_policy('session', 'parent', {'filesystem_mode': 'read-only', 'capabilities': {
+    save_run_policy('session', 'parent', {'filesystem_mode': 'workspace-write', 'capabilities': {
         'plugin:stella.agent-hub': {'read': 'allow', 'write': 'allow', 'system_execute': 'allow'}}})
     with identity_scope(session_id='parent'):
         tool = AgentHubTool()
-        result = tool.execute(action='submit', goal='probe', provider_config_id=config['providerConfigId'])
+        from agent.permission.gateway import SecurityGateway
+        from agent.runtime.tool_invocation import permission_denial, invocation_scope
+        args = {'action': 'submit', 'goal': 'probe', 'provider_config_id': config['providerConfigId']}
+        assert permission_denial('agent_hub', args)
+        pending = next(row for row in SecurityGateway.pending() if row['session'] == 'parent')
+        assert SecurityGateway.approve(pending['id'])
+        assert permission_denial('agent_hub', args) is None
+        with invocation_scope('external-ceiling'):
+            result = tool.execute(**args)
         assert result.status == 'success', result.result
         eid = result.result['executionId']
         deadline = time.monotonic() + 5
@@ -113,7 +121,7 @@ print(json.dumps(result))
             if status['execution']['status'] in {'succeeded', 'failed'}:
                 break
             time.sleep(.02)
-        assert status['execution']['status'] == 'succeeded', status
+        assert status['execution']['status'] == 'succeeded', json.dumps(status)
         assert json.loads(status['artifacts'][0]['text']) == {'read': 'denied', 'write': 'denied', 'host_secret': False}
     assert not outside.exists()
 
@@ -285,7 +293,7 @@ def test_once_approved_public_selector_starts_real_provider(tmp_path, selector):
     config = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
     session_id = 'hub-once-' + '-'.join(selector.keys())
-    save_run_policy('session', session_id, {'filesystem_mode': 'read-only', 'capabilities': {
+    save_run_policy('session', session_id, {'filesystem_mode': 'workspace-write', 'capabilities': {
         'plugin:stella.agent-hub': {'read': 'allow', 'write': 'allow', 'system_execute': 'confirm'}}})
     args = {'action': 'submit', 'goal': 'synthetic goal', 'acceptance': {'checks': ['completed']}, **selector}
     with identity_scope(session_id=session_id):
@@ -312,7 +320,7 @@ def test_hub_once_receipt_rejects_changed_public_request(changed):
     from core.security.approvals import inherited
     from core.security.capabilities import describe_tool
     args = {'action': 'submit', 'goal': 'original', 'provider_local_id': 'codex-cli', 'acceptance': {'checks': ['same']}}
-    save_run_policy('session', 'hub-changed', {'filesystem_mode': 'read-only', 'capabilities': {
+    save_run_policy('session', 'hub-changed', {'filesystem_mode': 'workspace-write', 'capabilities': {
         'plugin:stella.agent-hub': {'system_execute': 'confirm'}}})
     with identity_scope(session_id='hub-changed'):
         assert permission_denial('agent_hub', args)
@@ -333,7 +341,7 @@ def test_hub_derived_once_approval_binds_provider_and_complete_payload():
     from core.security.approvals import agent_hub_operation_scope, inherited
     from core.security.capabilities import describe_tool
     args = {'action': 'submit', 'goal': 'approved', 'provider_local_id': 'codex-cli'}
-    save_run_policy('session', 'hub-payload', {'filesystem_mode': 'read-only', 'capabilities': {
+    save_run_policy('session', 'hub-payload', {'filesystem_mode': 'workspace-write', 'capabilities': {
         'plugin:stella.agent-hub': {'system_execute': 'confirm'}}})
     payload = {'provider_config_id': 'approved-provider', 'task': {'goal': 'approved', 'acceptance': {'checks': ['one']}}}
     with identity_scope(session_id='hub-payload'):

@@ -9,18 +9,18 @@ def set_policy(session, mode, capabilities):
     return save_run_policy('session', session, {'filesystem_mode': mode, 'capabilities': capabilities})
 
 
-def test_read_only_with_tasks_write_creates_real_todo(todos_plugin):
-    set_policy('tasks-writer', 'read-only', {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}})
+def test_workspace_mode_creates_real_todo_without_independent_permission(todos_plugin):
+    set_policy('tasks-writer', 'workspace-write', {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}})
     with identity_scope(session_id='tasks-writer'):
         created = todos_plugin.create_todo({'title': '独立业务权限'})
         assert created['title'] == '独立业务权限'
         assert todos_plugin.get_todo(created['id'])['id'] == created['id']
 
 
-def test_tasks_read_cannot_create_even_with_full_filesystem_access(todos_plugin):
+def test_full_access_replaces_obsolete_per_plugin_read_only_setting(todos_plugin):
     set_policy('tasks-reader', 'full-access', {'plugin:stella.tasks': {'read': 'allow'}})
-    with identity_scope(session_id='tasks-reader'), pytest.raises(PermissionError):
-        todos_plugin.create_todo({'title': 'must not exist'})
+    with identity_scope(session_id='tasks-reader'):
+        assert todos_plugin.create_todo({'title': 'mode permits write'})['title'] == 'mode permits write'
 
 
 def test_business_write_does_not_grant_direct_file_write(tmp_path):
@@ -41,20 +41,18 @@ def test_manage_does_not_include_delete(todos_plugin):
         assert todos_plugin.get_todo(created['id'])['title'] == 'retained'
 
 
-def test_full_access_does_not_authorize_email_mcp():
-    from agent.permission.gateway import Capability, register_tool
-    from agent.runtime.tool_invocation import permission_denial
-    register_tool('email_send_test', Capability.EXTERNAL, connection='mcp:mail')
+def test_full_access_does_not_grant_actual_mcp_resource():
+    from core.security.service import SecurityService
     set_policy('no-mail', 'full-access', {})
-    with identity_scope(session_id='no-mail'):
-        assert permission_denial('email_send_test', {'account_id': 'private'}, noninteractive=True)
+    with identity_scope(session_id='no-mail'), pytest.raises(PermissionError, match='resource'):
+        SecurityService.authorize_connection('mail', 'external_send')
 
 
 def test_unknown_mcp_requires_exact_approval_and_background_preauthorization():
     from agent.permission.gateway import Capability, register_tool, SecurityGateway
     from agent.runtime.tool_invocation import permission_denial
     register_tool('opaque_mcp_test', Capability.EXTERNAL, connection='mcp:opaque', read_only=True)
-    set_policy('unknown', 'full-access', {})
+    set_policy('unknown', 'workspace-write', {})
     with identity_scope(session_id='unknown'):
         assert permission_denial('opaque_mcp_test', {'value': 1})
         pending = [row for row in SecurityGateway.pending() if row['session'] == 'unknown']
@@ -68,7 +66,7 @@ def test_policy_revision_invalidates_unused_approval():
     from agent.permission.gateway import Capability, register_tool, SecurityGateway
     from agent.runtime.tool_invocation import permission_denial
     register_tool('revision_mcp_test', Capability.EXTERNAL, connection='mcp:revision')
-    policy = set_policy('revision', 'full-access', {})
+    policy = set_policy('revision', 'workspace-write', {})
     with identity_scope(session_id='revision'):
         assert permission_denial('revision_mcp_test', {})
         pending = next(row for row in SecurityGateway.pending() if row['session'] == 'revision')
@@ -83,7 +81,7 @@ def test_approved_business_operation_reaches_service_once_without_approving_othe
     from agent.runtime.tool_invocation import permission_denial, invocation_scope
     first = todos_plugin.create_todo({'title': 'approved target'})
     second = todos_plugin.create_todo({'title': 'unapproved target'})
-    set_policy('approved-service', 'read-only', {'plugin:stella.tasks': {
+    set_policy('approved-service', 'workspace-write', {'plugin:stella.tasks': {
         'read': 'allow', 'write': 'allow', 'delete': 'confirm'}})
     with identity_scope(session_id='approved-service'):
         arguments = {'action': 'delete', 'id': first['id']}

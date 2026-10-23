@@ -9,7 +9,7 @@ from core.plugins.host import PluginSession
 from core.plugins.registry import PluginRegistry
 
 
-def test_revoked_grant_blocks_invoke():
+def test_legacy_grant_revocation_does_not_block_native_invoke():
     authz = PluginAuthorizationStore()
     registry = PluginRegistry()
     session = PluginSession(
@@ -28,8 +28,7 @@ def test_revoked_grant_blocks_invoke():
     try:
         session.start()
         authz.revoke("g1")
-        with pytest.raises(PermissionError, match="revoked"):
-            session.invoke_contract(
+        result = session.invoke_contract(
                 contract="stella.sample.alpha@1",
                 method="ping",
                 input_payload={},
@@ -37,6 +36,8 @@ def test_revoked_grant_blocks_invoke():
                 grant_ref="g1",
                 permissions=["sample.ping"],
             )
+        assert result["status"] == "succeeded"
+        assert authz.get("g1").revoked
     finally:
         session.dispose()
 
@@ -69,8 +70,10 @@ def test_gateway_worker_restart_does_not_restore_revoked_grant(domain, monkeypat
     monkeypatch.setattr("core.plugins.host.DEFAULT_AUTHZ", authz)
     monkeypatch.setattr(gateway, "DEFAULT_REGISTRY", PluginRegistry())
     try:
-        ensure()
+        first = ensure()
         grant_ref = gateway._GRANT_REF
+        assert authz.get(grant_ref) is None
+        authz.issue(grant_ref=grant_ref, plugin_id=first.plugin_id, user_id=first.user_id, capabilities=[])
         authz.revoke(grant_ref)
         shutdown()
         session = ensure()
@@ -206,18 +209,18 @@ def test_gateway_switches_users_without_sharing_grants(monkeypatch):
     try:
         with identity_scope(user_id="alice"):
             alice = gateway.ensure_bills_session()
-            authz.revoke(user_grant_ref(gateway._GRANT_REF))
+            assert authz.get(user_grant_ref(gateway._GRANT_REF)) is None
         with identity_scope(user_id="bob"):
             bob = gateway.ensure_bills_session()
             assert bob is not alice
             assert bob.user_id == "bob"
             assert alice._proc is None
-            assert not authz.get(user_grant_ref(gateway._GRANT_REF)).revoked
+            assert authz.get(user_grant_ref(gateway._GRANT_REF)) is None
         with identity_scope(user_id="alice"):
             restarted = gateway.ensure_bills_session()
             assert restarted.user_id == "alice"
             assert restarted.generation > alice.generation
-            assert authz.get(user_grant_ref(gateway._GRANT_REF)).revoked
+            assert authz.get(user_grant_ref(gateway._GRANT_REF)) is None
     finally:
         gateway.shutdown_bills_session()
 
@@ -301,7 +304,7 @@ def test_gateway_replaces_dead_worker_without_regranting_or_replaying(domain, mo
         assert second is not first
         assert second.generation > first.generation
         assert second._proc.poll() is None
-        assert authz.get(gateway._GRANT_REF).revoked
+        assert authz.get(gateway._GRANT_REF) is None
     finally:
         shutdown()
 

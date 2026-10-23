@@ -164,7 +164,7 @@ def handle_invoke(params):
         original = owner.resources
         def revoked(*args):
             result = original(*args)
-            authz.revoke(f'legacy-compat:{session.plugin_id}:{session.user_id}')
+            owner.allowed = False
             return result
         owner.resources = revoked
         with pytest.raises(PluginHostError, match='revoked|denied'):

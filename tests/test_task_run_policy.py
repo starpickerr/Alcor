@@ -28,13 +28,13 @@ def test_new_task_has_read_only_independent_policy(scheduler):
 
 def test_trusted_task_business_write_is_independent_of_filesystem(scheduler):
     from agent.runtime.tool_invocation import permission_denial, scheduled_permission_scope
-    created = scheduler.create(task(run_policy={'filesystem_mode': 'read-only',
-        'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}}))
+    created = scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write',
+        'capabilities': {}}))
     save_run_policy('session', 'notification', {'filesystem_mode': 'full-access', 'capabilities': {}})
     with identity_scope(task_id='daily', session_id='notification'), scheduled_permission_scope(created):
         assert permission_denial('todos', {'action': 'create'}, noninteractive=True) is None
-        assert permission_denial('write', {'path': 'blocked.txt', 'content': 'blocked'}, noninteractive=True)
-        assert resolve_run_policy()['filesystem_mode'] == 'read-only'
+        assert permission_denial('write', {'path': '/outside/blocked.txt', 'content': 'blocked'}, noninteractive=True)
+        assert resolve_run_policy()['filesystem_mode'] == 'workspace-write'
 
 
 def test_agent_cannot_escalate_task_even_with_forged_user_origin(scheduler):
@@ -47,15 +47,13 @@ def test_agent_cannot_escalate_task_even_with_forged_user_origin(scheduler):
         assert scheduler.store.get_task('daily') is None
 
 
-def test_agent_task_creation_can_delegate_only_its_allowed_operations(scheduler):
-    save_run_policy('session', 'parent', {'filesystem_mode': 'read-only',
-        'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}})
+def test_agent_task_creation_cannot_delegate_a_wider_mode(scheduler):
+    save_run_policy('session', 'parent', {'filesystem_mode': 'workspace-write'})
     with identity_scope(session_id='parent'):
-        created = scheduler.create(task(run_policy={'filesystem_mode': 'read-only',
-            'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}}), origin='agent')
-        assert created['run_policy']['capabilities']['plugin:stella.tasks']['write'] == 'allow'
+        created = scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write'}), origin='agent')
+        assert created['run_policy']['filesystem_mode'] == 'workspace-write'
         with pytest.raises((ValueError, PermissionError)):
-            scheduler.update('daily', {'run_policy': {'capabilities': {'plugin:stella.tasks': {'delete': 'allow'}}}}, origin='agent')
+            scheduler.update('daily', {'run_policy': {'filesystem_mode': 'full-access'}}, origin='agent')
 
 
 def test_background_missing_sensitive_preauthorization_fails_without_pending(scheduler):
@@ -66,17 +64,16 @@ def test_background_missing_sensitive_preauthorization_fails_without_pending(sch
     with identity_scope(task_id='daily', session_id='notification'), scheduled_permission_scope(created):
         before = len(SecurityGateway.pending())
         denial = permission_denial('todos', {'action': 'delete', 'todo_id': 'one'}, noninteractive=True)
-        assert denial and ('rerun' in denial or 'Authorization' in denial)
+        assert denial and 'denied' in denial.lower()
         assert len(SecurityGateway.pending()) == before
 
 
-def test_child_permission_ceiling_includes_capabilities():
+def test_child_permission_ceiling_includes_mode():
     from agent.runtime.tool_invocation import permission_denial, permission_limit_scope, _current_authorization
-    save_run_policy('session', 'child', {'filesystem_mode': 'full-access',
-        'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}})
+    save_run_policy('session', 'child', {'filesystem_mode': 'full-access', 'capabilities': {}})
     with identity_scope(session_id='child'):
         _, context, _ = _current_authorization(None, None, 'child', None, False)
-        ceiling = {**context['policy'], 'capabilities': {'plugin:stella.tasks': {'read': 'allow'}}}
+        ceiling = {**context['policy'], 'filesystem_mode': 'read-only'}
         with permission_limit_scope(ceiling, context['scope'].write_roots):
             assert permission_denial('todos', {'action': 'list'}) is None
             assert permission_denial('todos', {'action': 'create'}, noninteractive=True)
@@ -134,7 +131,7 @@ def test_child_task_creation_keeps_captured_ceiling_through_real_worker(tmp_path
     monkeypatch.setenv('STELLA_AUTOMATION_PLUGIN', '1')
     monkeypatch.setenv('STELLA_AUTOMATION_PLUGIN_ROOT', str(Path('stella-plugins-workspace/plugins/automation').resolve()))
     facade = AutomationPluginFacade(AutomationStore(str(tmp_path / 'tasks.json'), 'default'))
-    save_run_policy('session', 'captured-parent', {'filesystem_mode': 'read-only',
+    save_run_policy('session', 'captured-parent', {'filesystem_mode': 'workspace-write',
         'capabilities': {'plugin:stella.automation': {'read': 'allow', 'write': 'allow'}}})
     try:
         with identity_scope(session_id='captured-parent'):
@@ -148,11 +145,12 @@ def test_child_task_creation_keeps_captured_ceiling_through_real_worker(tmp_path
         shutdown_automation_session()
 
 
-def test_task_delegation_cannot_restore_implicitly_denied_file_tool(scheduler):
+def test_legacy_capability_field_cannot_override_delegating_mode(scheduler):
     save_run_policy('session', 'denied-file-parent', {'filesystem_mode': 'workspace-write',
         'capabilities': {'builtin:write': {'write': 'deny'}}})
-    with identity_scope(session_id='denied-file-parent'), pytest.raises(PermissionError):
-        scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write', 'capabilities': {}}), origin='agent')
+    with identity_scope(session_id='denied-file-parent'):
+        created = scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write'}), origin='agent')
+        assert created['run_policy']['filesystem_mode'] == 'workspace-write'
 
 
 def test_delegated_task_preserves_legacy_restrictions(scheduler):

@@ -13,7 +13,7 @@ def test_native_control_updates_one_subject_and_rejects_stale_revision():
         'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}},
         'policy_revision': policy['policy_revision']})
     assert saved['policy']['filesystem_mode'] == 'read-only'
-    assert saved['policy']['capabilities']['plugin:stella.tasks']['write'] == 'allow'
+    assert 'capabilities' not in saved['policy']
     assert control.read('session', 'control-two')['policy'] == control.read('template', 'default')['policy']
     with pytest.raises(ValueError, match='revision'):
         control.save('session', 'control-one', policy)
@@ -149,26 +149,14 @@ def test_connection_owner_edit_uses_revision_and_does_not_change_template_or_leg
             capability_descriptor=descriptor, create_pending=False).allowed
 
 
-def test_catalog_includes_installed_third_party_and_configured_mcp(tmp_path, monkeypatch):
-    from core.plugins.management import ManagementStore
-    from core.plugins.package_ops import PackageStore
-    from agent.tools.tool_manager import ToolManager
-    from core.security.control import capability_catalog
-    store = ManagementStore(tmp_path / 'packages')
-    monkeypatch.setattr('core.plugins.management.default_store', lambda: store)
-    packages = PackageStore(store.root)
-    operation = packages.stage('samples/plugins/alpha')
-    operation = packages.inspect(operation.operation_id)
-    operation = packages.prepare(operation.operation_id)
-    packages.commit(operation.operation_id)
-    manager = ToolManager()
-    monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [{'name': 'custom-mcp', 'type': 'http', 'url': 'https://example.test/mcp'}])
-    rows = capability_catalog({'capabilities': {}})
-    assert any(row['id'] == 'plugin:stella.sample.alpha' and row['installed'] for row in rows)
-    assert any(row['id'] == 'mcp:custom-mcp' for row in rows)
+def test_permission_control_has_no_capability_catalog():
+    from core.security.control import PermissionControl
+    result = PermissionControl().read('template', 'default')
+    assert result['capabilities'] == []
+    assert 'capabilities' not in result['policy']
 
 
-def test_reauthorizing_business_write_preserves_old_file_denial():
+def test_explicit_mode_replaces_hidden_legacy_file_denial():
     from core.security.run_policy import resolve_run_policy
     from core.security.control import PermissionControl
     from agent.runtime.tool_invocation import permission_denial
@@ -176,12 +164,10 @@ def test_reauthorizing_business_write_preserves_old_file_denial():
         'rules': {'workspace_write': 'deny'}})
     control = PermissionControl()
     state = control.read('session', 'custom-business')
-    assert state['policy']['capabilities']['plugin:stella.tasks']['write'] == 'deny'
-    control.save('session', 'custom-business', {**state['policy'], 'capabilities': {
-        **state['policy']['capabilities'], 'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}})
+    control.save('session', 'custom-business', {**state['policy'], 'filesystem_mode': 'workspace-write'})
     with identity_scope(session_id='custom-business'):
         assert permission_denial('todos', {'action': 'create', 'title': 'authorized'}) is None
-        assert permission_denial('write', {'path': 'blocked.txt', 'content': 'blocked'})
+        assert permission_denial('write', {'path': '/outside/blocked.txt', 'content': 'blocked'})
 
 
 def test_session_settings_report_independent_three_mode_policy(tmp_path, monkeypatch):

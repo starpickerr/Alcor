@@ -76,7 +76,7 @@ def test_session_invoke_uses_contract_shape(tmp_path):
         session.dispose()
 
 
-def test_read_only_grant_can_query_but_cannot_write(tmp_path):
+def test_read_only_agent_can_query_but_cannot_write(tmp_path):
     from core.plugins.authz import PluginAuthorizationStore
     from core.plugins.registry import PluginRegistry
 
@@ -87,15 +87,21 @@ def test_read_only_grant_can_query_but_cannot_write(tmp_path):
                 capabilities=["bills.read"], purposes=["interactive"])
     try:
         session.start()
-        args = dict(contract="stella.bills@1", origin="ui", grant_ref="read",
+        from core.security.run_policy import save_run_policy
+        save_run_policy("session", "bill-readonly", {"filesystem_mode": "read-only"})
+        from common.runtime_identity import identity_scope
+        scope = identity_scope(session_id="bill-readonly")
+        scope.__enter__()
+        args = dict(contract="stella.bills@1", origin="tool", grant_ref="read",
                     data_handle={"dbPath": str(tmp_path / "bills.db"), "namespace": "stella.bills"})
         result = session.invoke_contract(method="list_ledger", input_payload={"year": 2026, "month": 10}, **args)
         assert result["status"] == "succeeded"
-        with pytest.raises(PermissionError, match="bills.write"):
+        with pytest.raises(PermissionError):
             session.invoke_contract(method="create_ledger", input_payload={}, **args)
         with pytest.raises((PermissionError, ValueError), match="unknown|not declared"):
             session.invoke_contract(method="undeclared", input_payload={}, **args)
     finally:
+        scope.__exit__(None, None, None)
         session.dispose()
 
 

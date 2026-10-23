@@ -30,7 +30,7 @@ BACKEND = (
 
 @pytest.mark.skipif(not BACKEND.is_file(), reason="frozen Stella.app backend missing")
 @pytest.mark.skipif(not CATALOG.is_file(), reason="Stella-Plugins catalog missing")
-def test_revoked_grant_blocks_bills_write_on_frozen_runner(tmp_path, monkeypatch):
+def test_agent_mode_blocks_bills_write_on_frozen_runner(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "/nonexistent")
     monkeypatch.delenv("PYTHONPATH", raising=False)
     store = PackageStore(tmp_path / "plugin-packages")
@@ -83,9 +83,13 @@ def test_revoked_grant_blocks_bills_write_on_frozen_runner(tmp_path, monkeypatch
                 data_handle={"dbPath": str(db), "namespace": "stella.bills"},
             )
 
-        assert create("k1", "a")["status"] == "succeeded"
-        authz.revoke(grant)
-        with pytest.raises(PermissionError, match="revoked"):
-            create("k2", "b")
+        from common.runtime_identity import identity_scope
+        from core.security.run_policy import save_run_policy
+        save_run_policy('session', 'frozen-mode', {'filesystem_mode': 'workspace-write'})
+        with identity_scope(user_id=user, session_id='frozen-mode'):
+            assert create("k1", "a")["status"] == "succeeded"
+            save_run_policy('session', 'frozen-mode', {'filesystem_mode': 'read-only'})
+            with pytest.raises(PermissionError):
+                create("k2", "b")
     finally:
         session.dispose()

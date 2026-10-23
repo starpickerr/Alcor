@@ -184,7 +184,7 @@ def test_default_template_switch_keeps_legacy_restrictions_and_original_backup(t
         "connections": {"browser": {"allowed": False}},
     })
     assert saved['filesystem_mode'] == 'read-only'
-    assert saved['rules']['network'] == 'deny'
+    assert saved['rules'] == {}
     assert saved['connections']['browser']['allowed'] is False
     assert security_center.global_policy() == saved
     assert "base_preset" not in saved

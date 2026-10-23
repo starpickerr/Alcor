@@ -477,7 +477,7 @@ def test_domain_queries_use_capability_operations_independent_of_tool_aliases():
     from core.plugins.host import _conversation_permission_denial
     from core.security.run_policy import save_run_policy
     from common.runtime_identity import identity_scope
-    save_run_policy('session', 'service-reader', {'filesystem_mode': 'full-access',
+    save_run_policy('session', 'service-reader', {'filesystem_mode': 'read-only',
         'capabilities': {'plugin:stella.memory': {'read': 'allow'}, 'plugin:stella.knowledge': {'read': 'allow'}}})
     with identity_scope(session_id='service-reader'):
         for domain in ('memory', 'knowledge'):

@@ -10,7 +10,7 @@ from common.runtime_identity import identity_scope
 from core.security.run_policy import save_run_policy
 
 
-@pytest.mark.parametrize('revoke', ['policy', 'grant'])
+@pytest.mark.parametrize('revoke', ['policy', 'generation'])
 @pytest.mark.parametrize('effect,side_effects', [('query', 'none'), ('mutation', 'committed')])
 def test_real_worker_discards_body_after_revocation(tmp_path, revoke, effect, side_effects):
     from core.plugins.host import PluginSession
@@ -32,7 +32,7 @@ def handle_invoke(params):
     authz = PluginAuthorizationStore()
     authz.issue(grant_ref='slow-grant', plugin_id='review.slow', user_id='local-default', capabilities=['sample.read'])
     session = PluginSession(package, source_label='test', registry=PluginRegistry(), authz=authz)
-    save_run_policy('session', 'inflight', {'filesystem_mode': 'read-only',
+    save_run_policy('session', 'inflight', {'filesystem_mode': 'workspace-write',
         'capabilities': {'plugin:review.slow': {'read': 'allow', 'write': 'allow'}}})
     results = []
     def run():
@@ -55,9 +55,9 @@ def handle_invoke(params):
             time.sleep(.01)
         assert (private / 'started').exists(), results
         if revoke == 'policy':
-            save_run_policy('session', 'inflight', {'capabilities': {'plugin:review.slow': {'read': 'deny', 'write': 'deny'}}})
+            save_run_policy('session', 'inflight', {'filesystem_mode': 'read-only'})
         else:
-            authz.revoke('slow-grant')
+            session.registry.revoke(session.plugin_id, session.generation)
         (private / 'release').touch()
         thread.join(5)
         assert not thread.is_alive()

@@ -385,8 +385,8 @@ class PluginSession:
     def invoke(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Compatibility wrapper for samples/tests — production callers use ``invoke_contract``.
 
-        Auto-issues a per-plugin compat grant covering declared capabilities so
-        authz stays enforceable (R05); a revoked grant still blocks.
+        Uses the same caller mode, lifecycle and contract checks as production.
+        Legacy grant references are retained only as diagnostic metadata.
         """
         services = self.registry.get(self.plugin_id)
         contract = (services.services[0] if services and services.services else f"{self.plugin_id}@1")
@@ -398,14 +398,6 @@ class PluginSession:
             if isinstance(row, dict) and row.get("capability"):
                 caps.add(str(row["capability"]))
         caps.update(self._service_permissions.get(contract) or ())
-        if self.authz.get(grant_ref) is None:
-            self.authz.issue(
-                grant_ref=grant_ref,
-                plugin_id=self.plugin_id,
-                user_id=self.user_id,
-                capabilities=caps,
-                purposes=["interactive", "system", "any"],
-            )
         return self.invoke_contract(
             contract=contract,
             method=method,
@@ -483,63 +475,26 @@ class PluginSession:
         required = set(permissions)
         required.update(declared)
         from core.plugins.management import default_store
-        from core.plugins.caller import current_consumer_plugin, managed_plugin
+        from core.plugins.caller import managed_plugin
 
         managed = managed_plugin(self.plugin_id, self.user_id)
         if managed and skip_authz:
             raise PermissionError('managed authorization cannot be bypassed')
-        resource_refs = None
-        if not skip_authz:
-            if managed:
-                from core.plugins.resources import invocation_resources
-
-                from core.plugins.locks import package_lock
-
-                policy = (nullcontext() if method in CONFIG_METHODS else
-                          package_lock(default_store().root, self.plugin_id + ':policy', exclusive=True))
-                with policy:
-                    purpose = 'background' if origin == 'job' or purpose == 'background' else 'interactive'
-                    scope = dict(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
-                                 consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
-                                 required_capabilities=required or {'plugin.invoke'}, method=method, purpose=purpose)
-                    # No body read is permitted merely to discover the authorization scope.
-                    self.authz.check_scoped(**scope, resources=[])
-
-                    def metadata(name, values):
-                        context = build_host_context(user_id=self.user_id, instance_id=self.instance_id,
-                            generation=self.generation, origin=origin, grant_ref=grant_ref)
-                        params = build_invoke_params(contract=contract, method=name, input_payload=values, context=context,
-                            deadline=min(deadline, datetime.now(timezone.utc) + timedelta(seconds=10)))
-                        params['_hostDataHandle'] = dict(data_handle or {})
-                        metadata_timeout = min(10_000, remaining_invocation_seconds() * 1000)
-                        result = validate_operation_result(self._rpc('plugin.invoke', params, timeout_ms=metadata_timeout, allow_callbacks=False))
-                        if result['status'] != 'succeeded' or not isinstance(result.get('value'), dict):
-                            raise PermissionError('source metadata is unavailable')
-                        return result['value']
-
-                    resource_refs = invocation_resources(self.plugin_id, method, input_payload, self.user_id, metadata)
-                    self.authz.check_scoped(**scope, resources=resource_refs)
-            else:
-                self.authz.check(
-                    grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
-                    required_capabilities=required or {'plugin.invoke'}, purpose=purpose,
-                    generation=self.generation, context_generation=self.generation,
-                )
-            # Overlay existing conversation/tool permission path when agent/tool origin.
-            if origin in {"tool", "job"}:
-                from core.security.capabilities import method_operation
-                denial = _conversation_permission_denial(
-                    contract=contract,
-                    method=method,
-                    agent_id=agent_id,
-                    session_id=session_id,
-                    input_payload=input_payload,
-                    noninteractive=origin == "job",
-                    effect=self._method_effects[(contract, method)],
-                    operation=method_operation(self._method_descriptors[(contract, method)], input_payload),
-                )
-                if denial:
-                    raise PermissionError(denial)
+        # Every Agent and task uses the same mode gate, including delegated calls.
+        if origin in {"tool", "job"}:
+            from core.security.capabilities import method_operation
+            denial = _conversation_permission_denial(
+                contract=contract,
+                method=method,
+                agent_id=agent_id,
+                session_id=session_id,
+                input_payload=input_payload,
+                noninteractive=origin == "job",
+                effect=self._method_effects[(contract, method)],
+                operation=method_operation(self._method_descriptors[(contract, method)], input_payload),
+            )
+            if denial:
+                raise PermissionError(denial)
         if check_only:
             if skip_authz or self._method_effects[(contract, method)] != 'query':
                 raise PermissionError('authorization probes require an authorized query')
@@ -600,8 +555,6 @@ class PluginSession:
                         values.update(snapshot['values'])
                 invoke_params['_hostDataHandle']['settings'] = values
 
-            if resource_refs is not None:
-                invoke_params["_hostDataHandle"]["authorizedResources"] = resource_refs
         if managed and method in CONFIG_METHODS:
             # A timed-out mutation may have committed, so invalidate before dispatch.
             default_store().bump_source_revision(self.plugin_id, self.user_id)
@@ -615,16 +568,15 @@ class PluginSession:
             self._check_runtime()
             result = validate_operation_result(result)
             try:
+                self.registry.require_generation(self.plugin_id, self.generation)
+                if managed:
+                    current = default_store().instance(self.plugin_id, self.user_id)
+                    if (current['intent'] != 'enabled' or
+                            default_store().runtime_state(self.plugin_id, self.user_id) in {'maintenance', 'draining'}):
+                        raise PermissionError('Plugin disabled or unavailable during the call')
                 if SecurityService.policy_binding(**binding_args) != policy_binding:
                     raise PermissionError('Execution policy changed during the call')
-                if not skip_authz:
-                    if managed:
-                        self.authz.check_scoped(**scope, resources=resource_refs)
-                    else:
-                        self.authz.check(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
-                            required_capabilities=required or {'plugin.invoke'}, purpose=purpose,
-                            generation=self.generation, context_generation=self.generation)
-            except PermissionError:
+            except (PermissionError, LookupError):
                 # Preserve the real effect state, but never release a body after
                 # revocation. Do not request or consume a second once approval.
                 return {'status': 'failed', 'sideEffects': result['sideEffects'],

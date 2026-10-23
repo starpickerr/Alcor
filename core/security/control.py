@@ -12,7 +12,7 @@ def require_owner():
 
 
 def public_policy(policy):
-    return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'capabilities', 'policy_revision',
+    return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'policy_revision',
         'extra_roots', 'connections') if key in policy}
 
 
@@ -51,7 +51,7 @@ class PermissionControl:
             policy = task['run_policy']
         return {'policy': public_policy(policy), 'migration_status': policy.get('migration_status', 'complete'),
                 'compatibility_restrictions': deepcopy(policy.get('legacy_restrictions') or {}),
-                'capabilities': capability_catalog(policy)}
+                'capabilities': []}
 
     def save(self, kind, subject, patch, agent=None):
         self._prepare(kind, subject, agent)
@@ -68,42 +68,6 @@ class PermissionControl:
                reason='Owner updated independent execution permissions.')
         return self.read(kind, subject, agent)
 
-
-def capability_catalog(policy):
-    from core.security.run_policy import DOMAINS, default_template
-    from core.plugins.management import default_store
-    from core.plugins.package_ops import PackageStore
-    from common.runtime_identity import current_identity
-    store = default_store()
-    user = current_identity().user_id or 'local-default'
-    names = {'tasks': '事务', 'calendar': '日程', 'bills': '账单', 'briefing': '简报', 'automation': '定时任务',
-        'agent-hub': '外部 Agent', 'memory': '记忆', 'knowledge': '知识'}
-    identifiers = set(default_template()['capabilities']) | set(policy['capabilities'])
-    identifiers.update('plugin:stella.' + domain for domain in DOMAINS)
-    identifiers.update('plugin:' + path.parent.name for path in PackageStore(store.root).packages.glob('*/current.json'))
-    from agent.tools.tool_manager import ToolManager
-    from core.security.capabilities import describe_tool
-    manager = ToolManager()
-    identifiers.update(describe_tool(name, {}).capability_id for name in manager.tool_classes)
-    mcp_configs = {row['name']: row for row in manager._load_mcp_configs()}
-    identifiers.update('mcp:' + name for name in mcp_configs)
-    rows = []
-    for identifier in sorted(identifiers):
-        source, name = identifier.split(':', 1)
-        row = {'id': identifier, 'name': name, 'source': source}
-        if source == 'plugin':
-            domain = name.removeprefix('stella.')
-            state = store.instance(name, user)
-            package = PackageStore(store.root).current_package(name)
-            row.update(name=names.get(domain, name), installed=bool(package),
-                       enabled=bool(package) and store.has_instance(name, user) and state['intent'] == 'enabled', runtime_state=state['state'])
-        elif source == 'builtin':
-            row.update(installed=True, runtime_state='available')
-        else:
-            config = mcp_configs.get(name.split('/', 1)[0])
-            row.update(runtime_state='configured' if config else 'unavailable', enabled=manager._mcp_enabled(config) if config else False)
-        rows.append(row)
-    return rows
 
 
 class ResourceControl:

@@ -116,13 +116,8 @@ def managed_plugin(plugin_id: str, user_id: str) -> bool:
 
 
 def issue_compatibility_grant(authz, **kwargs):
-    """Only the opt-in legacy source path has an implicit compatibility grant.
-
-    Installed/managed packages always require a separately approved grant.
-    """
-    if managed_plugin(kwargs['plugin_id'], kwargs['user_id']):
-        return None
-    return authz.issue(**kwargs)
+    """Compatibility call site only: plugins no longer own a grant system."""
+    return None
 
 
 def managed_plugin_route(plugin_id: str, environment_value: str) -> bool:
