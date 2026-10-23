@@ -1,3 +1,4 @@
+import type { CapabilityDetail, CapabilityInventory, CapabilityKind } from './capabilityTypes'
 import type { DataSnapshot, DataRecords, DataCommandResult, DataResources, DataResourceContent } from './dataTypes'
 import type { LogPage, LogQuery } from '../pages/log-viewer/logTypes'
 import type { McpServerInfo } from '../types'
@@ -783,6 +784,19 @@ class ApiClient {
   // ---------------------------------------------------------
   // Tools & skills
   // ---------------------------------------------------------
+
+  async getCapabilities(signal?: AbortSignal): Promise<CapabilityInventory> {
+    const data = await this.request<CapabilityInventory & { message?: string }>('/api/capabilities', { signal })
+    if (data.status !== 'success' || !Array.isArray(data.items)) throw new Error(data.message || 'Could not load capabilities')
+    return data
+  }
+
+  async getCapabilityDetail(kind: CapabilityKind, id: string, signal?: AbortSignal): Promise<CapabilityDetail> {
+    const query = new URLSearchParams({ kind, id })
+    const data = await this.request<{ status: string; detail?: CapabilityDetail; message?: string }>(`/api/capabilities?${query}`, { signal })
+    if (data.status !== 'success' || !data.detail) throw new Error(data.message || 'Capability not found')
+    return data.detail
+  }
 
   async getTools(): Promise<ToolInfo[]> {
     const data = await this.request<{ status: string; tools?: ToolInfo[]; message?: string }>('/api/tools')

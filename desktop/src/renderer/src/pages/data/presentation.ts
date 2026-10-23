@@ -1,5 +1,6 @@
 import { getLang } from '../../i18n'
 import type { DataSourceInfo } from '../../api/dataTypes'
+import { detailPath } from '../capabilities/presentation'
 
 export const c = (zh: string, en: string) => getLang() === 'zh' ? zh : en
 export const button = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-default px-3 py-2 text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed'
@@ -20,8 +21,12 @@ export const sourceOrigin = (source: DataSourceInfo) => source.connection?.start
   ? `MCP · ${source.connection.slice(4)}`
   : source.connection?.startsWith('plugin:') ? c('插件', 'Plugin') : source.provider
 export function settingsPath(source: DataSourceInfo): string | undefined {
-  if (['/email', '/elearning'].includes(source.settings_url || '')) return `/data/sources${source.settings_url}`
-  if (['/todos', '/calendar', '/bills', '/briefing', '/knowledge', '/memory'].includes(source.settings_url || '')) return source.settings_url
+  if (source.connection?.startsWith('plugin:')) return detailPath('plugins', source.connection.slice(7), 'configuration')
+  if (source.connection?.startsWith('mcp:')) {
+    const owner = source.connection.slice(4)
+    return detailPath('mcp', owner, ['email', 'elearning'].includes(owner) ? 'configuration' : undefined)
+  }
+  if (['/email', '/elearning'].includes(source.settings_url || '')) return detailPath('mcp', source.settings_url!.slice(1), 'configuration')
   return undefined
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { product } from '@product'
 import { getLang, t } from '../i18n'
 import PageHeader from '../components/PageHeader'
@@ -8,7 +8,6 @@ import AboutSettings from './settings/AboutSettings'
 import ModelsTab from './settings/ModelsTab'
 import ManagedModelSettings from './settings/ManagedModelSettings'
 import AssistantSettings from './settings/AssistantSettings'
-import AppleIntegrations from './settings/AppleIntegrations'
 import type { SettingsOrigin } from './settings/origin'
 
 const copy = (zh: string, en: string) => getLang() === 'zh' ? zh : en
@@ -52,8 +51,7 @@ export function AgentSettingsPage({ baseUrl }: { baseUrl: string }) {
 }
 
 export function AppleSettingsPage({ kind }: { kind: 'calendar' | 'todos' }) {
-  return <ConfigurationFrame title={kind === 'calendar' ? 'Apple 日历' : 'Apple 提醒事项'}>
-    <Link className="text-sm text-accent" to={kind === 'calendar' ? '/calendar' : '/todos'}>{copy('返回', 'Back')}</Link>
-    <AppleIntegrations section={kind === 'calendar' ? 'apple-calendar' : 'apple-reminders'} kind={kind} />
-  </ConfigurationFrame>
+  const location = useLocation()
+  const plugin = kind === 'calendar' ? 'stella.calendar' : 'stella.tasks'
+  return <Navigate to={`/skills/plugins/${plugin}?section=configuration&integration=${kind === 'calendar' ? 'apple-calendar' : 'apple-reminders'}`} replace state={location.state || { from: kind === 'calendar' ? '/calendar' : '/todos', scroll: 0 }} />
 }

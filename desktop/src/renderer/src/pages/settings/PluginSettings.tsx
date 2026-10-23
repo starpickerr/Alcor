@@ -8,12 +8,13 @@ import { hasPluginDomainPanel, PluginDomainPanel } from './PluginDomainPanels'
 type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conflict?: boolean }
 type Props = {
   baseUrl: string
+  embedded?: boolean
   pluginId?: string | null
   onPluginChange?: (pluginId: string) => void
 }
 
 /** Same shell as General / Assistant: one column of Group cards, no nested sidebar. */
-export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Props) {
+export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embedded = false }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
   const [selected, setSelected] = useState('')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
@@ -199,7 +200,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
   }))
   return (
     <div className="space-y-8">
-      <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
+      {!embedded && <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
         {!rows.length ? (
           <Row label={t('settings_plugin_empty')} />
         ) : (
@@ -218,7 +219,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
             }
           />
         )}
-      </Group>
+      </Group>}
 
       {selected && sectionOptions.length > 1 && (
         <div className="px-1">
