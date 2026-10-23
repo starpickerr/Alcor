@@ -27,7 +27,8 @@ export default function PermissionSelector({ sessionId }: { sessionId: string })
   useEffect(() => { generation.current++; setEditing(false); setBusy(false); setError('') }, [sessionId])
   useEffect(() => { if (open) void refresh(sessionId) }, [open, refresh, sessionId])
   const close = useCallback(() => setOpenMenu(null), [setOpenMenu])
-  const mode = cfg?.permission.policy.filesystem_mode || (cfg?.permission.mode === 'custom' ? cfg.permission.base_preset : cfg?.permission.mode)
+  const permission = cfg?.permission
+  const mode = permission?.policy?.filesystem_mode || (permission?.mode === 'custom' ? permission.base_preset : permission?.mode)
   const name = (value: FileMode) => labels[value][en ? 'en' : 'zh']
   const select = async (next: FileMode) => {
     if (busy) return
@@ -54,8 +55,8 @@ export default function PermissionSelector({ sessionId }: { sessionId: string })
       </> : <>
         <div className="px-1"><h3 className="text-sm font-semibold text-content">{en ? 'Files and commands' : '文件与命令权限'}</h3>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">{en ? 'Applies to this conversation. Project conversations share files and keep independent permissions.' : '仅作用于此对话。项目内对话共享文件，各自保存权限。'}</p></div>
-        {(error || storeError || cfg?.permission.error) && <p role="alert" className="text-xs text-danger">{error || storeError || cfg?.permission.error}</p>}
-        {(Object.keys(labels) as FileMode[]).map(value => <button key={value} type="button" disabled={busy || !cfg} aria-pressed={mode === value} onClick={() => void select(value)}
+        {(error || storeError || permission?.error) && <p role="alert" className="text-xs text-danger">{error || storeError || permission?.error}</p>}
+        {(Object.keys(labels) as FileMode[]).map(value => <button key={value} type="button" disabled={busy || !permission} aria-pressed={mode === value} onClick={() => void select(value)}
           className={`flex min-h-10 w-full items-center justify-between rounded-btn px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent ${mode === value ? 'bg-accent-soft text-accent' : 'text-content hover:bg-surface-2'}`}>
           {name(value)}{mode === value && <Check size={14} />}
         </button>)}

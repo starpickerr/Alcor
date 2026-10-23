@@ -357,3 +357,27 @@ def test_hub_derived_once_approval_binds_provider_and_complete_payload():
                 changed_binding = _current_authorization(None, None, 'hub-payload', None, False)[2]
                 assert not inherited(descriptor, changed_binding, {'method': 'provider_start', 'input': payload})
             assert not inherited(descriptor, binding, {'method': 'provider_start', 'input': payload})
+
+
+@pytest.mark.parametrize('stage,expected', [('start', 'failed'), ('observe', 'outcome_unknown')])
+def test_hub_permission_failure_preserves_whether_provider_was_started(tmp_path, monkeypatch, stage, expected):
+    import sys
+    fake = tmp_path / 'codex'
+    fake.write_text(f'#!{sys.executable}\nprint("synthetic codex")\n')
+    fake.chmod(0o755)
+    config = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
+        'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
+    tool = AgentHubTool()
+    if stage == 'start':
+        original = agent_hub_gateway.invoke_ok
+        def before_dispatch(method, *args, **kwargs):
+            if method == 'provider_start':
+                raise PermissionError('revoked before dispatch')
+            return original(method, *args, **kwargs)
+        monkeypatch.setattr(agent_hub_gateway, 'invoke_ok', before_dispatch)
+    else:
+        def after_start(*args):
+            raise PermissionError('result authorization failed after actual start')
+        monkeypatch.setattr(tool, '_observe_execution', after_start)
+    result = tool.execute(action='submit', goal='state probe', provider_config_id=config['providerConfigId'])
+    assert result.result['status'] == expected, result.result

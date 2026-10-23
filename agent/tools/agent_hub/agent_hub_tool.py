@@ -133,7 +133,7 @@ class AgentHubTool(BaseTool):
         except Exception as exc:
             eid = created["executionId"]
             row = svc.get(eid)
-            if isinstance(exc, PermissionError) or row["status"] == "queued":
+            if row["status"] == "queued":
                 row = svc.transition(eid, "failed", error={"message": str(exc)})
             elif row["status"] in {"running", "cancel_requested"}:
                 row = svc.transition(eid, "outcome_unknown", error={"message": str(exc)})
@@ -190,8 +190,14 @@ class AgentHubTool(BaseTool):
             },
         }
         from core.security.approvals import agent_hub_operation_scope
-        with agent_hub_operation_scope(kwargs, "provider_start", start_payload):
-            start = agent_hub_gateway.invoke_ok("provider_start", start_payload)
+        try:
+            with agent_hub_operation_scope(kwargs, "provider_start", start_payload):
+                start = agent_hub_gateway.invoke_ok("provider_start", start_payload)
+        except PermissionError as exc:
+            # Host admission rejected before dispatch. A later observation or
+            # artifact error cannot make this claim about an already-started run.
+            svc.transition(eid, "failed", error={"message": str(exc)})
+            return {"executionId": eid, "status": "failed", "error": {"message": str(exc)}}
         if start.get("status") != "started":
             err = start.get("error") or {"message": "provider rejected start"}
             svc.transition(eid, "failed", summary="provider start rejected", error=err)

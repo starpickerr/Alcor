@@ -93,6 +93,9 @@ with sync_playwright() as playwright:
         }""")
         embedded = page.locator('#embedded-test-root')
         expect(embedded.get_by_text('已处理：请创建读书日程')).to_be_visible()
+        # The synthetic settings response has no permission metadata. Keep the
+        # composer usable while permission controls stay in the loading state.
+        expect(embedded.locator('#permission-selector-chip')).to_contain_text('正在读取权限')
         assert len(sent) == 1 and sent[0]['message'] == '请创建读书日程'
         calendar_session = sent[0]['session_id']
         hold_todo_history[0] = True
