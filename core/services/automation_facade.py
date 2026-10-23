@@ -2,7 +2,8 @@
 
 Host-only work stays here: destination catalog, test sends, notification-route
 normalization, conversation-scope validation and delivery status (which reads
-Core's lease/delivery tables). Everything else is a plugin call against the shared
+Core's lease/delivery tables). Task rules run against a Core-brokered copy containing only the current
+user and Agent task rows; Core validates and commits the requested changes to
 ``automation.db``. Stores without that database (legacy JSON ``TaskStore``) are not
 served by the plugin; ``Application.scheduler`` keeps them on ``SchedulerMutations``.
 """
@@ -15,7 +16,7 @@ from core.services import automation_gateway
 
 
 def plugin_serves(store: Any) -> bool:
-    """Only the SQLite AutomationStore shares automation.db with the plugin."""
+    """Only the SQLite AutomationStore supports the Core task-row broker."""
     return bool(getattr(store, "store_path", None)) and bool(getattr(store, "agent_id", None))
 
 

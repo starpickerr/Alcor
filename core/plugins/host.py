@@ -308,7 +308,7 @@ class PluginSession:
             storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
             self._storage_directory = storage
             from core.plugins.storage import storage_paths
-            domain, legacy_reads = storage_paths(self._bound_data_handle)
+            domain, legacy_reads = storage_paths(self._bound_data_handle, legacy=self.maintenance)
             plan = prepare_extension(cmd, self.plugin_root, storage, env, trusted=plugin_trusted(
                 self.plugin_root, self.plugin_id, self.package_digest, self.user_id),
                 read_roots=[Path(cmd[0]).resolve().parent, *legacy_reads], write_roots=[domain])
@@ -447,6 +447,7 @@ class PluginSession:
         session_id: str | None = None,
         data_handle: Mapping[str, Any] | None = None,
         check_only: bool = False,
+        commit_data=None,
     ) -> dict[str, Any]:
         from common.runtime_identity import current_identity
 
@@ -609,6 +610,10 @@ class PluginSession:
                 # revocation. Do not request or consume a second once approval.
                 return {'status': 'failed', 'sideEffects': result['sideEffects'],
                         'error': {'code': 'permission_denied', 'message': 'Authorization changed during the call; result discarded.'}}
+            if commit_data is not None:
+                if self.plugin_id != 'stella.automation' or not callable(commit_data):
+                    raise PermissionError('Invalid Core data commit callback')
+                result = validate_operation_result(commit_data(result))
             if result['status'] == 'succeeded' and self.plugin_id == 'stella.automation':
                 from core.security.task_policy import describe_task, revoke_task_policy
                 if task_policy_change is not None:

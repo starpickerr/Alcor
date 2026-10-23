@@ -159,6 +159,16 @@ def _permission_denial(
             return f'Tool {tool_name} is disabled.'
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
+        from core.security.service import SecurityService
+        if SecurityService.native_user_operation():
+            # UI and UI-rooted service calls do not borrow the default Agent
+            # mode. Gateway identity, private paths and connection constraints
+            # still run against the same trusted execution context.
+            native_policy = dict(check_kwargs['policy'])
+            native_policy.update(preset='full-access', filesystem_mode='full-access', rules={}, migration_status='complete')
+            native_policy.pop('error', None)
+            check_kwargs['policy'] = native_policy
+            mode = 'full-access'
         capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
         from core.security.capabilities import describe_tool
         descriptor = capability_descriptor or describe_tool(tool_name, arguments)

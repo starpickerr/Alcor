@@ -34,7 +34,7 @@ Agent 对话和后台任务共用三档 RunPolicy，各自保存独立快照。�
 
 未使用受信任宿主运行的扩展使用实际 OS 隔离：macOS Seatbelt、Linux bubblewrap；隔离不可用时拒绝启动。受信任运行允许宿主文件与网络访问，撤销会停止受信任进程及普通后代。安全中心显示实际运行模式，未运行不宣称已隔离。
 
-Core 适配器在启动前绑定实际业务数据目录和私有运行目录；SQLite 仅开放所属业务目录，Memory/Knowledge 使用实际内容目录。旧导入源只读。不同数据目录改绑时重启进程，隔离进程拒绝临时替换句柄路径；符号链接不能把绑定转移到其他目录。迁移也绑定同一份 scratch 数据，原数据与备份在验证成功前保持完整。不会通过将整个用户目录加入沙箱来修复 EPERM。
+Core 适配器在启动前绑定实际业务数据目录和私有运行目录；SQLite 仅开放所属业务目录，Memory/Knowledge 使用实际内容目录。常规 Memory 进程不开放旧目录；迁移由 Core 提取 Markdown 到临时只读快照，排除对话索引等 Core 文件。不同数据目录改绑时重启进程，隔离进程拒绝临时替换句柄路径；符号链接不能把绑定转移到其他目录。迁移也绑定同一份 scratch 数据，原数据与备份在验证成功前保持完整。Automation 的原共享库继续由 Core 保管，工作进程仅获得当前用户、当前 Agent 的任务事务副本，不包含 Core 执行/投递表。Core 校验目标与所有权后提交单个任务，取消、撤销或非法修改时回滚；原库不搬迁。不会通过将整个用户目录加入沙箱来修复 EPERM。
 
 本地 MCP 按启动内容摘要选择隔离或受信任运行，远程 MCP 显示为远程连接。脚本摘要覆盖同包导入代码；无法固定内容的模块/eval/下载启动器不得复用不完整摘要的信任。
 
@@ -45,5 +45,7 @@ Core 适配器在启动前绑定实际业务数据目录和私有运行目录；
 权限迁移只读取旧权限元数据，保留原账号凭据、业务存储和配置备份。迁移预览与恢复保留版本和输入指纹校验；后续编辑阻止恢复覆盖，资源撤销不会因恢复而复活。
 
 验证通过 `scripts/run_isolated.py` 使用临时 HOME/STELLA_DATA_DIR，不连接真实账号。回归入口为 test_unified_agent_permissions.py、test_plugin_domain_sandbox.py、test_task_run_policy.py、test_resource_grants.py、test_inflight_policy.py、test_permission_control.py、test_permission_migration.py 及 ui_run_policy.py、ui_security_modes.py、ui_tasks.py。
+
+本次实现、审查和验证记录见[三档权限交付记录](agent-permissions-validation.md)。
 
 当前机器验证 macOS 实际文件/进程隔离；Linux/Windows 仍需对应平台执行。Windows 无实际隔离时拒绝启动，用户可明确选择适用的受信任运行。普通命令保留启动时的 OS 边界，后续模式变更影响新调用。DNS 检查与实际连接之间仍存在 DNS rebinding 边界。

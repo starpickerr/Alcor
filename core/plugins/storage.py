@@ -1,5 +1,6 @@
 """Host-selected private storage for plugins without a legacy domain path."""
 from pathlib import Path
+from contextlib import contextmanager
 import re
 
 
@@ -54,9 +55,40 @@ def bound_data_handle(plugin_id, handle):
     return result
 
 
-def storage_paths(handle):
+def storage_paths(handle, *, legacy=False):
     """One owner domain is writable; legacy import sources are read-only."""
     primary = Path(handle['dbPath']).parent if handle.get('dbPath') else Path(handle['dataDir'])
     primary.mkdir(parents=True, exist_ok=True, mode=0o700)
-    reads = [Path(handle[key]) for key in _STORAGE_KEYS[2:] if handle.get(key) and Path(handle[key]).exists()]
+    reads = [Path(handle[key]) for key in _STORAGE_KEYS[2:] if (legacy or key == 'legacyCalendarDbPath') and handle.get(key) and Path(handle[key]).exists()]
     return primary, reads
+
+
+@contextmanager
+def migration_import_handle(handle):
+    """Expose only a fixed Markdown snapshot, never a legacy Core directory."""
+    if handle.get('namespace') != 'stella.memory':
+        yield handle
+        return
+    import shutil
+    import tempfile
+    normalized = bound_data_handle('stella.memory', handle)
+    with tempfile.TemporaryDirectory(prefix='stella-memory-import-') as folder:
+        target = Path(folder)
+        memories = target / 'memory'
+        memories.mkdir()
+        legacy = Path(normalized['legacyMemoryDir'])
+        if legacy.is_dir():
+            for source in legacy.rglob('*.md'):
+                relative = source.relative_to(legacy)
+                if any(part.startswith('.') for part in relative.parts):
+                    continue
+                if source.is_symlink() or not source.resolve().is_relative_to(legacy.resolve()):
+                    raise PermissionError('legacy memory symlink refused')
+                if source.is_file():
+                    destination = memories / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
+        main = Path(normalized['legacyMainFile'])
+        if main.is_file():
+            shutil.copy2(main, target / 'MEMORY.md')
+        yield {**normalized, 'legacyMemoryDir': str(memories), 'legacyMainFile': str(target / 'MEMORY.md')}

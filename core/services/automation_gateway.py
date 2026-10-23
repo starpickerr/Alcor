@@ -99,27 +99,27 @@ def invoke_automation(
 ) -> dict[str, Any]:
     if method not in AUTOMATION_METHOD_PARAMS:
         raise ValueError(f"unknown automation plugin method: {method}")
-    session = ensure_automation_session(db_path)
+    from common.runtime_identity import current_identity
+    identity = current_identity()
+    if (owner_user_id and owner_user_id != plugin_user_id() or
+            identity.agent_id and identity.agent_id != agent_id):
+        raise PermissionError('Host data handle identity does not match the worker execution')
+    owner = owner_user_id or (identity.user_id if identity.user_id not in (None, 'local-default') else '')
     write = method in AUTOMATION_WRITE_METHODS
-    handle = {
-        "dbPath": str(db_path),
-        "namespace": PLUGIN_ID,
-        "agentId": agent_id,
-        "userId": owner_user_id or "",
-    }
     payload = dict(params)
     idem = payload.pop("idempotencyKey", None)
-    return session.invoke_contract(
-        contract=CONTRACT,
-        method=method,
-        input_payload=payload,
-        origin="system",
-        grant_ref=user_grant_ref(_GRANT_REF),
-        permissions=("automation.write",) if write else ("automation.read",),
-        purpose="interactive",
-        idempotency_key=idem or (uuid.uuid4().hex if write else None),
-        data_handle=handle,
-    )
+    from core.plugins.task_records import task_records
+    with task_records(db_path, agent_id, owner, method, payload) as records:
+        session = ensure_automation_session(records.path)
+        return session.invoke_contract(
+            contract=CONTRACT, method=method, input_payload=payload, origin="system",
+            grant_ref=user_grant_ref(_GRANT_REF),
+            permissions=("automation.write",) if write else ("automation.read",),
+            purpose="interactive", idempotency_key=idem or (uuid.uuid4().hex if write else None),
+            data_handle={"dbPath": str(records.path), "namespace": PLUGIN_ID,
+                         "agentId": agent_id, "userId": owner},
+            commit_data=records.commit,
+        )
 
 
 def resolve_handler(task: dict[str, Any], *, db_path: Path, agent_id: str, owner_user_id: str = "") -> dict[str, Any]:

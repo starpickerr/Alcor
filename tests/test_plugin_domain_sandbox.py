@@ -130,7 +130,7 @@ def handle_invoke(params):
             origin='ui', grant_ref='compat', data_handle={'namespace': 'sample.storage', 'dataDir': str(own)})
         assert result['value'] == {'own': 'own', 'domain': 'denied', 'user': 'denied', 'symlink': 'denied',
             'write_own': 'allowed', 'write_domain': 'denied', 'write_user': 'denied', 'write_symlink': 'denied',
-            'legacy': 'legacy', 'write_legacy': 'denied'}
+            'legacy': 'denied', 'write_legacy': 'denied'}
         assert legacy.read_text() == 'legacy'
     finally:
         session.dispose()

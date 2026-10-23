@@ -7,6 +7,22 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
+    def native_user_operation():
+        from common.runtime_identity import current_identity
+        from core.execution.context import current_execution_context
+        from core.plugins.caller import current_caller_origin, current_invocation_purpose
+        active = current_execution_context()
+        if active:
+            active.check_active()
+        identity = current_identity()
+        # Legacy Application ports use a Core-owned caller scope rather than
+        # ExecutionContext. Only an explicit UI root qualifies; missing/system
+        # origins and all Agent execution identities remain mode constrained.
+        return (current_caller_origin() == 'ui' and current_invocation_purpose() != 'background' and
+                (active is None or active.purpose == 'interactive') and
+                not (identity.session_id or identity.task_id or identity.run_id or identity.execution_session_id))
+
+    @staticmethod
     def policy_binding(*, origin=None, agent_id=None, session_id=None):
         """Snapshot authorization inputs without using/consuming an approval."""
         from common.runtime_identity import current_identity

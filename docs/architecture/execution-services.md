@@ -67,3 +67,5 @@ MCP 调用在启动等待、授权、实际传输和结果释放处检查同一�
 权限统一为三档 RunPolicy 与 Resource Grants，Security Service 协调 Gateway 和 Data Service。所有模式均可调用内置工具、插件、MCP 和 Skill，由模式限制具体操作。插件没有独立操作授权；第一方摘要校验默认信任，安装的第三方需用户确认信任。原生 UI 操作不经 Agent 模式审核；Agent 和任务保持可信来源与权限上限。账号、凭据和业务存储不搬迁，历史 MCP 资源授权保留；公开服务与实际数据目录仍由 Core 绑定。
 
 测试入口：`tests/test_execution_context.py`、`test_service_boundaries.py`、`test_plugin_core_invoke.py`、`test_data_resources.py`，并结合现有 workspace/scheduler/security/plugin/MCP 回归。Data 资源细节见[数据服务](data-service.md)，现有平台与权限模式限制见[权限模式](../security-permission-modes.md)。
+
+Automation 通过 Core task-record broker 读写共享调度库：插件只看到当前用户/Agent 的任务副本，Core 原子核对并提交请求目标，Core job_runs/job_deliveries 与其他用户行不交给插件进程。副本锁覆盖跨进程读写，Core 持有源库写事务避免覆盖调度器的并发更新；取消和无效副本不发布。

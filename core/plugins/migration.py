@@ -80,6 +80,10 @@ class MigrationCoordinator:
         raw_path = data_handle.get('dbPath') or data_handle.get('dataDir')
         if not raw_path:
             raise ValueError('bound domain data required')
+        if plugin_id == 'stella.automation':
+            from core.plugins.task_records import is_task_records_path
+            if not is_task_records_path(raw_path, user_id):
+                raise PermissionError('Automation migrations require broker-owned task storage')
         data = Path(raw_path).resolve()
         directory = 'dbPath' not in data_handle
         target = manifest['data']['schemaVersion']
@@ -170,18 +174,20 @@ class MigrationCoordinator:
                         shutil.copy2(backup, scratch)
                     advance('migrating')
                     handle = {**data_handle, ('dataDir' if directory else 'dbPath'): str(scratch)}
-                    session = PluginSession(package, source_label='maintenance', registry=PluginRegistry(),
-                                            user_id=user_id, maintenance=True, data_handle=handle)
-                    try:
-                        session.start()
-                        result = session.migrate(operation_id=op_id, migration_id=migration_id,
-                                                 from_schema=facts['fromSchema'], to_schema=target, data_handle=handle, mode='apply')
-                        verified = session.migrate(operation_id=op_id, migration_id=migration_id,
-                                                   from_schema=facts['fromSchema'], to_schema=target, data_handle=handle, mode='verify')
-                        if not result['committed'] or not verified['verified']:
-                            raise RuntimeError('migration verification failed')
-                    finally:
-                        session.dispose()
+                    from core.plugins.storage import migration_import_handle
+                    with migration_import_handle(handle) as import_handle:
+                        session = PluginSession(package, source_label='maintenance', registry=PluginRegistry(),
+                                                user_id=user_id, maintenance=True, data_handle=import_handle)
+                        try:
+                            session.start()
+                            result = session.migrate(operation_id=op_id, migration_id=migration_id,
+                                                     from_schema=facts['fromSchema'], to_schema=target, data_handle=import_handle, mode='apply')
+                            verified = session.migrate(operation_id=op_id, migration_id=migration_id,
+                                                       from_schema=facts['fromSchema'], to_schema=target, data_handle=import_handle, mode='verify')
+                            if not result['committed'] or not verified['verified']:
+                                raise RuntimeError('migration verification failed')
+                        finally:
+                            session.dispose()
                     marker_copy = scratch / '.stella-migrations.sqlite' if directory else scratch
                     _checkpoint_database(marker_copy)
                     if not _marker(marker_copy, migration_id, target):

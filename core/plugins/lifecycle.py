@@ -43,7 +43,11 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
             return {'namespace': plugin_id, 'dataDir': str(state_dir.knowledge_dir(ensure=False).absolute())}
         if plugin_id == 'stella.automation':
             path = state_dir.scheduler_file().with_name('automation.db')
-            return {'namespace': plugin_id, 'dbPath': str(path.absolute())}
+            from core.plugins.task_records import task_records_path
+            from agent.registry import get_agent_registry
+            from common.runtime_identity import current_identity
+            agent = current_identity().agent_id or get_agent_registry().default_agent_id
+            return {'namespace': plugin_id, 'dbPath': str(task_records_path(path, agent, user_id))}
         if plugin_id == 'stella.agent-hub':
             return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).absolute())}
     from core.plugins.storage import private_data_handle
