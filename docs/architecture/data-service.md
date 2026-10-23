@@ -33,7 +33,7 @@ flowchart LR
 
 Data Service 不保存第二套 ACL。查询、同步、导出、删除及交付通过当前 Security/Tool/MCP 权限；读取缓存也不能绕过连接停用、工具开关、旧 Grant 撤销或资源范围。服务实例绑定用户，同一用户的来源在不同 Agent 与对话间保持一致；真实调用者、执行目的、取消、截止时间和现有权限仍沿调用传递。可信 `Consumer` 注册可以绑定插件消费者身份，订阅标签不能授予权限；已有消费者上下文不能被替换。读取正文后再次检查权限、来源 revision 和订阅状态。
 
-Core 内置简报采集在 `BriefingPipeline._fetch_source` 内进入短暂的可信采集范围，保持 `stella.briefing` 消费者身份。仅邮箱 `fetch_messages`、eLearning `fetch_source` 和日程 `list_events` 可复用安装/启用时已签发的同用户、同用途的所有者默认读取 Grant；不会创建或改写持久授权。已有任何简报消费者授权时，以其范围、用途、有效期和撤销状态为准，不回退到所有者默认值。所有者默认 Grant 的限制和撤销仍生效；公开插件回调、其他消费者和写操作不能继承该范围。外部连接与功能消费关系继续独立检查。实现位于 `core/security/source_collection.py` 与 `PluginAuthorizationStore.check_scoped`，验收覆盖 `test_briefing_source_authorization.py`、真实邮箱/eLearning MCP 和托管日程插件测试。
+Core 内置简报采集保持 `stella.briefing` 消费者和当前交互/后台身份。邮箱与 eLearning 已迁移 MCP，历史资源 grant 继续校验范围、用途、有效期和撤销；日程等插件取消独立操作 grants，Agent 来源按三档 RunPolicy 判断，原生 UI 来源不检查 Agent 模式。插件启停、执行身份及实际数据边界仍即时检查。
 
 原生简报的事务/日历协作由 `core/services/briefing_gateway.py` 单独绑定根操作，`core/security/briefing_peers.py` 只允许该操作所需的第一层 peer callback 复用同用户、同用途的所有者默认 Grant：详情读取限关联对象，目标选择限列表；用户决策和 outbox 投影可执行查重、删除记录检查、创建、提醒配置及事实同步。该范围在 gateway 返回时清除，直接调用 worker、第三方消费者、多层委托及其他业务方法不能继承；创建简报和读取详情不能借此写入事务或日历。实时授权仍由原 `check_scoped` 执行，显式简报消费者策略优先，撤销、有效期及资源限制不变，不新增持久 Grant。验收见 `tests/test_briefing_peer_authorization.py`，覆盖真实三个 worker、幂等创建、投影、提醒、拒绝与恢复和用户/调用链隔离。
 
@@ -65,7 +65,7 @@ Source 是稳定来源实例，必须有 `id/name/kind`，可声明 `operations`
 
 2026-10-22 根据用户对全局数据目录的修正，移除会话/任务工作区提供者与注册。已有数据库中的旧工作区引用不再列出或解析，不删除实际工作文件。Agent 的文件操作继续由独立 Workspace Service 和原工具权限管理，不作为数据页的信息源。
 
-HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resource_id 执行按需读取；两种请求均要求原生 API 认证。该接口继续为可信原生调用和资源消费者提供按需读取，桌面数据页不再提供资源预览组件。插件通过 `stella.data@1` 的只读方法消费资源，必须声明并获准 `data.read`，授权消费者和用途沿原调用传递。来源注册、存储清理和 Security 管理不在插件公开契约中。
+HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resource_id 执行按需读取；两种请求均要求原生 API 认证。该接口继续为可信原生调用和资源消费者提供按需读取，桌面数据页不再提供资源预览组件。插件通过 `stella.data@1` 的只读方法消费资源，必须在调用方法声明 `data.read` 并通过来源与当前执行权限校验，授权消费者和用途沿原调用传递。来源注册、存储清理和 Security 管理不在插件公开契约中。
 
 ## 已接入的所有者
 
@@ -78,7 +78,7 @@ HTTP 新增 `/api/data/resources`：传 source_id 返回目录页，另传 resou
 | 事务、日程、账单、简报 | `PluginResourceProvider` 调用各自已有的列表和详情契约 | 原业务 ID 的资源引用 |
 | 知识、记忆 | 同一适配器调用 `list_tree/read_file`、`list_files/get_content` | 文档路径、类别及来源引用；不复制编辑器或索引 |
 
-插件适配器与原 gateway 共用序列化锁、用户句柄、生命周期租约及现有 Grant。`PluginSession.invoke_contract(check_only=True)` 只允许经过完整授权的 query，用于查询和结果释放前的权限检查；它不执行目标业务方法，也不向插件 callback 开放。
+插件适配器与原 gateway 共用序列化锁、用户句柄、生命周期租约及当前三档运行权限。`PluginSession.invoke_contract(check_only=True)` 只允许经过完整授权的 query，用于查询和结果释放前的权限检查；它不执行目标业务方法，也不向插件 callback 开放。
 
 eLearning 的目录按课程和方法分别检查权限，未授权课程或文件方法不会阻断其他已授权资源；完全没有可读取资源权限时明确拒绝。历史课程内容通过原 Server 的查询窗口读取，文件由原 Server 提供元数据和上游链接，不将二进制伪装成正文。查看目录不推进简报消费游标，也不自动缓存正文、建立知识索引或加入模型上下文。简报继续使用同一 MCP 的既有后台消费接口，保留独立游标与现有历史数据。
 

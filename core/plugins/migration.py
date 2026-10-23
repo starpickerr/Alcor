@@ -171,7 +171,7 @@ class MigrationCoordinator:
                     advance('migrating')
                     handle = {**data_handle, ('dataDir' if directory else 'dbPath'): str(scratch)}
                     session = PluginSession(package, source_label='maintenance', registry=PluginRegistry(),
-                                            user_id=user_id, maintenance=True)
+                                            user_id=user_id, maintenance=True, data_handle=handle)
                     try:
                         session.start()
                         result = session.migrate(operation_id=op_id, migration_id=migration_id,

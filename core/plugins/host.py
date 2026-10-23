@@ -188,6 +188,7 @@ class PluginSession:
         authz: PluginAuthorizationStore | None = None,
         runner_command: list[str] | None = None,
         maintenance: bool = False,
+        data_handle: Mapping[str, Any] | None = None,
     ) -> None:
         self.plugin_root = Path(plugin_root).resolve()
         self.source_label = source_label
@@ -196,6 +197,9 @@ class PluginSession:
         self.authz = authz or DEFAULT_AUTHZ
         self.manifest = load_manifest(self.plugin_root)
         self.plugin_id = self.manifest["id"]
+        from core.plugins.storage import bound_data_handle, private_data_handle
+        self._bound_data_handle = bound_data_handle(self.plugin_id,
+            data_handle if data_handle is not None else private_data_handle(self.plugin_id, self.user_id))
         self.package_digest = _digest_tree(self.plugin_root)
         self.generation = 0
         self.instance_id = str(uuid.uuid4())
@@ -214,6 +218,18 @@ class PluginSession:
         self._method_descriptors = {}
         self.sandbox_state = {'mode': 'unavailable', 'reason': 'Worker has not started.'}
         _LIVE_SESSIONS.add(self)
+
+    def matches_storage(self, handle):
+        from core.plugins.storage import bound_data_handle, _STORAGE_KEYS
+        normalized = bound_data_handle(self.plugin_id, handle)
+        return all(normalized.get(key) == self._bound_data_handle.get(key) for key in _STORAGE_KEYS)
+
+    def _check_data_binding(self, handle):
+        if self.sandbox_state.get('mode') == 'isolated' and handle is not None:
+            from core.plugins.storage import bound_data_handle, _STORAGE_KEYS
+            normalized = bound_data_handle(self.plugin_id, {**self._bound_data_handle, **handle})
+            if any(normalized[key] != self._bound_data_handle.get(key) for key in _STORAGE_KEYS if key in normalized):
+                raise PermissionError('Host data handle differs from the bound worker storage; restart required')
 
     def _check_runtime(self):
         if self.sandbox_state.get('mode') == 'unavailable':
@@ -291,9 +307,11 @@ class PluginSession:
             from core.plugins.storage import private_data_handle
             storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
             self._storage_directory = storage
+            from core.plugins.storage import storage_paths
+            domain, legacy_reads = storage_paths(self._bound_data_handle)
             plan = prepare_extension(cmd, self.plugin_root, storage, env, trusted=plugin_trusted(
                 self.plugin_root, self.plugin_id, self.package_digest, self.user_id),
-                read_roots=[Path(cmd[0]).resolve().parent])
+                read_roots=[Path(cmd[0]).resolve().parent, *legacy_reads], write_roots=[domain])
             self.sandbox_state = plan.state
             self._proc = subprocess.Popen(
                 plan.argv,
@@ -372,6 +390,7 @@ class PluginSession:
                 data_handle: Mapping[str, Any], mode: str) -> dict[str, Any]:
         if not self.maintenance:
             raise PermissionError("migration requires maintenance session")
+        self._check_data_binding(data_handle)
         handle = {**dict(data_handle), "userId": self.user_id, "instanceId": self.instance_id,
                   "generation": self.generation}
         return self._rpc("runtime.migrate", {
@@ -440,6 +459,7 @@ class PluginSession:
                     data_handle.get('userId') not in (None, '', self.user_id) or
                     identity.agent_id and data_handle.get('agentId') not in (None, '', identity.agent_id)):
                 raise PermissionError('Host data handle identity does not match the worker execution')
+        self._check_data_binding(data_handle)
         # A compatibility gateway cannot erase the real tool/job caller.
         from core.plugins.caller import (current_caller_origin, current_delegation,
                                          current_invocation_deadline, remaining_invocation_seconds,
@@ -480,6 +500,11 @@ class PluginSession:
         managed = managed_plugin(self.plugin_id, self.user_id)
         if managed and skip_authz:
             raise PermissionError('managed authorization cannot be bypassed')
+        if managed:
+            from core.security.runtime_trust import plugin_trusted, verified_first_party
+            if not (verified_first_party(self.plugin_root, self.plugin_id, self.package_digest) or
+                    plugin_trusted(self.plugin_root, self.plugin_id, self.package_digest, self.user_id)):
+                raise PermissionError('Third-party plugin requires owner trust for this package digest')
         # Every Agent and task uses the same mode gate, including delegated calls.
         if origin in {"tool", "job"}:
             from core.security.capabilities import method_operation
@@ -570,6 +595,9 @@ class PluginSession:
             try:
                 self.registry.require_generation(self.plugin_id, self.generation)
                 if managed:
+                    if not (verified_first_party(self.plugin_root, self.plugin_id, self.package_digest) or
+                            plugin_trusted(self.plugin_root, self.plugin_id, self.package_digest, self.user_id)):
+                        raise PermissionError('Plugin trust changed during the call')
                     current = default_store().instance(self.plugin_id, self.user_id)
                     if (current['intent'] != 'enabled' or
                             default_store().runtime_state(self.plugin_id, self.user_id) in {'maintenance', 'draining'}):

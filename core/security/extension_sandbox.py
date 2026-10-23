@@ -16,7 +16,7 @@ class ExtensionPlan:
 
 
 def prepare_extension(command, package, storage, env, *, trusted=False, writable=True,
-                      read_roots=(), executable_reads=(), network=False):
+                      read_roots=(), write_roots=(), executable_reads=(), network=False):
     package, storage = Path(package).resolve(), Path(storage).resolve()
     storage.mkdir(parents=True, exist_ok=True, mode=0o700)
     storage.chmod(0o700)
@@ -31,6 +31,9 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
     state = capability()
     if state['status'] != 'enabled':
         raise SandboxUnavailable(state['reason'])
+    owned_roots = list(dict.fromkeys([storage, *(Path(path).resolve() for path in write_roots)]))
+    for directory in owned_roots:
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     private_home = storage / '.home'
     temporary = storage / '.tmp'
     private_home.mkdir(exist_ok=True, mode=0o700)
@@ -53,9 +56,9 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
         profile += ' '.join(f'(allow file-read* (subpath {literal(path)}))' for path in roots)
         profile += f' (allow file-read* (literal {literal(core)}))'
         profile += f' (allow file-read* (literal {literal(core / "common")}))'
-        profile += f' (allow file-read* (subpath {literal(storage)}))'
+        profile += ' '.join(f'(allow file-read* (subpath {literal(path)}))' for path in owned_roots)
         profile += ' '.join(f'(allow file-write* (subpath {literal(path)}))'
-                            for path in ([storage] if writable else [private_home, temporary]))
+                            for path in (owned_roots if writable else [private_home, temporary]))
         profile += ' '.join(f'(allow file-read* (literal {literal(Path(path).resolve())}))' for path in executable_reads)
         profile += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))'
         argv = [sandbox_executable(), '-p', profile, *command]
@@ -67,7 +70,8 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
             argv += ['--ro-bind', str(path), str(path)]
         for path in executable_reads:
             argv += ['--ro-bind', str(Path(path).resolve()), str(Path(path).resolve())]
-        argv += ['--bind' if writable else '--ro-bind', str(storage), str(storage)]
+        for path in owned_roots:
+            argv += ['--bind' if writable else '--ro-bind', str(path), str(path)]
         if not writable:
             for path in (private_home, temporary):
                 argv += ['--bind', str(path), str(path)]

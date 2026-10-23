@@ -23,7 +23,10 @@ def knowledge_plugin_enabled() -> bool:
 @serialized_gateway
 def ensure_knowledge_session(data_dir: Path | None = None) -> PluginSession:
     global _SESSION
-    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running):
+    from core.plugins.lifecycle import domain_data_handle
+    binding = (domain_data_handle('stella.knowledge', plugin_user_id()) if data_dir is None else
+               {'namespace': 'stella.knowledge', 'dataDir': str(data_dir)})
+    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running or not _SESSION.matches_storage(binding)):
         shutdown_knowledge_session()
     if _SESSION is not None:
         return _SESSION
@@ -41,6 +44,7 @@ def ensure_knowledge_session(data_dir: Path | None = None) -> PluginSession:
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
         authz=DEFAULT_AUTHZ,
+        data_handle=binding,
     )
     # Self-contained Stella-Plugins packages must not import Stella agent.* .
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:

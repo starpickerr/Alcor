@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright, expect
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_settings_retains_drafts_reports_conflict_and_approves_independently(tmp_path):
+def test_settings_retains_drafts_and_conflicts_without_plugin_permission_controls(tmp_path):
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -62,18 +62,7 @@ def test_settings_retains_drafts_reports_conflict_and_approves_independently(tmp
                         else:
                             result = {'revision': 3, 'values': body['changes'], 'secretFields': []}
                 elif '/authorization' in request.url:
-                    action = body['action']
-                    if action == 'describe':
-                        result = [{'methods': [{'name': 'list_ledger', 'permissions': ['bills.read']}]}]
-                    elif action == 'list':
-                        result = grants
-                    elif action == 'request':
-                        result = {'requestId': 'r1', **body['spec']}
-                    elif action == 'approve':
-                        grants.append({'grantId': 'g1', 'consumerPluginId': 'stella.bills', 'capability': 'bills.read', 'purpose': 'interactive', 'resources': [{'kind': 'user', 'id': 'alice'}], 'methods': ['list_ledger'], 'revoked': False})
-                        result = grants[-1]
-                    elif action == 'revoke':
-                        grants[0]['revoked'] = True
+                    raise AssertionError('Plugin settings must not request retired authorization APIs')
                 route.fulfill(json={'status': status, 'result': result, 'message': '设置已变化' if status == 'conflict' else ''})
 
             page.route('**/api/plugins/**', handle)
@@ -93,11 +82,7 @@ const Settings = (await import('/src/pages/settings/PluginSettings.tsx')).defaul
 const {MemoryRouter} = await import('ROUTER_URL');
 await import('/src/index.css');
 function Harness() {
-  const [authorizationOnly, setAuthorizationOnly] = React.useState(false);
-  return React.createElement(React.Fragment, null,
-    React.createElement('button', {onClick: () => setAuthorizationOnly(false)}, '配置页面'),
-    React.createElement('button', {onClick: () => setAuthorizationOnly(true)}, '授权页面'),
-    React.createElement(Settings, {baseUrl: window.location.origin, authorizationOnly}));
+  return React.createElement(Settings, {baseUrl: window.location.origin});
 }
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter, null, React.createElement(Harness)));
 </script></body></html>'''.replace('REACT_URL', react_url).replace('DOM_URL', dom_url).replace('ROUTER_URL', router_url)
@@ -118,15 +103,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
             expect(page.get_by_label('名称')).to_have_value('保留草稿')
             page.get_by_role('button', name='保存本类别').click()
             expect(page.get_by_role('status')).to_have_text('本类别已保存')
-            page.get_by_role('button', name='授权页面', exact=True).click()
-            page.get_by_role('button', name='审阅授权范围').click()
-            expect(page.get_by_role('dialog')).to_be_visible()
-            expect(page.get_by_role('dialog')).to_contain_text('user: alice')
-            page.get_by_role('button', name='批准并立即生效').click()
-            expect(page.get_by_role('dialog')).not_to_be_visible()
-            expect(page.get_by_role('status')).to_contain_text('来源选用保持原来的设置')
-            page.get_by_role('button', name='撤销', exact=True).click()
-            expect(page.get_by_role('button', name='已撤销')).to_be_disabled()
+            expect(page.get_by_role('button', name='审阅授权范围')).to_have_count(0)
+            expect(page.get_by_role('button', name='权限与授权')).to_have_count(0)
+            assert not any('/authorization' in request_url for request_url, _ in calls)
             page.screenshot(path=str(tmp_path / 'settings-desktop.png'), full_page=True)
             page.set_viewport_size({'width': 390, 'height': 844})
             page.screenshot(path=str(tmp_path / 'settings-narrow.png'), full_page=True)

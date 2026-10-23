@@ -83,9 +83,14 @@ def _plugin_root() -> Path:
 
 
 @serialized_gateway
-def ensure_todos_session() -> PluginSession:
+def ensure_todos_session(db_path: Path | None = None, legacy_calendar_db_path: Path | None = None) -> PluginSession:
     global _SESSION
-    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running):
+    from core.plugins.lifecycle import domain_data_handle
+    binding = (domain_data_handle('stella.tasks', plugin_user_id()) if db_path is None else
+               {'namespace': 'stella.tasks', 'dbPath': str(db_path)})
+    if legacy_calendar_db_path is not None:
+        binding['legacyCalendarDbPath'] = str(legacy_calendar_db_path)
+    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running or not _SESSION.matches_storage(binding)):
         shutdown_todos_session()
     if _SESSION is not None:
         return _SESSION
@@ -96,6 +101,7 @@ def ensure_todos_session() -> PluginSession:
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
         authz=DEFAULT_AUTHZ,
+        data_handle=binding,
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
@@ -122,7 +128,7 @@ def invoke_todos(
 ) -> dict[str, Any]:
     if method not in TODOS_METHOD_PARAMS:
         raise ValueError(f"unknown todos plugin method: {method}")
-    session = ensure_todos_session()
+    session = ensure_todos_session(db_path, legacy_calendar_db_path)
     write = method in TODOS_WRITE_METHODS
     handle: dict[str, Any] = {"dbPath": str(db_path), "namespace": PLUGIN_ID}
     if legacy_calendar_db_path is not None:

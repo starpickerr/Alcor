@@ -143,9 +143,12 @@ def agent_hub_db_path() -> Path:
 
 
 @serialized_gateway
-def ensure_agent_hub_session() -> PluginSession:
+def ensure_agent_hub_session(db_path: Path | None = None) -> PluginSession:
     global _SESSION
-    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running):
+    from core.plugins.lifecycle import domain_data_handle
+    binding = (domain_data_handle('stella.agent-hub', plugin_user_id()) if db_path is None else
+               {'namespace': 'stella.agent-hub', 'dbPath': str(db_path)})
+    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running or not _SESSION.matches_storage(binding)):
         shutdown_agent_hub_session()
     if _SESSION is not None:
         return _SESSION
@@ -156,6 +159,7 @@ def ensure_agent_hub_session() -> PluginSession:
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
         authz=DEFAULT_AUTHZ,
+        data_handle=binding,
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
@@ -205,7 +209,7 @@ def invoke_agent_hub(
         task = {**task, "goal": execution["goal"], "budget": execution["budget"],
                 "workspaceLeaseRef": execution["workspaceLeaseRef"], "acceptance": execution["acceptance"]}
         params = {**params, "task": task}
-    session = ensure_agent_hub_session()
+    session = ensure_agent_hub_session(db_path)
     write = method in AGENT_HUB_WRITE_METHODS
     path = Path(db_path) if db_path else agent_hub_db_path()
     handle = {

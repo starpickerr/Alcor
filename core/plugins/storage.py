@@ -28,3 +28,35 @@ def private_data_handle(plugin_id: str, user_id: str, *, ensure=False) -> dict:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
     return {'namespace': plugin_id, 'dataDir': str(path.absolute())}
+
+
+_STORAGE_KEYS = ('dataDir', 'dbPath', 'legacyMemoryDir', 'legacyMainFile', 'legacyCalendarDbPath')
+
+
+def bound_data_handle(plugin_id, handle):
+    """Normalize paths supplied by trusted Core adapters before worker launch."""
+    if handle.get('namespace', plugin_id) != plugin_id:
+        raise PermissionError('plugin storage namespace mismatch')
+    result = {**handle, 'namespace': plugin_id}
+    for key in _STORAGE_KEYS:
+        if key not in handle:
+            continue
+        path = Path(handle[key]).absolute()
+        # /var and /tmp are OS aliases on macOS, not user-controlled redirects.
+        candidate = path
+        while candidate != candidate.parent and str(candidate) not in {'/var', '/tmp'}:
+            if candidate.is_symlink():
+                raise PermissionError('plugin storage cannot use symlinks')
+            candidate = candidate.parent
+        result[key] = str(path.resolve())
+    if not (result.get('dataDir') or result.get('dbPath')):
+        raise ValueError('plugin storage requires dataDir or dbPath')
+    return result
+
+
+def storage_paths(handle):
+    """One owner domain is writable; legacy import sources are read-only."""
+    primary = Path(handle['dbPath']).parent if handle.get('dbPath') else Path(handle['dataDir'])
+    primary.mkdir(parents=True, exist_ok=True, mode=0o700)
+    reads = [Path(handle[key]) for key in _STORAGE_KEYS[2:] if handle.get(key) and Path(handle[key]).exists()]
+    return primary, reads

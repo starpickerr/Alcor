@@ -34,18 +34,18 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
         if plugin_id in {'stella.bills', 'stella.calendar', 'stella.tasks', 'stella.briefing'}:
             helper = {'stella.bills': state_dir.bills_db, 'stella.calendar': state_dir.calendar_db,
                       'stella.tasks': state_dir.todos_db, 'stella.briefing': state_dir.briefing_db}[plugin_id]
-            return {'namespace': plugin_id, 'dbPath': str(helper(ensure=False).resolve())}
+            return {'namespace': plugin_id, 'dbPath': str(helper(ensure=False).absolute())}
         if plugin_id == 'stella.memory':
-            return {'namespace': plugin_id, 'dataDir': str((state_dir.user_root() / 'plugins' / 'memory').resolve()),
-                    'legacyMemoryDir': str(state_dir.memory_dir(ensure=False).resolve()),
-                    'legacyMainFile': str(state_dir.memory_file().resolve())}
+            return {'namespace': plugin_id, 'dataDir': str((state_dir.user_root() / 'plugins' / 'memory').absolute()),
+                    'legacyMemoryDir': str(state_dir.memory_dir(ensure=False).absolute()),
+                    'legacyMainFile': str(state_dir.memory_file().absolute())}
         if plugin_id == 'stella.knowledge':
-            return {'namespace': plugin_id, 'dataDir': str(state_dir.knowledge_dir(ensure=False).resolve())}
+            return {'namespace': plugin_id, 'dataDir': str(state_dir.knowledge_dir(ensure=False).absolute())}
         if plugin_id == 'stella.automation':
             path = state_dir.scheduler_file().with_name('automation.db')
-            return {'namespace': plugin_id, 'dbPath': str(path.resolve())}
+            return {'namespace': plugin_id, 'dbPath': str(path.absolute())}
         if plugin_id == 'stella.agent-hub':
-            return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).resolve())}
+            return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).absolute())}
     from core.plugins.storage import private_data_handle
     return private_data_handle(plugin_id, user_id)
 

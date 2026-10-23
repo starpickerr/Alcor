@@ -55,9 +55,12 @@ def _plugin_root() -> Path:
 
 
 @serialized_gateway
-def ensure_automation_session() -> PluginSession:
+def ensure_automation_session(db_path: Path | None = None) -> PluginSession:
     global _SESSION
-    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running):
+    from core.plugins.lifecycle import domain_data_handle
+    binding = (domain_data_handle('stella.automation', plugin_user_id()) if db_path is None else
+               {'namespace': 'stella.automation', 'dbPath': str(db_path)})
+    if _SESSION is not None and (_SESSION.user_id != plugin_user_id() or not _SESSION.is_running or not _SESSION.matches_storage(binding)):
         shutdown_automation_session()
     if _SESSION is not None:
         return _SESSION
@@ -68,6 +71,7 @@ def ensure_automation_session() -> PluginSession:
         registry=DEFAULT_REGISTRY,
         user_id=user_id,
         authz=DEFAULT_AUTHZ,
+        data_handle=binding,
     )
     if os.environ.get("STELLA_ALLOW_REPO_IMPORT") in {"1", "true", "yes"}:
         os.environ.setdefault("STELLA_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
@@ -95,7 +99,7 @@ def invoke_automation(
 ) -> dict[str, Any]:
     if method not in AUTOMATION_METHOD_PARAMS:
         raise ValueError(f"unknown automation plugin method: {method}")
-    session = ensure_automation_session()
+    session = ensure_automation_session(db_path)
     write = method in AUTOMATION_WRITE_METHODS
     handle = {
         "dbPath": str(db_path),

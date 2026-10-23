@@ -336,7 +336,9 @@ def describe_task_permission(task: dict) -> dict:
             project = None
     explicit = task.get("run_permission_mode")
     conversation_mode = action.get("conversation_mode")
+    from agent.registry import get_agent_registry
     base = {
+        "owner_agent_id": task.get("owner_agent_id") or get_agent_registry().default_agent_id,
         "id": task.get("id"),
         "name": task.get("name") or task.get("id") or "",
         "enabled": bool(task.get("enabled")),

@@ -13,7 +13,7 @@ flowchart LR
   Entry[Desktop / Agent / scheduler] --> Work[Core Workspace Service: 目录与文件浏览]
   Entry --> Context[Execution Context: 不可变身份与执行约束]
   Context --> Security[Core Security Service: 授权协调]
-  Security --> Policy[现有 SecurityGateway / PluginAuthorizationStore / MCP policy]
+  Security --> Policy[SecurityGateway / RunPolicy / Resource Grants]
   Context --> Host[Plugin Host: 受控 RPC 与委托]
   Host --> Public[公开业务 / Data / Model 契约]
   Public --> Owners[业务插件 / Workspace / MCP 所有者]
@@ -64,6 +64,6 @@ MCP 调用在启动等待、授权、实际传输和结果释放处检查同一�
 
 ## 决策与验收入口
 
-权限统一为 RunPolicy、Capability Authorization 和 Resource Grants，Security Service 协调既有 Gateway、PluginAuthorizationStore 和 Data Service。原授权数据库承载新增策略、资源与迁移表，避免同一关系多处维护；账号、凭据和业务存储不搬迁。布局兼容适配器和既有有效 Grant 保留；新增消费者应走公开服务，不直接依赖物理数据库路径。
+权限统一为三档 RunPolicy 与 Resource Grants，Security Service 协调 Gateway 和 Data Service。所有模式均可调用内置工具、插件、MCP 和 Skill，由模式限制具体操作。插件没有独立操作授权；第一方摘要校验默认信任，安装的第三方需用户确认信任。原生 UI 操作不经 Agent 模式审核；Agent 和任务保持可信来源与权限上限。账号、凭据和业务存储不搬迁，历史 MCP 资源授权保留；公开服务与实际数据目录仍由 Core 绑定。
 
 测试入口：`tests/test_execution_context.py`、`test_service_boundaries.py`、`test_plugin_core_invoke.py`、`test_data_resources.py`，并结合现有 workspace/scheduler/security/plugin/MCP 回归。Data 资源细节见[数据服务](data-service.md)，现有平台与权限模式限制见[权限模式](../security-permission-modes.md)。

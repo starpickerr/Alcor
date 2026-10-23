@@ -224,3 +224,14 @@ def test_resource_catalog_uses_exact_folder_and_account_qualified_course_ids(mon
     resources = ResourceControl().available()
     assert {'kind': 'course', 'id': 'student-account:42', 'name': 'Courses · 42', 'operations': ['read']} in resources
     assert {'kind': 'folder', 'id': 'school', 'name': 'Mailbox', 'operations': ['read']} in resources
+
+
+def test_background_summary_preserves_owner_for_mode_editor(registered_agent):
+    from agent.permission.center import describe_task_permission
+    from core.security.run_policy import save_run_policy
+    registered_agent('another-agent')
+    policy = save_run_policy('task', 'shared-id', {'filesystem_mode': 'workspace-write'}, agent_id='another-agent')
+    row = describe_task_permission({'id': 'shared-id', 'owner_agent_id': 'another-agent',
+        'run_policy_version': 1, 'run_policy_revision': policy['policy_revision']})
+    assert row['owner_agent_id'] == 'another-agent'
+    assert row['effective_mode'] == 'workspace-write'

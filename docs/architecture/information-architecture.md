@@ -42,7 +42,7 @@ Stella 将信息、执行能力、模型选择与安全授权分开管理。比�
 
 ## 验收与限制
 
-`tests/ui_information_architecture.py`、`ui_settings_entry.py`、`ui_capabilities.py` 验证导航、唯一入口、兼容跳转和返回行为；`ui_model_selection.py` 验证六类模型用途、厂商元数据、首次设置失败重试及到安全的跳转；`ui_managed_models.py` 使用 `tests/fixtures/managed_product` 扩展构建验证精简版模型选择和凭据入口；`ui_security_modes.py` 验证四种模式、凭据选择/保存、键盘和窄窗口；`ui_data_management.py`、`ui_elearning_settings.py` 验证聚合来源、卡片点击与键盘配置、多邮箱原表单、旧预览入口回退、消费关系、下载入口和失败反馈。
+`tests/ui_information_architecture.py`、`ui_settings_entry.py`、`ui_capabilities.py` 验证导航、唯一入口、兼容跳转和返回行为；`ui_model_selection.py` 验证六类模型用途、厂商元数据、首次设置失败重试及到安全的跳转；`ui_managed_models.py` 使用 `tests/fixtures/managed_product` 扩展构建验证精简版模型选择和凭据入口；`ui_security_modes.py` 验证三种 Agent 模式、凭据选择/保存、键盘和窄窗口；`ui_data_management.py`、`ui_elearning_settings.py` 验证聚合来源、卡片点击与键盘配置、多邮箱原表单、旧预览入口回退、消费关系、下载入口和失败反馈。
 
 后端对应 `tests/test_security_center.py`、`test_data_api.py`、`test_data_browse_scope.py`、`test_data_global_catalog.py`、`test_data_elearning_resources.py` 与 `test_owned_resource_providers.py`。浏览器使用隔离的 API 数据；独立插件/MCP 的实际 RPC、授权和下载路径由上述集成测试验证，不以浏览器 Mock 代替服务验收。实际学校与邮箱账号不用于测试，OS 通知、启动项和应用更新仍由 Electron 平台适配器提供。
 
