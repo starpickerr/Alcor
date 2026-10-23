@@ -125,3 +125,55 @@ def test_generic_mcp_connection_requires_actual_resource_grant(tmp_path, monkeyp
             assert manager.call_mcp_tool('scoped-generic', 'echo', {})['accounts']
         finally:
             manager._teardown_mcp_server('scoped-generic')
+
+
+@pytest.mark.parametrize('preauthorized', [True, False])
+def test_unknown_mcp_real_call_uses_explicit_system_execute_resource(tmp_path, monkeypatch, preauthorized):
+    import sys
+    from pathlib import Path
+    from common.runtime_identity import identity_scope
+    from agent.tools.tool_manager import ToolManager
+    from core.security.run_policy import save_run_policy
+    from core.security.resource_grants import ResourceGrantStore
+    from agent.permission.gateway import SecurityGateway
+    from agent.runtime.tool_invocation import permission_denial, invocation_scope
+    from agent.registry import get_agent_registry
+    script = tmp_path / 'server.py'
+    script.write_text(Path('tests/fixtures/mcp_echo_server.py').read_text().replace('f"echo:{text}"', 'json.dumps(f"echo:{text}")'))
+    config = {'name': 'opaque-real', 'command': sys.executable, 'args': [str(script)], 'timeout': 10}
+    with identity_scope(user_id='opaque-owner', session_id='opaque-chat'):
+        save_run_policy('session', 'opaque-chat', {'filesystem_mode': 'full-access',
+            'capabilities': {'mcp:opaque-real': {'system_execute': 'allow' if preauthorized else 'confirm'}}})
+        manager = ToolManager()
+        monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [config])
+        try:
+            manager.set_mcp_enabled('opaque-real', True)
+            if preauthorized:
+                with pytest.raises(PermissionError, match='resource'):
+                    manager.call_mcp_tool('opaque-real', 'echo', {'text': 'ok'})
+            else:
+                import time
+                deadline = time.monotonic() + 5
+                while not manager._mcp_tool_instances and time.monotonic() < deadline:
+                    time.sleep(.01)
+                tool = next(iter(manager._mcp_tool_instances.values()))
+                assert permission_denial(tool.name, {'text': 'ok'}, tool=tool)
+                request = next(row for row in SecurityGateway.pending() if row['session'] == 'opaque-chat')
+                assert SecurityGateway.approve(request['id'])
+                assert permission_denial(tool.name, {'text': 'ok'}, tool=tool) is None
+            store = ResourceGrantStore()
+            grant = store.issue(user_id='opaque-owner', subject=f'session:{get_agent_registry().default_agent_id}:opaque-chat',
+                resource={'kind': 'connection', 'id': 'mcp:opaque-real'}, operations=['system_execute'],
+                purposes=['interactive', 'background'])
+            # Exact once receipt is retained across the trusted manager adapter.
+            from core.plugins.caller import invocation_purpose_scope
+            with invocation_scope('opaque-once'), invocation_purpose_scope('background' if preauthorized else 'interactive'):
+                assert manager.call_mcp_tool('opaque-real', 'echo', {'text': 'ok'}) == 'echo:ok'
+                if not preauthorized:
+                    with pytest.raises(PermissionError):
+                        manager.call_mcp_tool('opaque-real', 'echo', {'text': 'changed'})
+            store.revoke(grant['grant_id'], user_id='opaque-owner', expected_revision=1)
+            with pytest.raises(PermissionError):
+                manager.call_mcp_tool('opaque-real', 'echo', {'text': 'ok'})
+        finally:
+            manager._teardown_mcp_server('opaque-real')

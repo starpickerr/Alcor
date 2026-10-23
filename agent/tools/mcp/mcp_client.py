@@ -403,14 +403,8 @@ class McpClient:
                 self._proc.stdin.close()
             except Exception:
                 pass
-            try:
-                self._proc.terminate()
-                self._proc.wait(timeout=5)
-            except Exception:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
+            from common.process_tree import stop_process_tree
+            stop_process_tree(self._proc, owned_session=True)
             self._proc = None
             logger.debug(f"[MCP:{self.name}] stdio process terminated")
 

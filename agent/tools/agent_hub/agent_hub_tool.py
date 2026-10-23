@@ -133,10 +133,10 @@ class AgentHubTool(BaseTool):
         except Exception as exc:
             eid = created["executionId"]
             row = svc.get(eid)
-            if row["status"] in {"running", "cancel_requested"}:
-                row = svc.transition(eid, "outcome_unknown", error={"message": str(exc)})
-            elif row["status"] == "queued":
+            if isinstance(exc, PermissionError) or row["status"] == "queued":
                 row = svc.transition(eid, "failed", error={"message": str(exc)})
+            elif row["status"] in {"running", "cancel_requested"}:
+                row = svc.transition(eid, "outcome_unknown", error={"message": str(exc)})
             return {"executionId": eid, "status": row["status"], "error": {"message": str(exc)}}
 
     def _start_execution(self, svc, created: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -156,13 +156,10 @@ class AgentHubTool(BaseTool):
             selector["accessMode"] = kwargs["access_mode"]
         try:
             agent_hub_gateway.apply_user_preferences()
-            provider = agent_hub_gateway.invoke_ok(
-                "select_provider",
-                {
-                    "selector": agent_hub_gateway.resolve_provider_selector(selector or None)
-                    or None
-                },
-            )
+            selection = {"selector": agent_hub_gateway.resolve_provider_selector(selector or None) or None}
+            from core.security.approvals import agent_hub_operation_scope
+            with agent_hub_operation_scope(kwargs, "select_provider", selection):
+                provider = agent_hub_gateway.invoke_ok("select_provider", selection)
         except Exception as exc:
             svc.transition(eid, "failed", summary="no ready provider", error={"message": str(exc)})
             return {
@@ -179,22 +176,22 @@ class AgentHubTool(BaseTool):
         )
         svc.attach_workspace(eid, lease["workspaceLeaseRef"], lease["path"])
         svc.transition(eid, "running")
-        start = agent_hub_gateway.invoke_ok(
-            "provider_start",
-            {
-                "provider_config_id": provider["providerConfigId"],
-                "task": {
-                    "executionId": eid,
-                    "attemptId": created["attemptId"],
-                    "goal": goal,
-                    "taskKind": task_kind,
-                    "workspacePath": lease["path"],
-                    "workspaceLeaseRef": lease["workspaceLeaseRef"],
-                    "budget": created["budget"],
-                    "acceptance": created.get("acceptance") or {},
-                },
+        start_payload = {
+            "provider_config_id": provider["providerConfigId"],
+            "task": {
+                "executionId": eid,
+                "attemptId": created["attemptId"],
+                "goal": goal,
+                "taskKind": task_kind,
+                "workspacePath": lease["path"],
+                "workspaceLeaseRef": lease["workspaceLeaseRef"],
+                "budget": created["budget"],
+                "acceptance": created.get("acceptance") or {},
             },
-        )
+        }
+        from core.security.approvals import agent_hub_operation_scope
+        with agent_hub_operation_scope(kwargs, "provider_start", start_payload):
+            start = agent_hub_gateway.invoke_ok("provider_start", start_payload)
         if start.get("status") != "started":
             err = start.get("error") or {"message": "provider rejected start"}
             svc.transition(eid, "failed", summary="provider start rejected", error=err)

@@ -41,6 +41,7 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
     # Core chooses import roots; no caller import injection survives.
     roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/Library', '/private/etc',
              sys.prefix, sys.base_prefix, str(core / 'core'), str(package), *map(str, read_roots)) if Path(path).exists()]
+    executable_reads = (*executable_reads, core / 'common' / '__init__.py', core / 'common' / 'log.py')
     if sys.platform == 'darwin':
         def literal(path):
             return json.dumps(str(path), ensure_ascii=False)
@@ -51,6 +52,7 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
             profile += '(allow network*) '
         profile += ' '.join(f'(allow file-read* (subpath {literal(path)}))' for path in roots)
         profile += f' (allow file-read* (literal {literal(core)}))'
+        profile += f' (allow file-read* (literal {literal(core / "common")}))'
         profile += f' (allow file-read* (subpath {literal(storage)}))'
         profile += ' '.join(f'(allow file-write* (subpath {literal(path)}))'
                             for path in ([storage] if writable else [private_home, temporary]))

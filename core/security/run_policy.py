@@ -80,7 +80,7 @@ def validate_policy(value):
         if field in value:
             validate_patch({field: value[field]})
     revision = result.get('policy_revision')
-    if revision is not None and (type(revision) is not int or revision < 1):
+    if revision is not None and (type(revision) is not int or revision < 0):
         raise ValueError('invalid policy revision')
     return result
 

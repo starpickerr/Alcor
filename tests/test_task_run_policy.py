@@ -123,3 +123,106 @@ def test_policy_commit_interruption_is_fail_closed(scheduler, monkeypatch):
     stored = scheduler.get('daily')
     assert stored['run_policy']['migration_status'] == 'needs_confirmation'
     assert stored['run_policy']['filesystem_mode'] == 'read-only'
+
+
+def test_child_task_creation_keeps_captured_ceiling_through_real_worker(tmp_path, monkeypatch):
+    from pathlib import Path
+    from agent.scheduler.automation_store import AutomationStore
+    from core.services.automation_facade import AutomationPluginFacade
+    from core.services.automation_gateway import shutdown_automation_session
+    from agent.runtime.tool_invocation import permission_limit_scope, _current_authorization
+    monkeypatch.setenv('STELLA_AUTOMATION_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_AUTOMATION_PLUGIN_ROOT', str(Path('stella-plugins-workspace/plugins/automation').resolve()))
+    facade = AutomationPluginFacade(AutomationStore(str(tmp_path / 'tasks.json'), 'default'))
+    save_run_policy('session', 'captured-parent', {'filesystem_mode': 'read-only',
+        'capabilities': {'plugin:stella.automation': {'read': 'allow', 'write': 'allow'}}})
+    try:
+        with identity_scope(session_id='captured-parent'):
+            _, context, _ = _current_authorization(None, None, 'captured-parent', None, False)
+            with permission_limit_scope(context['policy'], context['scope'].write_roots):
+                save_run_policy('session', 'captured-parent', {'filesystem_mode': 'full-access'})
+                with pytest.raises(PermissionError, match='exceeds'):
+                    facade.create(task('child-task', run_policy={'filesystem_mode': 'full-access', 'capabilities': {}}), origin='agent')
+                assert facade.store.get_task('child-task') is None
+    finally:
+        shutdown_automation_session()
+
+
+def test_task_delegation_cannot_restore_implicitly_denied_file_tool(scheduler):
+    save_run_policy('session', 'denied-file-parent', {'filesystem_mode': 'workspace-write',
+        'capabilities': {'builtin:write': {'write': 'deny'}}})
+    with identity_scope(session_id='denied-file-parent'), pytest.raises(PermissionError):
+        scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write', 'capabilities': {}}), origin='agent')
+
+
+def test_delegated_task_preserves_legacy_restrictions(scheduler):
+    save_run_policy('session', 'legacy-parent', {'filesystem_mode': 'workspace-write', 'capabilities': {}},
+        legacy_rules={'network': 'deny'})
+    with identity_scope(session_id='legacy-parent'):
+        created = scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write', 'capabilities': {}}), origin='agent')
+    assert created['run_policy']['legacy_restrictions']['network'] == 'deny'
+
+
+def test_owner_can_repair_missing_task_policy_with_cas(scheduler, monkeypatch):
+    from core.security.task_policy import TaskPolicyChange, initialize_scheduled_policy
+    from core.security.control import PermissionControl
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
+    with monkeypatch.context() as fault:
+        fault.setattr(TaskPolicyChange, 'apply', lambda self: (_ for _ in ()).throw(OSError('disk full')))
+        with pytest.raises(OSError):
+            scheduler.create(task(run_policy={'filesystem_mode': 'full-access', 'capabilities': {}}))
+    control = PermissionControl(task_service=lambda agent: scheduler)
+    revision = control.read('task', 'daily')['policy']['policy_revision']
+    assert revision == 0
+    patch = {'policy_revision': revision, 'filesystem_mode': 'read-only', 'capabilities': {}}
+    with identity_scope(session_id='model'), pytest.raises(PermissionError):
+        control.save('task', 'daily', patch)
+    saved = control.save('task', 'daily', patch)
+    assert saved['migration_status'] == 'complete'
+    with pytest.raises(ValueError, match='revision'):
+        control.save('task', 'daily', patch)
+    with identity_scope(task_id='daily'):
+        assert initialize_scheduled_policy(scheduler.get('daily'))['migration_status'] == 'complete'
+
+
+def test_owner_can_confirm_untranslatable_task_policy(scheduler):
+    from core.security.control import PermissionControl
+    from core.security.policy_store import RunPolicyStore
+    from core.security.run_policy import subject_key
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
+    scheduler.create(task())
+    RunPolicyStore().update(subject_key('task', 'daily'), lambda current: {**current,
+        'migration_status': 'needs_confirmation', 'legacy_restrictions': {'network': 'deny'}})
+    control = PermissionControl(task_service=lambda agent: scheduler)
+    policy = control.read('task', 'daily')['policy']
+    saved = control.save('task', 'daily', {**policy, 'filesystem_mode': 'read-only', 'capabilities': {}})
+    assert saved['migration_status'] == 'complete'
+    assert saved['compatibility_restrictions'] == {}
+
+
+def test_delegated_path_grant_survives_captured_ceiling(scheduler, tmp_path):
+    from agent.runtime.tool_invocation import permission_limit_scope, _current_authorization
+    root = str(tmp_path / 'granted')
+    save_run_policy('session', 'path-parent', {'filesystem_mode': 'workspace-write', 'capabilities': {}, 'extra_roots': [root]})
+    with identity_scope(session_id='path-parent'):
+        _, context, _ = _current_authorization(None, None, 'path-parent', None, False)
+        with permission_limit_scope(context['policy'], context['scope'].write_roots):
+            created = scheduler.create(task(run_policy={'filesystem_mode': 'workspace-write', 'capabilities': {}, 'extra_roots': [root]}), origin='agent')
+            assert created['run_policy']['extra_roots'] == [root]
+            with pytest.raises(PermissionError):
+                scheduler.create(task('outside', run_policy={'filesystem_mode': 'workspace-write', 'capabilities': {},
+                    'extra_roots': [str(tmp_path / 'outside')]}), origin='agent')
+
+
+def test_model_cannot_repair_missing_policy_through_task_mutation(scheduler, monkeypatch):
+    from core.security.task_policy import TaskPolicyChange
+    with monkeypatch.context() as fault:
+        fault.setattr(TaskPolicyChange, 'apply', lambda self: (_ for _ in ()).throw(OSError('disk full')))
+        with pytest.raises(OSError):
+            scheduler.create(task())
+    save_run_policy('session', 'model-repair', {'filesystem_mode': 'read-only', 'capabilities': {}})
+    with identity_scope(session_id='model-repair'), pytest.raises(PermissionError):
+        scheduler.update('daily', {'run_policy': {'filesystem_mode': 'read-only', 'capabilities': {}, 'policy_revision': 0}}, origin='agent')
+    assert scheduler.get('daily')['run_policy']['policy_revision'] == 0

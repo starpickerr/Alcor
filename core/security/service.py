@@ -7,6 +7,20 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
+    def policy_binding(*, origin=None, agent_id=None, session_id=None):
+        """Snapshot authorization inputs without using/consuming an approval."""
+        from common.runtime_identity import current_identity
+        from core.execution.context import current_execution_context
+        from agent.runtime.tool_invocation import _current_authorization
+        identity = current_identity()
+        active = current_execution_context()
+        if not (identity.session_id or identity.task_id or session_id or
+                origin in {'tool', 'job'} or active and active.origin in {'tool', 'job'}):
+            return None
+        return _current_authorization(None, identity.agent_id or agent_id,
+                                      identity.session_id or session_id, None, False)[2]
+
+    @staticmethod
     def authorize_resource(resource, operation, *, purpose=None, legacy_connection=None):
         """The trusted execution identity, rather than tool input, selects grants."""
         from common.runtime_identity import current_identity
@@ -55,7 +69,8 @@ class SecurityService:
         active = current_execution_context()
         if (identity.session_id or identity.task_id or current_consumer_plugin() or current_delegation() or
                 active and active.origin in {'tool', 'job'}):
-            return SecurityService.authorize_resource({'kind': 'connection', 'id': 'mcp:' + server}, operation)
+            return SecurityService.authorize_resource({'kind': 'connection', 'id': 'mcp:' + server},
+                                                      'system_execute' if operation == 'unknown' else operation)
 
     @staticmethod
     def legacy_connection_restrictions(connection, *, session_id=None, agent_id=None):

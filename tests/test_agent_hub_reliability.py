@@ -270,3 +270,90 @@ def test_artifact_reference_resolves_after_reopening_and_is_execution_scoped(tmp
     assert Path(reopened['path']).read_text() == 'persistent result'
     with pytest.raises(FileNotFoundError):
         resolve_artifact(store_root=tmp_path / 'store', artifact_ref=artifact['artifactRef'], execution_id='other-execution')
+
+
+@pytest.mark.parametrize('selector', [{'provider_local_id': 'codex-cli'}, {'agent_id': 'codex', 'access_mode': 'cli'}, {}])
+def test_once_approved_public_selector_starts_real_provider(tmp_path, selector):
+    import sys
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    from agent.runtime.tool_invocation import permission_denial, invocation_scope
+    from agent.permission.gateway import SecurityGateway
+    fake = tmp_path / 'codex'
+    fake.write_text(f'#!{sys.executable}\nimport sys\nprint("codex 1" if "--version" in sys.argv else "completed")\n')
+    fake.chmod(0o755)
+    config = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
+        'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
+    session_id = 'hub-once-' + '-'.join(selector.keys())
+    save_run_policy('session', session_id, {'filesystem_mode': 'read-only', 'capabilities': {
+        'plugin:stella.agent-hub': {'read': 'allow', 'write': 'allow', 'system_execute': 'confirm'}}})
+    args = {'action': 'submit', 'goal': 'synthetic goal', 'acceptance': {'checks': ['completed']}, **selector}
+    with identity_scope(session_id=session_id):
+        assert permission_denial('agent_hub', args)
+        pending = next(row for row in SecurityGateway.pending() if row['session'] == session_id)
+        assert SecurityGateway.approve(pending['id'])
+        assert permission_denial('agent_hub', args) is None
+        with invocation_scope('hub-approved'):
+            result = AgentHubTool().execute(**args)
+        assert result.result.get('providerConfigId') == config['providerConfigId'], result.result
+        assert result.result['status'] in {'running', 'succeeded'}, result.result
+        assert not [row for row in SecurityGateway.pending() if row['session'] == session_id]
+
+
+@pytest.mark.parametrize('changed', [
+    {'goal': 'another goal'}, {'provider_local_id': 'claude-code'},
+    {'acceptance': {'checks': ['different']}}, {'acceptance': {'checks': ['same', 'extra']}},
+])
+def test_hub_once_receipt_rejects_changed_public_request(changed):
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    from agent.runtime.tool_invocation import permission_denial, invocation_scope, _current_authorization
+    from agent.permission.gateway import SecurityGateway
+    from core.security.approvals import inherited
+    from core.security.capabilities import describe_tool
+    args = {'action': 'submit', 'goal': 'original', 'provider_local_id': 'codex-cli', 'acceptance': {'checks': ['same']}}
+    save_run_policy('session', 'hub-changed', {'filesystem_mode': 'read-only', 'capabilities': {
+        'plugin:stella.agent-hub': {'system_execute': 'confirm'}}})
+    with identity_scope(session_id='hub-changed'):
+        assert permission_denial('agent_hub', args)
+        pending = next(row for row in SecurityGateway.pending() if row['session'] == 'hub-changed')
+        assert SecurityGateway.approve(pending['id'])
+        assert permission_denial('agent_hub', args) is None
+        with invocation_scope('hub-changed'):
+            binding = _current_authorization(None, None, 'hub-changed', None, False)[2]
+            assert not inherited(describe_tool('agent_hub', args), binding, {**args, **changed})
+
+
+def test_hub_derived_once_approval_binds_provider_and_complete_payload():
+    from copy import deepcopy
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    from agent.runtime.tool_invocation import permission_denial, invocation_scope, _current_authorization
+    from agent.permission.gateway import SecurityGateway
+    from core.security.approvals import agent_hub_operation_scope, inherited
+    from core.security.capabilities import describe_tool
+    args = {'action': 'submit', 'goal': 'approved', 'provider_local_id': 'codex-cli'}
+    save_run_policy('session', 'hub-payload', {'filesystem_mode': 'read-only', 'capabilities': {
+        'plugin:stella.agent-hub': {'system_execute': 'confirm'}}})
+    payload = {'provider_config_id': 'approved-provider', 'task': {'goal': 'approved', 'acceptance': {'checks': ['one']}}}
+    with identity_scope(session_id='hub-payload'):
+        assert permission_denial('agent_hub', args)
+        request = next(row for row in SecurityGateway.pending() if row['session'] == 'hub-payload')
+        assert SecurityGateway.approve(request['id'])
+        assert permission_denial('agent_hub', args) is None
+        with invocation_scope('hub-payload'):
+            descriptor = describe_tool('agent_hub', args)
+            binding = _current_authorization(None, None, 'hub-payload', None, False)[2]
+            with agent_hub_operation_scope(args, 'provider_start', payload):
+                assert inherited(descriptor, binding, {'method': 'provider_start', 'input': payload})
+                changed = deepcopy(payload)
+                changed['provider_config_id'] = 'other-provider'
+                assert not inherited(descriptor, binding, {'method': 'provider_start', 'input': changed})
+                changed = deepcopy(payload)
+                changed['task']['acceptance']['checks'].append('extra')
+                assert not inherited(descriptor, binding, {'method': 'provider_start', 'input': changed})
+                assert not inherited(descriptor, binding, {'method': 'other', 'input': payload})
+                save_run_policy('session', 'hub-payload', {'capabilities': {}})
+                changed_binding = _current_authorization(None, None, 'hub-payload', None, False)[2]
+                assert not inherited(descriptor, changed_binding, {'method': 'provider_start', 'input': payload})
+            assert not inherited(descriptor, binding, {'method': 'provider_start', 'input': payload})

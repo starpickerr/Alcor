@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import os
 
 from core.security.policy_store import RunPolicyStore
-from core.security.run_policy import (gateway_policy, resolve_run_policy, subject_key,
+from core.security.run_policy import (gateway_policy, subject_key,
                                       validate_policy, from_legacy)
 
 _ORDER = {'deny': 0, 'confirm': 1, 'allow': 2}
@@ -58,6 +58,14 @@ def _check_delegation(candidate, ceiling):
             descriptor = CapabilityDescriptor(capability, capability.split(':', 1)[0], operation)
             if _ORDER[setting] > _ORDER[authorization(ceiling, descriptor)]:
                 raise PermissionError('Task capability permission exceeds the delegating run')
+    # Ordinary filesystem tools have implicit mode-based grants when omitted.
+    for name, operation in [('read', 'read'), ('ls', 'read'), ('search_files', 'read'),
+                            ('vision', 'read'), ('write', 'write'), ('edit', 'write'), ('skill', 'write')]:
+        if operation == 'write' and candidate['filesystem_mode'] == 'read-only':
+            continue  # The file-mode gate already denies every direct write.
+        descriptor = CapabilityDescriptor('builtin:' + name, 'builtin', operation, True)
+        if _ORDER[authorization(candidate, descriptor)] > _ORDER[authorization(ceiling, descriptor)]:
+            raise PermissionError('Task file capability permission exceeds the delegating run')
     for path in candidate.get('extra_roots') or []:
         real = os.path.realpath(path)
         if not any(os.path.commonpath((real, os.path.realpath(root))) == os.path.realpath(root)
@@ -97,12 +105,19 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
     mode = task.pop('run_permission_mode', None)
     key = subject_key('task', str(task['id']), agent_id)
     current = RunPolicyStore().get(key)
+    if not creating and not trusted_user_edit(origin) and (current is None or current.get('migration_status') == 'needs_confirmation'):
+        raise PermissionError('Task policy repair requires an authenticated user action')
     base = ({'filesystem_mode': 'read-only', 'capabilities': {}, 'connections': {}, 'extra_roots': [],
              'legacy_restrictions': {}, 'migration_status': 'complete'} if creating or current is None else deepcopy(current))
     if requested is not None:
         patch = validate_policy(requested)
-        if not creating and patch.get('policy_revision') is not None and patch['policy_revision'] != (current or {}).get('policy_revision'):
+        if not creating and patch.get('policy_revision') is not None and patch['policy_revision'] != (current or {}).get('policy_revision', 0):
             raise ValueError('Task policy revision changed; refresh and retry')
+        if trusted_user_edit(origin) and (current is None or current.get('migration_status') == 'needs_confirmation'):
+            if not {'filesystem_mode', 'capabilities'} <= patch.keys():
+                raise ValueError('Task policy repair requires a complete explicit choice')
+            base['legacy_restrictions'] = {}
+            base['migration_status'] = 'complete'
         base.update(patch)
     if mode not in (None, '', 'inherit'):
         if mode not in _MODES:
@@ -112,7 +127,20 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
     if not trusted_user_edit(origin):
         if not creating:
             _check_delegation(base, current or {'filesystem_mode': 'read-only', 'capabilities': {}})
-        _check_delegation(base, resolve_run_policy(agent_id=agent_id))
+        from common.runtime_identity import current_identity
+        from agent.runtime.tool_invocation import _current_authorization
+        from agent.permission.security_policy import intersect
+        identity = current_identity()
+        _, effective, _ = _current_authorization(None, identity.agent_id or agent_id,
+                                                 identity.session_id, None, False)
+        ceiling = effective['policy']
+        _check_delegation(base, ceiling)
+        # Persist restrictions too: a later scheduler must not lose a caller's
+        # legacy deny merely because its filesystem mode has the same name.
+        from agent.permission.security_policy import PRESETS
+        rules = intersect(gateway_policy(base), ceiling)['rules']
+        base['legacy_restrictions'] = {name: value for name, value in rules.items()
+                                       if value != PRESETS[base['filesystem_mode']][name]}
     change = TaskPolicyChange(key, base, current['policy_revision'] if current else 0)
     task.update(run_policy_version=1, run_policy_revision=change.expected_revision + 1)
     return task, change

@@ -474,6 +474,9 @@ class PluginSession:
         agent_id = identity.agent_id or agent_id
         session_id = identity.session_id or session_id
         self.registry.require_generation(self.plugin_id, self.generation)
+        from core.security.service import SecurityService
+        binding_args = dict(origin=origin, agent_id=agent_id, session_id=session_id)
+        policy_binding = SecurityService.policy_binding(**binding_args)
         declared = self._method_permissions.get((contract, method))
         if declared is None:
             raise PermissionError(f"method not declared: {contract}.{method}")
@@ -611,6 +614,21 @@ class PluginSession:
         try:
             self._check_runtime()
             result = validate_operation_result(result)
+            try:
+                if SecurityService.policy_binding(**binding_args) != policy_binding:
+                    raise PermissionError('Execution policy changed during the call')
+                if not skip_authz:
+                    if managed:
+                        self.authz.check_scoped(**scope, resources=resource_refs)
+                    else:
+                        self.authz.check(grant_ref=grant_ref, plugin_id=self.plugin_id, user_id=self.user_id,
+                            required_capabilities=required or {'plugin.invoke'}, purpose=purpose,
+                            generation=self.generation, context_generation=self.generation)
+            except PermissionError:
+                # Preserve the real effect state, but never release a body after
+                # revocation. Do not request or consume a second once approval.
+                return {'status': 'failed', 'sideEffects': result['sideEffects'],
+                        'error': {'code': 'permission_denied', 'message': 'Authorization changed during the call; result discarded.'}}
             if result['status'] == 'succeeded' and self.plugin_id == 'stella.automation':
                 from core.security.task_policy import describe_task, revoke_task_policy
                 if task_policy_change is not None:

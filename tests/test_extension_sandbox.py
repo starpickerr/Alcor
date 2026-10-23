@@ -213,3 +213,73 @@ def test_mcp_trust_digest_covers_imported_package_code(tmp_path):
     before = launch_identity(config)[0]
     helper.write_text('VALUE = 2\n')
     assert launch_identity(config)[0] != before
+
+
+def test_mcp_trust_revoke_stops_ordinary_descendant(tmp_path):
+    import time
+    from agent.tools.mcp.mcp_client import McpClient
+    from core.security.mcp_runtime import launch_identity
+    from core.security.runtime_trust import RuntimeTrustStore
+    heartbeat = tmp_path / 'heartbeat'
+    child = "import time; from pathlib import Path; p=Path(" + repr(str(heartbeat)) + ");\nwhile True: p.write_text(str(time.monotonic())); time.sleep(.03)"
+    script = tmp_path / 'server.py'
+    script.write_text('import subprocess, sys\nsubprocess.Popen([sys.executable, "-c", ' + repr(child) + '])\n' + Path('tests/fixtures/mcp_echo_server.py').read_text().replace('from __future__ import annotations', ''))
+    config = {'name': 'trust-descendant', 'command': sys.executable, 'args': [str(script)]}
+    key = dict(user_id='local-default', kind='mcp', identifier=config['name'], digest=launch_identity(config)[0])
+    store = RuntimeTrustStore()
+    store.set(**key, trusted=True)
+    client = McpClient(config)
+    process = None
+    try:
+        assert client.initialize()
+        process = client._proc
+        deadline = time.monotonic() + 5
+        while not heartbeat.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert heartbeat.exists()
+        store.set(**key, trusted=False)
+        assert process.poll() is not None
+        time.sleep(.1)
+        stopped = heartbeat.read_text()
+        time.sleep(.15)
+        assert heartbeat.read_text() == stopped
+    finally:
+        client.shutdown()
+        if process:
+            from common.process_tree import stop_process_tree
+            stop_process_tree(process, owned_session=True)
+
+
+def test_mcp_entrypoint_digest_includes_sibling_import(tmp_path):
+    from core.security.mcp_runtime import launch_identity
+    entry, helper = tmp_path / 'entrypoint', tmp_path / 'helper.py'
+    entry.write_text('#!' + sys.executable + '\nimport helper\n')
+    entry.chmod(0o700)
+    helper.write_text('VALUE=1\n')
+    config = {'name': 'entry-digest', 'command': str(entry), 'args': []}
+    before = launch_identity(config)[0]
+    helper.write_text('VALUE=2\n')
+    assert launch_identity(config)[0] != before
+
+
+def test_trusted_console_entry_requires_fixed_local_implementation(tmp_path):
+    from core.security.mcp_runtime import launch_identity, prepare_mcp
+    from core.security.runtime_trust import RuntimeTrustStore
+    entry = tmp_path / 'console-script'
+    entry.write_text('#!' + sys.executable + '\nfrom installed_server import main\nmain()\n')
+    entry.chmod(0o700)
+    config = {'name': 'console-digest', 'command': str(entry), 'args': []}
+    RuntimeTrustStore().set(user_id='local-default', kind='mcp', identifier=config['name'],
+        digest=launch_identity(config)[0], trusted=True)
+    with pytest.raises(PermissionError, match='fixed local'):
+        prepare_mcp(config, os.environ.copy())
+
+
+def test_trusted_module_launcher_requires_fixed_script():
+    from core.security.mcp_runtime import launch_identity, prepare_mcp
+    from core.security.runtime_trust import RuntimeTrustStore
+    config = {'name': 'module-digest', 'command': sys.executable, 'args': ['-m', 'synthetic_server']}
+    RuntimeTrustStore().set(user_id='local-default', kind='mcp', identifier=config['name'],
+        digest=launch_identity(config)[0], trusted=True)
+    with pytest.raises(PermissionError, match='fixed local'):
+        prepare_mcp(config, os.environ.copy())

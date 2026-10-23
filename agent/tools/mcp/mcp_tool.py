@@ -43,6 +43,8 @@ class McpTool(BaseTool):
             return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
+            from core.security.service import SecurityService
+            policy_binding = SecurityService.policy_binding()
             resource_check = getattr(self, '_resource_check', None)
             if resource_check is not None:
                 resource_check()
@@ -54,6 +56,8 @@ class McpTool(BaseTool):
                 result = self.client.call_tool(self.remote_name, params)
             else:
                 result = self.client.call_tool(self.remote_name, params, cancel_event=self.cancel_event)
+            if SecurityService.policy_binding() != policy_binding:
+                return ToolResult.fail('MCP authorization changed during the call; result discarded.')
             if self.is_cancelled():
                 return ToolResult.fail("MCP call cancelled")
             if not self.is_available():

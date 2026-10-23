@@ -378,8 +378,21 @@ def intersect(current: dict, ceiling: dict) -> dict:
             scopes = parent_scopes if not scopes or "*" in scopes else [scope for scope in scopes if scope in parent_scopes]
         connections[name] = {"allowed": parent.get("allowed", True) and child.get("allowed", True),
                              "scopes": scopes}
+    roots = []
+    for child in current.get('extra_roots') or []:
+        child = os.path.realpath(child)
+        for parent in ceiling.get('extra_roots') or []:
+            parent = os.path.realpath(parent)
+            try:
+                common = os.path.commonpath((child, parent))
+            except ValueError:
+                continue
+            if common == parent:
+                roots.append(child)
+            elif common == child:
+                roots.append(parent)
     result = {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
-              "connections": connections}
+              "connections": connections, "extra_roots": sorted(set(roots))}
     if 'capabilities' in current or 'capabilities' in ceiling:
         from core.security.capabilities import CapabilityDescriptor, authorization
         from core.security.run_policy import OPERATIONS, from_legacy

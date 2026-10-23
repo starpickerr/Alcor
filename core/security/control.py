@@ -57,7 +57,7 @@ class PermissionControl:
         self._prepare(kind, subject, agent)
         from core.security.run_policy import validate_policy, save_run_policy
         clean = validate_policy(patch)
-        if type(clean.get('policy_revision')) is not int or clean['policy_revision'] < 1:
+        if type(clean.get('policy_revision')) is not int or clean['policy_revision'] < (0 if kind == 'task' else 1):
             raise ValueError('Current policy revision is required')
         if kind == 'task':
             self._tasks(agent).update(subject, {'run_policy': clean}, agent_id=agent, origin='user')
