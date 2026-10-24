@@ -159,30 +159,30 @@ def test_package_selection_change_cannot_read_docs_under_old_metadata(catalog, t
     assert 'DO_NOT_EXPOSE' not in json.dumps(detail)
 
 
-@pytest.mark.parametrize('plugin_id,keyword', [
-    ('stella.bills', '收支'), ('stella.calendar', '日程'),
-    ('stella.tasks', '事务'), ('stella.briefing', '简报'),
-    ('stella.automation', '定时'), ('stella.agent-hub', '智能体'),
-    ('stella.knowledge', '知识'), ('stella.memory', '记忆'),
+@pytest.mark.parametrize('plugin_id', [
+    'stella.bills', 'stella.calendar', 'stella.tasks', 'stella.briefing',
+    'stella.automation', 'stella.agent-hub', 'stella.knowledge', 'stella.memory',
 ])
-def test_legacy_first_party_plugins_have_useful_descriptions_without_reinstall(catalog, plugin_id, keyword):
+def test_plugin_description_is_owned_by_the_package_even_for_first_party_ids(catalog, plugin_id):
     service, package = catalog
     row = service.plugin_manager.inventory('local-default')[0]
     row['pluginId'] = plugin_id
     row['manifest'].pop('description', None)
     service.plugin_manager.inventory = lambda user: [row]
     (package / 'README.md').unlink()
-    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
-    assert keyword in summary['description']['zh']
     detail = service.detail('plugins', plugin_id)
-    assert keyword in detail['overview']['zh']
-    assert detail['overview']['en'].strip()
+    assert '尚未提供介绍' in detail['overview']['zh']
+    row['manifest']['description'] = {'zh': '由插件作者提供的用途', 'en': 'Purpose supplied by the package author'}
+    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
+    assert summary['description'] == row['manifest']['description']
+    assert service.detail('plugins', plugin_id)['overview'] == row['manifest']['description']
 
 
 @pytest.mark.parametrize('server,keyword', [('email', '邮件'), ('elearning', '课程')])
 def test_managed_mcp_description_is_available_before_connection(catalog, server, keyword):
     service, _ = catalog
-    service.mcp_rows = lambda: [dict(name=server, transport='stdio', enabled=False, state='disabled', tools=[])]
+    service.mcp_rows = lambda: [dict(name=server, transport='stdio', enabled=False, state='disabled', tools=[],
+                                   description={'zh': f'来自 MCP 包的{keyword}介绍', 'en': 'Package-owned introduction'})]
     detail = service.detail('mcp', server)
     assert keyword in detail['overview']['zh']
     assert detail['state'] == 'disabled' and detail['features'] == []
