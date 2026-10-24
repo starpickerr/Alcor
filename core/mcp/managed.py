@@ -1,5 +1,6 @@
 """Trusted default local Server registrations and backward-compatible intent."""
 
+import json
 import os
 from pathlib import Path
 import sys
@@ -28,6 +29,26 @@ OPERATIONS = {
 
 class ManagedMcpConfig(dict):
     """Core factory provenance; a user JSON field cannot create this type."""
+
+
+def _package_description(root, domain):
+    """Read only bounded public metadata, without importing Server code."""
+    from core.capabilities.descriptions import clean_copy
+
+    path = root / f'{domain}_mcp' / 'capability.json'
+    try:
+        if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+            return ''
+        with path.open('rb') as stream:
+            content = stream.read(65_537)
+        if len(content) > 65_536:
+            return ''
+        metadata = json.loads(content)
+        if not isinstance(metadata, dict) or metadata.get('name') != domain:
+            return ''
+        return clean_copy(metadata.get('description'))
+    except (OSError, ValueError):
+        return ''
 
 
 def configurations(manager):
@@ -67,6 +88,8 @@ def configurations(manager):
             else:
                 command = shutil.which(domain + "-mcp") or domain + "-mcp"
                 launch = []
+            metadata_root = binary.parent / '_internal' if getattr(sys, 'frozen', False) else repo
+            description = _package_description(metadata_root, domain)
             from importlib import import_module
 
             paths = import_module("core.services." + domain + "_facade")._paths()
@@ -86,6 +109,7 @@ def configurations(manager):
             configs.append(
                 ManagedMcpConfig({
                     "name": domain,
+                    **({'description': description} if description else {}),
                     "type": "stdio",
                     "command": command,
                     "args": launch
