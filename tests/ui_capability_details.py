@@ -101,8 +101,14 @@ def backend(route):
                 return
         else:
             data.update(
-                items=ROWS, errors={"mcp": "unavailable"} if partial_error[0] else {}
+                connectionSettings=['browser'], items=ROWS, errors={"mcp": "unavailable"} if partial_error[0] else {}
             )
+    elif path == '/api/capabilities/access':
+        if route.request.method == 'POST':
+            body = route.request.post_data_json
+            assert body['id'] == 'browser' and body['kind'] == 'connection' and body['connection_id'] == 'browser'
+            assert body['allowed'] is True and body['scopes'] == ['read'] and body['revision'] == 7
+        data.update(grants=[], inherited=[], available=[], subjects=[], restrictions=[], connection=dict(id='browser', allowed=route.request.method == 'POST', scopes=['read'], revision=8 if route.request.method == 'POST' else 7))
     elif path == "/api/plugins/runtime":
         if not malformed_plugin[0]:
             data["plugins"] = [
@@ -226,6 +232,13 @@ with sync_playwright() as p:
                 expect(card).not_to_contain_text('运行中')
             row.update(original)
         page.reload(wait_until='networkidle')
+        limits = page.get_by_role('region', name='连接访问设置', exact=True)
+        limits.get_by_text('浏览器', exact=True).click()
+        expect(limits.get_by_label('允许访问此连接')).not_to_be_checked()
+        limits.get_by_label('允许访问此连接').check()
+        limits.get_by_role('button', name='保存连接访问范围', exact=True).click()
+        expect(limits.get_by_role('status')).to_contain_text('连接访问范围已保存')
+        limits.get_by_text('浏览器', exact=True).click()
         page.get_by_role("button", name="搜索能力", exact=True).click()
         page.get_by_role("searchbox", name="搜索能力", exact=True).fill("代码")
         expect(page.get_by_role("link", name="Code Review", exact=True)).to_be_visible()

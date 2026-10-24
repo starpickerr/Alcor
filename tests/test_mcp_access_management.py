@@ -85,7 +85,11 @@ def test_grants_cannot_be_edited_cross_user_or_from_agent(access):
     assert access.get("mail-read").revoked
 
 
-def test_native_grant_api_requires_auth_and_checks_identity(access):
+def test_removed_native_provider_grant_api_keeps_revocation_and_requires_auth(access, monkeypatch):
+    from agent.tools.tool_manager import ToolManager
+    manager = ToolManager()
+    monkeypatch.setitem(manager.__dict__, '_load_mcp_configs', lambda: [{'name': 'email', 'type': 'stdio'}])
+    assert manager._load_mcp_configs()[0]['name'] == 'email'
     from channel.desktop import desktop_channel as desktop
 
     with (
@@ -95,13 +99,23 @@ def test_native_grant_api_requires_auth_and_checks_identity(access):
             desktop.web,
             "data",
             return_value=json.dumps(
-                {"id": "mail-read", "revision": 2, "revoked": False}
+                {"id": "email", "kind": "mcp", "action": "legacy", "legacy_id": "mail-read", "revision": 2, "revoked": False}
             ).encode(),
         ),
     ):
-        result = json.loads(desktop.SecurityMcpAccessHandler().POST())
-        assert result["status"] == "success" and not access.get("mail-read").revoked
+        result = json.loads(desktop.CapabilityAccessSettingsHandler().POST())
+        assert result["status"] == "error" and access.get("mail-read").revoked
         auth.assert_called_once()
         auth.side_effect = PermissionError("unauthenticated")
         with pytest.raises(PermissionError):
-            desktop.SecurityMcpAccessHandler().POST()
+            desktop.CapabilityAccessSettingsHandler().POST()
+
+
+def test_expired_legacy_scope_can_be_revoked_without_reissuing_expiry(access):
+    from agent.permission.mcp_access import update
+    row = access.get('mail-read')
+    expired = '2020-01-01T00:00:00Z'
+    access.update_owned('mail-read', user_id='local-default', revision=row.policy_revision, revoked=False, valid_until=expired)
+    row = access.get('mail-read')
+    update(dict(id='mail-read', revision=row.policy_revision, revoked=True, valid_until=expired))
+    assert access.get('mail-read').revoked and access.get('mail-read').valid_until == expired

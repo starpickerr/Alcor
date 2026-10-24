@@ -323,7 +323,6 @@ available_setting = {
     # Default permission mode for sessions that have not picked one of their own:
     # Historical mode key. Existing installs are migrated to an exact policy
     # snapshot; new installs start with project-scoped access.
-    "agent_permission_mode": "workspace-write",
     "agent_tool_allowlist": [],
     "agent_account_allowlist": [],
     # In-process sub agents: the Agent hands a self-contained task to a

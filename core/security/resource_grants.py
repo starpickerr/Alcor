@@ -125,7 +125,34 @@ class ResourceGrantStore(RunPolicyStore):
             return sum(row[1] for row in db.execute('SELECT connection,revision FROM resource_restrictions WHERE user=? AND subject=?',
                 (user_id, 'user:' + user_id)) if row[0] in names)
 
+    @staticmethod
+    def summarize_connections(rows):
+        grouped = {}
+        for connection, revision, policy in rows:
+            key = 'mcp:' + connection if connection in {'email', 'elearning'} else connection
+            grouped.setdefault(key, []).append((revision, policy))
+        result = []
+        for key, values in grouped.items():
+            scopes = [set(body['scopes']) for _, body in values if body.get('scopes') and '*' not in body['scopes']]
+            common = set.intersection(*scopes) if scopes else set()
+            result.append(dict(id=key, revision=sum(revision for revision, _ in values),
+                allowed=all(body.get('allowed', True) for _, body in values) and (not scopes or bool(common)),
+                scopes=sorted(common)))
+        return result
+
+    def connection_settings(self, *, user_id, subject):
+        """Read existing restrictions for their owning feature without creating grants."""
+        with self.transaction() as db:
+            self._restrictions(db)
+            rows = [(connection, revision, json.loads(body)) for connection, revision, body in db.execute(
+                'SELECT connection,revision,body FROM resource_restrictions WHERE user=? AND subject=?', (user_id, subject))]
+            return self.summarize_connections(rows)
+
     def update_owned_connection(self, *, user_id, connection, policy, expected_revision):
+        return self.update_connection(user_id=user_id, subject='user:' + user_id, connection=connection,
+                                      policy=policy, expected_revision=expected_revision)
+
+    def update_connection(self, *, user_id, subject, connection, policy, expected_revision):
         from agent.permission.security_policy import validate_patch
         policy = validate_patch({'connections': {connection: policy}})['connections'][connection]
         names = {connection}
@@ -134,14 +161,14 @@ class ResourceGrantStore(RunPolicyStore):
         with self.transaction() as db:
             self._restrictions(db)
             revision = sum(row[1] for row in db.execute('SELECT connection,revision FROM resource_restrictions WHERE user=? AND subject=?',
-                (user_id, 'user:' + user_id)) if row[0] in names)
+                (user_id, subject)) if row[0] in names)
             if type(expected_revision) is not int or expected_revision != revision:
                 raise ValueError('Connection authorization revision changed; refresh and retry')
             for name in names:
-                db.execute('DELETE FROM resource_restrictions WHERE user=? AND subject=? AND connection=?', (user_id, 'user:' + user_id, name))
+                db.execute('DELETE FROM resource_restrictions WHERE user=? AND subject=? AND connection=?', (user_id, subject, name))
             body = json.dumps(policy, sort_keys=True)
             db.execute('INSERT INTO resource_restrictions VALUES (?,?,?,?,?,?)',
-                (user_id, 'user:' + user_id, connection, revision + 1, body, body))
+                (user_id, subject, connection, revision + 1, body, body))
 
     def set_connection_restriction(self, *, user_id, subject, connection, policy):
         from agent.permission.security_policy import validate_patch

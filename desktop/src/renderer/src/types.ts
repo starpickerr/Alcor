@@ -756,7 +756,8 @@ export interface TaskAction {
   params?: Record<string, unknown> | unknown[]
   execution_session_id?: string
   notify_session_id?: string
-  conversation_mode?: 'source' | 'reuse' | 'new'
+  conversation_mode?: 'independent' | 'source' | 'reuse' | 'new'
+  workspace_version?: 1
   source_session_id?: string
   conversation_space?: 'personal' | 'project'
   execution_project_dir?: string

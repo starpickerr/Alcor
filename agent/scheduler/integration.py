@@ -263,6 +263,11 @@ def reset_scheduler_services(stop: bool = True) -> None:
         _task_store = None
 
 
+def _record_only(task):
+    return ((task.get('action') or {}).get('conversation_mode') == 'independent'
+            and not task.get('notification_route'))
+
+
 def _remember_delivered_output(
     agent_bridge,
     task: dict,
@@ -287,6 +292,8 @@ def _remember_delivered_output(
         return True
     action = task.get("action", {})
     action_type = action.get("type", "")
+    if action.get("conversation_mode") == "independent":
+        return True
 
     # send_message defaults to NOT being injected; explicit opt-in via config.
     if action_type == "send_message" and "conversation_mode" not in action:
@@ -487,7 +494,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 )
                 return True
 
-            if action.get("silent", False):
+            if action.get("silent", False) or _record_only(task):
                 logger.info(
                     f"[Scheduler] Task {task['id']} executed successfully in silent mode"
                 )
@@ -591,6 +598,10 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         elif channel_type == "qq":
             context["msg"] = None
 
+        from agent.scheduler.result_cache import save_output
+        save_output(get_task_store(agent_id=agent_id), task.get('job_run_id'), content)
+        if _record_only(task):
+            return True
         # Create reply
         reply = Reply(ReplyType.TEXT, content)
         if task.get("notification_route"):
@@ -778,7 +789,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             from agent.scheduler.outcome import ExecutionOutcome
             if isinstance(content, ExecutionOutcome):
                 return content
-        if silent:
+        if silent or _record_only(task):
             return True
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
@@ -906,7 +917,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Task {task['id']}: No result from skill execution")
             return True
 
-        if action.get("silent", False):
+        if action.get("silent", False) or _record_only(task):
             return True
 
         if result_prefix:

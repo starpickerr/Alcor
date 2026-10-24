@@ -28,11 +28,11 @@ def policy_for_task(task, agent_id=None):
             current = {'filesystem_mode': 'read-only', 'capabilities': {}, 'policy_revision': 0,
                        'migration_status': 'needs_confirmation'}
         else:
-            from agent.permission.policy import global_mode
+            from agent.permission.policy import legacy_global_mode
             from agent.permission.security_policy import _legacy_resolve
             action = task.get('action') or {}
             source = action.get('execution_session_id') or action.get('source_session_id')
-            legacy = _legacy_resolve(global_mode(), project_dir=action.get('execution_project_dir'),
+            legacy = _legacy_resolve(legacy_global_mode(), project_dir=action.get('execution_project_dir'),
                                       session_id=source, agent_id=agent_id)
             mode = task.get('run_permission_mode')
             if mode in _MODES:

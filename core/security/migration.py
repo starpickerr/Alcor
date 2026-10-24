@@ -133,10 +133,10 @@ def _metadata_json(path):
 
 
 def _task_policy(task, agent):
-    from agent.permission.policy import global_mode
+    from agent.permission.policy import legacy_global_mode
     from agent.permission.security_policy import _legacy_resolve
     action = task.get('action') or {}
-    legacy = _legacy_resolve(global_mode(), project_dir=action.get('execution_project_dir'),
+    legacy = _legacy_resolve(legacy_global_mode(), project_dir=action.get('execution_project_dir'),
         session_id=action.get('execution_session_id') or action.get('source_session_id'), agent_id=agent)
     if task.get('run_permission_mode') in {'read-only', 'workspace-write', 'full-access'}:
         legacy = {**legacy, 'preset': task['run_permission_mode'], 'rules': {}}
@@ -150,13 +150,13 @@ def discover_subjects():
     from common.runtime_identity import current_identity, identity_scope
     from common.state_dir import memory_index_db, scheduler_file
     from agent.registry import get_agent_registry
-    from agent.permission.policy import global_mode
+    from agent.permission.policy import legacy_global_mode
     from agent.permission.security_policy import _legacy_resolve
     from agent.workspace import session_prefs, project_store
     user = current_identity().user_id or 'local-default'
     owners = ('', 'local-default') if user == 'local-default' else (user, user)
     registry = get_agent_registry()
-    yield {'kind': 'template', 'subject': 'default', 'agent': '*', 'legacy': _legacy_resolve(global_mode())}
+    yield {'kind': 'template', 'subject': 'default', 'agent': '*', 'legacy': _legacy_resolve(legacy_global_mode())}
     prefs = _metadata_json(session_prefs._store_file()).get('sessions') or {}
     projects = _metadata_json(project_store._store_file()).get('sessions') or {}
     for profile in registry.list():
@@ -174,7 +174,7 @@ def discover_subjects():
             for session in sorted(ids):
                 project = project_store.get_project_dir(session, profile.id)
                 yield {'kind': 'session', 'subject': session, 'agent': profile.id,
-                       'legacy': _legacy_resolve(global_mode(), project_dir=project, session_id=session, agent_id=profile.id)}
+                       'legacy': _legacy_resolve(legacy_global_mode(), project_dir=project, session_id=session, agent_id=profile.id)}
             file = scheduler_file()
             db_path = file.with_name('automation.db')
             tasks = []

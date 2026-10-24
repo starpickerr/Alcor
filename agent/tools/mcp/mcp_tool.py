@@ -22,13 +22,17 @@ class McpTool(BaseTool):
         self.remote_name = tool_schema["name"]
         self.title = tool_schema.get('title')
         self.output_schema = tool_schema.get('outputSchema')
-        slug = re.sub(r"[^A-Za-z0-9_-]", "_", self.remote_name)[:55].strip("_") or "tool"
-        digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
-        tool_digest = hashlib.sha256(self.remote_name.encode()).hexdigest()[:8]
-        self.name = f"mcp_{digest}_{slug}_{tool_digest}"
+        self.name = self.name_for(server_name, self.remote_name)
         self.read_only = (tool_schema.get("annotations") or {}).get("readOnlyHint") is True
         self.description = tool_schema.get("description", "")
         self.params = tool_schema.get("inputSchema", {})
+
+    @staticmethod
+    def name_for(server_name, remote_name):
+        slug = re.sub(r"[^A-Za-z0-9_-]", "_", remote_name)[:55].strip("_") or "tool"
+        digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
+        tool_digest = hashlib.sha256(remote_name.encode()).hexdigest()[:8]
+        return f"mcp_{digest}_{slug}_{tool_digest}"
 
     def is_available(self):
         from agent.tools.capability_settings import tool_enabled

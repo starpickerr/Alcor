@@ -42,7 +42,7 @@ def test_disconnected_route_does_not_block_unrelated_todo_edit(service, monkeypa
     assert renamed["reminder_delivery"] == todo["reminder_delivery"]
 
 
-def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path, service, monkeypatch):
+def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command(tmp_path, service, monkeypatch, native_settings_action):
     with identity_scope(user_id="student-a"):
         store = AutomationStore(tmp_path / "scheduler" / "tasks.json", "default")
         # The host reconciles plugin reminder links into the user-scoped desktop store.
@@ -55,8 +55,10 @@ def test_linked_reminder_uses_user_scoped_desktop_scheduler_and_internal_command
             with pytest.raises(PermissionError, match="reserved for scheduler"):
                 Application.command("todos", "QueueTodoReminder", [todo["id"], reminder],
                                     RequestContext(source="desktop", user_id="student-a"))
+            from core.security.run_policy import save_run_policy
+            save_run_policy('session', 'reminder-test', {'filesystem_mode': 'workspace-write'})
             result = Application.command("todos", "QueueTodoReminder", [todo["id"], reminder],
-                                         RequestContext(source="scheduler", user_id="student-a"))
+                                         RequestContext(source="scheduler", user_id="student-a", session_id="reminder-test"))
             assert result["value"] is False  # The scheduler has not reached the time yet.
     with identity_scope(user_id="student-b"):
         assert store.get_task(todo["scheduler_task_id"]) is None

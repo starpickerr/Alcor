@@ -114,7 +114,7 @@ def test_agent_scheduler_schema_and_execute_cannot_raise_run_permission(scope, t
     assert tool.task_store.load_tasks() == {}
 
 
-def test_agent_created_task_defaults_to_source_even_before_chat_is_saved(scope):
+def test_agent_created_task_can_associate_current_chat_before_it_is_saved(scope):
     sessions, bindings, project = scope
     sessions.clear()  # The Agent can call the tool before its current turn is persisted.
     bindings["chat_a"] = str(project)
@@ -125,7 +125,7 @@ def test_agent_created_task_defaults_to_source_even_before_chat_is_saved(scope):
     tool.current_context = type("ToolContext", (dict,), {"kwargs": {}})(context)
     with identity_scope(agent_id="agent-a"):
         result = tool.execute({"action": "create", "name": "daily", "message": "hello",
-                               "schedule_type": "interval", "schedule_value": "3600"})
+                               "schedule_type": "interval", "schedule_value": "3600", "conversation_mode": "source"})
     assert result.status == "success"
     assert saved[0]["action"]["conversation_mode"] == "source"
     assert saved[0]["action"]["source_session_id"] == "chat_a"
@@ -201,3 +201,65 @@ def test_scoped_output_persists_full_text_and_does_not_recreate_deleted_chat():
                                           channel_type="web", force=True, require_existing=True)
     assert written[0][0][1]["content"][0]["text"] == "x" * 3000
     assert written[0][1]["create_if_missing"] is False
+
+
+def test_independent_task_needs_no_chat_and_keeps_workspace_between_runs(scope):
+    from agent.workspace.context import resolve_context
+    from agent.runtime.tool_invocation import scheduled_permission_scope
+    from core.security.task_policy import prepare_task_policy
+    with identity_scope(agent_id='agent-a'):
+        task, change = prepare_task_policy({'id': 'solo', 'action': {'channel_type': 'web',
+            'conversation_mode': 'independent'}}, agent_id='agent-a')
+        change.apply()
+        first = conversation.prepare_run({**task, 'job_run_id': 'first'}, 'agent-a')
+        second = conversation.prepare_run({**task, 'job_run_id': 'second'}, 'agent-a')
+        with identity_scope(task_id='solo'), scheduled_permission_scope(first):
+            root = resolve_context(None, 'agent-a', task_id='solo', ensure=True).root
+            (root / 'keep.txt').write_text('saved')
+        with identity_scope(task_id='solo'), scheduled_permission_scope(second):
+            assert (resolve_context(None, 'agent-a', task_id='solo').root / 'keep.txt').read_text() == 'saved'
+        assert conversation.agent_session_id(first) != conversation.agent_session_id(second)
+        assert not first['action'].get('source_session_id')
+
+
+def test_new_linked_task_uses_chat_workspace_but_owns_its_policy(scope):
+    from agent.workspace.context import resolve_context, private_access
+    from agent.runtime.tool_invocation import scheduled_permission_scope
+    from core.security.task_policy import prepare_task_policy
+    from core.security.run_policy import save_run_policy, resolve_run_policy
+    _, bindings, project = scope
+    bindings['chat_a'] = str(project)
+    with identity_scope(agent_id='agent-a'):
+        save_run_policy('session', 'chat_a', {'filesystem_mode': 'full-access'})
+        task, change = prepare_task_policy({'id': 'linked', 'action': {'channel_type': 'web',
+            'conversation_mode': 'source', 'source_session_id': 'chat_a', 'workspace_version': 1}}, agent_id='agent-a')
+        change.apply()
+        prepared = conversation.prepare_run(task, 'agent-a')
+        with identity_scope(task_id='linked', execution_session_id='chat_a'), scheduled_permission_scope(prepared):
+            context = resolve_context('chat_a', 'agent-a', task_id='linked')
+            assert context.root == project
+            assert resolve_run_policy()['filesystem_mode'] == 'read-only'
+        # Old tasks keep their original task-owned directory.
+        old = {**prepared, 'action': {**prepared['action'], 'workspace_version': None}}
+        with identity_scope(task_id='linked'), scheduled_permission_scope(old):
+            assert resolve_context('chat_a', 'agent-a', task_id='linked').root != project
+        bindings.clear()
+        prepared = conversation.prepare_run(task, 'agent-a')
+        with identity_scope(task_id='linked'), scheduled_permission_scope(prepared):
+            context = resolve_context('chat_a', 'agent-a', task_id='linked')
+            assert context.kind == 'session'
+            assert private_access(str(context.root / 'own.txt'), context) == 'write'
+            assert private_access(str(context.work_root / 'sessions/agent-a/chat_b/secret'), context) == 'deny'
+
+
+def test_agent_can_create_independent_task_without_current_chat(scope):
+    tool = SchedulerTool({'channel_type': 'web'})
+    saved = []
+    tool.task_store = SimpleNamespace(add_task=saved.append)
+    tool.current_context = type('ToolContext', (dict,), {'kwargs': {}})({})
+    with identity_scope(agent_id='agent-a'):
+        result = tool.execute({'action': 'create', 'name': 'solo', 'message': 'hello',
+            'schedule_type': 'interval', 'schedule_value': '3600', 'conversation_mode': 'independent'})
+    assert result.status == 'success', result.result
+    assert saved[0]['action']['conversation_mode'] == 'independent'
+    assert not saved[0]['action'].get('source_session_id')

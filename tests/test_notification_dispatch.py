@@ -296,6 +296,10 @@ def test_scheduler_todo_command_reports_external_delivery_waiting(monkeypatch):
 def _scheduler_context():
     from application import RequestContext
 
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    with identity_scope(user_id='test-user', agent_id='test-agent'):
+        save_run_policy('session', 's', {'filesystem_mode': 'full-access'})
     return RequestContext(source="scheduler", user_id="test-user", agent_id="test-agent", session_id="s")
 
 
@@ -303,7 +307,7 @@ def _scheduler_context():
 # tests/test_todos_plugin_gateway.py; route edits below use the same real-worker path.
 
 
-def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugin, monkeypatch, registered_agent):
+def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugin, monkeypatch, registered_agent, native_settings_action):
     from application import Application
     registered_agent('test-agent')
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(
@@ -329,7 +333,7 @@ def test_todo_route_edit_replaces_waiting_recipient_for_same_instant(todos_plugi
     assert sends == ["telegram", "wecom_bot"]
 
 
-def test_todo_unknown_result_is_preserved_across_route_edit(todos_plugin, monkeypatch, registered_agent):
+def test_todo_unknown_result_is_preserved_across_route_edit(todos_plugin, monkeypatch, registered_agent, native_settings_action):
     from application import Application
     registered_agent('test-agent')
     monkeypatch.setattr(delivery, "runtime_channel", lambda _: SimpleNamespace(

@@ -35,8 +35,13 @@ def validate_conversation_action(action, *, allow_pending_source=False):
         return action
     mode = action.get("conversation_mode")
     space = action.get("conversation_space")
-    if mode not in ("source", "reuse", "new"):
+    if mode not in ("source", "reuse", "new", "independent"):
         raise ValueError("Invalid task conversation choice")
+    if mode == "independent":
+        # No chat or project dependency; Work/automations owns the durable files.
+        for field in ('source_session_id', 'execution_project_dir', 'conversation_space'):
+            action.pop(field, None)
+        return action
     if mode == "source":
         session_id = action.get("source_session_id")
         if not isinstance(session_id, str) or not session_id:
@@ -87,7 +92,7 @@ def prepare_run(task, agent_id=None):
         raise ValueError("Invalid task ID")
     if action["conversation_mode"] == "source":
         session_id = action["source_session_id"]
-    elif action["conversation_mode"] == "reuse":
+    elif action["conversation_mode"] in ("reuse", "independent"):
         session_id = f"task_{task_id}_{_scope_token(action)}"
     else:
         occurrence = str(task.get("job_run_id") or uuid.uuid4().hex)
@@ -96,7 +101,7 @@ def prepare_run(task, agent_id=None):
         session_id = f"task_{task_id}_{occurrence}"
     if action["conversation_mode"] == "source":
         pass  # The existing conversation owns its project binding.
-    elif action["conversation_space"] == "project":
+    elif action.get("conversation_space") == "project":
         # Recheck project membership on every run. A deleted project cannot
         # silently turn a scheduled write into a personal-workspace write.
         project_store.set_project_dir(session_id, action["execution_project_dir"], agent_id)
@@ -119,7 +124,7 @@ def agent_session_id(task):
     """The Agent transcript is separate from the visible task conversation."""
     action = task.get("action") or {}
     base = f"scheduler_{task['id']}"
-    if action.get("conversation_mode") == "new":
+    if action.get("conversation_mode") in ("new", "independent") or action.get("workspace_version") == 1:
         return base + "_" + str(task.get("job_run_id") or uuid.uuid4().hex)
     if action.get("conversation_mode") in ("source", "reuse"):
         return base + "_" + _scope_token(action)

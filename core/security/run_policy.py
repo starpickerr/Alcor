@@ -1,4 +1,6 @@
 """Independent execution snapshots; legacy policies are migration inputs only."""
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 import re
 
@@ -8,6 +10,7 @@ from core.security.policy_store import RunPolicyStore
 OPERATIONS = frozenset({'read', 'write', 'delete', 'external_send', 'system_execute'})
 VALUES = frozenset({'allow', 'confirm', 'deny'})
 DOMAINS = ('tasks', 'calendar', 'bills', 'briefing', 'automation', 'agent-hub', 'memory', 'knowledge')
+_TASK_SNAPSHOT = ContextVar('task_run_policy_snapshot', default=None)
 _CAPABILITY = re.compile(r'^(?:builtin|plugin|mcp):[^\s\x00-\x1f]{1,240}$')
 
 
@@ -86,13 +89,25 @@ def validate_policy(value):
 
 
 def default_template():
-    from agent.permission.policy import global_mode
-    from agent.permission.security_policy import _load_global
-    return RunPolicyStore().ensure(subject_key('template', 'default'), from_legacy(_load_global(global_mode(), None)))
+    # Retired templates remain in storage solely as migration evidence.
+    return {**_seed({'filesystem_mode': READ_ONLY, 'capabilities': {}}), 'policy_revision': 1}
+
+
+@contextmanager
+def task_policy_scope(task, agent_id=None):
+    from core.security.task_policy import policy_for_task
+    key = subject_key('task', str(task['id']), agent_id)
+    parent = _TASK_SNAPSHOT.get()
+    snapshot = parent if parent and parent[0] == key else (key, policy_for_task(task, agent_id))
+    token = _TASK_SNAPSHOT.set(snapshot)
+    try:
+        yield
+    finally:
+        _TASK_SNAPSHOT.reset(token)
 
 
 def resolve_run_policy(session_id=None, agent_id=None, task_id=None, seed=None):
-    from core.security.migration import PermissionMigration
+    from core.security.migration import ensure_migrated
     from common.runtime_identity import current_identity
     identity = current_identity()
     task_id = task_id or identity.task_id
@@ -103,27 +118,26 @@ def resolve_run_policy(session_id=None, agent_id=None, task_id=None, seed=None):
         kind, subject = 'session', session_id
     else:
         return default_template() if seed is None else _seed(seed)
+    # Snapshot existing subjects before assigning a fixed default to a new one.
     store, key = RunPolicyStore(), subject_key(kind, subject, agent_id)
+    snapshot = _TASK_SNAPSHOT.get()
+    if kind == 'task' and snapshot and snapshot[0] == key:
+        live = store.get(key)
+        if live is None or live.get('revoked'):
+            raise PermissionError('Task authorization was revoked')
+        return deepcopy(snapshot[1])
     current = store.get(key)
     if current is not None:
         return current
-    if seed is not None:
-        initial = _seed(seed)
-    elif kind == 'task':
-        initial = _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
-    elif PermissionMigration().verify()['status'] == 'applied':
-        initial = default_template()
-    else:
-        from agent.permission.policy import global_mode
-        from agent.permission.security_policy import _legacy_resolve
-        from agent.workspace.project_store import get_project_dir
-        legacy = _legacy_resolve(global_mode(), project_dir=get_project_dir(subject, agent_id),
-                                 session_id=subject, agent_id=agent_id)
-        from agent.workspace.session_prefs import get_prefs
-        if legacy.get('error'):
-            initial = from_legacy(legacy)
-        else:
-            initial = from_legacy(legacy) if get_project_dir(subject, agent_id) or get_prefs(subject, agent_id).get('security_policy') else default_template()
+    if seed is None:
+        try:
+            ensure_migrated()
+        except (ValueError, OSError, PermissionError):
+            return {**from_legacy({'error': 'Legacy permission migration requires repair'}), 'policy_revision': 0}
+        current = store.get(key)
+        if current is not None:
+            return current
+    initial = _seed(seed) if seed is not None else default_template()
     return store.ensure(key, initial)
 
 

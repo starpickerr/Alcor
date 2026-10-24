@@ -36,21 +36,27 @@ def backend(route):
         if data['status'] == 'success':
             data.update(policy=policies[subject], migration_status='complete', compatibility_restrictions={}, capabilities=[
                 {'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True, 'enabled': True, 'runtime_state': 'active'}])
-    elif path == '/api/security/resources':
+    elif path == '/api/sessions/access':
         if request.method == 'POST':
             body = json.loads(request.post_data)
+            assert body['id'] == 'one' and body['connection_id'] == 'browser'
+            assert body['revision'] == 7 and body['allowed'] is True
+            saved.append(body)
+        data.update(grants=[], subjects=[dict(id='session:default:one', kind='session', subject='one')], available=[], inherited=[],
+                    restrictions=[dict(id='browser', allowed=request.method == 'POST', scopes=['read'], revision=8 if request.method == 'POST' else 7)])
+    elif path == '/api/data/access':
+        if request.method == 'POST':
+            body = json.loads(request.post_data)
+            assert body['id'] == 'school'
             saved.append(body)
             if body['action'] == 'issue':
                 grants.append({**body, 'grant_id': 'grant-one', 'revision': 1, 'effective': True, 'revoked': False})
-            else:
+            elif body['action'] == 'revoke':
                 grants[0].update(revoked=True, effective=False, revision=2)
+            elif body['action'] == 'legacy':
+                legacy_grant.update({key: value for key, value in body.items() if key not in {'action', 'id', 'legacy_id'}}, revision=legacy_grant['revision'] + 1)
         data.update(grants=grants, subjects=[{'id': 'session:default:one', 'kind': 'session', 'subject': 'one', 'agent': 'default'}],
             available=[{'kind': 'folder', 'id': 'school', 'name': '测试邮箱', 'operations': ['read']}], inherited=[legacy_grant])
-    elif path == '/api/security/mcp-access' and request.method == 'POST':
-        body = json.loads(request.post_data)
-        assert set(body) <= {'id', 'revision', 'revoked', 'purposes', 'resources', 'valid_until'}
-        saved.append(body)
-        legacy_grant.update(body, revision=legacy_grant['revision'] + 1)
     elif path == '/api/security/runtime-trust':
         if request.method == 'POST':
             runtime_choices.append(json.loads(request.post_data))
@@ -89,6 +95,12 @@ with sync_playwright() as p:
     expect(one.get_by_role('status')).to_contain_text('已保存')
     assert saved[-1]['policy'] == {'filesystem_mode': 'read-only', 'policy_revision': 1}
     expect(two.get_by_role('radio', name='工作区写入', exact=True)).to_be_checked()
+    one.get_by_text('保留的连接访问范围', exact=True).click()
+    expect(one.get_by_label('允许访问此连接')).not_to_be_checked()
+    one.get_by_label('允许访问此连接').check()
+    one.get_by_role('button', name='保存连接访问范围', exact=True).click()
+    expect(one.get_by_role('status').filter(has_text='连接访问范围已保存')).to_be_visible()
+    one.get_by_text('保留的连接访问范围', exact=True).click()
     reject[0] = True
     one.get_by_role('radio', name='完全访问', exact=True).check()
     one.get_by_role('button', name='保存权限', exact=True).click()

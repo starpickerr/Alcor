@@ -81,7 +81,11 @@ export interface ResourceGrant {
   purposes: string[]; valid_until: string | null; revoked: boolean; revision: number; effective: boolean
   legacy_scope?: string
 }
-export interface ResourceGrantState extends ApiResult {
+export interface FeatureAccessContext { module: 'data' | 'sessions' | 'capabilities'; id: string; kind?: 'connection'; agent?: string }
+export interface FeatureAccessState extends ApiResult {
+  retired?: boolean
+  restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
+  connection?: { id: string; allowed: boolean; scopes: string[]; revision: number } | null
   grants: ResourceGrant[]; subjects: { id: string; kind: string; subject: string; agent?: string }[]
   available: { kind: string; id: string; name: string; operations: Operation[] }[]; inherited: InheritedMcpGrant[]
 }
@@ -625,16 +629,19 @@ class ApiClient {
     return result
   }
 
-  async saveRunPolicy(kind: 'template' | 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
+  async saveRunPolicy(kind: 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
     const result = await this.request<RunPolicyState>('/api/security/run-policy', { method: 'POST', body: JSON.stringify({ kind, subject, policy, agent }) })
     if (result.status !== 'success') throw new Error(result.message || '保存权限失败')
     notifySecurityPolicyChanged()
     return result
   }
 
-  async resourceGrants(body?: Record<string, unknown>): Promise<ResourceGrantState> {
-    const result = await this.request<ResourceGrantState>('/api/security/resources', body ? { method: 'POST', body: JSON.stringify(body) } : undefined)
-    if (result.status !== 'success') throw new Error(result.message || '资源授权不可用')
+  async featureAccess(context: FeatureAccessContext, body?: Record<string, unknown>): Promise<FeatureAccessState> {
+    const { module, ...scope } = context
+    const query = new URLSearchParams(Object.entries(scope).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    const result = await this.request<FeatureAccessState>(`/api/${module}/access${body ? '' : `?${query}`}`,
+      body ? { method: 'POST', body: JSON.stringify({ ...body, ...scope }) } : undefined)
+    if (result.status !== 'success') throw new Error(result.message || '访问设置不可用')
     return result
   }
 
@@ -670,9 +677,6 @@ class ApiClient {
     return result
   }
 
-  async updateSecurityConnection(id: string, allowed: boolean, scopes: string[], revision = 0): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, allowed, scopes, revision }) })
-  }
 
   async saveSecuritySecret(name: string, value: string): Promise<{ status: string; message?: string }> {
     return this.request('/api/security/secrets', { method: 'POST', body: JSON.stringify({ name, value }) })
@@ -682,9 +686,6 @@ class ApiClient {
     return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
   }
 
-  async updateMcpAccess(grant: Pick<InheritedMcpGrant, 'id' | 'revision' | 'revoked' | 'purposes' | 'resources' | 'valid_until'>): Promise<ApiResult> {
-    return this.request('/api/security/mcp-access', { method: 'POST', body: JSON.stringify(grant) })
-  }
 
   async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
     return this.request('/api/security/privacy', { method: 'POST', body: JSON.stringify({ action }) })
@@ -810,6 +811,10 @@ class ApiClient {
     return data.servers
   }
 
+  async toggleProviderTool(kind: string, provider: string, id: string, enabled: boolean): Promise<ApiResult> {
+    return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ kind, provider, id, enabled }) })
+  }
+
   async toggleTool(id: string, enabled: boolean): Promise<ApiResult> {
     return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ id, enabled }) })
   }
@@ -897,12 +902,17 @@ class ApiClient {
     return data.tasks
   }
 
+  async getTaskRuns(taskId: string): Promise<{ job_run_id: string; status: string; started_at: string; error?: string; output: string }[]> {
+    const result = await this.request<{ runs: { job_run_id: string; status: string; started_at: string; error?: string; output: string }[] }>(`/api/scheduler/runs?task_id=${encodeURIComponent(taskId)}`)
+    return result.runs || []
+  }
+
   async createTask(payload: {
     name: string
     enabled?: boolean
     schedule: TaskSchedule
     action: TaskAction
-    session_id: string
+    session_id?: string
     notification_route?: SchedulerTask['notification_route']
     run_permission_mode?: SchedulerTask['run_permission_mode'] | 'inherit'
     run_policy?: Pick<RunPolicy, 'filesystem_mode' | 'capabilities'>

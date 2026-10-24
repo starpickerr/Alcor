@@ -1,14 +1,20 @@
+import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { CapabilityDetail } from '../../api/capabilityTypes'
 import PluginSettings from '../settings/PluginSettings'
-import { MailboxSettings } from '../data/MailboxSettings'
 import { ElearningSettings } from '../data/ElearningSettings'
+import { MailboxSettings } from '../data/MailboxSettings'
 import ElearningFileSettings from '../settings/ElearningFileSettings'
 import AppleIntegrations from '../settings/AppleIntegrations'
 import { c } from './presentation'
 
 export default function CapabilityConfiguration({ item, baseUrl }: { item: CapabilityDetail; baseUrl: string }) {
   const [params] = useSearchParams()
+  const settingsUrl = item.configuration?.settingsUrl
+  const mcpSettings: Record<string, ReactNode> = {
+    '/elearning': <><ElearningSettings /><ElearningFileSettings /></>,
+    '/email': <MailboxSettings />,
+  }
   return <div className="space-y-6">
     {item.kind === 'plugins' && <>
       <PluginSettings key={item.id} baseUrl={baseUrl} pluginId={item.id} embedded />
@@ -17,8 +23,9 @@ export default function CapabilityConfiguration({ item, baseUrl }: { item: Capab
         <AppleIntegrations section={params.get('integration') === 'apple-reminders' || item.id === 'stella.tasks' ? 'apple-reminders' : 'apple-calendar'} kind={item.id === 'stella.calendar' ? 'calendar' : 'todos'} />
       </section>}
     </>}
-    {item.kind === 'mcp' && item.id === 'email' && <MailboxSettings />}
-    {item.kind === 'mcp' && item.id === 'elearning' && <><ElearningSettings /><ElearningFileSettings /></>}
-    <Link className="inline-flex text-sm text-accent hover:underline" to="/security?tab=connections">{c('管理账号与资源访问授权', 'Manage account and resource access')}</Link>
+    {item.kind === 'mcp' && (settingsUrl && mcpSettings[settingsUrl] ? mcpSettings[settingsUrl] :
+      settingsUrl?.startsWith('/') && !settingsUrl.startsWith('//') && !settingsUrl.startsWith('/skills') ?
+        <Link to={settingsUrl} className="text-sm text-accent">{c('打开提供者配置', 'Open provider settings')}</Link> :
+        <p className="text-sm text-content-secondary">{c('此提供者未发布可编辑的配置项。', 'This provider has not published editable settings.')}</p>)}
   </div>
 }

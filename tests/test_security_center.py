@@ -156,7 +156,7 @@ def test_global_policy_rejects_custom_preset():
                         "rules": {"network": "deny"}}, global_policy=True)
 
 
-def test_default_template_switch_keeps_legacy_restrictions_and_original_backup(tmp_path, monkeypatch):
+def test_fixed_defaults_keep_legacy_restrictions_and_original_backup(tmp_path, monkeypatch):
     """Old installs stored custom global defaults; switching to a product preset must succeed."""
     from agent.permission import center as security_center
     import config as config_module
@@ -177,18 +177,20 @@ def test_default_template_switch_keeps_legacy_restrictions_and_original_backup(t
     monkeypatch.setattr(config_module, "conf", lambda: live)
     monkeypatch.setattr(config_module, "read_config_template", lambda: {})
 
-    saved = security_center.save_global_policy({
-        "preset": "read-only",
-        "base_preset": "workspace-write",
-        "rules": {},
-        "connections": {"browser": {"allowed": False}},
-    })
-    assert saved['filesystem_mode'] == 'read-only'
-    assert saved['rules'] == {}
+    from core.security.migration import ensure_migrated
+    from agent.memory import get_conversation_store
+    from core.security.run_policy import resolve_run_policy
+    get_conversation_store().append_messages('legacy-custom', [{'role': 'user', 'content': 'synthetic'}])
+    original = config_path.read_bytes()
+    ensure_migrated()
+    saved = resolve_run_policy('legacy-custom')
+    assert saved['filesystem_mode'] == 'workspace-write'
+    assert saved['legacy_restrictions']['network'] == 'deny'
     assert saved['connections']['browser']['allowed'] is False
-    assert security_center.global_policy() == saved
-    assert "base_preset" not in saved
-    assert live["security_policy"]["preset"] == "custom"
+    assert security_center.global_policy()['filesystem_mode'] == 'read-only'
+    assert config_path.read_bytes() == original
+    assert live['security_policy']['preset'] == 'custom'
+
 
 
 def test_project_policy_ignores_later_global_default_change(tmp_path, monkeypatch):
@@ -370,7 +372,7 @@ def test_security_api_persists_real_policy_and_returns_no_secret(tmp_path, monke
     monkeypatch.setattr("common.state_dir.mcp_config_file", lambda *args, **kwargs: state / "mcp.json")
     monkeypatch.setattr(security_center, "_env_path", lambda: tmp_path / "missing.env")
     saved = json.loads(channel.SecurityPolicyHandler().POST())
-    assert saved["status"] == "success"
+    assert saved["status"] == "error"
     assert security_center.global_policy()['filesystem_mode'] == 'read-only'
     assert json.loads(config_file.read_text())['web_password'] == 'TOPSECRET'
     overview = json.loads(channel.SecurityCenterHandler().GET())
@@ -408,6 +410,8 @@ def test_full_access_overview_keeps_enabled_sandbox_status(tmp_path, monkeypatch
     monkeypatch.setattr("agent.workspace.context.personal_work_dir", lambda **kwargs: work)
     monkeypatch.setattr("agent.permission.process_sandbox.capability",
                         lambda: {"status": "enabled", "reason": "Seatbelt is active."})
+    from core.security.run_policy import save_run_policy
+    save_run_policy('session', 'owner', {'filesystem_mode': 'full-access'}, agent_id='alpha')
     overview = security_center.overview("owner", "alpha")
     assert overview["effective_mode"] == "full-access"
     assert overview["process_isolation"]["status"] == "enabled"
@@ -425,20 +429,6 @@ def test_shell_does_not_inherit_backend_secret(tmp_path, monkeypatch):
     assert result.status == "success"
     assert "missing" in str(result.result)
     assert "TOPSECRET" not in str(result.result)
-
-
-def test_global_policy_save_failure_keeps_live_state(tmp_path, monkeypatch):
-    from agent.permission import center as security_center
-    import config as config_module
-    live = {"security_policy": {"preset": "approval", "rules": {}, "connections": {}}}
-    monkeypatch.setattr(config_module, "conf", lambda: live)
-    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
-    before = security_center.global_policy()
-    monkeypatch.setattr('core.security.policy_store.RunPolicyStore.update', lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
-    with pytest.raises(OSError, match="disk full"):
-        security_center.save_global_policy({"preset": "project-full", "rules": {}})
-    assert live["security_policy"]["preset"] == "approval"
-    assert security_center.global_policy() == before
 
 
 def test_corrupt_scoped_stores_fail_closed_and_report_error(tmp_path, monkeypatch):
@@ -768,7 +758,9 @@ def test_privacy_inventory_reports_real_paths(tmp_path, monkeypatch, security_au
     assert by_id["security_activity"]["bytes"] >= 1
     assert "clear_temporary" in by_id["temporary"]["actions"]
 
-    cleared = privacy_mod.cleanup("clear_temporary")
+    from core.plugins.caller import caller_origin_scope
+    with caller_origin_scope("desktop"):
+        cleared = privacy_mod.cleanup("clear_temporary")
     assert cleared["status"] == "success"
     assert list(tmp.iterdir()) == []
     after = {row["id"]: row for row in privacy_mod.inventory()["categories"]}

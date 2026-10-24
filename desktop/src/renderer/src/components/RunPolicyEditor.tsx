@@ -4,7 +4,9 @@ import apiClient from '../api/client'
 import type { FileMode, RunPolicy, RunPolicyState } from '../api/client'
 import { getLang } from '../i18n'
 
-export const permissionInput = 'min-h-10 min-w-0 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50'
+import { permissionInput } from './permissionStyles'
+export { permissionInput } from './permissionStyles'
+import FeatureAccessEditor from './FeatureAccessEditor'
 const saveButton = 'min-h-10 rounded-btn bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent'
 const modes: { id: FileMode; zh: string; en: string; zhHelp: string; enHelp: string }[] = [
   { id: 'read-only', zh: '只读', en: 'Read Only', zhHelp: '查看与检索信息，不修改数据或执行命令。', enHelp: 'View and search information, without changing data or running commands.' },
@@ -36,10 +38,11 @@ export function PolicyFields({ value, onChange, disabled = false }: {
 }
 
 export default function RunPolicyEditor({ kind, subject, agent, onSaved }: {
-  kind: 'template' | 'session' | 'task'; subject: string; agent?: string; onSaved?: (policy: RunPolicy) => void
+  kind: 'session' | 'task'; subject: string; agent?: string; onSaved?: (policy: RunPolicy) => void
 }) {
   const en = getLang() === 'en'
   const [state, setState] = useState<RunPolicyState | null>(null)
+  const [connectionOpen, setConnectionOpen] = useState(false)
   const [draft, setDraft] = useState<RunPolicy | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -77,5 +80,6 @@ export default function RunPolicyEditor({ kind, subject, agent, onSaved }: {
       <button type="button" disabled={busy} onClick={() => void load()} className="flex min-h-10 items-center gap-1.5 text-sm text-content-secondary hover:text-content focus-visible:outline-2 focus-visible:outline-accent"><RefreshCw size={13} />{en ? 'Refresh' : '刷新'}</button>
       {draft && <span className="text-xs text-content-tertiary">{en ? `Revision ${draft.policy_revision}` : `权限版本 ${draft.policy_revision}`}</span>}
     </div>
+    {kind === 'session' && <details onToggle={event => setConnectionOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{en ? 'Retained connection limits' : '保留的连接访问范围'}</summary>{connectionOpen && <div className="mt-4"><FeatureAccessEditor context={{ module: 'sessions', id: subject, agent }} restrictionsOnly /></div>}</details>}
   </div>
 }

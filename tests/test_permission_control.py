@@ -58,34 +58,12 @@ def test_run_policy_http_requires_auth_and_returns_authoritative_policy(monkeypa
         desktop.SecurityRunPolicyHandler().GET()
 
 
-def test_resource_control_rejects_forged_subject_and_uses_owned_revision(monkeypatch):
-    from core.security.control import PermissionControl, ResourceControl
-    from core.security.resource_grants import ResourceGrantStore
-    from agent.registry import get_agent_registry
-    PermissionControl().read('session', 'resource-ui')
-    agent = get_agent_registry().default_agent_id
-    control = ResourceControl()
-    monkeypatch.setattr(control, 'available', lambda: [{'kind': 'folder', 'id': 'school', 'name': 'School', 'operations': ['read']}])
-    grant = control.issue({'subject': f'session:{agent}:resource-ui', 'resource': {'kind': 'folder', 'id': 'school'},
-        'operations': ['read'], 'purposes': ['interactive']})
-    with pytest.raises(ValueError):
-        control.issue({'subject': 'session:forged:unknown', 'resource': {'kind': 'folder', 'id': 'school'}, 'operations': ['read']})
-    with pytest.raises(PermissionError):
-        control.issue({'subject': f'session:{agent}:resource-ui', 'resource': {'kind': 'folder', 'id': 'personal'}, 'operations': ['read']})
-    with identity_scope(user_id='another-owner'), pytest.raises(PermissionError):
-        ResourceControl().revoke(grant['grant_id'], 1)
-    control.revoke(grant['grant_id'], 1)
-    assert not next(row for row in ResourceGrantStore().list_owned('local-default') if row['grant_id'] == grant['grant_id'])['effective']
-    with pytest.raises(ValueError):
-        control.revoke(grant['grant_id'], 1)
-
-
 def test_resource_and_runtime_http_routes_require_auth(monkeypatch):
     from channel.desktop import desktop_channel as desktop
     def reject():
         raise PermissionError('unauthenticated')
     monkeypatch.setattr(desktop, '_require_auth', reject)
-    for handler in (desktop.SecurityResourceGrantsHandler, desktop.SecurityRuntimeTrustHandler, desktop.SecurityMigrationHandler):
+    for handler in (desktop.DataAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityRuntimeTrustHandler, desktop.SecurityMigrationHandler):
         with pytest.raises(PermissionError):
             handler().GET()
         with pytest.raises(PermissionError):
@@ -123,7 +101,9 @@ def test_linked_reminder_permission_edit_does_not_change_managed_schedule(tmp_pa
 def test_connection_owner_edit_uses_revision_and_does_not_change_template_or_legacy_input(monkeypatch):
     from config import conf
     from copy import deepcopy
-    from core.security.control import ResourceControl, PermissionControl
+    from core.security.control import PermissionControl
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setitem(ToolManager().__dict__, '_load_mcp_configs', lambda: [{'name': 'email', 'type': 'stdio'}])
     from core.security.resource_grants import ResourceGrantStore
     from core.security.service import SecurityService
     from agent.permission.gateway import Capability, SecurityGateway, register_tool
@@ -134,16 +114,16 @@ def test_connection_owner_edit_uses_revision_and_does_not_change_template_or_leg
     before = PermissionControl().read('template', 'default')['policy']
     store = ResourceGrantStore()
     revision = store.connection_revision(user_id='local-default', connection='mcp:email')
-    ResourceControl().set_connection('mcp:email', True, ['read'], revision)
+    ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=True, scopes=['read']), expected_revision=revision)
     assert PermissionControl().read('template', 'default')['policy'] == before
     assert conf()['security_policy'] == legacy
     with pytest.raises(ValueError, match='revision'):
-        ResourceControl().set_connection('mcp:email', False, [], revision)
+        ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=False, scopes=[]), expected_revision=revision)
     descriptor = CapabilityDescriptor('mcp:email/fetch_messages', 'mcp', 'read')
     register_tool('mcp_resource_read', Capability.EXTERNAL, connection='mcp:email', descriptor=descriptor)
     with identity_scope(session_id='owner-restored'):
         policy = gateway_policy(resolve_run_policy('owner-restored'))
-        assert policy['connections']['mcp:email']['allowed'] is False  # Retained migration input is no longer authority.
+        assert 'mcp:email' not in policy['connections']  # New subjects do not inherit legacy global defaults.
         assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
         assert SecurityGateway.check('full-access', 'mcp_resource_read', {}, policy=policy,
             capability_descriptor=descriptor, create_pending=False).allowed
@@ -215,13 +195,13 @@ def test_background_summary_uses_authoritative_task_snapshot():
 
 
 def test_resource_catalog_uses_exact_folder_and_account_qualified_course_ids(monkeypatch):
-    from core.security.control import ResourceControl
+    from core.security.access_settings import FeatureAccessControl
     from types import SimpleNamespace
     monkeypatch.setattr('core.data.runtime.current_service', lambda: SimpleNamespace(list_sources=lambda: [
         {'id': 'email-source', 'provider': 'email', 'name': 'Mailbox', 'account_id': 'school'},
         {'id': 'learning-source', 'provider': 'elearning', 'name': 'Courses',
          'config': {'account_id': 'student-account', 'course_ids': ['42', '43']}}]))
-    resources = ResourceControl().available()
+    resources = [row for source in FeatureAccessControl('data', 'unused')._sources() for row in FeatureAccessControl._source_resources(source)]
     assert {'kind': 'course', 'id': 'student-account:42', 'name': 'Courses · 42', 'operations': ['read']} in resources
     assert {'kind': 'folder', 'id': 'school', 'name': 'Mailbox', 'operations': ['read']} in resources
 

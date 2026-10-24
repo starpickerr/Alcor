@@ -2052,19 +2052,20 @@ class DesktopChannel(ChatChannel):
             '/api/security/policy', 'SecurityPolicyHandler',
             '/api/security/run-policy', 'SecurityRunPolicyHandler',
             '/api/security/migration', 'SecurityMigrationHandler',
-            '/api/security/resources', 'SecurityResourceGrantsHandler',
             '/api/security/runtime-trust', 'SecurityRuntimeTrustHandler',
-            '/api/security/connections', 'SecurityConnectionsHandler',
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/security/privacy', 'SecurityPrivacyHandler',
-            '/api/security/mcp-access', 'SecurityMcpAccessHandler',
+            '/api/data/access', 'DataAccessSettingsHandler',
+            '/api/sessions/access', 'SessionAccessSettingsHandler',
+            '/api/capabilities/access', 'CapabilityAccessSettingsHandler',
             '/api/data', 'DataManagementHandler',
             '/api/data/records', 'DataRecordsHandler',
             '/api/data/resources', 'DataResourcesHandler',
             '/api/data/command', 'DataCommandHandler',
             '/api/data/elearning/sync-files', 'DataElearningSyncFilesHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
+            '/api/scheduler/runs', 'SchedulerRunsHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
@@ -5961,11 +5962,22 @@ class ToolsHandler:
             from agent.tools.catalog import CATALOG
             from agent.tools.capability_settings import CapabilitySettings
             body = json.loads(web.data() or b'{}')
-            if not isinstance(body, dict) or set(body) != {'id', 'enabled'}:
-                raise ValueError('id and enabled are required')
-            if body['id'] not in {row['id'] for row in CATALOG} or type(body['enabled']) is not bool:
-                raise ValueError('unknown tool or invalid enabled value')
-            CapabilitySettings().set_enabled('tool', body['id'], body['enabled'])
+            if not isinstance(body, dict) or set(body) not in ({'id', 'enabled'}, {'id', 'enabled', 'kind', 'provider'}):
+                raise ValueError('id and enabled with optional provider context are required')
+            if type(body['enabled']) is not bool:
+                raise ValueError('enabled must be a boolean')
+            identifier = body['id']
+            if 'kind' in body:
+                if body['kind'] not in {'mcp', 'plugins'}:
+                    raise ValueError('Invalid tool provider')
+                detail = _capability_catalog().detail(body['kind'], body['provider'])
+                feature = next((row for row in detail['features'] if row['id'] == identifier and row.get('toggleId')), None)
+                if feature is None:
+                    raise ValueError('Tool is not registered by this provider')
+                identifier = feature['toggleId']
+            elif identifier not in {row['id'] for row in CATALOG}:
+                raise ValueError('unknown tool')
+            CapabilitySettings().set_enabled('tool', identifier, body['enabled'])
             return json.dumps({'status': 'success', **body})
         except Exception as exc:
             logger.warning('[Capabilities] Tool setting rejected: %s', exc)
@@ -6220,34 +6232,51 @@ class SecurityMigrationHandler:
             return _api_reject('Permission migration', error)
 
 
-class SecurityResourceGrantsHandler:
+class FeatureAccessSettingsHandler:
+    module = None
+
+    def _control(self, values):
+        from core.security.access_settings import FeatureAccessControl
+        return FeatureAccessControl(self.module, values.get('id'), kind=values.get('kind'),
+            agent=values.get('agent'))
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        from core.security.control import ResourceControl
         try:
-            return json.dumps({'status': 'success', **ResourceControl().inventory()}, ensure_ascii=False)
+            values = dict(web.input(id='', kind='', agent=''))
+            return json.dumps({'status': 'success', **self._control(values).inventory()}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Resource authorization', error)
+            return _api_reject('Feature access settings', error)
 
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from core.security.control import ResourceControl
+        web.header('Cache-Control', 'no-store')
         try:
             body = json.loads(web.data() or b'{}')
-            action = body.pop('action', None)
-            control = ResourceControl()
-            if action == 'issue':
-                control.issue(body)
-            elif action == 'revoke' and set(body) == {'grant_id', 'revision'}:
-                control.revoke(body['grant_id'], body['revision'])
-            else:
-                raise ValueError('Invalid resource authorization action')
-            return json.dumps({'status': 'success', **control.inventory()}, ensure_ascii=False)
+            if not isinstance(body, dict):
+                raise ValueError('Invalid feature access settings')
+            context = {key: body.pop(key, None) for key in ('id', 'kind', 'agent')}
+            # Legacy grant id is separate from the server-bound feature identifier.
+            if 'legacy_id' in body:
+                body['id'] = body.pop('legacy_id')
+            return json.dumps({'status': 'success', **self._control(context).save(body)}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Resource authorization', error)
+            return _api_reject('Feature access settings', error)
+
+
+class DataAccessSettingsHandler(FeatureAccessSettingsHandler):
+    module = 'data'
+
+
+class SessionAccessSettingsHandler(FeatureAccessSettingsHandler):
+    module = 'sessions'
+
+
+class CapabilityAccessSettingsHandler(FeatureAccessSettingsHandler):
+    module = 'capabilities'
 
 
 class SecurityRuntimeTrustHandler:
@@ -6275,13 +6304,13 @@ class SecurityPolicyHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import save_global_policy, overview
+        from agent.permission.center import overview
         try:
             body = json.loads(web.data() or b"{}")
             target = body.get("target")
             policy = body.get("policy")
             if target == "global":
-                saved = save_global_policy(policy)
+                raise ValueError('New conversations and tasks default to read-only; edit their independent permissions')
             elif target == "project":
                 raise ValueError("Projects share workspace files; edit each conversation's independent permissions")
             elif target == "conversation":
@@ -6296,23 +6325,6 @@ class SecurityPolicyHandler:
                                "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
         except (ValueError, FileNotFoundError, OSError) as error:
             return _api_reject("Security", error)
-
-
-class SecurityConnectionsHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import connections
-        from core.security.control import ResourceControl
-        try:
-            body = json.loads(web.data() or b'{}')
-            connection = body.get('id')
-            if connection not in {row['id'] for row in connections()}:
-                raise ValueError('Unknown connection')
-            ResourceControl().set_connection(connection, body.get('allowed'), body.get('scopes', []), body.get('revision'))
-            return json.dumps({'status': 'success', 'connections': connections()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Connection resources', error)
 
 
 class SecuritySecretsHandler:
@@ -6339,18 +6351,6 @@ class SecuritySecretsHandler:
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
         except ValueError as error:
             return _api_reject("Security", error)
-
-
-class SecurityMcpAccessHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.mcp_access import update
-        try:
-            return json.dumps({'status': 'success', 'grants': update(json.loads(web.data() or b'{}'))}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Security', error)
 
 
 class SecurityPrivacyHandler:
@@ -6465,7 +6465,12 @@ class SchedulerHandler:
             if not content:
                 return json.dumps({"status": "error", "message": "content is required"})
 
+            task_id = uuid.uuid4().hex[:8]
+            independent = action_in.get('conversation_mode') == 'independent'
             session_id = (body.get("session_id") or action_in.get("receiver") or "").strip()
+            if independent:
+                session_id = f'task_{task_id}'
+
             if not session_id:
                 return json.dumps({
                     "status": "error",
@@ -6478,13 +6483,16 @@ class SchedulerHandler:
             now = datetime.now()
             from agent.scheduler.delivery import normalize_destination
             from agent.scheduler.conversation import validate_conversation_action
-            action = normalize_destination({**action_in,
+            destination = {**action_in,
                 "channel_type": action_in.get("channel_type") or "web",
-                "receiver": action_in.get("receiver") or session_id}, current_identity().agent_id)
+                "receiver": action_in.get("receiver") or session_id}
+            action = destination if independent and destination["channel_type"] == "web" else normalize_destination(destination, current_identity().agent_id)
             action.update(type=action_type, execution_session_id=session_id)
-            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
+            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir", "workspace_version"):
                 if field in action_in:
                     action[field] = action_in[field]
+            if action.get("conversation_mode") == "source":
+                action["workspace_version"] = 1
             action = validate_conversation_action(action)
             if action_type == "send_message":
                 action["content"] = content
@@ -6492,7 +6500,7 @@ class SchedulerHandler:
                 action["task_description"] = content
 
             task = {
-                "id": uuid.uuid4().hex[:8],
+                "id": task_id,
                 "name": name,
                 "enabled": bool(body.get("enabled", True)),
                 "created_at": now.isoformat(),
@@ -6521,6 +6529,19 @@ class SchedulerHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerRunsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        params = web.input(task_id='')
+        store = _scheduler_store()
+        if not store.get_task(params.task_id):
+            return _api_reject('Scheduler', ValueError('Task not found'))
+        runs = store.list_runs(params.task_id) if hasattr(store, 'list_runs') else []
+        return json.dumps({'status': 'success', 'runs': runs}, ensure_ascii=False)
 
 
 class SchedulerRunHandler:

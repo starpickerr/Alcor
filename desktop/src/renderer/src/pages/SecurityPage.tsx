@@ -6,8 +6,7 @@ import type { SecurityActivityCounts, SecurityCenterState, SecurityRecord } from
 import { getLang } from '../i18n'
 import PluginSettings from './settings/PluginSettings'
 import PageHeader from '../components/PageHeader'
-import RunPolicyEditor from '../components/RunPolicyEditor'
-import { ResourceAuthorizationPanel, RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
+import { RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
@@ -26,11 +25,11 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'permissions', 'connections', 'secrets', 'activity', 'privacy', 'plugins'] as const
+const tabs = ['overview', 'permissions', 'secrets', 'activity', 'privacy', 'plugins'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
   overview: ShieldCheck, permissions: SlidersHorizontal,
-  connections: Link2, secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
+  secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
 }
 
 const modeLabel = (
@@ -84,6 +83,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const setTab = (next: Tab) => navigate(next === 'overview' ? '/security' : `/security?tab=${next}`)
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
   useEffect(() => {
+    if (requestedTab === 'connections') navigate('/data?section=sources', { replace: true })
     if (requestedTab === 'background') navigate('/security?tab=permissions#background-tasks', { replace: true })
     if (location.hash === '#background-tasks' && center) document.getElementById('background-tasks')?.scrollIntoView({ block: 'start' })
   }, [requestedTab, navigate, location.hash, center])
@@ -302,7 +302,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         ) : (
           <>
             {tab === 'overview' && (() => {
-              const globalMode = center.global_policy?.preset || 'workspace-write'
+              const globalMode = 'read-only'
               const taskSummary = center.summary.background_tasks
               const connectionPreview = center.connections.slice(0, 3)
               const secretPreview = center.secrets.slice(0, 4)
@@ -346,7 +346,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   )}
                 </section>
                 <section className={overviewCard}>
-                  <SectionTitle icon={Link2} to="/security?tab=connections">{copy.overviewConnectionsTitle}</SectionTitle>
+                  <SectionTitle icon={Link2} to="/skills?tab=mcp">{copy.overviewConnectionsTitle}</SectionTitle>
                   <div className="mt-5 mb-4 flex items-end gap-2">
                     <p className={metricValue}>
                       {typeof center.summary.connection_count === 'number'
@@ -428,97 +428,11 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             })()}
             {tab === 'overview' && <PermissionMigrationPanel />}
             {tab === 'permissions' && <div className="space-y-6">
-              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Default permissions' : '默认权限设置'}</h2>
-                <p className={`${faded} mt-2 mb-5`}>{getLang() === 'en' ? 'All three modes can use MCP, plugins, skills and built-in tools. The mode limits each operation. Applies to new conversations; existing conversations keep their own mode.' : '三种模式均可调用 MCP、插件、Skill 和内置工具，操作受所选模式限制。默认设置仅影响新建对话，已有对话保持独立权限。'}</p>
-                <RunPolicyEditor kind="template" subject="default" />
+              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Conversation and task permissions' : '对话与任务权限'}</h2>
+                <p className={`${faded} mt-2`}>{getLang() === 'en' ? 'New conversations and tasks start read-only. Change permissions in the conversation or task. Existing permissions remain independent. Resource access is checked separately.' : '新建对话和定时任务固定默认只读，可在对应对话或任务中单独修改。已有权限保持独立，数据源、账号及插件等资源访问仍需分别授权。'}</p>
               </section>
-              <section id="background-tasks" className={`${card} scroll-mt-6`}>
-                <h2 className={heading}>{copy.backgroundTitle}</h2>
-                <p className={`${faded} mt-2`}>{getLang() === 'en' ? 'Each task has its own mode and starts with Read Only. Background runs cannot wait for confirmation; use Full Access for operations that require it.' : '每个任务独立选择权限，新建任务默认只读。后台无法等待确认；需要此类操作时，请选择完全访问。'}</p>
-                {(center.background_tasks || []).length === 0 ? <p className={`${faded} mt-4`}>{copy.backgroundEmpty}</p> :
-                  <div className="mt-4 divide-y divide-default">{(center.background_tasks || []).map(task => <details key={`${task.owner_agent_id || ''}:${task.id}`} className="py-4">
-                    <summary className="cursor-pointer rounded-btn text-sm focus-visible:outline-2 focus-visible:outline-accent">
-                      <span className="font-medium">{task.name}</span>
-                      <span className="ml-3 text-content-secondary">{task.enabled ? copy.backgroundEnabled : copy.backgroundPaused}{' · '}{task.unknown ? copy.backgroundSourceUnknown : modeLabel(copy, task.effective_mode)}</span>
-                    </summary>
-                    {task.policy_error && <p className="mt-2 text-sm text-danger">{task.policy_error}</p>}
-                    <div className="mt-4"><RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} onSaved={() => { void load() }} /></div>
-                  </details>)}</div>}
-              </section>
+              <section id="background-tasks" className={card}><h2 className={heading}>{copy.backgroundTitle}</h2><p className={`${faded} mt-2`}>{getLang() === 'en' ? 'Manage each task and its execution permissions in Task management.' : '任务及其独立执行权限统一在任务管理中配置。'}</p><Link to="/tasks" className="mt-3 inline-flex text-sm text-accent">{getLang() === 'en' ? 'Manage tasks' : '前往任务管理'}</Link></section>
             </div>}
-            {tab === 'connections' && (
-              <div className="space-y-3">
-                <div className={card}><ResourceAuthorizationPanel /></div>
-
-                <div>
-                  <h2 className={heading}>{copy.connectionsTitle}</h2>
-                  <p className={`${faded} mt-1`}>{copy.connectionsHelp}</p>
-                </div>
-                {center.connections.length === 0 && <p className={faded}>{copy.noConnections}</p>}
-                {center.connections.map((connection) => (
-                  <section
-                    key={connection.id}
-                    className={`${card} flex flex-col sm:flex-row sm:justify-between gap-4 sm:items-center`}
-                  >
-                    <div className="min-w-0">
-                      <h3 className="font-semibold">
-                        {(copy.connectionNames as Record<string, string>)[connection.id] || connection.name}
-                      </h3>
-                      <p className={faded}>
-                        {connection.connected
-                          ? `${copy.connected} · ${connection.allowed ? copy.accessAllowed : copy.accessRevoked}`
-                          : copy.disconnected}
-                      </p>
-                      {!connection.connected && (
-                        <p className="text-xs text-content-tertiary mt-1">{copy.connectInFeature}</p>
-                      )}
-                      {connection.connected && (
-                        <p className="text-xs text-content-tertiary mt-2">
-                          {copy.accessRange}
-                          {copy.fieldSeparator}
-                          {connection.scopes.includes('*')
-                            ? copy.allOperations
-                            : connection.scopes.length
-                              ? connection.scopes
-                                  .map((scope) => (copy.operations as Record<string, string>)[scope] || scope)
-                                  .join(copy.listSeparator)
-                              : copy.undeclaredScopes}
-                        </p>
-                      )}
-                      {connection.connected && (
-                        <p className="text-xs text-content-tertiary">
-                          {copy.lastAccess}
-                          {copy.fieldSeparator}
-                          {connection.last_access
-                            ? new Date(connection.last_access * 1000).toLocaleString(
-                                getLang() === 'en' ? 'en-US' : 'zh-CN',
-                              )
-                            : copy.never}
-                        </p>
-                      )}
-                    </div>
-                    {connection.connected && (
-                      <button
-                        disabled={busy}
-                        className={connection.allowed ? input : action}
-                        onClick={() =>
-                          void mutate(() =>
-                            apiClient.updateSecurityConnection(
-                              connection.id,
-                              !connection.allowed,
-                              connection.scopes,
-                              connection.revision,
-                            ),
-                          )
-                        }
-                      >
-                        {connection.allowed ? copy.revoke : copy.restore}
-                      </button>
-                    )}
-                  </section>
-                ))}
-              </div>
-            )}
             {tab === 'secrets' && (
               <div className="space-y-5">
                 <section className={card}>
@@ -816,7 +730,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
                   <div className="mt-4 flex flex-wrap gap-4 text-sm text-accent">
                     <Link to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
-                    <Link to="/security?tab=connections">{getLang() === 'zh' ? '管理连接授权' : 'Manage connection access'}</Link>
+                    <Link to="/skills?tab=mcp">{getLang() === 'zh' ? '管理能力连接' : 'Manage capability connections'}</Link>
                     <Link to="/security?tab=permissions">{getLang() === 'zh' ? '权限策略' : 'Permission policies'}</Link>
                   </div>
                   <div className="mt-4 divide-y divide-default">

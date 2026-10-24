@@ -182,7 +182,9 @@ def test_managed_mcp_connections_have_one_canonical_security_entry(env, monkeypa
     assert next(row for row in rows if row["id"] == "mcp:email")["allowed"] is False
 
 
-def test_explicit_canonical_policy_edit_replaces_the_legacy_alias(env, monkeypatch):
+def test_removed_provider_management_cannot_replace_legacy_denial(env, monkeypatch):
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setitem(ToolManager().__dict__, '_load_mcp_configs', lambda: [{'name': 'email', 'type': 'stdio'}])
     from config import conf
 
     monkeypatch.setitem(
@@ -203,11 +205,11 @@ def test_explicit_canonical_policy_edit_replaces_the_legacy_alias(env, monkeypat
     ensure_migrated()
     revision = ResourceGrantStore().connection_revision(user_id='local-default', connection='mcp:email')
     response = call(
-        desktop.SecurityConnectionsHandler,
-        body={"id": "mcp:email", "allowed": True, "scopes": ["read"], "revision": revision},
+        desktop.CapabilityAccessSettingsHandler,
+        body={"id": "email", "kind": "mcp", "action": "connection", "allowed": True, "scopes": ["read"], "revision": revision},
     )
-    assert response["status"] == "success"
-    assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
+    assert response["status"] == "error"
+    assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': False, 'scopes': []}]
     assert conf()['security_policy']['connections'] == {'email': {'allowed': False, 'scopes': []}}
 
 

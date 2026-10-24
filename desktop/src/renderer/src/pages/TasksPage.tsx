@@ -9,7 +9,6 @@ import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
 import PageHeader from '../components/PageHeader'
 import RunPolicyEditor, { PolicyFields } from '../components/RunPolicyEditor'
 import type { RunPolicy } from '../api/client'
-import { ResourceAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
 import { PROACTIVE_CHANNELS, notificationChannelError } from './taskChannel'
 
 interface TasksPageProps {
@@ -226,11 +225,11 @@ const TaskEditModal: React.FC<{
   const loadSessions = useSessionStore((s) => s.loadSessions)
   const isCreate = task == null
   const isToolCall = !!task && ['tool_call', 'skill_call', 'application_command'].includes(task.action.type)
-  const hasNotification = !task?.action.silent && task?.action.type !== 'application_command'
+  const [notifyEnabled, setNotifyEnabled] = useState(!!task?.notification_route || !!task && task.action.conversation_mode !== 'independent')
+  const hasNotification = notifyEnabled && !task?.action.silent && task?.action.type !== 'application_command'
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', policy_revision: 0 })
-  const [resourceOpen, setResourceOpen] = useState(false)
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -239,9 +238,7 @@ const TaskEditModal: React.FC<{
   const [content, setContent] = useState(task?.action.content || task?.action.task_description || '')
   const [channel, setChannel] = useState(task?.action.channel_type || 'web')
   const [receiver, setReceiver] = useState(task?.action.receiver || sessionId)
-  const [conversationMode, setConversationMode] = useState<'source' | 'reuse' | 'new'>(
-    task?.action.conversation_mode || (
-      useSessionStore.getState().sessions.some((s) => s.session_id === sessionId) ? 'source' : 'reuse'))
+  const [conversationMode, setConversationMode] = useState<'independent' | 'source' | 'reuse' | 'new'>(task?.action.conversation_mode || (task ? 'reuse' : 'independent'))
   const [sourceSessionId, setSourceSessionId] = useState(task?.action.source_session_id || sessionId)
   const [conversationSpace, setConversationSpace] = useState<'personal' | 'project'>(
     task?.action.conversation_space || 'personal')
@@ -261,6 +258,17 @@ const TaskEditModal: React.FC<{
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [runStatus, setRunStatus] = useState('')
+  const [runs, setRuns] = useState<Awaited<ReturnType<typeof apiClient.getTaskRuns>>>([])
+  const [runsError, setRunsError] = useState('')
+  const [runsVersion, setRunsVersion] = useState(0)
+  useEffect(() => {
+    if (!task) return
+    let active = true
+    void apiClient.getTaskRuns(task.id).then(rows => { if (active) { setRuns(rows); setRunsError('') } })
+      .catch(cause => { if (active) setRunsError(cause instanceof Error ? cause.message : String(cause)) })
+    return () => { active = false }
+  }, [task, runsVersion])
+
   const [error, setError] = useState('')
   const linkedTodoId = task?.linked_todo_id || ''
   const linked = linkedTodoId !== ''
@@ -294,7 +302,15 @@ const TaskEditModal: React.FC<{
     if (channel === 'feishu') a.receive_id_type = receiveIdType
     a.execution_session_id = task?.action.execution_session_id || task?.action.notify_session_id || sessionId
     a.conversation_mode = conversationMode
-    if (conversationMode === 'source') {
+    if (isCreate || task?.action.conversation_mode !== conversationMode || (conversationMode === 'source' && task?.action.source_session_id !== sourceSessionId)) a.workspace_version = 1
+    if (conversationMode === 'independent') {
+      delete a.source_session_id
+      delete a.execution_session_id
+      delete a.notify_session_id
+      delete a.execution_project_dir
+      delete a.conversation_space
+      if (!hasNotification) { a.channel_type = 'web'; delete a.receiver }
+    } else if (conversationMode === 'source') {
       a.source_session_id = sourceSessionId
       if (sourceSessionId !== task?.action.source_session_id) {
         delete a.conversation_space
@@ -373,7 +389,7 @@ const TaskEditModal: React.FC<{
           enabled,
           schedule: buildSchedule(),
           action: buildAction(),
-          session_id: sessionId,
+          ...(conversationMode === 'independent' ? {} : { session_id: sourceSessionId || sessionId }),
           run_policy: { filesystem_mode: newPolicy.filesystem_mode },
           ...(route ? { notification_route: route } : {}),
         })
@@ -469,7 +485,7 @@ const TaskEditModal: React.FC<{
         <Toggle checked={enabled} onChange={setEnabled} />
       </div>
 
-      {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'This task has its own policy and persistent workspace. Operations requiring confirmation need Full Access in background.' : '任务使用独立权限和持久工作区。后台无法等待确认，敏感操作需要完全访问。'}</p>
+      {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'Permissions apply only to this task. Resource access is checked separately. Background operations requiring confirmation stop with a recorded reason.' : '权限仅作用于当前任务，资源访问授权仍需分别检查。后台遇到需要确认的操作会停止该操作并记录原因。'}</p>
         <PolicyFields value={newPolicy} onChange={setNewPolicy} disabled={saving} />
       </div>}
 
@@ -524,7 +540,8 @@ const TaskEditModal: React.FC<{
         />}
       </Field>
 
-      {!task?.action.silent && task?.action.type !== 'application_command' && <>
+      {isCreate && <label className="flex items-center gap-2 text-sm text-content-secondary"><input type="checkbox" checked={notifyEnabled} onChange={event => setNotifyEnabled(event.target.checked)} />{getLang() === 'en' ? 'Send an additional result notification' : '额外发送结果通知'}</label>}
+      {hasNotification && <>
         <Field label={t('task_channel')}>
           <Dropdown value={channel} onChange={value => { setChannel(value); setReceiver(value === 'web' ? sessionId : ''); setReceiveIdType('open_id') }}
             options={[
@@ -539,14 +556,19 @@ const TaskEditModal: React.FC<{
         </Field>
       </>}
       <Field label={t('task_conversation_mode')}>
-        <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'source' | 'reuse' | 'new')}
+        <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'independent' | 'source' | 'reuse' | 'new')}
           options={[
+            { value: 'independent', label: t('task_conversation_independent') },
             { value: 'source', label: t('task_conversation_source') },
-            { value: 'reuse', label: t('task_conversation_reuse') },
-            { value: 'new', label: t('task_conversation_new') },
+            ...(task?.action.conversation_mode === 'reuse' || task?.action.conversation_mode === 'new' ? [
+              { value: 'reuse', label: t('task_conversation_reuse') },
+              { value: 'new', label: t('task_conversation_new') },
+            ] : []),
           ]} />
       </Field>
+      {conversationMode === 'independent' && <p className="text-xs text-content-tertiary">{t('task_conversation_independent_hint')}</p>}
       {conversationMode === 'source' && <>
+        {task && !task.action.workspace_version && <p className="text-xs text-content-tertiary">{getLang() === 'en' ? 'This existing task keeps its original execution directory. Reassociate a conversation to use its workspace.' : '此旧任务保留原执行目录。重新选择关联对话后，将使用该对话的工作空间。'}</p>}
         <Field label={t('task_conversation_source_pick')}>
           <Dropdown value={sourceSessionId} onChange={setSourceSessionId}
             options={[{ value: '', label: t('task_conversation_source_pick') }, ...sessions.map((session) => ({
@@ -568,7 +590,7 @@ const TaskEditModal: React.FC<{
         <p className="text-xs text-content-tertiary">{t(task?.action.silent ? 'task_conversation_silent_hint' : 'task_conversation_hint')}</p>
         {conversationSpace === 'project' && !projectDir && <p className="text-xs text-danger">{t('task_conversation_project_required')}</p>}
       </>}
-      {!task?.action.silent && task?.action.type !== 'application_command' && <>
+      {hasNotification && <>
         {channel === 'feishu' && <Field label={t('task_receive_type')}>
           <Dropdown value={receiveIdType} onChange={setReceiveIdType} options={['open_id','user_id','union_id','email','chat_id'].map(value => ({value,label:t(('task_receive_'+value) as Parameters<typeof t>[0])}))} />
         </Field>}
@@ -588,12 +610,22 @@ const TaskEditModal: React.FC<{
       {runStatus && <p className="text-xs text-success">{runStatus}</p>}
       {error && <p className="text-xs text-danger">{error}</p>}
       </fieldset>
+      {!isCreate && task && <section className="mt-6 space-y-3 border-t border-default pt-5">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">{getLang() === 'en' ? 'Run records' : '运行记录'}</h3>
+          <button type="button" className="text-xs text-accent" onClick={() => setRunsVersion(value => value + 1)}>{getLang() === 'en' ? 'Refresh' : '刷新记录'}</button></div>
+        {runsError && <p role="alert" className="text-xs text-danger">{runsError}</p>}
+        {!runsError && runs.length === 0 && <p className="text-xs text-content-tertiary">{getLang() === 'en' ? 'No run records yet.' : '暂无运行记录。'}</p>}
+        {runs.map(run => <details key={run.job_run_id} className="border-b border-default py-2">
+          <summary className="cursor-pointer text-xs text-content-secondary">{formatNextRun(run.started_at)} · {t(('task_status_' + run.status) as Parameters<typeof t>[0])}</summary>
+          {run.error && <p className="mt-2 whitespace-pre-wrap text-xs text-danger">{run.error}</p>}
+          {run.output && <p className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm text-content">{run.output}</p>}
+        </details>)}
+      </section>}
       {!isCreate && task && <div className="mt-6 space-y-5 border-t border-default pt-5">
         <h3 className="text-sm font-semibold">{getLang() === 'en' ? 'Independent task permissions' : '任务独立权限'}</h3>
         {task.last_error && <p role="alert" className="text-xs text-danger">{task.last_error}</p>}
         <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Save permission changes here, then use Run now to retry a denied task.' : '在此保存权限修改，再使用“立即执行”重试被拒绝的任务。')}</p>
         <RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} />
-        <details onToggle={event => setResourceOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{getLang() === 'en' ? 'Resource grants' : '特定资源授权'}</summary>{resourceOpen && <div className="mt-4"><ResourceAuthorizationPanel preferredSubject={task.id} /></div>}</details>
       </div>}
     </Modal>
   )

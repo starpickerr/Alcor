@@ -9,6 +9,7 @@ from playwright.sync_api import expect, sync_playwright
 
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://localhost:5173')
+created = []
 tasks = [
     dict(id='plain-1', name='Standalone digest', enabled=True, created_at='', updated_at='',
          schedule={'type': 'cron', 'expression': '0 8 * * *'},
@@ -31,7 +32,11 @@ def backend(route):
     elif path == '/api/models':
         data.update(providers=[{'id': 'test', 'configured': True}], capabilities={'chat': {'current_provider': 'test', 'current_model': 'test'}})
     elif path == '/api/scheduler':
+        if route.request.method == 'POST':
+            created.append(json.loads(route.request.post_data))
         data['tasks'] = tasks
+    elif path == '/api/scheduler/runs':
+        data['runs'] = [dict(job_run_id='run-one', status='completed', started_at='2026-10-24T08:00:00Z', output='独立任务的报告内容')]
     elif path == '/api/scheduler/destinations':
         data['destinations'] = [dict(channel_type='desktop', configured=True, ready=True, status='ready', recipients=[]),
                                 dict(channel_type='weixin', configured=True, ready=False, status='no_recipient', recipients=[])]
@@ -94,6 +99,25 @@ with sync_playwright() as playwright:
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/tasks', wait_until='networkidle')
+        page.get_by_role('button', name='新增任务', exact=True).click()
+        fresh = page.get_by_role('dialog')
+        expect(fresh.get_by_role('button', name='独立任务', exact=True)).to_be_visible()
+        expect(fresh.get_by_role('radio', name='只读', exact=True)).to_be_checked()
+        expect(fresh.get_by_text('选择关联对话', exact=True)).to_have_count(0)
+        fresh.get_by_role('button', name='独立任务', exact=True).click()
+        page.get_by_text('关联已有对话', exact=True).click()
+        expect(fresh.get_by_text('选择关联对话', exact=True)).to_be_visible()
+        expect(fresh.get_by_role('radio', name='只读', exact=True)).to_be_checked()
+        fresh.get_by_role('button', name='关联已有对话', exact=True).click()
+        page.get_by_text('独立任务', exact=True).click()
+        fresh.locator('input').first.fill('New independent task')
+        fresh.locator('textarea').fill('Create a report')
+        fresh.get_by_role('button', name='保存', exact=True).click()
+        expect(fresh).to_be_hidden()
+        assert created[-1]['action']['conversation_mode'] == 'independent'
+        assert created[-1]['run_policy']['filesystem_mode'] == 'read-only'
+        assert 'source_session_id' not in created[-1]['action']
+        assert 'session_id' not in created[-1]
         page.get_by_text('Linked reminder').click()
         dialog = page.get_by_role('dialog')
         expect(dialog).to_be_visible()
@@ -116,6 +140,9 @@ with sync_playwright() as playwright:
         page.get_by_role('dialog').get_by_role('button', name='取消').click()
         page.get_by_text('Standalone digest').click()
         editor = page.get_by_role('dialog')
+        expect(editor.get_by_role('heading', name='运行记录')).to_be_visible()
+        editor.get_by_role('heading', name='运行记录').locator('xpath=../..').locator('summary').first.click()
+        expect(editor.get_by_text('独立任务的报告内容', exact=True)).to_be_visible()
         expect(editor).to_contain_text('需要重新选择渠道')
         editor.get_by_role('button', name='需要重新选择渠道').click()
         expect(page.get_by_text('客户端', exact=True)).to_be_visible()
@@ -124,6 +151,8 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('权限待确认').first).to_be_visible()
         page.get_by_text('Standalone digest').click()
         editor = page.get_by_role('dialog')
+        expect(editor.get_by_text('数据与连接访问', exact=True)).to_have_count(0)
+        expect(editor.get_by_text('授予资源访问', exact=True)).to_have_count(0)
         expect(editor.get_by_role('radio', name='只读', exact=True)).to_be_checked()
         assert editor.get_by_role('radio').count() == 3
         editor.get_by_role('radio', name='完全访问', exact=True).check()
