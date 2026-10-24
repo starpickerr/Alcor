@@ -8,12 +8,13 @@ import { hasPluginDomainPanel, PluginDomainPanel } from './PluginDomainPanels'
 type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conflict?: boolean }
 type Props = {
   baseUrl: string
+  embedded?: boolean
   pluginId?: string | null
   onPluginChange?: (pluginId: string) => void
 }
 
 /** Same shell as General / Assistant: one column of Group cards, no nested sidebar. */
-export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Props) {
+export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embedded = false }: Props) {
   const [rows, setRows] = useState<PluginRow[]>([])
   const [selected, setSelected] = useState('')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
@@ -55,6 +56,12 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
       .pluginRequest<{ plugins: PluginRow[] }>('runtime')
       .then((data) => {
         if (cancelled) return
+        if (!Array.isArray(data.plugins)) throw new Error(getLang() === 'zh' ? '无法读取插件目录，请重试。' : 'Could not read the plugin inventory. Retry.')
+        if (pluginId && !data.plugins.some((item) => item.pluginId === pluginId)) {
+          setRows([])
+          setSelected('')
+          throw new Error(getLang() === 'zh' ? '此插件已不可用，请重新打开详情。' : 'This plugin is unavailable. Reopen its details.')
+        }
         setRows(data.plugins)
         setSelected((value) => {
           if (pluginId && data.plugins.some((item) => item.pluginId === pluginId)) return pluginId
@@ -85,7 +92,11 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
     void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
-        if (!cancelled) setDescriptors(result)
+        if (cancelled) return
+        if (!Array.isArray(result) || result.some(item => !Array.isArray(item.categories) || !Array.isArray(item.fields))) {
+          throw new Error(getLang() === 'zh' ? '无法读取插件配置，请重试。' : 'Could not read plugin settings. Retry.')
+        }
+        setDescriptors(result)
       })
       .catch((err) => {
         if (!cancelled) setError(String(err))
@@ -111,6 +122,9 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
       })
       .then((snapshot) => {
         if (!cancelled) {
+          if (!snapshot || !Number.isInteger(snapshot.revision) || !snapshot.values || typeof snapshot.values !== 'object' || Array.isArray(snapshot.values)) {
+            throw new Error(getLang() === 'zh' ? '插件配置响应无效，请重新读取。' : 'Invalid plugin settings response. Reload it.')
+          }
           setDrafts((previous) =>
             previous[draftKey] ? previous : { ...previous, [draftKey]: { snapshot, values: snapshot.values } },
           )
@@ -199,7 +213,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
   }))
   return (
     <div className="space-y-8">
-      <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
+      {!embedded && <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
         {!rows.length ? (
           <Row label={t('settings_plugin_empty')} />
         ) : (
@@ -218,7 +232,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange }: Pr
             }
           />
         )}
-      </Group>
+      </Group>}
 
       {selected && sectionOptions.length > 1 && (
         <div className="px-1">

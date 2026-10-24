@@ -17,6 +17,12 @@ sync_failure = [False]
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=())
     body = route.request.post_data_json if route.request.method == 'POST' else {}
     data = {'status': 'success'}
     if path == '/api/health':

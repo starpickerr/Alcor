@@ -82,6 +82,12 @@ todo_rows = [dict(dict(parent_id=None), **row, series_id=None, sort_order=index,
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     if path == '/api/briefings/' + briefing['id'] and fail_next_detail[0]:
         fail_next_detail[0] = False
         route.fulfill(status=503, content_type='application/json', body='{}',

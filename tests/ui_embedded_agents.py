@@ -20,6 +20,12 @@ held_history = [None]
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     body = route.request.post_data_json if route.request.method == 'POST' else {}
     data = {'status': 'success'}
     if path == '/api/health':
@@ -165,7 +171,7 @@ with sync_playwright() as playwright:
         assert len(event_reads) > prior_calendar_reads
         calendar_agent.get_by_role('button', name='Apple 日历').click()
         calendar_agent.get_by_role('menuitem', name='管理 Apple 日历').click()
-        expect(page).to_have_url(url + '/#/calendar/settings/apple')
+        expect(page).to_have_url(url + '/#/skills/plugins/stella.calendar?section=configuration&integration=apple-calendar')
         page.goto(url + '/#/todos', wait_until='networkidle')
         expect(page.locator('#todo-quick-title')).to_have_count(0)
         page.get_by_role('button', name='新建事务').click()
@@ -184,7 +190,7 @@ with sync_playwright() as playwright:
         assert len(todo_reads) > prior_todo_reads
         todos_agent.get_by_role('button', name='Apple 提醒事项').click()
         todos_agent.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
-        expect(page).to_have_url(url + '/#/todos/settings/apple')
+        expect(page).to_have_url(url + '/#/skills/plugins/stella.tasks?section=configuration&integration=apple-reminders')
         assert errors == [], errors
         print('Embedded Agent UI: sessions, streams, approval and page actions passed')
     finally:

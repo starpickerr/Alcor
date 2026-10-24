@@ -14,6 +14,12 @@ saved = []
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     data = {'status': 'success'}
     if path == '/api/health':
         data = {'status': 'ok'}
@@ -111,9 +117,9 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='保存助手设置').click()
         expect(page.get_by_text('已保存', exact=True)).to_be_visible()
         assert saved[-1]['enable_thinking'] is True
-        redirects = {'models': '/models', 'assistant': '/agent-settings', 'plugins': '/skills?tab=plugins&view=settings',
+        redirects = {'models': '/models', 'assistant': '/agent-settings', 'plugins': '/skills?tab=plugins',
                      'about': '/general?section=about', 'basic': '/general',
-                     'integrations&section=apple-calendar': '/calendar/settings/apple'}
+                     'integrations&section=apple-calendar': '/skills/plugins/stella.calendar?section=configuration&integration=apple-calendar'}
         for old, new in redirects.items():
             page.goto(test_url + '/#/settings?tab=' + old, wait_until='networkidle')
             expect(page).to_have_url(test_url + '/#' + new)

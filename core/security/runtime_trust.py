@@ -54,7 +54,9 @@ def verified_first_party(root, plugin_id, digest):
         catalogs = [Path(sys.executable).resolve().parents[2] / 'plugin-catalog.json',
                     Path(getattr(sys, '_MEIPASS', core)) / 'resources/plugin-catalog.json']
     else:
-        catalogs = [core / 'resources/plugin-catalog.json', core.parent / 'Stella-Plugins/catalog/official.json']
+        catalogs = [core / 'resources/plugin-catalog.json',
+                    core / 'desktop/resources/plugin-catalog.json',
+                    core.parent / 'Stella-Plugins/catalog/official.json']
     try:
         for path in catalogs:
             if not path.is_file():

@@ -2032,6 +2032,7 @@ class DesktopChannel(ChatChannel):
             '/api/channels', 'ChannelsHandler',
             '/api/weixin/qrlogin', 'WeixinQrHandler',
             '/api/feishu/register', 'FeishuRegisterHandler',
+            '/api/capabilities', 'CapabilitiesHandler',
             '/api/tools', 'ToolsHandler',
             '/api/mcp', 'McpCatalogHandler',
             '/api/skills', 'SkillsHandler',
@@ -5925,6 +5926,31 @@ class FeishuRegisterHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] FeishuRegister POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+def _capability_catalog():
+    from core.capabilities.catalog import CapabilityCatalog
+    return CapabilityCatalog(_get_state_root())
+
+
+class CapabilitiesHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        query = web.input(kind='', id='')
+        try:
+            catalog = _capability_catalog()
+            if query.kind or query.id:
+                return json.dumps({'status': 'success', 'detail': catalog.detail(query.kind, query.id)}, ensure_ascii=False)
+            return json.dumps(catalog.list(), ensure_ascii=False)
+        except KeyError:
+            return json.dumps({'status': 'error', 'code': 'not_found', 'message': 'Capability not found'})
+        except ValueError:
+            return json.dumps({'status': 'error', 'code': 'invalid_argument', 'message': 'Invalid capability request'})
+        except Exception:
+            logger.warning('[Capabilities] Inventory could not be read')
+            return json.dumps({'status': 'error', 'message': 'Capability inventory is unavailable'})
 
 
 class ToolsHandler:
