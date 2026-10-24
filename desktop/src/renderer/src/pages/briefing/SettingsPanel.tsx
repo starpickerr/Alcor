@@ -41,7 +41,7 @@ export const SettingsPanel: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
     } finally { setBusy(false) }
   }
 
-  // Embedded in settings → plugins: same vertical rhythm as General/Assistant (space-y-8).
+  // Keep plugin configuration and source handling authorizations directly accessible.
   return <div className={onBack ? 'max-w-3xl mx-auto space-y-6' : 'space-y-8'}>
     {onBack && <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold text-content">{t('briefing_settings')}</h2>

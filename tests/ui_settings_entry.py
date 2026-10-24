@@ -49,7 +49,14 @@ def backend(route):
         data.update(updates=[], blocked=[])
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.briefing', 'name': '简报', 'intent': 'enabled', 'state': 'stopped', 'version': '1.0'}]
-    elif path in ('/api/plugins/settings', '/api/plugins/authorization'):
+    elif path == '/api/plugins/settings':
+        body = route.request.post_data_json
+        if body['action'] == 'describe':
+            data['result'] = [{'id': 'preferences', 'categories': [{'id': 'general', 'title': '常规'}],
+                               'fields': [{'key': 'enabled', 'title': '启用默认行为', 'category': 'general', 'type': 'boolean'}]}]
+        else:
+            data['result'] = {'revision': 1, 'values': {'enabled': True}}
+    elif path == '/api/plugins/authorization':
         data['result'] = []
     elif path.startswith('/api/briefings'):
         data.update(briefings=[], rules=[], default_text='', sources=[], items=[],
@@ -107,7 +114,17 @@ with sync_playwright() as playwright:
         expect(page).to_have_url(test_url + '/#/skills/plugins/stella.briefing?section=configuration')
         expect(categories.get_by_role('button', name='简报', exact=True)).to_have_count(0)
         expect(page.get_by_role('tab', name='配置', exact=True)).to_have_attribute('aria-selected', 'true')
+        expect(page.get_by_role('radiogroup', name='插件设置分区')).to_have_count(0)
+        expect(page.get_by_role('switch', name='启用默认行为')).to_be_enabled()
+        expect(page.get_by_role('link', name='打开简报')).to_have_count(0)
+        expect(page.get_by_text('信息处理与自动操作授权', exact=True)).to_be_visible()
+        expect(page.get_by_text('来源处理规则', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='添加邮箱')).to_have_count(0)
+        for width in (1280, 640):
+            page.set_viewport_size({'width': width, 'height': 900})
+            expect(page.get_by_role('switch', name='启用默认行为')).to_be_visible()
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        page.set_viewport_size({'width': 1280, 'height': 900})
         expect(page.get_by_role('link', name='管理信息源', exact=True)).to_have_attribute('href', '#/data?section=sources')
         page.get_by_role('link', name='返回原页面').click()
         expect(page).to_have_url(test_url + '/#/skills')

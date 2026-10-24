@@ -3,7 +3,7 @@ import { apiClient } from '../../api/client'
 import { getLang, t } from '../../i18n'
 import { PluginRow, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
 import { Dropdown, Group, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
-import { hasPluginDomainPanel, PluginDomainPanel } from './PluginDomainPanels'
+import { SettingsPanel as BriefingSettingsPanel } from '../briefing/SettingsPanel'
 
 type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conflict?: boolean }
 type Props = {
@@ -18,7 +18,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
   const [rows, setRows] = useState<PluginRow[]>([])
   const [selected, setSelected] = useState('')
   const [descriptors, setDescriptors] = useState<SettingsDescriptor[]>([])
-  const [section, setSection] = useState('domain')
+  const [section, setSection] = useState('')
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -33,16 +33,14 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
   const draftKey = `${selected}/${section}`
   const draft = drafts[draftKey]
   const fields = category?.descriptor.fields.filter((field) => field.category === category.id) || []
-  const showDomain = !!selected && hasPluginDomainPanel(selected)
 
   const sectionOptions = useMemo(() => {
     const options: { value: string; label: string }[] = []
-    if (showDomain) options.push({ value: 'domain', label: t('settings_plugin_domain_tab') })
     for (const item of categories) {
       options.push({ value: `${item.descriptor.id}/${item.id}`, label: item.title })
     }
     return options
-  }, [showDomain, categories])
+  }, [categories])
 
   const selectPlugin = (next: string) => {
     setSelected(next)
@@ -88,7 +86,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
     setDescriptors([])
     setError('')
     setMessage('')
-    setSection(hasPluginDomainPanel(selected) ? 'domain' : '')
+    setSection('')
     void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
@@ -213,7 +211,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
   }))
   return (
     <div className="space-y-8">
-      {!embedded && <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '管理插件功能与配置。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
+      {!embedded && <Group title={t('settings_plugin_picker_label')} description={getLang() === 'zh' ? '配置插件运行参数与默认行为。Agent 调用遵循当前对话或任务的权限模式。' : 'Configure plugin behavior. Agent operations follow the current conversation or task permission mode.'}>
         {!rows.length ? (
           <Row label={t('settings_plugin_empty')} />
         ) : (
@@ -251,14 +249,8 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
         </p>
       )}
 
-      {section === 'domain' && showDomain && (
-        <div className="space-y-8">
-          <PluginDomainPanel pluginId={selected} />
-        </div>
-      )}
-
       {category && (
-        <Group title={category.title} description={showDomain ? t('settings_plugin_prefs_hint') : undefined}>
+        <Group title={category.title}>
           {!fields.length && <Row label={t('settings_plugin_empty_category')} />}
           {fields.map((field) => {
             if (field.secret) {
@@ -346,6 +338,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
         </Group>
       )}
 
+      {selected === 'stella.briefing' && <BriefingSettingsPanel key={selected} />}
     </div>
   )
 }
