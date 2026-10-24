@@ -20,7 +20,7 @@ def test_mcp_catalog_reports_runtime_tools_and_pending_servers():
     assert result == [
         {'name': 'booting', 'transport': 'stdio', 'enabled': True, 'state': 'pending', 'tools': []},
         {'name': 'docs', 'transport': 'streamable-http', 'enabled': True, 'state': 'ready',
-         'tools': [{'name': 'search', 'description': 'Search documents'}]},
+         'tools': [{'name': 'search', 'description': 'Search documents', 'enabled': True}]},
         {'name': 'offline', 'transport': 'stdio', 'enabled': True, 'state': 'failed', 'tools': []},
     ]
     assert 'secret' not in json.dumps(result)

@@ -1,3 +1,6 @@
+import FeatureAccessEditor from '../components/FeatureAccessEditor'
+import { getLang } from '../i18n'
+import { securityCopy } from './securityLocale'
 import './capabilities/capabilities.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Layers2, Loader2, Plus, Search } from 'lucide-react'
@@ -10,6 +13,12 @@ import CapabilityTabs from './capabilities/CapabilityTabs'
 import AddCapability from './capabilities/AddCapability'
 import { button, c, copy, detailPath, kindIcon, kindLabel, panel, capabilityStatusLabel } from './capabilities/presentation'
 
+function ConnectionSettings({ id }: { id: string }) {
+  const [open, setOpen] = useState(false)
+  const names = securityCopy(getLang()).connectionNames as Record<string, string>
+  return <details className="border-t border-default py-4" onToggle={event => setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium">{names[id] || id}</summary>{open && <div className="mt-4"><FeatureAccessEditor context={{ module: 'capabilities', kind: 'connection', id }} restrictionsOnly /></div>}</details>
+}
+
 export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -18,6 +27,7 @@ export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
   const kinds: CapabilityKind[] = ['plugins', 'mcp', 'skills', 'tools']
   const tab = kinds.includes(requested as CapabilityKind) ? requested : 'all'
   const query = params.get('q') || ''
+  const [connectionSettings, setConnectionSettings] = useState<string[]>([])
   const [items, setItems] = useState<CapabilityItem[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -31,7 +41,7 @@ export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
     setLoading(true); setError('')
     try {
       const data = await apiClient.getCapabilities(controller.signal)
-      if (!controller.signal.aborted) { setItems(data.items); setErrors(data.errors || {}) }
+      if (!controller.signal.aborted) { setItems(data.items); setConnectionSettings(data.connectionSettings || []); setErrors(data.errors || {}) }
     } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { if (!controller.signal.aborted) setLoading(false) }
   }, [])
@@ -84,6 +94,7 @@ export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
                 <ChevronRight size={19} aria-hidden="true" className="capability-row-chevron shrink-0 text-content-tertiary group-hover:text-accent" />
               </Link>
             })}</div>}
+          {!loading && ['all', 'tools'].includes(tab) && connectionSettings.length > 0 && <section aria-label={c('连接访问设置', 'Connection access settings')} className={`${panel} p-5 sm:p-6`}><h2 className="mb-3 text-sm font-semibold">{c('连接访问设置', 'Connection access settings')}</h2>{connectionSettings.filter(id => id.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map(id => <ConnectionSettings key={id} id={id} />)}</section>}
         </div>
       </div>
     </main>

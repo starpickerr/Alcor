@@ -224,3 +224,23 @@ def test_model_cannot_repair_missing_policy_through_task_mutation(scheduler, mon
     with identity_scope(session_id='model-repair'), pytest.raises(PermissionError):
         scheduler.update('daily', {'run_policy': {'filesystem_mode': 'read-only', 'capabilities': {}, 'policy_revision': 0}}, origin='agent')
     assert scheduler.get('daily')['run_policy']['policy_revision'] == 0
+
+
+def test_task_policy_edits_only_apply_to_next_execution(scheduler):
+    from agent.runtime.tool_invocation import scheduled_permission_scope
+    created = scheduler.create(task(run_policy={'filesystem_mode': 'read-only'}))
+    with identity_scope(task_id='daily'), scheduled_permission_scope(created):
+        save_run_policy('task', 'daily', {'filesystem_mode': 'full-access'})
+        assert resolve_run_policy()['filesystem_mode'] == 'read-only'
+    with identity_scope(task_id='daily'), scheduled_permission_scope(created):
+        assert resolve_run_policy()['filesystem_mode'] == 'full-access'
+
+
+def test_revoking_task_still_stops_an_active_execution(scheduler):
+    from agent.runtime.tool_invocation import scheduled_permission_scope
+    from core.security.task_policy import revoke_task_policy
+    created = scheduler.create(task(run_policy={'filesystem_mode': 'full-access'}))
+    with identity_scope(task_id='daily'), scheduled_permission_scope(created):
+        revoke_task_policy('daily')
+        with pytest.raises(PermissionError, match='revoked'):
+            resolve_run_policy()

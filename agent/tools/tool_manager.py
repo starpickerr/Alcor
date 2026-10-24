@@ -459,6 +459,9 @@ class ToolManager:
         cfg = configs.get(server_name)
         if cfg is None or not self._mcp_enabled(cfg):
             raise PermissionError("MCP server is disabled or not configured")
+        from agent.tools.mcp.mcp_tool import McpTool
+        if not self.capability_settings.enabled('tool', McpTool.name_for(server_name, method)):
+            raise PermissionError('MCP tool is disabled')
         public = cfg.get("agentTools")
         if not host and public is not None and method not in public:
             raise PermissionError("MCP management tool is not available to agents")
@@ -553,6 +556,11 @@ class ToolManager:
             SecurityService.authorize_connection(server_name, tool.capability_descriptor.operation)
         if not self._mcp_admitted(server_name, generation):
             raise PermissionError("MCP connection was replaced")
+        # Resource checks may wait on remote metadata; a tool switch can change
+        # without replacing the server generation. Recheck before cache/dispatch.
+        from agent.tools.capability_settings import tool_enabled
+        if not tool_enabled(tool.name, tool=tool):
+            raise PermissionError('MCP tool was disabled during authorization')
         # Cache consumers need the same current authorization and admission
         # without issuing a second upstream read. This is a Core-only option.
         if check_only:
@@ -715,6 +723,7 @@ class ToolManager:
     def mcp_catalog(self):
         """Inventory reads never connect servers or expose connection secrets."""
         from core.capabilities.descriptions import clean_copy
+        from agent.tools.mcp.mcp_tool import McpTool
         with self._mcp_lock:
             configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
             configs = {**self._mcp_active_configs, **configs}
@@ -730,6 +739,7 @@ class ToolManager:
                     **({'description': description} if description else {}),
                     'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
                         {'name': tool.remote_name, 'description': tool.description,
+                         'enabled': self.capability_settings.enabled('tool', McpTool.name_for(name, tool.remote_name)),
                          **({'title': tool.title} if getattr(tool, 'title', None) else {}),
                          **({'inputSchema': tool.params} if isinstance(getattr(tool, 'params', None), dict) else {}),
                          **({'outputSchema': tool.output_schema} if isinstance(getattr(tool, 'output_schema', None), dict) else {})}

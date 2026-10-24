@@ -77,6 +77,8 @@ def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch, regi
                                               'alpha', threading.Event(), None)
     assert allowed == 'ok'
     assert calls == [{'command': 'git push origin main'}]
+    from core.security.run_policy import save_run_policy
+    save_run_policy('session', 'source', {'filesystem_mode': 'workspace-write'})
     later = permission_denial('bash', {'command': 'git push origin main'}, session_id='source', noninteractive=True)
     assert later and 'Authorization required' in later
     from agent.workspace.context import resolve_context

@@ -1,8 +1,26 @@
+import { useEffect, useState } from 'react'
+import FeatureAccessEditor from '../../components/FeatureAccessEditor'
+import { MailboxSettings } from './MailboxSettings'
+import { ElearningSettings } from './ElearningSettings'
+import ElearningFileSettings from '../settings/ElearningFileSettings'
 import { ChevronRight } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { currentSettingsOrigin } from '../settings/origin'
 import { SourceIcon } from './DataUsage'
 import { c, groupSettingsPath, panel, sourceDescription, sourceOrigin, sourceStatus, type SourceGroup } from './presentation'
+
+function SourceAccess({ id }: { id: string }) {
+  const [open, setOpen] = useState(false)
+  return <details onToggle={event => setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{c('访问权限', 'Access permissions')}</summary>{open && <div className="mt-4"><FeatureAccessEditor context={{ module: 'data', id }} /></div>}</details>
+}
+
+function SourceAccounts({ provider }: { provider: string }) {
+  const [params] = useSearchParams()
+  const selected = params.get('source') === provider
+  const [open, setOpen] = useState(selected)
+  useEffect(() => { if (selected) setOpen(true) }, [selected])
+  return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{c('账号与连接配置', 'Accounts and connection settings')}</summary>{open && <div className="mt-4 space-y-6">{provider === 'email' ? <MailboxSettings /> : <><ElearningSettings /><ElearningFileSettings /></>}</div>}</details>
+}
 
 export default function DataSources({ groups }: { groups: SourceGroup[] }) {
   const location = useLocation()
@@ -11,8 +29,8 @@ export default function DataSources({ groups }: { groups: SourceGroup[] }) {
       <p className="mt-1 text-sm leading-relaxed text-content-secondary">{c('查看 Stella 已接入的信息源，点击卡片管理账号与配置。', 'See connected sources. Select a card to manage accounts and settings.')}</p>
     </div>
     {!groups.length && <p className={`${panel} p-5 text-sm text-content-secondary`}>{c('尚无已注册的信息源。请先在能力中连接服务，或配置来源账号。', 'No sources are registered. Connect a service in Capabilities or configure a source account first.')}</p>}
-    <div className="grid gap-4 sm:grid-cols-2">{groups.map(group => <Link key={group.id} data-testid={`data-source-${group.id}`}
-      state={currentSettingsOrigin(location.pathname, location.search)} to={groupSettingsPath(group)} className={`${panel} group min-w-0 p-5 sm:p-6 text-content shadow-sm hover:border-strong hover:bg-surface-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}>
+    <div className="grid gap-4 sm:grid-cols-2">{groups.map(group => <article key={group.id} className={`${panel} min-w-0 overflow-hidden`}><Link key={group.id} data-testid={`data-source-${group.id}`}
+      state={currentSettingsOrigin(location.pathname, location.search)} to={['email', 'elearning'].includes(group.id) ? `/data?section=sources&source=${group.id}` : groupSettingsPath(group)} className={`block group min-w-0 p-5 sm:p-6 text-content shadow-sm hover:border-strong hover:bg-surface-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}>
       <div className="flex items-center gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-accent-soft"><SourceIcon source={group.source} size={21} /></span>
         <h3 className="min-w-0 flex-1 break-words text-base font-semibold text-content">{group.name}</h3>
@@ -23,8 +41,9 @@ export default function DataSources({ groups }: { groups: SourceGroup[] }) {
         <span>{group.id === 'email' ? c(`${group.accounts} 个邮箱`, `${group.accounts} ${group.accounts === 1 ? 'mailbox' : 'mailboxes'}`) : sourceOrigin(group.source)}</span>
         <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${group.status === 'available' ? 'bg-accent' : group.status === 'partial' ? 'bg-amber-500' : 'bg-content-tertiary'}`} />{sourceStatus(group)}</span>
       </div>
-    </Link>)}</div>
-    <p className="text-xs leading-relaxed text-content-secondary">{c('可用性不代表访问授权，访问范围在安全中管理。', 'Availability does not grant access. Manage access scopes in Security.')}</p>
+    </Link><div className="space-y-4 border-t border-default p-5 sm:p-6">{['email', 'elearning'].includes(group.id) && <SourceAccounts provider={group.id} />}{group.items.map(source => <section key={source.id} className="space-y-2"><h4 className="text-sm font-medium">{source.name}</h4><SourceAccess id={source.id} /></section>)}</div></article>)}</div>
+    {['email', 'elearning'].filter(provider => !groups.some(group => group.id === provider)).map(provider => <section key={provider} className={`${panel} space-y-3 p-5 sm:p-6`}><h3 className="text-sm font-semibold">{provider === 'email' ? 'Email' : 'eLearning'}</h3><SourceAccounts provider={provider} /></section>)}
+    <p className="text-xs leading-relaxed text-content-secondary">{c('可用性不代表访问授权，请在对应信息源中配置访问范围。', 'Availability does not grant access. Configure access in the corresponding source.')}</p>
     <Link className="inline-flex items-center gap-1 text-sm text-accent hover:underline" to="/skills?tab=mcp">{c('管理来源连接', 'Manage connections')}<ChevronRight size={15} aria-hidden="true" /></Link>
   </section>
 }

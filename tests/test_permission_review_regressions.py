@@ -279,10 +279,12 @@ def test_ui_rooted_mcp_writes_skip_agent_mode_but_preserve_connection_deny(legac
     from core.plugins.caller import caller_origin_scope, consumer_plugin_scope
     from core.security.service import SecurityService
     from core.security.capabilities import CapabilityDescriptor
-    from core.security.run_policy import save_run_policy
     from agent.permission.gateway import Capability, register_tool
-    save_run_policy('template', 'default', {'filesystem_mode': 'read-only',
-        'connections': {'mcp:blocked-native': {'allowed': False, 'scopes': []}}})
+    from core.security.migration import ensure_migrated
+    from core.security.resource_grants import ResourceGrantStore
+    ensure_migrated()
+    ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:blocked-native',
+        policy={'allowed': False, 'scopes': []}, expected_revision=0)
     descriptor = CapabilityDescriptor('mcp:native-fixture/save', 'mcp', 'write')
     register_tool('native_mcp_fixture', Capability.EXTERNAL, descriptor=descriptor)
     blocked = CapabilityDescriptor('mcp:blocked-native/save', 'mcp', 'write')

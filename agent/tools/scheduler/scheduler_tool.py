@@ -44,6 +44,10 @@ class SchedulerTool(BaseTool):
                 "enum": ["create", "list", "get", "update", "destinations", "delete", "enable", "disable"],
                 "description": "操作类型: create(创建), list(列表), get(查询), delete(删除), enable(启用), disable(禁用)"
             },
+            "conversation_mode": {
+                "type": "string", "enum": ["independent", "source"],
+                "description": "independent: 独立任务，使用持久任务空间；source: 关联当前对话，仅参考上下文和工作空间，不继承权限。默认 independent。"
+            },
             "task_id": {
                 "type": "string",
                 "description": "任务ID (用于 get/delete/enable/disable 操作)"
@@ -172,7 +176,7 @@ class SchedulerTool(BaseTool):
             raise ValueError(f"无效的调度配置 - type: {schedule_type}, value: {schedule_value}")
         
         # Get context info for receiver
-        if not self.current_context:
+        if self.current_context is None:
             raise ValueError("无法获取当前对话上下文")
         
         context = self.current_context
@@ -217,19 +221,21 @@ class SchedulerTool(BaseTool):
         if msg and hasattr(msg, 'sender_staff_id') and not context.get("isgroup", False):
             action["dingtalk_sender_staff_id"] = msg.sender_staff_id
 
-        # A task created by the Agent in a desktop chat belongs to that chat
-        # by default. Freeze its current project scope at creation time.
         if action["channel_type"] == "web":
-            if not notify_session_id:
-                raise ValueError("桌面定时任务需要当前对话")
             from agent.scheduler.conversation import validate_conversation_action
-            action["conversation_mode"] = "source"
-            action["source_session_id"] = notify_session_id
-            try:
-                action = validate_conversation_action(action, allow_pending_source=True)
-            except ValueError as exc:
-                raise ValueError(f"无法绑定当前对话: {exc}") from exc
-        
+            mode = kwargs.get('conversation_mode', 'independent')
+            if mode not in {'source', 'independent'}:
+                raise ValueError('请选择独立任务或关联当前对话')
+            action['conversation_mode'] = mode
+            action['workspace_version'] = 1
+            if mode == 'source':
+                if not notify_session_id:
+                    raise ValueError('关联任务需要当前对话')
+                action['source_session_id'] = notify_session_id
+            else:
+                action.update(receiver=f'task_{task_id}', notify_session_id=None, execution_session_id=None)
+            action = validate_conversation_action(action, allow_pending_source=True)
+
         task_data = {
             "id": task_id,
             "name": name,

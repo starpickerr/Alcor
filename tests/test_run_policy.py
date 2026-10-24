@@ -9,15 +9,20 @@ def isolated_policy_state(tmp_path, monkeypatch):
     monkeypatch.setattr('common.state_dir.shared_root', lambda: tmp_path / 'state')
 
 
-def test_template_changes_only_seed_new_conversations():
-    from core.security.run_policy import resolve_run_policy, save_run_policy
-    template = {'filesystem_mode': 'read-only', 'capabilities': {}}
-    save_run_policy('template', 'default', template)
-    assert resolve_run_policy('first')['filesystem_mode'] == 'read-only'
-    save_run_policy('template', 'default', {**template, 'filesystem_mode': 'full-access'})
-    assert resolve_run_policy('first')['filesystem_mode'] == 'read-only'
-    assert resolve_run_policy('second')['filesystem_mode'] == 'full-access'
-    assert resolve_run_policy('second')['capabilities'] == {}
+def test_retired_template_cannot_widen_new_conversations():
+    from core.security.policy_store import RunPolicyStore
+    from core.security.run_policy import resolve_run_policy, save_run_policy, subject_key
+    RunPolicyStore().ensure(subject_key('template', 'default'),
+                          {'filesystem_mode': 'full-access', 'capabilities': {}})
+    save_run_policy('session', 'existing', {'filesystem_mode': 'workspace-write'})
+    assert resolve_run_policy('fresh')['filesystem_mode'] == 'read-only'
+    assert resolve_run_policy('existing')['filesystem_mode'] == 'workspace-write'
+
+
+def test_template_is_no_longer_editable():
+    from core.security.control import PermissionControl
+    with pytest.raises(ValueError, match='session|task|default'):
+        PermissionControl().save('template', 'default', {'filesystem_mode': 'full-access', 'policy_revision': 1})
 
 
 def test_project_conversations_have_independent_policies(tmp_path):

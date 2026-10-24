@@ -65,4 +65,4 @@ def tool_enabled(name, *, tool=None, agent_id=None, workspace_root=None):
             identity = identity.derive(agent_id=agent_id)
         store = CapabilitySettings(workspace_root or real_state_root(identity), user_id=identity.user_id)
     server = getattr(tool, 'server_name', None)
-    return store.enabled('mcp', server) if server else store.enabled('tool', name)
+    return store.enabled('tool', name) and (not server or store.enabled('mcp', server))

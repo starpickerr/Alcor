@@ -730,3 +730,23 @@ def test_stdio_drainers_keep_process_streams_when_shutdown_interleaves(monkeypat
     assert client.initialize() is False
     assert errors == []
     assert client._proc is None and client._closed
+
+
+def test_server_lifecycle_preserves_disabled_tool_intent(tmp_path, monkeypatch, fake_mcp):
+    manager = _manager(tmp_path, monkeypatch)
+    manager.set_mcp_enabled('Documents', True)
+    _wait(lambda: manager.list_mcp_status().get('Documents') == 'ready')
+    try:
+        original = next(iter(manager._mcp_tool_instances.values()))
+        manager.capability_settings.set_enabled('tool', original.name, False)
+        assert original.execute({}).status == 'error'
+        manager.set_mcp_enabled('Documents', False)
+        manager.set_mcp_enabled('Documents', True)
+        _wait(lambda: manager.list_mcp_status().get('Documents') == 'ready')
+        restored = next(iter(manager._mcp_tool_instances.values()))
+        assert restored.name == original.name
+        assert not restored.is_available()
+        assert manager.mcp_catalog()[0]['tools'][0]['enabled'] is False
+        assert restored.name not in manager.list_tools()
+    finally:
+        manager.shutdown_mcp()

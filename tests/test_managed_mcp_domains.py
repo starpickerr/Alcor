@@ -148,7 +148,7 @@ def test_migrated_domains_are_not_shipped_or_started_as_plugins():
 
 def test_settings_and_agent_tools_share_managed_connection_and_durable_switch(
     tmp_path, monkeypatch
-):
+, native_settings_action):
     monkeypatch.setenv("STELLA_MANAGED_MCP", "1")
     from core.services import elearning_facade
     from agent.tools.tool_manager import ToolManager

@@ -240,4 +240,4 @@ def test_runtime_tab_requires_observable_state_or_diagnostics(catalog, state, er
 def test_mcp_without_connection_state_has_no_empty_runtime_tab(catalog):
     service, _ = catalog
     service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='', tools=[])]
-    assert service.detail('mcp', 'docs')['tabs'] == ['overview', 'features']
+    assert service.detail('mcp', 'docs')['tabs'] == ['overview', 'features', 'configuration']

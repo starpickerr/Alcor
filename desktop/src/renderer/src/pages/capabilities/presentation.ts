@@ -18,7 +18,7 @@ export const stateLabel = (state: string) => ({
   pending: c('连接中', 'Connecting'), needs_auth: c('需要认证', 'Authentication required'),
 }[state] || state)
 export const sourceLabel = (source: string) => ({ builtin: c('Stella 内置', 'Built into Stella'), installed: c('已安装', 'Installed'),
-  custom: c('自定义', 'Custom'), plugin: c('插件提供', 'Provided by a plugin'), stdio: c('本地连接', 'Local connection'),
+  retained: c('保留的连接设置', 'Retained connection settings'), custom: c('自定义', 'Custom'), plugin: c('插件提供', 'Provided by a plugin'), stdio: c('本地连接', 'Local connection'),
   sse: c('远程连接', 'Remote connection'), 'streamable-http': c('远程连接', 'Remote connection') }[source] || source)
 export const panel = 'rounded-card border border-default bg-surface'
 export const button = 'inline-flex items-center justify-center gap-2 rounded-btn px-4 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50'

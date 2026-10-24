@@ -33,9 +33,14 @@ def normalize_mode(value: Any, default: Optional[str] = None) -> str:
     return value if value in MODES else _ALIASES.get(value, READ_ONLY)
 
 
-def global_mode() -> str:
+def legacy_global_mode() -> str:
     try:
         from config import conf
         return normalize_mode(conf().get(CONFIG_KEY))
     except Exception:
         return DEFAULT_MODE
+
+
+def global_mode() -> str:
+    """New execution contexts always start read-only; old values are migration inputs."""
+    return READ_ONLY

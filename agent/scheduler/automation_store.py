@@ -274,6 +274,26 @@ class AutomationStore:
                  int(outcome.retryable) if outcome is not None else 1, job_run_id,
                  self._current_user()))
 
+    def list_runs(self, task_id, limit=20):
+        """Read existing occurrence records through their task's ownership boundary."""
+        from agent.scheduler.result_cache import load_output
+        with self.lock, self._connect() as db:
+            rows = db.execute("""SELECT r.job_run_id,r.status,r.started_at,r.finished_at,r.error
+                FROM job_runs r JOIN tasks t ON t.task_id=r.task_id
+                WHERE t.task_id=? AND t.owner_agent_id=? AND t.owner_user_id=?
+                AND r.owner_user_id=? ORDER BY r.started_at DESC LIMIT ?""",
+                (task_id, self.agent_id, self._current_user(), self._current_user(), max(1, min(limit, 100)))).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            try:
+                output = load_output(self, item['job_run_id'])
+                item['output'] = output or ''
+            except OSError:
+                item['output'] = ''
+            result.append(item)
+        return result
+
     def get_execution_ref(self, job_run_id):
         with self.lock, self._connect() as db:
             row = db.execute("SELECT result_ref FROM job_runs WHERE job_run_id=? AND owner_user_id=?",

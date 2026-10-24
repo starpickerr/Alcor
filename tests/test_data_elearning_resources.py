@@ -5,7 +5,7 @@ from core.data.service import DataService, ProviderRegistry
 
 
 @pytest.fixture
-def integration(tmp_path, monkeypatch):
+def integration(tmp_path, monkeypatch, native_settings_action):
     from config import conf
     from agent.tools.tool_manager import ToolManager
     from tests.test_managed_mcp_domains import fake_config
@@ -73,6 +73,13 @@ def test_agent_reads_global_sources_without_feature_selection_and_connection_can
             assert service.read_resource(source['id'], assignment['id'])['content']
     monkeypatch.setitem(conf(), 'security_policy', {'preset': 'full-access', 'rules': {},
         'connections': {'mcp:elearning': {'allowed': False}}})
+    from core.security.resource_grants import ResourceGrantStore
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
+    store = ResourceGrantStore()
+    revision = store.connection_revision(user_id='local-default', connection='mcp:elearning')
+    store.update_owned_connection(user_id='local-default', connection='mcp:elearning',
+        policy={'allowed': False, 'scopes': []}, expected_revision=revision)
     with identity_scope(session_id='second'), execution_scope(origin='tool'):
         with pytest.raises(PermissionError):
             service.read_resource(source['id'], assignment['id'])

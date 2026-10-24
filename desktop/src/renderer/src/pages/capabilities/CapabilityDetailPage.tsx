@@ -93,15 +93,17 @@ export default function CapabilityDetailPage({ baseUrl }: { baseUrl: string }) {
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${item.enabled && !['failed', 'unavailable'].includes(item.state) ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-content-secondary'}`}>{item.enabled ? c('已启用', 'Enabled') : c('已停用', 'Disabled')}</span>
             </div>
             <p className="break-words text-sm leading-relaxed text-content-secondary">{copy(item.description)}</p>
-            <button type="button" disabled={busy || loading || ['maintenance', 'draining'].includes(item.state)} onClick={() => void toggle()}
-              className={`${button} bg-surface-2 text-content hover:bg-accent-soft`}><Power size={16} />{busy ? c('处理中…', 'Saving…') : item.state === 'removed' ? c('重新安装', 'Reinstall') : item.enabled ? c('停用', 'Disable') : c('启用', 'Enable')}</button>
+            {!item.retained && <button type="button" disabled={busy || loading || ['maintenance', 'draining'].includes(item.state)} onClick={() => void toggle()}
+              className={`${button} bg-surface-2 text-content hover:bg-accent-soft`}><Power size={16} />{busy ? c('处理中…', 'Saving…') : item.state === 'removed' ? c('重新安装', 'Reinstall') : item.enabled ? c('停用', 'Disable') : c('启用', 'Enable')}</button>}
             {saveError && <p role="alert" className="text-sm text-danger">{saveError}</p>}
           </section>
           <CapabilityTabs label={c('能力详情', 'Capability details')} tabs={item.tabs.map(value => ({ id: value, label: tabLabel(value) }))} value={section} onChange={changeSection} />
           <section role="tabpanel" id="capability-content" aria-labelledby={`capability-tab-${section}`} tabIndex={0} className={`${panel} min-w-0 p-5 sm:p-7`}>
             {section === 'overview' && <div className="space-y-4"><Markdown content={copy(item.overview) || c('暂无详细介绍。', 'No description is available.')} />{item.reason && <p className="text-sm text-content-secondary">{copy(item.reason)}</p>}</div>}
             {section === 'content' && <Markdown content={item.content || c('暂无内容。', 'No content is available.')} />}
-            {section === 'features' && <CapabilityFeatures key={`${kind}/${id}`} item={item} />}
+            {section === 'features' && <CapabilityFeatures key={`${kind}/${id}`} item={item} onToolChanged={(toolId, enabled) => setDetail(current => current?.kind === kind && current.id === id ? {
+              ...current, features: current.features.map(feature => feature.id === toolId ? { ...feature, enabled } : feature),
+            } : current)} />}
             {section === 'runtime' && <div className="space-y-5"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold">{c('运行状态', 'Runtime state')}</h2><button className={`${button} bg-surface-2`} disabled={busy || loading} onClick={() => void load()}>{c('刷新', 'Refresh')}</button></div>
               {item.runtime.state && <dl className="divide-y divide-default"><div className="flex min-w-0 flex-wrap justify-between gap-3 py-3 text-sm"><dt className="text-content-secondary">{kind === 'mcp' ? c('连接状态', 'Connection state') : c('加载状态', 'Load state')}</dt><dd className="min-w-0 break-words">{providerStateLabel(kind, String(item.runtime.state || item.state))}</dd></div></dl>}
               {item.runtime.error && <div role="alert" className="space-y-2 text-sm"><h3 className="font-medium">{c('最近错误', 'Latest error')}</h3><p className="whitespace-pre-wrap break-words text-danger">{String(item.runtime.error)}</p></div>}

@@ -39,8 +39,6 @@ def backend(route):
         else:
             subject = parse_qs(urlparse(route.request.url).query)['subject'][0]
         data.update(policy=policies.setdefault(subject, dict(policies['default'])), capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True, 'enabled': True}], migration_status='complete', compatibility_restrictions={})
-    elif path == '/api/security/resources':
-        data.update(grants=[], subjects=[], available=[], inherited=[{'id': 'legacy-course', 'server': 'elearning', 'consumer': 'stella.briefing', 'revoked': False, 'scoped': True, 'capabilities': ['elearning.read'], 'methods': ['fetch'], 'resources': [{'kind': 'course', 'id': 'account:42'}], 'purposes': ['interactive'], 'valid_until': None, 'revision': 1}])
     elif path == '/api/security/runtime-trust':
         data.update(runtimes=[], isolation={'status': 'enabled', 'reason': 'OS isolation'})
     elif path == '/api/security/migration':
@@ -150,13 +148,14 @@ with sync_playwright() as playwright:
         page.goto(url + '/#/security', wait_until='networkidle')
         expect(page.get_by_role('heading', name='安全中心')).to_be_visible()
         expect(page.get_by_text('历史权限迁移与恢复', exact=True)).to_be_visible()
-        expect(page.get_by_text('工作区写入', exact=True).first).to_be_visible()
+        expect(page.get_by_text('只读', exact=True).first).to_be_visible()
+        expect(page.get_by_role('radio')).to_have_count(0)
         connections_card = page.get_by_role('heading', name='外部连接', exact=True).locator('xpath=..')
         expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
+        expect(connections_card.get_by_role('link')).to_have_attribute('href', '#/skills?tab=mcp')
         overview_links = [
-            ('新建对话默认模板', 'permissions', '默认权限设置'),
+            ('权限规则', 'permissions', '对话与任务权限'),
             ('后台任务权限', 'permissions#background-tasks', '后台任务权限'),
-            ('外部连接', 'connections', '连接与访问'),
             ('凭据', 'secrets', '服务凭据'),
             ('安全活动', 'activity', '安全活动'),
             ('数据访问', 'privacy', '数据访问'),
@@ -168,62 +167,35 @@ with sync_playwright() as playwright:
             link.press('Enter')
             expect(page).to_have_url(url + '/#/security?tab=' + target)
             expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
-            if target == 'connections':
-                expect(page.get_by_role('heading', name='特定资源授权')).to_be_visible()
-                page.get_by_text('保留的连接授权', exact=True).click()
-                expect(page.get_by_test_id('mcp-grant-legacy-course')).to_be_visible()
             if target == 'privacy':
                 expect(page.get_by_test_id('mcp-grant-legacy-course')).to_have_count(0)
             if target == 'secrets':
                 page.reload(wait_until='networkidle')
                 expect(page.get_by_role('heading', name=destination, exact=True)).to_be_visible()
             page.go_back(wait_until='networkidle')
-            expect(page.get_by_role('heading', name='新建对话默认模板', exact=True).get_by_role('link')).to_be_visible()
+            expect(page.get_by_role('heading', name='权限规则', exact=True).get_by_role('link')).to_be_visible()
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.set_viewport_size({'width': 1280, 'height': 1280})
-            page.get_by_role('heading', name='新建对话默认模板', exact=True).evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
+            page.get_by_role('heading', name='权限规则', exact=True).evaluate("node => node.closest('.overflow-y-auto').scrollTop = 0")
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview.png', full_page=True, animations='disabled')
         page.set_viewport_size({'width': 640, 'height': 900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-        narrow_title = page.get_by_role('heading', name='新建对话默认模板').get_by_role('link')
+        narrow_title = page.get_by_role('heading', name='权限规则').get_by_role('link')
         expect(narrow_title).to_be_visible()
         assert narrow_title.bounding_box()['height'] <= 44
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-narrow.png', full_page=True, animations='disabled')
         page.set_viewport_size({'width': 1280, 'height': 900})
+        expect(page.get_by_role('navigation', name='安全中心').get_by_role('button', name='资源授权', exact=True)).to_have_count(0)
         expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
-        default_card = page.get_by_role('heading', name='默认权限设置', exact=True).locator('xpath=..')
-        expect(default_card).to_be_visible()
-        expect(page.get_by_text('历史权限迁移与恢复', exact=True)).to_have_count(0)
-        assert default_card.get_by_role('radio').count() == 3
-        expect(page.get_by_text('Agent 可用能力', exact=True)).to_have_count(0)
-        expect(page.get_by_role('heading', name='当前对话', exact=True)).to_have_count(0)
-        expect(page.get_by_role('navigation', name='安全中心').get_by_role('button', name='后台任务权限', exact=True)).to_have_count(0)
-        page.get_by_text('每日整理', exact=True).click()
-        task_card = page.locator('#background-tasks')
-        expect(task_card.get_by_role('radio')).to_have_count(3)
-        task_card.get_by_role('radio', name='只读', exact=True).check()
-        task_card.get_by_role('button', name='保存权限', exact=True).click()
-        expect(task_card.get_by_role('status')).to_contain_text('已保存')
-        assert saved[-1]['kind'] == 'task' and saved[-1]['subject'] == 'task-one'
-        assert saved[-1]['agent'] == 'default'
-        if os.environ.get('STELLA_UI_SCREENSHOTS'):
-            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-permissions.png', full_page=True, animations='disabled')
-            page.set_viewport_size({'width': 390, 'height': 844})
-            page.get_by_role('button', name='收起侧栏').click()
-            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-permissions-mobile.png', full_page=True, animations='disabled')
-            page.set_viewport_size({'width': 1280, 'height': 900})
-            page.get_by_role('button', name='展开侧栏').click()
-        before = len(saved)
-        default_card.get_by_role('radio', name='完全访问', exact=True).check()
-        default_card.get_by_role('button', name='保存权限', exact=True).click()
-        expect(default_card.get_by_role('status')).to_contain_text('权限已保存')
-        assert len(saved) > before and saved[-1]['policy']['filesystem_mode'] == 'full-access'
+        expect(page.get_by_role('heading', name='默认权限设置', exact=True)).to_have_count(0)
+        expect(page.get_by_role('radio')).to_have_count(0)
+        expect(page.get_by_role('link', name='前往任务管理', exact=True)).to_have_attribute('href', '#/tasks')
+        assert saved == []
         expect(page.get_by_role('heading', name='项目权限')).to_have_count(0)
-        for tab, heading in [('资源授权', '连接与访问'),
+        for tab, heading in [
                              ('安全活动', '安全活动'), ('数据访问', '数据访问')]:
             page.get_by_role('navigation', name='安全中心').get_by_role('button', name=tab, exact=True).click()
             expect(page.get_by_role('heading', name=heading, exact=True)).to_be_visible()
@@ -245,7 +217,7 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='收起侧栏').click()
         expect(page.get_by_role('complementary')).to_have_css('width', '56px')
         page.get_by_role('navigation', name='安全中心').get_by_role('button', name='总览', exact=True).click()
-        mobile_title = page.get_by_role('heading', name='新建对话默认模板').get_by_role('link')
+        mobile_title = page.get_by_role('heading', name='权限规则').get_by_role('link')
         expect(mobile_title).to_be_visible()
         assert mobile_title.bounding_box()['height'] <= 44
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -282,7 +254,7 @@ with sync_playwright() as playwright:
         english.route('http://127.0.0.1:9876/**', backend)
         english.goto(url + '/#/security', wait_until='networkidle')
         expect(english.get_by_role('heading', name='Security Center')).to_be_visible()
-        expect(english.get_by_role('heading', name='Connections', exact=True).get_by_role('link')).to_have_attribute('href', '#/security?tab=connections')
+        expect(english.get_by_role('heading', name='Connections', exact=True).get_by_role('link')).to_have_attribute('href', '#/skills?tab=mcp')
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             english.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-overview-dark-en.png', full_page=True, animations='disabled')
         english.get_by_role('navigation', name='Security Center').get_by_role('button', name='Credentials', exact=True).click()

@@ -20,23 +20,6 @@ def global_policy() -> dict:
     return gateway_policy(default_template())
 
 
-def save_global_policy(value: dict) -> dict:
-    from core.security.migration import ensure_migrated
-    ensure_migrated()
-    from core.security.run_policy import default_template, gateway_policy, save_run_policy, validate_policy
-    current = default_template()
-    if 'filesystem_mode' in value or 'capabilities' in value:
-        clean = validate_policy(value)
-    else:
-        legacy = validate_patch(value, global_policy=True)
-        clean = {'filesystem_mode': legacy.get('preset', current['filesystem_mode'])}
-        clean.update({key: legacy[key] for key in ('connections', 'extra_roots') if key in legacy})
-    saved = save_run_policy('template', 'default', clean,
-                            expected_revision=value.get('policy_revision', current['policy_revision']))
-    record(operation="update", resource="new subject template", decision="policy_change", reason="New subject defaults updated.")
-    return gateway_policy(saved)
-
-
 def save_conversation_policy(session: str, value: dict | None, agent: str | None = None) -> dict:
     """Update one conversation, independently of other chats in its project."""
     from core.security.migration import ensure_migrated
@@ -222,7 +205,11 @@ def _connection_row(entry_id: str, name: str, *, configured: bool, available: bo
 
 
 def connections(policy: dict | None = None) -> list[dict]:
+    from core.security.migration import ensure_migrated
+    if policy is None:
+        ensure_migrated()
     from config import conf
+    explicit_policy = policy is not None
     policy = policy or global_policy()
     cfg = conf()
     github_token = bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token"))
@@ -293,7 +280,7 @@ def connections(policy: dict | None = None) -> list[dict]:
                 if current and '*' not in current and not grant['scopes']:
                     grant['allowed']=False
         from core.security.migration import resource_authority_migrated
-        if resource_authority_migrated():
+        if resource_authority_migrated() and not explicit_policy:
             from core.security.service import SecurityService
             from core.security.resource_grants import ResourceGrantStore
             from common.runtime_identity import current_identity

@@ -8,9 +8,11 @@ def _schemas(source):
 
 
 def mcp_features(row):
+    from agent.tools.mcp.mcp_tool import McpTool
     if not row.get('enabled') or row.get('state') != 'ready':
         return []
-    return [dict(id=tool['name'], type='tools', source='mcp', available=True,
+    return [dict(id=tool['name'], type='tools', source='mcp', available=tool.get('enabled', True),
+                 enabled=tool.get('enabled', True), toggleId=McpTool.name_for(row['name'], tool['name']),
                  name=clean_copy(tool.get('title')) or tool['name'],
                  description=clean_copy(tool.get('description')), **_schemas(tool),
                  **user_tool_copy(tool.get('description')))
@@ -48,7 +50,7 @@ def plugin_features(row, adapters):
             continue
         previous = features.get(('tools', tool['id']), {})
         features[('tools', tool['id'])] = dict(previous,
-            id=tool['id'], type='tools', source='plugin', name=clean_copy(tool.get('title')) or previous.get('name') or tool['id'],
+            id=tool['id'], type='tools', source='plugin', enabled=tool.get('enabled', True), toggleId=tool['id'], name=clean_copy(tool.get('title')) or previous.get('name') or tool['id'],
             description=clean_copy(tool.get('intro')) or previous.get('description', ''),
             detailDescription=clean_copy(tool.get('toolDescription')) or clean_copy(tool.get('detail')) or previous.get('detailDescription') or clean_copy(tool.get('intro')) or previous.get('description', ''),
             available=available and tool.get('enabled', False) and tool.get('available', False), **_schemas(tool))

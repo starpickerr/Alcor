@@ -26,7 +26,7 @@ def _native():
         )
     ) or not native_user_action(True, "manage_mcp_access", None):
         raise PermissionError(
-            "MCP access must be edited by the user in Security Center"
+            "MCP access must be edited by the user in feature settings"
         )
 
 
@@ -112,7 +112,7 @@ def update(body):
         changes["resources"] = frozenset(_resource_key(value) for value in values)
     if "valid_until" in changes:
         value = changes["valid_until"]
-        if value is not None and (
+        if value != row.valid_until and value is not None and (
             not row.parent_ref
             or not isinstance(value, str)
             or _expiry(value) <= datetime.now(timezone.utc)
@@ -129,6 +129,6 @@ def update(body):
         operation="update",
         resource="mcp:" + row.plugin_id.removeprefix("stella."),
         decision="policy_change",
-        reason="User updated inherited MCP authorization in Security Center.",
+        reason="User updated inherited MCP authorization in feature settings.",
     )
     return inventory()

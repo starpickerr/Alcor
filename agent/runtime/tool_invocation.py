@@ -39,12 +39,16 @@ def approved_browser_file(url: str) -> str | None:
 
 @contextmanager
 def scheduled_permission_scope(task):
-    """Resolve a task's independent policy; later calls recheck its live revision."""
+    """Capture independent task permissions for this execution only."""
     from common.runtime_identity import current_identity
     from core.security.task_policy import initialize_scheduled_policy
     if not isinstance(task, dict):
         task = {'id': current_identity().task_id, 'run_permission_mode': task}
-    yield initialize_scheduled_policy(task)
+    from agent.workspace.context import scheduled_workspace_scope
+    policy = initialize_scheduled_policy(task)
+    from core.security.run_policy import task_policy_scope
+    with scheduled_workspace_scope(task), task_policy_scope(task, current_identity().agent_id):
+        yield policy
 
 
 @contextmanager

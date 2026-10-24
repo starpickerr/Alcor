@@ -54,6 +54,9 @@ class PermissionControl:
                 'capabilities': []}
 
     def save(self, kind, subject, patch, agent=None):
+        require_owner()
+        if kind not in {'session', 'task'}:
+            raise ValueError('Only session and task permissions are editable; defaults are fixed read-only')
         self._prepare(kind, subject, agent)
         from core.security.run_policy import validate_policy, save_run_policy
         clean = validate_policy(patch)
@@ -68,97 +71,6 @@ class PermissionControl:
                reason='Owner updated independent execution permissions.')
         return self.read(kind, subject, agent)
 
-
-
-class ResourceControl:
-    @staticmethod
-    def _user():
-        from common.runtime_identity import current_identity
-        return current_identity().user_id or 'local-default'
-
-    def subjects(self):
-        require_owner()
-        from core.security.policy_store import RunPolicyStore
-        with RunPolicyStore().transaction() as db:
-            rows = [{'id': f'{kind}:{agent}:{subject}', 'kind': kind, 'agent': agent, 'subject': subject}
-                    for agent, kind, subject in db.execute('SELECT agent,kind,subject FROM run_policies WHERE user=? AND kind!=?',
-                                                          (self._user(), 'template'))]
-        from core.plugins.management import default_store
-        from core.plugins.package_ops import PackageStore
-        packages = PackageStore(default_store().root).packages
-        rows += [{'id': 'plugin:' + path.parent.name, 'kind': 'plugin', 'subject': path.parent.name}
-                 for path in packages.glob('*/current.json')]
-        return rows
-
-    def available(self):
-        from agent.tools.tool_manager import ToolManager
-        rows = [{'kind': 'connection', 'id': 'mcp:' + cfg['name'], 'name': cfg['name'],
-                 'operations': ['read', 'write', 'delete', 'external_send', 'system_execute']}
-                for cfg in ToolManager()._load_mcp_configs()]
-        from core.data.runtime import current_service
-        try:
-            sources = current_service().list_sources()
-        except (ValueError, OSError, RuntimeError, PermissionError):
-            sources = []
-        for source in sources:
-            if source['provider'] == 'elearning':
-                config = source.get('config') or {}
-                account = config.get('account_id')
-                if account:
-                    rows.extend({'kind': 'course', 'id': f'{account}:{course}',
-                                 'name': f"{source.get('name') or 'eLearning'} · {course}", 'operations': ['read']}
-                                for course in config.get('course_ids', []) if isinstance(course, str) and course.isdigit())
-                continue
-            kind = 'folder' if source['provider'] == 'email' else 'course' if source['provider'] == 'elearning' else 'data-source'
-            identifier = source.get('account_id') if kind != 'data-source' else source['id']
-            if identifier:
-                rows.append({'kind': kind, 'id': identifier, 'name': source.get('name') or source['id'], 'operations': ['read']})
-        return list({(row['kind'], row['id']): row for row in rows}.values())
-
-    def inventory(self):
-        require_owner()
-        from core.security.resource_grants import ResourceGrantStore
-        from agent.permission.mcp_access import inventory
-        return {'grants': ResourceGrantStore().list_owned(self._user()), 'available': self.available(),
-                'subjects': self.subjects(), 'inherited': inventory()}
-
-    def issue(self, body):
-        require_owner()
-        if not isinstance(body, dict) or set(body) - {'subject', 'resource', 'operations', 'purposes', 'valid_until'}:
-            raise ValueError('Invalid resource authorization fields')
-        if body.get('subject') not in {row['id'] for row in self.subjects()}:
-            raise ValueError('Execution subject not found; select an existing conversation, task or plugin')
-        resource = body.get('resource')
-        allowed = next((row for row in self.available() if {'kind': row['kind'], 'id': row['id']} == resource), None)
-        if not allowed or not set(body.get('operations') or []) <= set(allowed['operations']):
-            raise PermissionError('Resource scope is unavailable or its operations are unsupported')
-        from core.security.resource_grants import ResourceGrantStore
-        row = ResourceGrantStore().issue(user_id=self._user(), **body)
-        from agent.permission.audit import record
-        record(event='resource_grant', operation='issue', resource=resource['kind'], decision='policy_change',
-               reason='Owner authorized a specific resource scope.')
-        return row
-
-    def revoke(self, grant_id, revision):
-        require_owner()
-        from core.security.resource_grants import ResourceGrantStore
-        ResourceGrantStore().revoke(grant_id, user_id=self._user(), expected_revision=revision)
-        from agent.permission.audit import record
-        record(event='resource_grant', operation='revoke', resource='resource grant', decision='policy_change',
-               reason='Owner revoked a resource scope.')
-
-    def set_connection(self, connection, allowed, scopes, revision):
-        require_owner()
-        from core.security.migration import ensure_migrated
-        ensure_migrated()
-        if not isinstance(allowed, bool) or not isinstance(scopes, list) or any(not isinstance(value, str) for value in scopes):
-            raise ValueError('Invalid connection scope')
-        from core.security.resource_grants import ResourceGrantStore
-        ResourceGrantStore().update_owned_connection(user_id=self._user(), connection=connection,
-            policy={'allowed': allowed, 'scopes': scopes}, expected_revision=revision)
-        from agent.permission.audit import record
-        record(operation='update', resource='connection scope', event='resource_grant', decision='policy_change',
-               reason='Owner updated connection resource restrictions.')
 
 
 class RuntimeControl:
@@ -220,7 +132,8 @@ class RuntimeControl:
         if not current or not current.get('digest') or current['digest'] != body['digest']:
             raise ValueError('Runtime package changed; refresh before changing trust')
         from core.security.runtime_trust import RuntimeTrustStore
-        RuntimeTrustStore().set(user_id=ResourceControl._user(), kind=body['kind'], identifier=body['id'],
+        from core.security.access_settings import current_user
+        RuntimeTrustStore().set(user_id=current_user(), kind=body['kind'], identifier=body['id'],
                                digest=body['digest'], trusted=body['trusted'])
         from agent.permission.audit import record
         record(event='runtime_trust', operation='update', resource=body['kind'], decision='policy_change',

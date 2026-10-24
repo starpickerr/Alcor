@@ -6,7 +6,7 @@ from core.data.providers import McpProvider, EMAIL_MAPPING, DataSource
 
 
 @pytest.fixture
-def integration(tmp_path, monkeypatch):
+def integration(tmp_path, monkeypatch, native_settings_action):
     from config import conf
     from core.services.email_facade import EmailMcpFacade
     from agent.tools.tool_manager import ToolManager
@@ -186,7 +186,7 @@ def test_production_briefing_source_directory_consumes_data_service(
 
 def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
     tmp_path, monkeypatch
-):
+, native_settings_action):
     from pathlib import Path
     from config import conf
     from agent.tools.tool_manager import ToolManager

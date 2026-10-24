@@ -225,6 +225,10 @@ def test_vendored_service_dispatch_is_noop_without_adapter_and_uses_callback(tmp
 def _scheduler_context():
     from application import RequestContext
 
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    with identity_scope(user_id='test-user', agent_id='test-agent'):
+        save_run_policy('session', 's', {'filesystem_mode': 'full-access'})
     return RequestContext(source="scheduler", user_id="test-user", agent_id="test-agent", session_id="s")
 
 
@@ -241,7 +245,7 @@ def _telegram_sends(monkeypatch):
     return sends
 
 
-def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, monkeypatch, registered_agent):
+def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, monkeypatch, registered_agent, native_settings_action):
     from application import Application
     from core.services.todos_facade import TodosPluginFacade
 
@@ -263,7 +267,7 @@ def test_scheduled_reminder_is_delivered_once_through_plugin_outbox(tmp_path, mo
     assert facade.get_todo(todo["id"])["reminder_delivery_status"]["status"] == "accepted"
 
 
-def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_path, monkeypatch, registered_agent):
+def test_late_scheduled_reminder_expires_in_plugin_outbox_without_sending(tmp_path, monkeypatch, registered_agent, native_settings_action):
     from application import Application
     from core.services.todos_facade import TodosPluginFacade
 

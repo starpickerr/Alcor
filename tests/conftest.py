@@ -218,3 +218,11 @@ def elearning_mcp_env(monkeypatch, tmp_path):
     yield
     for manager in ToolManager.instances():
         manager._teardown_mcp_server('elearning')
+
+
+@pytest.fixture
+def native_settings_action():
+    """A direct feature-settings operation, distinct from Agent execution."""
+    from core.plugins.caller import caller_origin_scope
+    with caller_origin_scope('desktop'):
+        yield

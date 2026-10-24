@@ -85,8 +85,8 @@ def test_agent_mode_blocks_bills_write_on_frozen_runner(tmp_path, monkeypatch):
 
         from common.runtime_identity import identity_scope
         from core.security.run_policy import save_run_policy
-        save_run_policy('session', 'frozen-mode', {'filesystem_mode': 'workspace-write'})
         with identity_scope(user_id=user, session_id='frozen-mode'):
+            save_run_policy('session', 'frozen-mode', {'filesystem_mode': 'workspace-write'})
             assert create("k1", "a")["status"] == "succeeded"
             save_run_policy('session', 'frozen-mode', {'filesystem_mode': 'read-only'})
             with pytest.raises(PermissionError):

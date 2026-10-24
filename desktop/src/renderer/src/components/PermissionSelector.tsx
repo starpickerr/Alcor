@@ -61,7 +61,7 @@ export default function PermissionSelector({ sessionId }: { sessionId: string })
           {name(value)}{mode === value && <Check size={14} />}
         </button>)}
         <div className="border-t border-default pt-2"><button type="button" onClick={() => setEditing(true)} className="min-h-10 w-full rounded-btn px-3 text-left text-sm text-accent hover:bg-surface-2">{en ? 'Set conversation permissions' : '设置对话权限'}</button>
-          <a href="#/security" className="block rounded-btn px-3 py-2 text-xs text-content-secondary hover:text-content">{en ? 'Resource grants and default template' : '资源授权与默认模板'}</a></div>
+          <a href="#/security" className="block rounded-btn px-3 py-2 text-xs text-content-secondary hover:text-content">{en ? 'Security Center' : '安全中心'}</a></div>
       </>}
     </div>
   </ComposerChip></div>

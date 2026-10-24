@@ -7,18 +7,22 @@ from common.runtime_identity import identity_scope
 @pytest.mark.parametrize('legacy', [{'preset': 'full-access', 'connections': {'mcp:email': 'broken'}}, 'broken'])
 def test_invalid_legacy_connection_scope_is_pending_and_can_be_repaired(monkeypatch, legacy):
     from config import conf
-    from core.security.control import PermissionControl, ResourceControl
+    from core.security.control import PermissionControl
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setitem(ToolManager().__dict__, '_load_mcp_configs', lambda: [{'name': 'email', 'type': 'stdio'}])
     from core.security.resource_grants import ResourceGrantStore
     monkeypatch.setitem(conf(), 'security_policy', legacy)
+    from agent.memory import get_conversation_store
+    get_conversation_store().append_messages('legacy-invalid', [{'role': 'user', 'content': 'synthetic'}])
     control = PermissionControl()
-    state = control.read('template', 'default')
+    state = control.read('session', 'legacy-invalid')
     assert state['migration_status'] == 'needs_confirmation'
     assert state['policy']['filesystem_mode'] == 'read-only'
     revision = ResourceGrantStore().connection_revision(user_id='local-default', connection='mcp:email')
-    ResourceControl().set_connection('mcp:email', True, ['read'], revision)
+    ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=True, scopes=['read']), expected_revision=revision)
     from core.security.service import SecurityService
     assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
-    saved = control.save('template', 'default', {**state['policy'], 'filesystem_mode': 'read-only',
+    saved = control.save('session', 'legacy-invalid', {**state['policy'], 'filesystem_mode': 'read-only',
         'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}})
     assert saved['migration_status'] == 'complete'
     assert saved['compatibility_restrictions'] == {}
@@ -100,16 +104,16 @@ def test_recovery_is_atomic_and_user_scoped_and_retains_old_grant_revocation():
     assert migration.apply(migration.preview()['fingerprint'])['status'] == 'applied'
 
 
-def test_template_edit_freezes_existing_conversations_before_changing_defaults(monkeypatch):
+def test_fixed_defaults_migrate_existing_conversations_without_changing_them(monkeypatch):
     from config import conf
     from agent.memory import get_conversation_store
-    from agent.permission.center import save_global_policy
+    from core.security.migration import ensure_migrated
     from core.security.run_policy import resolve_run_policy
     monkeypatch.setitem(conf(), 'security_policy', {'preset': 'workspace-write'})
     get_conversation_store().append_messages('existing-before-migration', [{'role': 'user', 'content': 'SYNTHETIC_BODY'}])
-    save_global_policy({'filesystem_mode': 'full-access'})
+    ensure_migrated()
     assert resolve_run_policy('existing-before-migration')['filesystem_mode'] == 'workspace-write'
-    assert resolve_run_policy('created-after-migration')['filesystem_mode'] == 'full-access'
+    assert resolve_run_policy('created-after-migration')['filesystem_mode'] == 'read-only'
 
 
 def test_preview_retains_original_legacy_preferences_bytes(tmp_path, monkeypatch):
@@ -140,7 +144,7 @@ def test_new_project_conversation_uses_template_after_legacy_subjects_are_frozen
     save_run_policy('template', 'default', {'filesystem_mode': 'full-access'})
     project_store.set_project_dir('new-in-project', str(project))
     assert resolve_run_policy('legacy-in-project')['filesystem_mode'] == 'read-only'
-    assert resolve_run_policy('new-in-project')['filesystem_mode'] == 'full-access'
+    assert resolve_run_policy('new-in-project')['filesystem_mode'] == 'read-only'
 
 
 def test_task_metadata_discovery_never_imports_another_users_legacy_task(tmp_path, monkeypatch):

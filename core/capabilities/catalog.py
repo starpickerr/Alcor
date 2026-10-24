@@ -72,8 +72,22 @@ class CapabilityCatalog:
     def _raw(self, kind):
         if kind not in KINDS:
             raise ValueError('Unknown capability type')
-        return {'plugins': self._plugins, 'tools': self.tool_rows,
+        rows = {'plugins': self._plugins, 'tools': self.tool_rows,
                 'skills': self._skills, 'mcp': self.mcp_rows}[kind]()
+        if kind == 'plugins':
+            from core.security.access_settings import retained_plugins
+            known = {row['pluginId'] for row in rows}
+            rows = [*rows, *[dict(pluginId=key, name=key, intent='removed', state='stopped', version=None, retained=True,
+                manifest={'description': {'zh': '插件已移除，旧访问范围仍保留，可在配置中查看和撤销。', 'en': 'Plugin removed. Review and revoke retained access in Configuration.'}})
+                for key in sorted(retained_plugins()) if key not in known]]
+        if kind == 'mcp':
+            from core.security.access_settings import retained_connections
+            known = {row['name'] for row in rows}
+            rows = [*rows, *[dict(name=key[4:], enabled=False, state='disabled', transport='retained', tools=[], retained=True,
+                description={'zh': '连接已移除。现有访问限制仍保留，可在配置中查看和撤销旧授权。',
+                             'en': 'Connection removed. Review and revoke retained access in Configuration.'})
+                for key in sorted(retained_connections()) if key.startswith('mcp:') and key[4:] not in known]]
+        return rows
 
     @staticmethod
     def _summary(kind, row):
@@ -82,14 +96,15 @@ class CapabilityCatalog:
             return dict(kind=kind, id=row['pluginId'], name=row['name'],
                         description=description,
                         enabled=row['intent'] == 'enabled', state=row['state'] if row['intent'] == 'enabled' else row['intent'],
-                        source='installed', version=row.get('version'))
+                        source='installed', version=row.get('version'), **({'retained': True} if row.get('retained') else {}))
         if kind == 'tools':
             return dict(kind=kind, id=row['id'], name=row['title'], description=description,
                         enabled=row['enabled'], state=('available' if row['available'] else 'unavailable') if row['enabled'] else 'disabled',
                         source=row.get('source', {}).get('type', 'builtin'), version=None)
         if kind == 'mcp':
             return dict(kind=kind, id=row['name'], name=row['name'], description=description,
-                        enabled=row['enabled'], state=row['state'], source=row['transport'], version=None)
+                        enabled=row['enabled'], state=row['state'], source=row['transport'], version=None,
+                        **({'retained': True} if row.get('retained') else {}))
         return dict(kind=kind, id=row['name'], name=row.get('display_name') or row['name'],
                     description=description, enabled=row['enabled'],
                     state='enabled' if row['enabled'] else 'disabled', source=row.get('source', 'custom'), version=None)
@@ -104,7 +119,9 @@ class CapabilityCatalog:
             except Exception:
                 # Error strings from configuration/registries may contain secrets.
                 errors[kind] = 'Capability inventory is unavailable. Retry this category.'
-        return dict(status='success', items=items, errors=errors)
+        from core.security.access_settings import owner_connection_settings
+        connection_settings = [row['id'] for row in owner_connection_settings() if not row['id'].startswith('mcp:')]
+        return dict(status='success', items=items, errors=errors, connectionSettings=connection_settings)
 
     def detail(self, kind, identifier):
         if not isinstance(identifier, str) or not identifier or len(identifier) > 512 or '\0' in identifier:
@@ -124,9 +141,10 @@ class CapabilityCatalog:
             entry = self.skill_manager.get_skill(identifier)
             detail.update(tabs=['overview', 'content'], content=entry.skill.content[:DOCUMENT_LIMIT] if entry else '')
         elif kind == 'mcp':
-            configurable = identifier in {'email', 'elearning'} and row.get('settings_url') == '/' + identifier
-            detail['tabs'] = ['overview', 'features'] + (['configuration'] if configurable else []) + ['runtime']
+            detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
             detail['features'] = mcp_features(row)
+            if row.get('settings_url'):
+                detail['configuration'] = dict(settingsUrl=row['settings_url'])
             detail['technical'] = dict(transport=row['transport'])
             detail['runtime'] = dict(state=row['state'])
         else:
@@ -150,6 +168,8 @@ class CapabilityCatalog:
             except Exception:
                 adapters = []  # A broken adapter catalog must not hide declared pages.
             detail['features'] = plugin_features(row, adapters)
+        if row.get('retained'):
+            detail.update(tabs=['overview', 'configuration'], features=[], runtime={})
         if 'runtime' in detail['tabs'] and not any(detail['runtime'].get(key) for key in ('state', 'error')):
             detail['tabs'].remove('runtime')
         return detail
