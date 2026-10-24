@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import expect, sync_playwright
 
@@ -33,6 +34,8 @@ hold_write = [False]
 pending_write = []
 partial_error = [False]
 malformed_plugin = [False]
+missing_plugin = [False]
+settings_requests = []
 preferences = {"revision": 1, "values": {"note": "before"}, "secretFields": ["token"]}
 preference_saves = []
 conflict = [False]
@@ -103,7 +106,7 @@ def backend(route):
         if not malformed_plugin[0]:
             data["plugins"] = [
                 {
-                    "pluginId": "fixture.plugin",
+                    "pluginId": "other.plugin" if missing_plugin[0] else "fixture.plugin",
                     "name": "日历插件",
                     "intent": "enabled",
                     "state": "stopped",
@@ -112,6 +115,7 @@ def backend(route):
             ]
     elif path == "/api/plugins/settings":
         body = route.request.post_data_json
+        settings_requests.append(body)
         if body["action"] == "describe":
             data["result"] = [
                 {
@@ -226,11 +230,16 @@ with sync_playwright() as p:
         page.screenshot(
             path="/tmp/stella-capability-detail-mobile-compact.png", full_page=True
         )
-        page.evaluate("document.documentElement.classList.add('dark')")
+        page.evaluate("localStorage.setItem('cow_theme', 'dark')")
+        page.reload(wait_until="networkidle")
+        expect(page.locator("html")).to_have_class(
+            re.compile(r"\bdark\b")
+        )
         page.screenshot(
             path="/tmp/stella-capability-detail-mobile-dark.png", full_page=True
         )
-        page.evaluate("document.documentElement.classList.remove('dark')")
+        page.evaluate("localStorage.setItem('cow_theme', 'light')")
+        page.reload(wait_until="networkidle")
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.goto(URL + "/#/skills/skills/review", wait_until="networkidle")
         page.get_by_role("tab", name="内容", exact=True).click()
@@ -321,6 +330,13 @@ with sync_playwright() as p:
         expect(page.get_by_role("alert")).to_contain_text("无法读取插件目录")
         expect(page.get_by_role("heading", name="日历插件", exact=True)).to_be_visible()
         malformed_plugin[0] = False
+        missing_plugin[0] = True
+        settings_requests.clear()
+        page.reload(wait_until="networkidle")
+        expect(page.get_by_role("alert")).to_contain_text("此插件已不可用")
+        expect(page.get_by_role("textbox", name="备注", exact=True)).to_have_count(0)
+        assert not settings_requests, settings_requests
+        missing_plugin[0] = False
         page.goto(URL + "/#/skills/tools/not-found", wait_until="networkidle")
         expect(page.get_by_role("alert")).to_contain_text("Capability not found")
         page.get_by_role("link", name="返回原页面", exact=True).click()

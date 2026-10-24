@@ -1,6 +1,6 @@
 # 统一能力页面验证记录
 
-2026-10-24，Core `capability-detail-pages`，从 develop `8c0a4c87` 建立，并纳入已验证的桌面官方插件信任修复 `adaa3b7f`。统一目录 API 提交 `3e8b30d6`，列表/详情与路由提交 `4ba108a8`，后续集成提交保存文档一致性、配置健壮性与浏览器迁移。
+2026-10-24，Core `capability-detail-pages`，从 develop 建立，并纳入已验证的桌面官方插件信任修复。仓库历史整理后对应基线 `966ae337`，官方信任修复 `04054690`，目录 API `0f450ad7`，列表/详情 `e700e879`，集成加固 `9e345fc6`；与整理前 `3371c0e7` 实现树相同，保留原验证证据。未改动 develop，未改动 Plugins。
 
 ## 交付内容与证据
 
@@ -14,7 +14,7 @@
 | --- | --- |
 | 后端目录、启停、MCP、插件管理阶段门禁 | 64 passed |
 | 新目录及选择变化边界 | 17用例；初始缺实现 RED，插件选择切换读取错误 README 另行实际 RED→GREEN |
-| 完整 Core 最终运行 | 2401 passed / 22 skipped / 5 warnings，173.21秒 |
+| 完整 Core | 前阶段2401 passed /22 skipped /5 warnings；本轮修复后当前工作树2396 passed /22 skipped /5 warnings，178.39秒（另有并行质量脚本/测试维护，未纳入本任务提交） |
 | Node | 24 passed |
 | 桌面 typecheck、ESLint、renderer/main build | PASS |
 | 完整浏览器脚本 | 18套 PASS；新增详情脚本另行检查390px、折叠侧栏与暗色 |
@@ -31,4 +31,16 @@
 3. 统一的是能力配置页，保留业务操作页；代价是若原意包含删除业务导航，仍需另行调整，当前选择保护现有功能。
 4. 添加入口复用catalog插件安装与既有Skill市场，不新建MCP运行命令配置协议；代价是任意MCP连接的新增仍使用原有配置流程。
 
-最终独立审查：待完成，尚不作为完成或合并依据。
+最终独立审查：**SKIP**，唯一一次调用因额度不足未能执行，没有返回审查结论。依开发工作流的中断恢复规范，改为作者风险自查，不能视作独立审查通过。范围、发现及限制见 [差异自查记录](capability-details-review.md)。自查发现并修复固定详情插件从配置目录消失时错误选中其他插件的问题，浏览器测试实际 RED→GREEN；暗色截图使用真实 `cow_theme` 设置并重载验证。
+
+修复后重新执行并确认退出码0：完整Core、18套UI、桌面typecheck、ESLint、renderer/main build，以及变更Python的Ruff和diff检查。Node24项为前阶段通过，本轮仅表单目标校验及浏览器夹具变化，复用该结果。
+
+可复现入口（Python使用项目Stella环境）：
+
+```sh
+python scripts/run_isolated.py python -m pytest tests -q --tb=short
+python scripts/run_isolated.py python scripts/ui_check.py
+npm --prefix desktop run typecheck
+npm --prefix desktop run lint
+npm --prefix desktop run build
+```

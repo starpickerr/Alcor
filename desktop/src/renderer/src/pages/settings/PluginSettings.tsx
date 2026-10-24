@@ -57,6 +57,11 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
       .then((data) => {
         if (cancelled) return
         if (!Array.isArray(data.plugins)) throw new Error(getLang() === 'zh' ? '无法读取插件目录，请重试。' : 'Could not read the plugin inventory. Retry.')
+        if (pluginId && !data.plugins.some((item) => item.pluginId === pluginId)) {
+          setRows([])
+          setSelected('')
+          throw new Error(getLang() === 'zh' ? '此插件已不可用，请重新打开详情。' : 'This plugin is unavailable. Reopen its details.')
+        }
         setRows(data.plugins)
         setSelected((value) => {
           if (pluginId && data.plugins.some((item) => item.pluginId === pluginId)) return pluginId
