@@ -1,91 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import {
-  MessageSquare,
-  BookOpen,
-  Brain,
-  Zap,
-  Radio,
-  Clock,
-  Settings,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Sun,
-  ScrollText,
-  ChevronRight,
-  ListChecks,
-  CalendarDays,
-  Receipt,
-  Shield,
-  Database,
-  Bot,
-  Cpu,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, ChevronRight } from 'lucide-react'
+import { NAV_GROUPS } from './navigation'
 import brandLogo from '../assets/logo.png'
 import { t } from '../i18n'
 import { useUIStore } from '../store/uiStore'
 import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { product } from '@product'
-
-interface NavItem {
-  path: string
-  labelKey: string
-  icon: LucideIcon
-}
-
-interface NavGroup {
-  id: string
-  labelKey: string
-  items: NavItem[]
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    id: 'chat',
-    labelKey: 'nav_chat',
-    items: [{ path: '/', labelKey: 'menu_chat', icon: MessageSquare }],
-  },
-  {
-    id: 'apps',
-    labelKey: 'nav_work',
-    items: [
-      { path: '/agent-hub', labelKey: 'menu_agent_hub', icon: Bot },
-      { path: '/todos', labelKey: 'menu_todos', icon: ListChecks },
-      { path: '/calendar', labelKey: 'menu_calendar', icon: CalendarDays },
-      { path: '/briefing', labelKey: 'menu_briefing', icon: Sun },
-      { path: '/bills', labelKey: 'menu_bills', icon: Receipt },
-      { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
-    ],
-  },
-  {
-    id: 'info',
-    labelKey: 'nav_info',
-    items: [
-      { path: '/data', labelKey: 'menu_data', icon: Database },
-      { path: '/memory', labelKey: 'menu_memory', icon: Brain },
-      { path: '/knowledge', labelKey: 'menu_knowledge', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'channels',
-    labelKey: 'nav_channels',
-    items: [{ path: '/channels', labelKey: 'menu_channels', icon: Radio }],
-  },
-  {
-    id: 'system',
-    labelKey: 'nav_system',
-    items: [
-      { path: '/models', labelKey: 'settings_tab_models', icon: Cpu },
-      { path: '/agent-settings', labelKey: 'config_agent', icon: Bot },
-      { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
-      { path: '/security', labelKey: 'menu_security', icon: Shield },
-      { path: '/general', labelKey: 'settings_tab_general', icon: Settings },
-      { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
-    ],
-  },
-]
 
 const GROUP_OPEN_DEFAULT: Record<string, boolean> = Object.fromEntries(
   NAV_GROUPS.map((g) => [g.id, true])

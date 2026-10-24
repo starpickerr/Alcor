@@ -65,3 +65,5 @@ Stella 将信息、执行能力、模型选择与安全授权分开管理。比�
 界面沿用 Stella token、字体与圆角，支持键盘标签切换、目录搜索、局部重试及窄内容区布局。旧插件设置书签 `view=settings&plugin=<id>` 转向详情配置。验证入口：`test_capability_catalog.py`、`ui_capability_details.py`、`ui_capabilities.py` 及数据/Apple/信息架构浏览器脚本。
 
 本轮实现与验证见[统一能力页面验证记录](../capability-details-validation.md)。
+
+功能标签按真实登记的工具、页面、Skill和MCP贡献动态分组，服务契约放在折叠技术信息。工具支持原地展开公开定义及参数，来源由注册元数据决定；MCP标题/schema来自工具发现，插件适配器从已登记类获取定义。页面入口复用侧栏导航绑定，未有宿主导航项的声明页经共享PluginPageHost打开，不复制业务页面。仅声明、失败或停用时不伪造运行可用性；概览不再复制完整工具清单。验证及边界见[功能列表记录](../capability-features-validation.md)。

@@ -31,7 +31,23 @@ class CapabilityCatalog:
     @staticmethod
     def _tools():
         from agent.tools.catalog import tools_payload
-        return tools_payload()['tools']
+        from agent.tools.provenance import plugin_tool_available, tool_source
+        from agent.tools.tool_manager import ToolManager
+        rows = list(tools_payload()['tools'])
+        manager = ToolManager()
+        known = {row['id'] for row in rows}
+        for identifier, definition in manager.tool_classes.copy().items():
+            source = tool_source(identifier)
+            if identifier in known or source['type'] != 'plugin':
+                continue
+            description = clean_copy(getattr(definition, 'description', ''))
+            text = description if isinstance(description, str) else next(iter(description.values()), '')
+            head, separator, _ = text.partition('. ')
+            rows.append(dict(id=identifier, title=clean_copy(getattr(definition, 'title', '')) or (head + '.' if separator else head) or identifier,
+                             intro=description, detail=description, toolDescription=description,
+                             enabled=manager.capability_settings.enabled('tool', identifier), available=plugin_tool_available(identifier),
+                             source=source, **({'inputSchema': definition.params} if isinstance(getattr(definition, 'params', None), dict) else {})))
+        return rows
 
     @staticmethod
     def _mcp():

@@ -109,6 +109,22 @@ def test_declared_tool_without_publication_does_not_claim_runtime_availability(t
     assert feature['available'] is None
 
 
+def test_registered_plugin_adapter_outside_static_catalog_keeps_its_definition(monkeypatch):
+    class Definition:
+        description = 'Search the knowledge base. Long-term memories use a different tool.'
+        params = {'type': 'object', 'properties': {'query': {'type': 'string'}}}
+        def __init__(self):
+            raise AssertionError('Do not instantiate registered definitions')
+    manager = SimpleNamespace(tool_classes={'knowledge_search': Definition}, capability_settings=SimpleNamespace(enabled=lambda *args: True))
+    monkeypatch.setattr('agent.tools.catalog.tools_payload', lambda: {'tools': []})
+    monkeypatch.setattr('agent.tools.tool_manager.ToolManager', lambda: manager)
+    monkeypatch.setattr('agent.tools.provenance.plugin_tool_available', lambda name: True)
+    tool, = CapabilityCatalog._tools()
+    assert tool['id'] == 'knowledge_search' and tool['source']['plugin_ids'] == ['stella.knowledge']
+    assert tool['title'] == 'Search the knowledge base.'
+    assert tool['inputSchema']['properties']['query']['type'] == 'string'
+
+
 def test_real_elearning_server_publishes_four_public_tool_titles_and_parameters(tmp_path):
     from agent.tools.mcp.mcp_client import McpClient
     from core.mcp.managed import PUBLIC_TOOLS
