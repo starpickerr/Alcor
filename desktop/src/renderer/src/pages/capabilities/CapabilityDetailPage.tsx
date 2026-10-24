@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChevronRight, Loader2, Power } from 'lucide-react'
+import { ArrowLeft, Loader2, Power } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import type { CapabilityDetail, CapabilityKind } from '../../api/capabilityTypes'
@@ -8,7 +8,8 @@ import PageHeader from '../../components/PageHeader'
 import { currentSettingsOrigin, type SettingsOrigin } from '../settings/origin'
 import CapabilityConfiguration from './CapabilityConfiguration'
 import CapabilityTabs from './CapabilityTabs'
-import { button, c, copy, detailPath, kindIcon, kindLabel, panel, sourceLabel, stateLabel } from './presentation'
+import CapabilityFeatures from './CapabilityFeatures'
+import { button, c, copy, kindIcon, kindLabel, panel, sourceLabel, stateLabel } from './presentation'
 
 const tabLabel = (id: string) => ({ overview: c('概览', 'Overview'), features: c('功能', 'Features'), configuration: c('配置', 'Configuration'), runtime: c('运行', 'Runtime'), content: c('内容', 'Content') }[id] || id)
 
@@ -100,12 +101,7 @@ export default function CapabilityDetailPage({ baseUrl }: { baseUrl: string }) {
           <section role="tabpanel" id="capability-content" aria-labelledby={`capability-tab-${section}`} tabIndex={0} className={`${panel} min-w-0 p-5 sm:p-7`}>
             {section === 'overview' && <div className="space-y-4"><Markdown content={copy(item.overview) || c('暂无详细介绍。', 'No description is available.')} />{item.reason && <p className="text-sm text-content-secondary">{copy(item.reason)}</p>}</div>}
             {section === 'content' && <Markdown content={item.content || c('暂无内容。', 'No content is available.')} />}
-            {section === 'features' && <div className="space-y-4"><h2 className="text-base font-semibold">{c('提供的能力', 'Provided capabilities')}</h2>
-              {!item.features.length && <p className="text-sm text-content-secondary">{c('暂无已登记的功能。连接或启动后可显示更多信息。', 'No registered features yet. More information may become available after connecting or starting.')}</p>}
-              <div className="divide-y divide-default">{item.features.map((feature, index) => {
-                const content = <><div className="min-w-0 flex-1"><h3 className="break-words text-sm font-medium">{copy(feature.name)}</h3>{copy(feature.description) && <p className="mt-1 break-words text-sm leading-relaxed text-content-secondary">{copy(feature.description)}</p>}</div>{feature.target && <ChevronRight size={17} className="shrink-0 text-content-tertiary" />}</>
-                return feature.target ? <Link key={`${feature.id}-${index}`} className="flex items-center gap-3 py-4 hover:text-accent" to={detailPath(feature.target.kind, feature.target.id)} state={currentSettingsOrigin(location.pathname, location.search)}>{content}</Link> : <div key={`${feature.id}-${index}`} className="flex gap-3 py-4">{content}</div>
-              })}</div></div>}
+            {section === 'features' && <CapabilityFeatures key={`${kind}/${id}`} item={item} />}
             {section === 'runtime' && <div className="space-y-5"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold">{c('运行状态', 'Runtime state')}</h2><button className={`${button} bg-surface-2`} disabled={busy || loading} onClick={() => void load()}>{c('刷新', 'Refresh')}</button></div>
               <dl className="divide-y divide-default">{Object.entries(item.runtime).map(([key, value]) => <div key={key} className="flex min-w-0 flex-wrap justify-between gap-3 py-3 text-sm"><dt className="text-content-secondary">{{ state: c('状态', 'State'), generation: c('运行版本', 'Runtime generation'), transport: c('连接方式', 'Transport'), services: c('服务', 'Services'), toolCount: c('已发现工具', 'Discovered tools') }[key] || key}</dt><dd className="min-w-0 break-all">{key === 'state' ? stateLabel(String(value)) : Array.isArray(value) ? value.join(', ') || '—' : String(value)}</dd></div>)}</dl>
               <Link to="/logs" state={currentSettingsOrigin(location.pathname, location.search)} className="text-sm text-accent">{c('查看日志', 'View logs')}</Link></div>}

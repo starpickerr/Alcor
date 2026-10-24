@@ -188,12 +188,13 @@ def test_managed_mcp_description_is_available_before_connection(catalog, server,
     assert detail['state'] == 'disabled' and detail['features'] == []
 
 
-def test_custom_mcp_overview_uses_discovered_tool_purpose_when_description_is_missing(catalog):
+def test_custom_mcp_keeps_discovered_tool_details_in_features(catalog):
     service, _ = catalog
     service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[
         dict(name='search', description='Search published research documents')])]
     detail = service.detail('mcp', 'docs')
-    assert 'Search published research documents' in detail['overview']['en']
+    assert detail['features'][0]['description'] == 'Search published research documents'
+    assert detail['overview'] == detail['description']
     assert 'search' in detail['description']['zh']
 
 

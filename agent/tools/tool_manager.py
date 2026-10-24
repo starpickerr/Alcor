@@ -729,7 +729,10 @@ class ToolManager:
                 result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
                     **({'description': description} if description else {}),
                     'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
-                        {'name': tool.remote_name, 'description': tool.description}
+                        {'name': tool.remote_name, 'description': tool.description,
+                         **({'title': tool.title} if getattr(tool, 'title', None) else {}),
+                         **({'inputSchema': tool.params} if isinstance(getattr(tool, 'params', None), dict) else {}),
+                         **({'outputSchema': tool.output_schema} if isinstance(getattr(tool, 'output_schema', None), dict) else {})}
                         for tool in tools if tool.server_name == name and state == 'ready'
                     ], key=lambda tool: tool['name'])})
             return result

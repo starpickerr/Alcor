@@ -30,11 +30,16 @@ def backend(route):
                                   auto_enabled=False, links=[], calendars=[], lists=[], conflicts=[])
     elif path in ('/api/calendar/categories', '/api/todos/categories'):
         data['categories'] = []
+    elif path == '/api/todos':
+        data['todos'] = []
+    elif path == '/api/todos/reminders/uncertain':
+        data['reminders'] = []
     elif path == '/api/logs/entries':
         data.update(entries=[], sources={}, next_cursor=None, truncated=False, scanned_bytes=0)
     elif path == '/api/plugins/runtime':
         data['plugins'] = [{'pluginId': 'stella.tasks', 'name': '事务', 'version': '1.0.0',
-                            'firstParty': True, 'intent': 'enabled', 'state': 'ready'}]
+                            'firstParty': True, 'intent': 'enabled', 'state': 'ready',
+                            'manifest': {'contributes': {'pages': ['tasks.main']}}}]
     elif path in ('/api/plugins/settings', '/api/plugins/authorization'):
         data['result'] = []
     elif path == '/config':
@@ -126,7 +131,10 @@ with sync_playwright() as playwright:
         page.goto(test_url + '/#/skills?tab=plugins&view=settings&plugin=stella.tasks', wait_until='networkidle')
         expect(page.get_by_role('link', name='管理插件授权', exact=True)).to_have_count(0)
         expect(page.get_by_role('button', name='权限与授权', exact=True)).to_have_count(0)
-        expect(page.get_by_role('link', name='打开事务页面', exact=True)).to_be_visible()
+        expect(page.get_by_role('link', name='打开事务页面', exact=True)).to_have_count(0)
+        page.get_by_role('tab', name='功能', exact=True).click()
+        page.get_by_role('link', name='打开事务页面', exact=True).click()
+        expect(page).to_have_url(test_url + '/#/todos')
         page.goto(test_url + '/#/general', wait_until='networkidle')
         page.set_viewport_size({'width': 640, 'height': 920})
         expect(page.get_by_role('button', name='检查更新', exact=True)).to_be_visible()
@@ -150,5 +158,8 @@ with sync_playwright() as playwright:
         page.screenshot(path='/tmp/stella-logs-system-nav-narrow.png', full_page=True)
         assert errors == [], errors
         print('PASS: configuration ownership, Agent configuration in System, sidebar groups, legacy redirects, General/About and narrow layout')
+    except Exception:
+        print('Failure diagnostics:', page.url, page.locator('body').inner_text()[-1800:], errors)
+        raise
     finally:
         browser.close()

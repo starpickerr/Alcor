@@ -281,6 +281,8 @@ class McpClient:
                     "name": t.get("name", ""),
                     "description": t.get("description", ""),
                     "inputSchema": t.get("inputSchema", {}),
+                    **({'title': t['title']} if isinstance(t.get('title'), str) else {}),
+                    **({'outputSchema': t['outputSchema']} if isinstance(t.get('outputSchema'), dict) else {}),
                 }
                 for t in tools
             ]

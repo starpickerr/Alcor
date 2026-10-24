@@ -1,4 +1,5 @@
 import CapabilityDetailPage from './pages/capabilities/CapabilityDetailPage'
+import RegisteredPluginPage from './pages/plugins/RegisteredPluginPage'
 import React, { useState, useCallback, useEffect } from 'react'
 import { Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { History, FolderTree } from 'lucide-react'
@@ -256,6 +257,7 @@ const App: React.FC = () => {
             <Route path="/knowledge" element={<PluginContributionPage baseUrl={backend.baseUrl} pluginId="stella.knowledge" pageId="knowledge.main" title="知识"><KnowledgePage baseUrl={backend.baseUrl} /></PluginContributionPage>} />
             <Route path="/memory" element={<PluginContributionPage baseUrl={backend.baseUrl} pluginId="stella.memory" pageId="memory.main" title="记忆"><MemoryPage baseUrl={backend.baseUrl} /></PluginContributionPage>} />
             <Route path="/skills/:kind/:id" element={<CapabilityDetailPage baseUrl={backend.baseUrl} />} />
+            <Route path="/plugins/:pluginId/pages/:pageId" element={<RegisteredPluginPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills/*" element={<Navigate to="/skills" replace />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
