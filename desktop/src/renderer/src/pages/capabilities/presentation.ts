@@ -2,7 +2,11 @@ import { BookOpen, Plug, Puzzle, Wrench } from 'lucide-react'
 import { getLang } from '../../i18n'
 import type { CapabilityCopy, CapabilityKind } from '../../api/capabilityTypes'
 export const c = (zh: string, en: string) => getLang() === 'zh' ? zh : en
-export const copy = (value: CapabilityCopy | null | undefined) => typeof value === 'string' ? value : value?.[getLang() === 'en' ? 'en' : 'zh'] || ''
+export const copy = (value: CapabilityCopy | null | undefined) => {
+  if (typeof value === 'string') return value.trim()
+  const preferred = value?.[getLang() === 'en' ? 'en' : 'zh']
+  return preferred?.trim() || value?.zh?.trim() || value?.en?.trim() || ''
+}
 export const kindLabel = (kind: CapabilityKind) => ({ plugins: c('插件', 'Plugins'), mcp: 'MCP', skills: 'Skill', tools: c('内置工具', 'Built-in tools') })[kind]
 export const kindIcon = { plugins: Puzzle, mcp: Plug, skills: BookOpen, tools: Wrench }
 export const detailPath = (kind: CapabilityKind, id: string, section?: string) => `/skills/${kind}/${encodeURIComponent(id)}${section ? `?section=${section}` : ''}`

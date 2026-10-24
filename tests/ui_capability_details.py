@@ -35,6 +35,7 @@ pending_write = []
 partial_error = [False]
 malformed_plugin = [False]
 missing_plugin = [False]
+english_only = [False]
 settings_requests = []
 preferences = {"revision": 1, "values": {"note": "before"}, "secretFields": ["token"]}
 preference_saves = []
@@ -84,7 +85,7 @@ def backend(route):
             data["detail"] = {
                 **row,
                 "tabs": tabs,
-                "overview": "# 真实说明\n\n安全的 **Markdown** 介绍。",
+                "overview": {"en": "Published MCP documentation"} if english_only[0] else "# 真实说明\n\n安全的 **Markdown** 介绍。",
                 "content": "# 审查步骤\n检查正确性。",
                 "features": [
                     {
@@ -337,6 +338,14 @@ with sync_playwright() as p:
         expect(page.get_by_role("textbox", name="备注", exact=True)).to_have_count(0)
         assert not settings_requests, settings_requests
         missing_plugin[0] = False
+        english_only[0] = True
+        mcp = next(row for row in ROWS if row['kind'] == 'mcp')
+        mcp['description'] = {'zh': '  ', 'en': 'Find published documents'}
+        page.goto(URL + '/#/skills?tab=mcp', wait_until='networkidle')
+        expect(page.get_by_role('link', name='Documents MCP', exact=True)).to_contain_text('Find published documents')
+        page.get_by_role('link', name='Documents MCP', exact=True).click()
+        expect(page.get_by_text('Published MCP documentation', exact=True)).to_be_visible()
+        english_only[0] = False
         page.goto(URL + "/#/skills/tools/not-found", wait_until="networkidle")
         expect(page.get_by_role("alert")).to_contain_text("Capability not found")
         page.get_by_role("link", name="返回原页面", exact=True).click()

@@ -157,3 +157,57 @@ def test_package_selection_change_cannot_read_docs_under_old_metadata(catalog, t
     service.plugin_manager.packages.current_package = lambda name: {'path':str(replacement), 'digest':_sha256_tree(replacement)}
     detail = service.detail('plugins', 'fixture.plugin')
     assert 'DO_NOT_EXPOSE' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('plugin_id,keyword', [
+    ('stella.bills', '收支'), ('stella.calendar', '日程'),
+    ('stella.tasks', '事务'), ('stella.briefing', '简报'),
+    ('stella.automation', '定时'), ('stella.agent-hub', '智能体'),
+    ('stella.knowledge', '知识'), ('stella.memory', '记忆'),
+])
+def test_legacy_first_party_plugins_have_useful_descriptions_without_reinstall(catalog, plugin_id, keyword):
+    service, package = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row['pluginId'] = plugin_id
+    row['manifest'].pop('description', None)
+    service.plugin_manager.inventory = lambda user: [row]
+    (package / 'README.md').unlink()
+    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
+    assert keyword in summary['description']['zh']
+    detail = service.detail('plugins', plugin_id)
+    assert keyword in detail['overview']['zh']
+    assert detail['overview']['en'].strip()
+
+
+@pytest.mark.parametrize('server,keyword', [('email', '邮件'), ('elearning', '课程')])
+def test_managed_mcp_description_is_available_before_connection(catalog, server, keyword):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name=server, transport='stdio', enabled=False, state='disabled', tools=[])]
+    detail = service.detail('mcp', server)
+    assert keyword in detail['overview']['zh']
+    assert detail['state'] == 'disabled' and detail['features'] == []
+
+
+def test_custom_mcp_overview_uses_discovered_tool_purpose_when_description_is_missing(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[
+        dict(name='search', description='Search published research documents')])]
+    detail = service.detail('mcp', 'docs')
+    assert 'Search published research documents' in detail['overview']['en']
+    assert 'search' in detail['description']['zh']
+
+
+def test_empty_or_invalid_localizations_do_not_hide_overview_fallbacks(catalog):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row['manifest']['description'] = {'zh': '  ', 'en': None, 'private': 'DO_NOT_EXPOSE'}
+    service.plugin_manager.inventory = lambda user: [row]
+    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
+    assert summary['description']['zh'].strip()
+    assert 'DO_NOT_EXPOSE' not in json.dumps(summary)
+
+
+def test_whitespace_readme_does_not_hide_the_plugin_description(catalog):
+    service, package = catalog
+    (package / 'README.md').write_text(' \n\t ')
+    assert service.detail('plugins', 'fixture.plugin')['overview'] == 'Plugin description'
