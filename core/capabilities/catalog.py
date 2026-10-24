@@ -1,7 +1,8 @@
 """Normalize existing registries; inventory never starts an extension or tool."""
 from pathlib import Path
 
-from core.capabilities.descriptions import clean_copy, description_for, text_for
+from core.capabilities.descriptions import clean_copy, description_for
+from core.capabilities.features import mcp_features, plugin_features
 
 KINDS = ('plugins', 'mcp', 'skills', 'tools')
 DOCUMENT_LIMIT = 262_144
@@ -109,12 +110,8 @@ class CapabilityCatalog:
         elif kind == 'mcp':
             configurable = identifier in {'email', 'elearning'} and row.get('settings_url') == '/' + identifier
             detail['tabs'] = ['overview', 'features'] + (['configuration'] if configurable else []) + ['runtime']
-            detail['features'] = [dict(id=tool['name'], name=tool['name'], description=tool.get('description', '')) for tool in row.get('tools', [])]
+            detail['features'] = mcp_features(row)
             detail['runtime'] = dict(transport=row['transport'], state=row['state'], toolCount=len(detail['features']))
-            if not clean_copy(row.get('description')) and detail['features']:
-                detail['overview'] = {lang: text_for(detail['description'], lang) + '\n\n' + '\n\n'.join(
-                    f"{tool['name']}: {text_for(tool['description'], lang)}" for tool in detail['features'])
-                    for lang in ('zh', 'en')}
         else:
             detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
             detail['runtime'] = dict(state=detail['state'], generation=row.get('generation', 0), services=row.get('services', []))
@@ -127,21 +124,9 @@ class CapabilityCatalog:
                             detail['overview'] = _document(current['path']) or detail['description']
                     except OSError:
                         pass
-            # Contract contributions are metadata, not a reason to start workers.
-            contributions = row.get('manifest', {}).get('contributes', {})
-            for category in ('tools', 'skills', 'services', 'pages'):
-                for item in contributions.get(category, []):
-                    name = item if isinstance(item, str) else item.get('id') or item.get('name')
-                    if name:
-                        detail['features'].append(dict(id=name, name=name,
-                            description=item.get('description', '') if isinstance(item, dict) else '', type=category))
             try:
-                for tool in self.tool_rows():
-                    if identifier in tool.get('source', {}).get('plugin_ids', []):
-                        feature = dict(id=tool['id'], name=tool['title'], description=tool['intro'],
-                                       type='tools', target=dict(kind='tools', id=tool['id']))
-                        detail['features'] = [item for item in detail['features'] if item['id'] != tool['id']]
-                        detail['features'].append(feature)
+                adapters = self.tool_rows()
             except Exception:
-                pass  # Registered manifest contributions remain visible.
+                adapters = []  # A broken adapter catalog must not hide declared pages.
+            detail['features'] = plugin_features(row, adapters)
         return detail

@@ -20,6 +20,8 @@ class McpTool(BaseTool):
         self.client = client
         self.server_name = server_name
         self.remote_name = tool_schema["name"]
+        self.title = tool_schema.get('title')
+        self.output_schema = tool_schema.get('outputSchema')
         slug = re.sub(r"[^A-Za-z0-9_-]", "_", self.remote_name)[:55].strip("_") or "tool"
         digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
         tool_digest = hashlib.sha256(self.remote_name.encode()).hexdigest()[:8]

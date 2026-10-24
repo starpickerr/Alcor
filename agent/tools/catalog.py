@@ -153,7 +153,7 @@ CATALOG = [
 ]
 
 
-def build_catalog(loaded_ids, settings=None):
+def build_catalog(loaded_ids, settings=None, *, definitions=None):
     """Return the public catalog. ``loaded_ids`` are tools the process can construct."""
     loaded = set(loaded_ids)
     if settings is None:
@@ -169,6 +169,13 @@ def build_catalog(loaded_ids, settings=None):
             "enabled": settings.enabled('tool', item['id']),
             "source": tool_source(item['id']),
         }
+        definition = (definitions or {}).get(item['id'])
+        schema = getattr(definition, 'params', None)
+        description = getattr(definition, 'description', None)
+        if isinstance(schema, dict):
+            row['inputSchema'] = schema
+        if isinstance(description, str):
+            row['toolDescription'] = description
         if item["id"] in MEMORY_IDS:
             row["available"] = False
             row["reason"] = dict(MEMORY_REASON)
@@ -188,4 +195,5 @@ def tools_payload():
 
     manager = ToolManager()
     manager.load_tools(load_mcp=False)
-    return {"status": "success", "tools": build_catalog(set(manager.tool_classes), manager.capability_settings)}
+    return {"status": "success", "tools": build_catalog(set(manager.tool_classes), manager.capability_settings,
+                                                       definitions=manager.tool_classes)}
