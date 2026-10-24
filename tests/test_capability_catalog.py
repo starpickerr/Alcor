@@ -53,7 +53,7 @@ def test_plugin_readme_and_features_use_registered_package_without_running_it(ca
     service, _ = catalog
     detail = service.detail('plugins', 'fixture.plugin')
     assert detail['overview'].startswith('# Fixture plugin')
-    assert detail['state'] == 'stopped' and detail['runtime']['generation'] == 0
+    assert detail['state'] == 'stopped' and detail['technical']['generation'] == 0
     assert detail['tabs'] == ['overview', 'features', 'configuration', 'runtime']
     assert any(item['id'] == 'fixture.tool' for item in detail['features'])
 
@@ -62,7 +62,8 @@ def test_skill_content_and_mcp_runtime_are_real_metadata(catalog):
     service, _ = catalog
     assert service.detail('skills', 'review')['content'] == '# Review\nCheck changes.'
     mcp = service.detail('mcp', 'docs')
-    assert mcp['runtime'] == {'transport': 'stdio', 'state': 'not_started', 'toolCount': 0}
+    assert mcp['runtime'] == {'state': 'not_started'}
+    assert mcp['technical'] == {'transport': 'stdio'}
     assert 'DO_NOT_EXPOSE' not in json.dumps(mcp)
     assert not mcp['features']
 
@@ -212,3 +213,31 @@ def test_whitespace_readme_does_not_hide_the_plugin_description(catalog):
     service, package = catalog
     (package / 'README.md').write_text(' \n\t ')
     assert service.detail('plugins', 'fixture.plugin')['overview'] == 'Plugin description'
+
+
+def test_plugin_runtime_separates_registration_and_redacts_real_diagnostics(catalog):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row.update(state='failed', generation=7, services=['fixture.service@1'],
+               error='Load failed: token=private-test-secret')
+    service.plugin_manager.inventory = lambda user: [row]
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert detail['technical'] == {'generation': 7, 'services': ['fixture.service@1']}
+    assert detail['runtime'] == {'state': 'failed', 'error': 'Load failed: token=[REDACTED]'}
+    assert 'private-test-secret' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('state,error,has_runtime', [('', None, False), ('stopped', None, True), ('', 'Load failed', True)])
+def test_runtime_tab_requires_observable_state_or_diagnostics(catalog, state, error, has_runtime):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row.update(state=state, error=error)
+    service.plugin_manager.inventory = lambda user: [row]
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert ('runtime' in detail['tabs']) is has_runtime
+
+
+def test_mcp_without_connection_state_has_no_empty_runtime_tab(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='', tools=[])]
+    assert service.detail('mcp', 'docs')['tabs'] == ['overview', 'features']

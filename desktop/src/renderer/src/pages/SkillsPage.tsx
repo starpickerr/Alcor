@@ -8,7 +8,7 @@ import PageHeader from '../components/PageHeader'
 import { currentSettingsOrigin } from './settings/origin'
 import CapabilityTabs from './capabilities/CapabilityTabs'
 import AddCapability from './capabilities/AddCapability'
-import { button, c, copy, detailPath, kindIcon, kindLabel, panel, stateLabel } from './capabilities/presentation'
+import { button, c, copy, detailPath, kindIcon, kindLabel, panel, capabilityStatusLabel } from './capabilities/presentation'
 
 export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
   const location = useLocation()
@@ -79,7 +79,7 @@ export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
                 className="capability-row group flex min-w-0 items-center gap-4 px-5 py-5 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:gap-5 sm:px-6 sm:py-6">
                 <span className="capability-row-icon flex size-12 shrink-0 items-center justify-center rounded-card bg-surface-2 text-content-secondary group-hover:text-accent"><Icon size={23} /></span>
                 <div className="min-w-0 flex-1 space-y-1"><h2 className="break-words text-base font-semibold text-content">{copy(item.name)}</h2>
-                  <p className="text-xs text-content-secondary">{kindLabel(item.kind)} · {item.kind === 'plugins' && item.enabled && item.state === 'stopped' ? c('已启用 · 已停止', 'Enabled · Stopped') : stateLabel(item.state)}</p>
+                  <p className="text-xs text-content-secondary">{kindLabel(item.kind)} · {capabilityStatusLabel(item)}</p>
                   <p className="break-words text-sm leading-relaxed text-content-secondary">{copy(item.description)}</p></div>
                 <ChevronRight size={19} aria-hidden="true" className="capability-row-chevron shrink-0 text-content-tertiary group-hover:text-accent" />
               </Link>

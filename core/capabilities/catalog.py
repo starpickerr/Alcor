@@ -127,10 +127,15 @@ class CapabilityCatalog:
             configurable = identifier in {'email', 'elearning'} and row.get('settings_url') == '/' + identifier
             detail['tabs'] = ['overview', 'features'] + (['configuration'] if configurable else []) + ['runtime']
             detail['features'] = mcp_features(row)
-            detail['runtime'] = dict(transport=row['transport'], state=row['state'], toolCount=len(detail['features']))
+            detail['technical'] = dict(transport=row['transport'])
+            detail['runtime'] = dict(state=row['state'])
         else:
             detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
-            detail['runtime'] = dict(state=detail['state'], generation=row.get('generation', 0), services=row.get('services', []))
+            detail['technical'] = dict(generation=row.get('generation', 0), services=row.get('services', []))
+            detail['runtime'] = dict(state=row['state'])
+            if row.get('error'):
+                from core.log_redaction import redact
+                detail['runtime']['error'] = redact(row['error'])[:12000]
             if row.get('digest'):
                 current = self.plugin_manager.packages.current_package(identifier)
                 if current:
@@ -145,4 +150,6 @@ class CapabilityCatalog:
             except Exception:
                 adapters = []  # A broken adapter catalog must not hide declared pages.
             detail['features'] = plugin_features(row, adapters)
+        if 'runtime' in detail['tabs'] and not any(detail['runtime'].get(key) for key in ('state', 'error')):
+            detail['tabs'].remove('runtime')
         return detail

@@ -201,6 +201,31 @@ with sync_playwright() as p:
             ["全部", "插件", "MCP", "Skill", "内置工具"]
         )
         expect(page.get_by_role("link", name="读取文件", exact=True)).to_be_visible()
+        # Enabled intent is independent of lazy plugin registration and MCP readiness.
+        for kind, name, cases in [
+            ('plugins', '日历插件', [
+                (True, 'stopped', '已启用'), (True, 'active', '已启用'),
+                (True, 'starting', '已启用'), (True, 'failed', '运行异常'),
+                (True, 'degraded', '运行异常'), (True, 'blocked', '暂不可用'),
+                (True, 'maintenance', '维护中'), (False, 'failed', '已停用'),
+            ]),
+            ('mcp', 'Documents MCP', [
+                (True, 'ready', '已启用'), (True, 'not_started', '待连接'),
+                (True, 'pending', '连接中'), (True, 'needs_auth', '需要授权'),
+                (True, 'failed', '运行异常'), (False, 'ready', '已停用'),
+            ]),
+        ]:
+            row = next(row for row in ROWS if row['kind'] == kind)
+            original = row.copy()
+            for enabled, runtime, label in cases:
+                row.update(enabled=enabled, state=runtime)
+                page.reload(wait_until='networkidle')
+                card = page.get_by_role('link', name=name, exact=True)
+                expect(card.locator('p').first).to_have_text(('插件' if kind == 'plugins' else 'MCP') + ' · ' + label)
+                expect(card).not_to_contain_text('已停止')
+                expect(card).not_to_contain_text('运行中')
+            row.update(original)
+        page.reload(wait_until='networkidle')
         page.get_by_role("button", name="搜索能力", exact=True).click()
         page.get_by_role("searchbox", name="搜索能力", exact=True).fill("代码")
         expect(page.get_by_role("link", name="Code Review", exact=True)).to_be_visible()
