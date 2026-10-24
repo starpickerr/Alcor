@@ -1,6 +1,8 @@
 """Normalize existing registries; inventory never starts an extension or tool."""
 from pathlib import Path
 
+from core.capabilities.descriptions import clean_copy, description_for, text_for
+
 KINDS = ('plugins', 'mcp', 'skills', 'tools')
 DOCUMENT_LIMIT = 262_144
 
@@ -12,7 +14,7 @@ def _document(root):
         if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
             continue
         with path.open('rb') as stream:
-            return stream.read(DOCUMENT_LIMIT).decode('utf-8', errors='replace')
+            return stream.read(DOCUMENT_LIMIT).decode('utf-8', errors='replace').strip()
     return ''
 
 
@@ -58,21 +60,21 @@ class CapabilityCatalog:
 
     @staticmethod
     def _summary(kind, row):
+        description = description_for(kind, row)
         if kind == 'plugins':
             return dict(kind=kind, id=row['pluginId'], name=row['name'],
-                        description=row.get('manifest', {}).get('description', ''),
+                        description=description,
                         enabled=row['intent'] == 'enabled', state=row['state'] if row['intent'] == 'enabled' else row['intent'],
                         source='installed', version=row.get('version'))
         if kind == 'tools':
-            return dict(kind=kind, id=row['id'], name=row['title'], description=row['intro'],
+            return dict(kind=kind, id=row['id'], name=row['title'], description=description,
                         enabled=row['enabled'], state=('available' if row['available'] else 'unavailable') if row['enabled'] else 'disabled',
                         source=row.get('source', {}).get('type', 'builtin'), version=None)
         if kind == 'mcp':
-            return dict(kind=kind, id=row['name'], name=row['name'], description=row.get('description') or
-                        {'zh': '通过 MCP 连接提供工具与服务。', 'en': 'Tools and services from an MCP connection.'},
+            return dict(kind=kind, id=row['name'], name=row['name'], description=description,
                         enabled=row['enabled'], state=row['state'], source=row['transport'], version=None)
         return dict(kind=kind, id=row['name'], name=row.get('display_name') or row['name'],
-                    description=row.get('description', ''), enabled=row['enabled'],
+                    description=description, enabled=row['enabled'],
                     state='enabled' if row['enabled'] else 'disabled', source=row.get('source', 'custom'), version=None)
 
     def list(self):
@@ -99,7 +101,7 @@ class CapabilityCatalog:
         detail = {**self._summary(kind, row), 'tabs': ['overview'], 'overview': '', 'features': [], 'runtime': {}}
         detail['overview'] = detail['description']
         if kind == 'tools':
-            detail['overview'] = row.get('detail') or detail['description']
+            detail['overview'] = clean_copy(row.get('detail')) or detail['description']
             detail['reason'] = row.get('reason')
         elif kind == 'skills':
             entry = self.skill_manager.get_skill(identifier)
@@ -109,6 +111,10 @@ class CapabilityCatalog:
             detail['tabs'] = ['overview', 'features'] + (['configuration'] if configurable else []) + ['runtime']
             detail['features'] = [dict(id=tool['name'], name=tool['name'], description=tool.get('description', '')) for tool in row.get('tools', [])]
             detail['runtime'] = dict(transport=row['transport'], state=row['state'], toolCount=len(detail['features']))
+            if not clean_copy(row.get('description')) and detail['features']:
+                detail['overview'] = {lang: text_for(detail['description'], lang) + '\n\n' + '\n\n'.join(
+                    f"{tool['name']}: {text_for(tool['description'], lang)}" for tool in detail['features'])
+                    for lang in ('zh', 'en')}
         else:
             detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
             detail['runtime'] = dict(state=detail['state'], generation=row.get('generation', 0), services=row.get('services', []))

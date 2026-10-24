@@ -714,6 +714,7 @@ class ToolManager:
 
     def mcp_catalog(self):
         """Inventory reads never connect servers or expose connection secrets."""
+        from core.capabilities.descriptions import clean_copy
         with self._mcp_lock:
             configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
             configs = {**self._mcp_active_configs, **configs}
@@ -724,7 +725,9 @@ class ToolManager:
                 config = configs.get(name, {'name': name})
                 enabled = self._mcp_enabled(config)
                 state = statuses.get(name, 'not_started') if enabled else 'disabled'
+                description = clean_copy(config.get('description'))
                 result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
+                    **({'description': description} if description else {}),
                     'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
                         {'name': tool.remote_name, 'description': tool.description}
                         for tool in tools if tool.server_name == name and state == 'ready'

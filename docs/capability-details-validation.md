@@ -44,3 +44,9 @@ npm --prefix desktop run typecheck
 npm --prefix desktop run lint
 npm --prefix desktop run build
 ```
+
+## 概述缺失修复（2026-10-24）
+
+根因是8个第一方插件的已发布包缺少manifest简介和README，MCP目录未传递配置中的description，以及前端仅读取当前语言。现在包内有效README与作者说明优先，Core为旧版第一方插件及默认邮件/eLearning MCP补充中英文用途介绍；自定义MCP可显示配置简介或已发现工具的说明；资料不足时明确提示缺失。空白README和空白本地化不再遮挡可用说明，非本地化额外字段不进入返回数据。此变更只影响展示，不改变包摘要、权限或启动状态，不要求重新安装插件。
+
+实际失败→通过：13项后端缺失/传递用例、1项空白README用例；浏览器先复现中文界面隐藏英文简介，修复后列表与详情均可读取。最终受影响Python回归117 passed /2 warnings（既有audioop/ffmpeg警告），完整18组UI、desktop typecheck/ESLint、Ruff和diff检查通过。Python范围为目录、MCP目录、工具目录、启停、默认MCP域与域路由；没有重复执行全量Core或构建，原有结果不作为本次代码的新增验证声明。沿用独立审查额度限制，以作者检查及上述回归提供证据。

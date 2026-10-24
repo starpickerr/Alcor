@@ -77,3 +77,22 @@ def test_mcp_http_handler_checks_auth_before_reading_catalog(monkeypatch):
     monkeypatch.setattr(desktop_channel, '_require_auth', deny)
     with pytest.raises(PermissionError, match='Authentication required'):
         desktop_channel.McpCatalogHandler().GET()
+
+
+def test_configured_mcp_description_survives_inventory_without_exposing_config(monkeypatch):
+    from core.capabilities.catalog import CapabilityCatalog
+    manager = object.__new__(ToolManager)
+    manager.__init__()
+    manager._mcp_active_configs = {}
+    manager._mcp_status = {}
+    manager._mcp_tool_instances = {}
+    monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [
+        {'name': 'docs', 'type': 'stdio', 'description': {'en': 'Search library documents', 'zh': ' ', 'secret': 'DO_NOT_EXPOSE'},
+         'env': {'TOKEN': 'DO_NOT_EXPOSE'}, 'args': ['DO_NOT_EXPOSE']},
+        {'name': 'broken', 'description': ['DO_NOT_EXPOSE']},
+    ])
+    rows = manager.mcp_catalog()
+    service = CapabilityCatalog('.', mcp_rows=lambda: rows)
+    detail = service.detail('mcp', 'docs')
+    assert detail['overview']['en'] == 'Search library documents'
+    assert 'DO_NOT_EXPOSE' not in json.dumps(rows)
