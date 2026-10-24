@@ -26,8 +26,10 @@ def plugin_features(row, adapters):
             identifier = item.get('id') or item.get('name')
             if not identifier:
                 continue
-            name = clean_copy(item.get('title')) or clean_copy(item.get('name')) or identifier
-            feature = dict(id=identifier, name=name, description=clean_copy(item.get('description')),
+            previous = features.get((category, identifier), {})
+            name = clean_copy(item.get('title')) or clean_copy(item.get('name')) or previous.get('name') or identifier
+            feature = dict(previous, id=identifier, name=name,
+                           description=clean_copy(item.get('description')) or previous.get('description', ''),
                            type=category, source='plugin', available=available, **_schemas(item))
             if category == 'tools' and available:
                 published_ids = [entry if isinstance(entry, str) else entry.get('id') or entry.get('name')
@@ -42,8 +44,10 @@ def plugin_features(row, adapters):
         source = tool.get('source', {})
         if source.get('type') != 'plugin' or row['pluginId'] not in source.get('plugin_ids', []):
             continue
-        features[('tools', tool['id'])] = dict(
-            id=tool['id'], type='tools', source='plugin', name=tool['title'], description=tool['intro'],
-            detailDescription=clean_copy(tool.get('toolDescription')) or clean_copy(tool.get('detail')) or tool['intro'],
+        previous = features.get(('tools', tool['id']), {})
+        features[('tools', tool['id'])] = dict(previous,
+            id=tool['id'], type='tools', source='plugin', name=clean_copy(tool.get('title')) or previous.get('name') or tool['id'],
+            description=clean_copy(tool.get('intro')) or previous.get('description', ''),
+            detailDescription=clean_copy(tool.get('toolDescription')) or clean_copy(tool.get('detail')) or previous.get('detailDescription') or clean_copy(tool.get('intro')) or previous.get('description', ''),
             available=available and tool.get('enabled', False) and tool.get('available', False), **_schemas(tool))
     return list(features.values())

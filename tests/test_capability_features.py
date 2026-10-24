@@ -45,6 +45,22 @@ def test_published_labels_override_declarations_and_unrelated_tools_stay_out(tmp
     assert len(features) == 2 and all(item['source'] == 'plugin' for item in features)
 
 
+@pytest.mark.parametrize('with_adapter', [False, True])
+def test_id_only_publication_preserves_declared_metadata_and_adapter_keeps_schemas(tmp_path, with_adapter):
+    declaration = {'id': 'lookup', 'title': '查找文档', 'description': '按关键词检索文档',
+                   'inputSchema': {'type': 'object', 'properties': {'query': {'type': 'string'}}},
+                   'outputSchema': {'type': 'object', 'properties': {'results': {'type': 'array'}}}}
+    adapters = [dict(id='lookup', title='查询资料', intro='通过适配工具查询资料', enabled=True, available=True,
+                     source={'type': 'plugin', 'plugin_ids': ['fixture.provider']})] if with_adapter else []
+    service, _ = plugin_catalog(tmp_path, {'tools': [declaration]}, published={'tools': ['lookup']}, tools=adapters)
+    feature, = service.detail('plugins', 'fixture.provider')['features']
+    assert feature['name'] == ('查询资料' if with_adapter else '查找文档')
+    assert feature['description'] == ('通过适配工具查询资料' if with_adapter else '按关键词检索文档')
+    assert feature['inputSchema']['properties']['query']['type'] == 'string'
+    assert feature['outputSchema']['properties']['results']['type'] == 'array'
+    assert feature['available'] is True
+
+
 @pytest.mark.parametrize('contributes,expected', [({'pages': ['one']}, ['pages']), ({'tools': ['one']}, ['tools']), ({}, [])])
 def test_single_kind_empty_and_disabled_plugin_do_not_invent_other_features(tmp_path, contributes, expected):
     service, _ = plugin_catalog(tmp_path, contributes, enabled=False)
