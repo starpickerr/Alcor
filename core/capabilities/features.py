@@ -1,5 +1,6 @@
 """Read-only projection of declarations, published contributions, and adapters."""
 from core.capabilities.descriptions import clean_copy
+from core.capabilities.tool_copy import user_tool_copy
 
 
 def _schemas(source):
@@ -11,7 +12,8 @@ def mcp_features(row):
         return []
     return [dict(id=tool['name'], type='tools', source='mcp', available=True,
                  name=clean_copy(tool.get('title')) or tool['name'],
-                 description=clean_copy(tool.get('description')), **_schemas(tool))
+                 description=clean_copy(tool.get('description')), **_schemas(tool),
+                 **user_tool_copy(tool.get('description')))
             for tool in row.get('tools', [])]
 
 
@@ -50,4 +52,9 @@ def plugin_features(row, adapters):
             description=clean_copy(tool.get('intro')) or previous.get('description', ''),
             detailDescription=clean_copy(tool.get('toolDescription')) or clean_copy(tool.get('detail')) or previous.get('detailDescription') or clean_copy(tool.get('intro')) or previous.get('description', ''),
             available=available and tool.get('enabled', False) and tool.get('available', False), **_schemas(tool))
+        features[('tools', tool['id'])].update(user_tool_copy(
+            features[('tools', tool['id'])]['description'], tool.get('detail'), tool.get('toolDescription')))
+    for feature in features.values():
+        if feature['type'] == 'tools' and 'userSummary' not in feature:
+            feature.update(user_tool_copy(feature['description'], feature.get('detailDescription')))
     return list(features.values())

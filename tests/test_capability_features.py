@@ -156,3 +156,31 @@ def test_real_elearning_server_publishes_four_public_tool_titles_and_parameters(
         assert all(isinstance(row['inputSchema'].get('properties'), dict) for row in rows)
     finally:
         client.shutdown()
+
+
+def test_user_tool_copy_prefers_catalog_prose_and_preserves_raw_definition(tmp_path):
+    raw = "操作 action='add', amount=32.5。"
+    tools = [dict(id='ledger', title='管理收支', intro={'zh': '查询和记录收支。', 'en': 'Track income and expenses.'},
+                  detail={'zh': '查看每月支出。你可以说：帮我看看这个月花了多少钱。', 'en': 'Review monthly spending.'},
+                  toolDescription=raw, inputSchema={'type': 'object'}, enabled=True, available=True,
+                  source={'type': 'plugin', 'plugin_ids': ['fixture.provider']})]
+    service, _ = plugin_catalog(tmp_path, {}, tools=tools)
+    feature, = service.detail('plugins', 'fixture.provider')['features']
+    assert feature['userSummary']['zh'] == '查询和记录收支。'
+    assert feature['userDetails']['zh'] == '查看每月支出。\n你可以说：帮我看看这个月花了多少钱。'
+    assert feature['userSummary']['en'] == 'Track income and expenses.'
+    assert feature['detailDescription'] == raw
+    assert feature['inputSchema'] == {'type': 'object'}
+
+
+def test_mcp_user_copy_omits_code_and_only_expands_for_additional_prose(tmp_path):
+    catalog = CapabilityCatalog(tmp_path, mcp_rows=lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[
+        dict(name='lookup', description='查找文档。\n支持按主题寻找相关资料。\n```python\nlookup(query="test")\n```\n参数 query: string', inputSchema={'type': 'object'}),
+        dict(name='short', description='列出文档。'),
+        dict(name='code', description='action="list"\n{"type": "object"}')])])
+    lookup, short, code = catalog.detail('mcp', 'docs')['features']
+    assert lookup['userSummary']['zh'] == '查找文档。'
+    assert lookup['userDetails']['zh'] == '支持按主题寻找相关资料。'
+    assert short['userDetails'] == {}
+    assert code['userSummary'] == {} and code['userDetails'] == {}
+    assert 'lookup(query=' in lookup['description']

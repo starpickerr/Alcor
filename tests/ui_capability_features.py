@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
 
     mcps = [dict(name='elearning', transport='stdio', enabled=True, state='ready', tools=discovered, settings_url='/elearning', description='课程服务介绍。'),
             dict(name='legacy', transport='stdio', enabled=True, state='ready', tools=[
-                dict(name='search_documents', description='Search published documents', inputSchema={'type': 'object'}),
+                dict(name='search_documents', description='Search published documents. Find papers about a topic. You can say: Find papers about climate change.\nlookup(query="climate")', inputSchema={'type': 'object'}),
                 dict(name='Search', title='Search', description='Search another collection', inputSchema={'type': 'object'})]),
             dict(name='offline', transport='stdio', enabled=True, state='failed', tools=[])]
     catalog = CapabilityCatalog(state, plugin_manager=SimpleNamespace(inventory=inventory), tool_rows=lambda: tool_rows, mcp_rows=lambda: mcps)
@@ -107,26 +107,64 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
             expect(panel.get_by_text('获取课程数据', exact=True)).to_be_visible()
             expect(panel.get_by_text('内置工具', exact=True)).to_have_count(0)
             expect(panel.get_by_role('button', name='停用', exact=True)).to_have_count(0)
-            panel.get_by_text('获取课程数据', exact=True).click()
-            tool = panel.locator('details[data-feature-id="fetch"]')
-            expect(tool.get_by_label('输入参数 JSON')).to_contain_text('course_ids')
-            expect(tool.get_by_text('fetch', exact=True)).to_be_visible()
-            tool.locator('summary').focus()
-            page.keyboard.press('Enter')
-            expect(tool).not_to_have_attribute('open', '')
+            tool = panel.locator('[data-feature-id="fetch"]')
+            expect(tool.locator('pre')).to_have_count(0)
+            expect(panel.get_by_label('输入参数 JSON')).to_have_count(0)
+            panel.get_by_text('技术信息', exact=True).click()
+            technical_tool = panel.locator('[data-technical-tool-id="fetch"]')
+            expect(technical_tool.get_by_label('输入参数 JSON')).to_contain_text('course_ids')
+            expect(technical_tool.get_by_text('fetch', exact=True)).to_be_visible()
+            panel.get_by_text('技术信息', exact=True).click()
             page.screenshot(path='/tmp/stella-features-elearning.png', full_page=True)
             page.get_by_role('tab', name='概览', exact=True).click()
             expect(page.get_by_role('tabpanel')).to_contain_text('课程服务介绍。')
             expect(page.get_by_role('tabpanel').locator('[data-feature-group]')).to_have_count(0)
             page.get_by_role('tab', name='运行', exact=True).click()
             expect(page.get_by_role('link', name='查看日志', exact=True)).to_be_visible()
+            expect(panel.get_by_text('已连接', exact=True)).to_be_visible()
+            expect(panel.locator('details')).to_have_count(0)
+            expect(panel.get_by_text('stdio', exact=True)).to_have_count(0)
+            # Read lifecycle/connection changes from the same production projection.
+            for state, label in [('not_started', '尚未连接'), ('pending', '连接中'), ('failed', '故障'), ('disabled', '已停用')]:
+                mcps[0]['state'] = state
+                page.get_by_role('button', name='刷新', exact=True).click()
+                expect(panel.get_by_text(label, exact=True)).to_be_visible()
+            mcps[0]['state'] = 'ready'
+            for state, label in [('active', '已加载'), ('stopped', '未加载')]:
+                providers[-1]['state'] = state
+                page.goto(URL + '/#/skills/plugins/example.empty?section=runtime', wait_until='networkidle')
+                page.reload(wait_until='networkidle')
+                expect(panel.get_by_text(label, exact=True)).to_be_visible()
+                expect(panel.get_by_text('运行中', exact=True)).to_have_count(0)
+            providers[-1].update(state='', error='Load failed: token=private-ui-secret')
+            page.reload(wait_until='networkidle')
+            expect(panel.get_by_role('alert')).to_contain_text('token=[REDACTED]')
+            expect(panel.get_by_text('加载状态', exact=True)).to_have_count(0)
+            expect(panel).not_to_contain_text('private-ui-secret')
+            providers[-1]['error'] = None
+            page.reload(wait_until='networkidle')
+            expect(page.get_by_role('tab', name='运行', exact=True)).to_have_count(0)
+            expect(page.get_by_role('tab', name='概览', exact=True)).to_have_attribute('aria-selected', 'true')
+            providers[-1]['state'] = 'stopped'
+            mcps[0]['state'] = ''
+            page.goto(URL + '/#/skills/mcp/elearning?section=features', wait_until='networkidle')
+            expect(page.get_by_role('tab', name='运行', exact=True)).to_have_count(0)
+            expect(panel.get_by_role('button', name='运行', exact=True)).to_have_count(0)
+            expect(panel).to_contain_text('尚未发现工具')
+            mcps[0]['state'] = 'ready'
             page.goto(URL + '/#/skills/mcp/legacy?section=features', wait_until='networkidle')
             for tool_name in ('search_documents', 'Search'):
-                legacy_tool = panel.locator(f'details[data-feature-id="{tool_name}"]')
+                legacy_tool = panel.locator(f'[data-feature-id="{tool_name}"]')
                 expect(legacy_tool.get_by_role('heading', name=tool_name, exact=True)).to_be_visible()
-                legacy_tool.locator('summary').click()
-                expect(legacy_tool.get_by_text(tool_name, exact=True)).to_have_count(2)
-                expect(legacy_tool.get_by_label('输入参数 JSON')).to_contain_text('object')
+                if tool_name == 'Search':
+                    expect(legacy_tool.locator('summary')).to_have_count(0)
+                else:
+                    legacy_tool.locator('summary').click()
+                    expect(legacy_tool).to_contain_text('You can say: Find papers about climate change.')
+                    expect(legacy_tool).not_to_contain_text('lookup(query=')
+                    expect(legacy_tool.locator('pre')).to_have_count(0)
+            panel.get_by_text('技术信息', exact=True).click()
+            expect(panel.locator('[data-technical-tool-id="search_documents"]').get_by_label('输入参数 JSON')).to_contain_text('object')
             page.goto(URL + '/#/skills/plugins/stella.bills?section=features', wait_until='networkidle')
             expect(panel.locator('[data-feature-group]')).to_have_count(2)
             expect(panel.get_by_role('heading', name='页面入口', exact=True)).to_be_visible()
@@ -134,10 +172,31 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
             expect(panel.get_by_text('stella.bills@1', exact=True)).not_to_be_visible()
             page.screenshot(path='/tmp/stella-features-bills-summary.png', full_page=True)
             panel.get_by_text('管理账单', exact=True).click()
-            expect(panel.get_by_label('输入参数 JSON')).to_contain_text('amount')
+            user_tool = panel.locator('[data-feature-id="bills"]')
+            expect(user_tool).not_to_contain_text("action=")
+            expect(user_tool.locator('pre')).to_have_count(0)
+            expect(panel.get_by_label('输入参数 JSON')).to_have_count(0)
+            expect(user_tool).to_contain_text('账单')
+            user_tool.locator('summary').focus()
+            page.keyboard.press('Enter')
+            expect(user_tool).not_to_have_attribute('open', '')
             panel.get_by_text('技术信息', exact=True).click()
+            expect(panel.get_by_label('输入参数 JSON')).to_contain_text('amount')
+            expect(panel.locator('[data-technical-tool-id="bills"]')).to_contain_text("action=")
             expect(panel.get_by_text('stella.bills@1', exact=True)).to_be_visible()
+            expect(panel.get_by_text('注册代次', exact=True)).to_be_visible()
+            expect(panel.get_by_text('0', exact=True)).to_be_visible()
             page.screenshot(path='/tmp/stella-features-bills.png', full_page=True)
+            page.get_by_role('tab', name='运行', exact=True).click()
+            expect(panel.get_by_text('未加载', exact=True)).to_be_visible()
+            expect(panel.locator('details')).to_have_count(0)
+            expect(panel.get_by_text('stella.bills@1', exact=True)).to_have_count(0)
+            expect(panel.get_by_text('1.0.0', exact=True)).to_have_count(0)
+            expect(panel.get_by_label('输入参数 JSON')).to_have_count(0)
+            page.get_by_role('tab', name='配置', exact=True).click()
+            expect(panel.get_by_text('stella.bills', exact=True)).to_have_count(0)
+            expect(panel.get_by_text('1.0.0', exact=True)).to_have_count(0)
+            page.get_by_role('tab', name='功能', exact=True).click()
             page.get_by_role('link', name='打开账单页面', exact=True).click()
             expect(page).to_have_url(URL + '/#/bills')
             page.goto(URL + '/#/skills/plugins/example.viewer?section=features', wait_until='networkidle')
@@ -184,9 +243,9 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 if width == 390:
                     panel.get_by_text('管理账单', exact=True).click()
-                    schema = panel.get_by_label('输入参数 JSON')
-                    expect(schema).to_contain_text('amount')
-                    assert schema.evaluate('(el) => el.scrollHeight > el.clientHeight')
+                    user_tool = panel.locator('[data-feature-id="bills"]')
+                    expect(user_tool.locator('pre')).to_have_count(0)
+                    assert user_tool.bounding_box()['height'] < 500
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     panel.get_by_text('管理账单', exact=True).click()
                     page.screenshot(path='/tmp/stella-features-mobile.png', full_page=True)
