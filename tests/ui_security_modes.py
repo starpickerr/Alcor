@@ -154,8 +154,6 @@ with sync_playwright() as playwright:
         expect(connections_card.get_by_text('2', exact=True)).to_be_visible()
         expect(connections_card.get_by_role('link')).to_have_attribute('href', '#/skills?tab=mcp')
         overview_links = [
-            ('权限规则', 'permissions', '对话与任务权限'),
-            ('后台任务权限', 'permissions#background-tasks', '后台任务权限'),
             ('凭据', 'secrets', '服务凭据'),
             ('安全活动', 'activity', '安全活动'),
             ('数据访问', 'privacy', '数据访问'),
@@ -189,10 +187,12 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('navigation', name='安全中心').get_by_role('button', name='资源授权', exact=True)).to_have_count(0)
         expect(page.get_by_text('packyapi', exact=True).first).to_be_visible()
         expect(page.get_by_text('灵算', exact=True).first).to_be_visible()
-        page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理').click()
+        expect(page.get_by_role('navigation', name='安全中心').get_by_role('button', name='权限管理')).to_have_count(0)
+        page.goto(url + '/#/security?tab=permissions', wait_until='networkidle')
+        expect(page).to_have_url(url + '/#/security')
         expect(page.get_by_role('heading', name='默认权限设置', exact=True)).to_have_count(0)
         expect(page.get_by_role('radio')).to_have_count(0)
-        expect(page.get_by_role('link', name='前往任务管理', exact=True)).to_have_attribute('href', '#/tasks')
+        expect(page.get_by_role('heading', name='后台任务权限', exact=True).get_by_role('link')).to_have_attribute('href', '#/tasks')
         assert saved == []
         expect(page.get_by_role('heading', name='项目权限')).to_have_count(0)
         for tab, heading in [

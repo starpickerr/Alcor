@@ -34,7 +34,6 @@ const locales = {
     saveFailed: '保存失败',
     tabs: {
       overview: '总览',
-      permissions: '权限管理',
       background: '后台任务权限',
       projects: '项目与对话',
       secrets: '凭据',
@@ -322,7 +321,6 @@ const locales = {
     saveFailed: 'Save failed',
     tabs: {
       overview: 'Overview',
-      permissions: 'Permissions',
       background: 'Background tasks',
       projects: 'Projects & chats',
       secrets: 'Credentials',

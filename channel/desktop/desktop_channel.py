@@ -2056,7 +2056,6 @@ class DesktopChannel(ChatChannel):
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/security/privacy', 'SecurityPrivacyHandler',
-            '/api/data/access', 'DataAccessSettingsHandler',
             '/api/sessions/access', 'SessionAccessSettingsHandler',
             '/api/capabilities/access', 'CapabilityAccessSettingsHandler',
             '/api/data', 'DataManagementHandler',
@@ -6001,11 +6000,14 @@ class McpCatalogHandler:
         try:
             from agent.tools.tool_manager import ToolManager
             body = json.loads(web.data() or b'{}')
-            if not isinstance(body, dict) or set(body) != {'name', 'enabled'}:
-                raise ValueError('name and enabled are required')
-            if not isinstance(body['name'], str) or type(body['enabled']) is not bool:
-                raise ValueError('invalid MCP enablement input')
-            ToolManager().set_mcp_enabled(body['name'], body['enabled'])
+            if not isinstance(body, dict) or not isinstance(body.get('name'), str):
+                raise ValueError('MCP name is required')
+            if set(body) == {'name', 'action'} and body['action'] == 'discover':
+                ToolManager().discover_mcp_tools(body['name'])
+            elif set(body) == {'name', 'enabled'} and type(body['enabled']) is bool:
+                ToolManager().set_mcp_enabled(body['name'], body['enabled'])
+            else:
+                raise ValueError('Invalid MCP management input')
             server = next(row for row in ToolManager().mcp_catalog() if row['name'] == body['name'])
             return json.dumps({'status': 'success', **body, 'server': server})
         except Exception as exc:
@@ -6265,10 +6267,6 @@ class FeatureAccessSettingsHandler:
             return json.dumps({'status': 'success', **self._control(context).save(body)}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
             return _api_reject('Feature access settings', error)
-
-
-class DataAccessSettingsHandler(FeatureAccessSettingsHandler):
-    module = 'data'
 
 
 class SessionAccessSettingsHandler(FeatureAccessSettingsHandler):

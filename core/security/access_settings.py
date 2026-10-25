@@ -92,8 +92,8 @@ class FeatureAccessControl:
 
     def _scope(self):
         require_owner()
-        if self.module == 'tasks' or self.module == 'capabilities' and self.kind != 'connection':
-            raise ValueError('Independent task/provider authorization management was removed')
+        if self.module in {'tasks', 'data'} or self.module == 'capabilities' and self.kind != 'connection':
+            raise ValueError('Independent source/task/provider authorization management was removed')
         from core.security.migration import ensure_migrated
         ensure_migrated()
         if not isinstance(self.identifier, str) or not self.identifier or len(self.identifier) > 512:
@@ -103,18 +103,7 @@ class FeatureAccessControl:
         connection = None
         self.retired = False
         from agent.tools.tool_manager import ToolManager
-        if self.module == 'data':
-            source = next((row for row in self._sources() if row['id'] == self.identifier), None)
-            if source is None:
-                raise ValueError('Data source not found')
-            available = self._source_resources(source)
-            # Preserve revoked/stale courses from the same account even if no longer selected.
-            account = (source.get('config') or {}).get('account_id') or source.get('account_id')
-            def matches(resource):
-                return (resource in [dict(kind=row['kind'], id=row['id']) for row in available] or
-                        source['provider'] == 'elearning' and resource['kind'] == 'course' and account and
-                        resource['id'].startswith(str(account) + ':'))
-        elif self.module in {'sessions', 'capabilities'}:
+        if self.module in {'sessions', 'capabilities'}:
             if self.module == 'sessions':
                 from agent.registry import get_agent_registry
                 self.agent = self.agent or get_agent_registry().default_agent_id
@@ -151,9 +140,7 @@ class FeatureAccessControl:
         rows = ResourceGrantStore().list_owned(current_user())
         grants = [row for row in rows if matches(row['resource']) and (not pinned or row['subject'] == pinned['id'])]
         from agent.permission.mcp_access import inventory
-        inherited = [row for row in inventory() if (
-            connection and 'mcp:' + row['server'] == connection or
-            self.module == 'data' and row['scoped'] and row['resources'] and all(matches(resource) for resource in row['resources']))]
+        inherited = [row for row in inventory() if connection and 'mcp:' + row['server'] == connection]
         result = dict(grants=grants, available=available, subjects=subjects, inherited=inherited)
         subject = pinned['id'] if pinned else 'user:' + current_user()
         restrictions = ResourceGrantStore().connection_settings(user_id=current_user(), subject=subject)
@@ -191,11 +178,6 @@ class FeatureAccessControl:
                 if body.get('revoked') is not True:
                     raise PermissionError('Removed connections only allow revocation')
                 body = {key: body[key] for key in ('id', 'revision', 'revoked')}
-            if self.module == 'data' and 'resources' in body:
-                original = next(row for row in state['inherited'] if row['id'] == body['id'])
-                keys = {(row['kind'], row['id']) for row in [*state['available'], *original['resources']]}
-                if any((row.get('kind'), row.get('id')) not in keys for row in body['resources']):
-                    raise PermissionError('Legacy resources are outside this source')
             from agent.permission.mcp_access import update
             update(body)
         elif action == 'connection' and set(body) <= {'connection_id', 'allowed', 'scopes', 'revision'}:
@@ -209,7 +191,7 @@ class FeatureAccessControl:
                     any(not isinstance(scope, str) for scope in body['scopes']) or body['allowed'] and not body['scopes']):
                 raise ValueError('Select allowed operations or disable connection access')
             subjects = state['subjects']
-            subject = subjects[0]['id'] if self.module in {'tasks', 'sessions'} or self.kind == 'plugins' else 'user:' + current_user()
+            subject = subjects[0]['id'] if self.module == 'sessions' else 'user:' + current_user()
             store.update_connection(user_id=current_user(), subject=subject, connection=connection,
                 policy=dict(allowed=body['allowed'], scopes=body['scopes']), expected_revision=body.get('revision'))
         else:

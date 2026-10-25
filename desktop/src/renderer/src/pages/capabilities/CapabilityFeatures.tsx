@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, ChevronRight, Code2, LayoutPanelTop, Plug, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import type { CapabilityDetail, CapabilityFeature } from '../../api/capabilityTypes'
 import { t } from '../../i18n'
 import { pluginPageBinding } from '../../layout/navigation'
@@ -14,12 +14,6 @@ import './capabilities.css'
 const rowClass = 'capability-feature-row flex min-w-0 items-center gap-3 px-4 py-3.5 sm:gap-4'
 const iconClass = 'capability-feature-icon flex size-9 shrink-0 items-center justify-center rounded-btn bg-surface text-content-secondary'
 const focusClass = 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent'
-
-function Definition({ label, schema }: { label: string; schema?: Record<string, unknown> }) {
-  return <div className="min-w-0 space-y-2"><h4 className="text-xs font-semibold text-content">{label}</h4>
-    {schema ? <pre aria-label={`${label} JSON`} className="max-h-72 min-w-0 overflow-auto rounded-btn bg-surface px-3 py-3 text-xs leading-relaxed text-content-secondary">{JSON.stringify(schema, null, 2)}</pre>
-      : <p className="text-xs text-content-secondary">{c('提供者未发布参数结构。', 'The provider has not published a parameter schema.')}</p>}</div>
-}
 
 function ToolRow({ feature, name, item, onSaved }: { feature: CapabilityFeature; name: string; item: CapabilityDetail; onSaved: (id: string, enabled: boolean) => void }) {
   const [enabled, setEnabled] = useState(feature.enabled !== false)
@@ -49,21 +43,8 @@ function ToolRow({ feature, name, item, onSaved }: { feature: CapabilityFeature;
   </div>
 }
 
-function TechnicalTool({ feature }: { feature: CapabilityFeature }) {
-  const descriptions = [...new Set([copy(feature.description), copy(feature.detailDescription)].filter(Boolean))]
-  return <section data-technical-tool-id={feature.id} className="min-w-0 space-y-4 border-t border-default pt-4">
-    <h3 className="text-sm font-semibold">{copy(feature.name) || feature.id}</h3>
-    <div className="text-xs"><p className="text-content-secondary">{c('工具 ID', 'Tool ID')}</p><p className="mt-1 break-all font-mono">{feature.id}</p></div>
-    {descriptions.length > 0 && <div className="space-y-2"><h4 className="text-xs font-semibold">{c('原始描述', 'Original description')}</h4><div className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-content-secondary">{descriptions.join('\n\n')}</div></div>}
-    <Definition label={c('输入参数', 'Input parameters')} schema={feature.inputSchema} />
-    {feature.outputSchema && <Definition label={c('返回结构', 'Output schema')} schema={feature.outputSchema} />}
-  </section>
-}
-
-export default function CapabilityFeatures({ item, onToolChanged }: { item: CapabilityDetail; onToolChanged: (id: string, enabled: boolean) => void }) {
-  const [technicalExpanded, setTechnicalExpanded] = useState(false)
+export default function CapabilityFeatures({ item, onToolChanged, onDiscover, discovering }: { item: CapabilityDetail; onToolChanged: (id: string, enabled: boolean) => void; onDiscover: () => void; discovering: boolean }) {
   const location = useLocation()
-  const navigate = useNavigate()
   const groups: { type: string; title: string; countLabel: string; icon: LucideIcon }[] = [
     { type: 'tools', title: c('提供的工具', 'Tools'), countLabel: c('工具数量', 'Tool count'), icon: Wrench },
     { type: 'pages', title: c('页面入口', 'Pages'), countLabel: c('页面数量', 'Page count'), icon: LayoutPanelTop },
@@ -73,15 +54,19 @@ export default function CapabilityFeatures({ item, onToolChanged }: { item: Capa
   ]
   const kind = (feature: CapabilityFeature) => feature.type || (item.kind === 'mcp' ? 'tools' : 'other')
   const visible = item.features.filter(feature => kind(feature) !== 'services')
-  const services = [...new Set([...item.features.filter(feature => kind(feature) === 'services').map(feature => feature.id), ...(item.technical?.services || [])])]
-  const openRuntime = () => {
-    const params = new URLSearchParams(location.search); params.set('section', 'runtime')
-    navigate(`${location.pathname}?${params}`, { replace: true, state: location.state })
-  }
+  const pending = discovering || item.state === 'pending'
+  const discoveryMessage = !item.enabled ? c('此连接已停用，启用后可发现工具。', 'This connection is disabled. Enable it to discover tools.')
+    : pending ? c('正在连接并发现工具…', 'Connecting and discovering tools…')
+    : item.state === 'failed' ? c('工具发现失败，请重试；连接配置和日志可帮助排查。', 'Tool discovery failed. Retry or check connection settings and logs.')
+    : item.state === 'needs_auth' ? c('连接需要认证，请先在配置中完成连接。', 'Authentication is required. Complete the connection in Configuration.')
+    : item.state === 'ready' ? c('服务未提供可用的公开工具。', 'The service has no public tools available.')
+    : c('尚未发现工具，点击发现工具以连接服务。', 'Tools have not been discovered. Select Discover tools to connect.')
   return <div data-capability-features className="min-w-0 space-y-6">
-    {visible.length === 0 && <div className="space-y-2 py-3"><p className="text-sm font-medium text-content">{item.kind === 'mcp' ? c('尚未发现工具', 'No tools discovered') : c('暂无已登记的功能', 'No registered features')}</p>
-      {item.kind === 'mcp' && !item.tabs.includes('runtime') ? <p className="text-sm text-content-secondary">{c('连接后将显示服务发现的工具。', 'Discovered tools will appear after connection.')}</p> : item.kind === 'mcp' ? <p className="text-sm leading-relaxed text-content-secondary">{c('工具列表由服务发现结果提供。可在', 'Tools are listed after discovery. Check the ')}<button type="button" onClick={openRuntime} className="rounded-sm text-accent underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent">{c('运行', 'Runtime')}</button>{c('选项卡检查连接。', ' tab for connection information.')}</p>
-        : <p className="text-sm text-content-secondary">{services.length > 0 ? c('此提供者仅登记了服务接口，可在技术信息中查看。', 'This provider registers service interfaces only. See Technical information.') : c('提供者未声明工具或页面入口。', 'This provider has not declared tools or page entries.')}</p>}</div>}
+    {item.kind === 'mcp' && !item.retained && <div className="flex flex-wrap items-center justify-between gap-3">
+      <p role="status" className="text-sm text-content-secondary">{visible.length === 0 || pending || item.state !== 'ready' ? discoveryMessage : c(`已发现 ${visible.length} 个工具`, `${visible.length} tools discovered`)}</p>
+      <button type="button" className="shrink-0 rounded-btn bg-surface-2 px-3 py-2 text-sm disabled:opacity-50" disabled={!item.enabled || pending} onClick={onDiscover}>{pending ? c('正在发现…', 'Discovering…') : item.state === 'failed' ? c('重试', 'Retry') : c('发现工具', 'Discover tools')}</button>
+    </div>}
+    {visible.length === 0 && item.kind !== 'mcp' && <div className="space-y-2 py-3"><p className="text-sm font-medium text-content">{c('暂无已登记的功能', 'No registered features')}</p><p className="text-sm text-content-secondary">{c('提供者未声明工具或页面入口。', 'This provider has not declared tools or page entries.')}</p></div>}
     {groups.map(({ type, title, countLabel, icon: Icon }) => {
       const features = visible.filter(feature => kind(feature) === type)
       if (features.length === 0) return null
@@ -98,13 +83,5 @@ export default function CapabilityFeatures({ item, onToolChanged }: { item: Capa
         })}</div>
       </section>
     })}
-    <details className="group border-t border-default pt-4" onToggle={event => setTechnicalExpanded(event.currentTarget.open)}><summary className={`${focusClass} flex cursor-pointer list-none items-center gap-2 py-1 [&::-webkit-details-marker]:hidden`}><Code2 size={18} aria-hidden /><span className="flex-1 text-sm font-semibold text-content">{c('技术信息', 'Technical information')}</span><ChevronRight size={16} aria-hidden className="text-content-secondary group-open:rotate-90" /></summary>
-      <dl className="mt-4 space-y-3 text-xs"><div><dt className="text-content-secondary">{c('提供者 ID', 'Provider ID')}</dt><dd className="mt-1 break-all font-mono text-content">{item.id}</dd></div>
-        {item.version && <div><dt className="text-content-secondary">{c('插件版本', 'Plugin version')}</dt><dd className="mt-1 font-mono text-content">{item.version}</dd></div>}
-        {item.technical?.transport && <div><dt className="text-content-secondary">{c('连接方式', 'Transport')}</dt><dd className="mt-1 font-mono text-content">{item.technical.transport}</dd></div>}
-        {item.technical?.generation !== undefined && <div><dt className="text-content-secondary">{c('注册代次', 'Registration generation')}</dt><dd className="mt-1 font-mono text-content">{item.technical.generation}</dd></div>}
-        {services.length > 0 && <div><dt className="text-content-secondary">{c('已注册服务', 'Registered services')}</dt><dd className="mt-1 space-y-1 text-content">{services.map(service => <div key={service} className="break-all font-mono">{service}</div>)}</dd></div>}</dl>
-    {technicalExpanded && <div className="mt-5 space-y-5">{visible.filter(feature => kind(feature) === 'tools').map(feature => <TechnicalTool key={feature.id} feature={feature} />)}</div>}
-    </details>
   </div>
 }

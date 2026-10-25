@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck, RefreshCw, ChevronRight, SlidersHorizontal, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
+import { ShieldCheck, RefreshCw, ChevronRight, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { SecurityActivityCounts, SecurityCenterState, SecurityRecord } from '../api/client'
@@ -25,10 +25,10 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'permissions', 'secrets', 'activity', 'privacy', 'plugins'] as const
+const tabs = ['overview', 'secrets', 'activity', 'privacy', 'plugins'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
-  overview: ShieldCheck, permissions: SlidersHorizontal,
+  overview: ShieldCheck,
   secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
 }
 
@@ -79,13 +79,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const requestedTab = new URLSearchParams(location.search).get('tab')
-  const tab: Tab = requestedTab === 'background' ? 'permissions' : (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
+  const tab: Tab = (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
   const setTab = (next: Tab) => navigate(next === 'overview' ? '/security' : `/security?tab=${next}`)
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
   useEffect(() => {
     if (requestedTab === 'connections') navigate('/data?section=sources', { replace: true })
-    if (requestedTab === 'background') navigate('/security?tab=permissions#background-tasks', { replace: true })
-    if (location.hash === '#background-tasks' && center) document.getElementById('background-tasks')?.scrollIntoView({ block: 'start' })
+    if (requestedTab === 'permissions') navigate('/security', { replace: true })
+    if (requestedTab === 'background') navigate('/tasks', { replace: true })
   }, [requestedTab, navigate, location.hash, center])
   const [records, setRecords] = useState<SecurityRecord[]>([])
   const [availableEvents, setAvailableEvents] = useState<SecurityRecord[]>([])
@@ -311,7 +311,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
                 <section className={`${overviewCard} lg:col-span-2 flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8`}>
                   <div className="min-w-0 flex-1">
-                    <SectionTitle icon={ShieldCheck} to="/security?tab=permissions">{copy.presetsTitle}</SectionTitle>
+                    <SectionTitle icon={ShieldCheck} to="/">{copy.presetsTitle}</SectionTitle>
                     <p className={`${faded} mt-3`}>{copy.overviewDefaultHelp}</p>
                   </div>
                   <div className="shrink-0 rounded-btn bg-accent-soft px-5 py-4 lg:min-w-52">
@@ -320,7 +320,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={overviewCard}>
-                  <SectionTitle icon={Clock3} to="/security?tab=permissions#background-tasks">{copy.overviewBackgroundTitle}</SectionTitle>
+                  <SectionTitle icon={Clock3} to="/tasks">{copy.overviewBackgroundTitle}</SectionTitle>
                   {!taskSummary || taskSummary.available === false ? (
                     <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
                   ) : (
@@ -427,12 +427,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )
             })()}
             {tab === 'overview' && <PermissionMigrationPanel />}
-            {tab === 'permissions' && <div className="space-y-6">
-              <section className={card}><h2 className={heading}>{getLang() === 'en' ? 'Conversation and task permissions' : '对话与任务权限'}</h2>
-                <p className={`${faded} mt-2`}>{getLang() === 'en' ? 'New conversations and tasks start read-only. Change permissions in the conversation or task. Existing permissions remain independent. Resource access is checked separately.' : '新建对话和定时任务固定默认只读，可在对应对话或任务中单独修改。已有权限保持独立，数据源、账号及插件等资源访问仍需分别授权。'}</p>
-              </section>
-              <section id="background-tasks" className={card}><h2 className={heading}>{copy.backgroundTitle}</h2><p className={`${faded} mt-2`}>{getLang() === 'en' ? 'Manage each task and its execution permissions in Task management.' : '任务及其独立执行权限统一在任务管理中配置。'}</p><Link to="/tasks" className="mt-3 inline-flex text-sm text-accent">{getLang() === 'en' ? 'Manage tasks' : '前往任务管理'}</Link></section>
-            </div>}
             {tab === 'secrets' && (
               <div className="space-y-5">
                 <section className={card}>
@@ -731,7 +725,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   <div className="mt-4 flex flex-wrap gap-4 text-sm text-accent">
                     <Link to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
                     <Link to="/skills?tab=mcp">{getLang() === 'zh' ? '管理能力连接' : 'Manage capability connections'}</Link>
-                    <Link to="/security?tab=permissions">{getLang() === 'zh' ? '权限策略' : 'Permission policies'}</Link>
+                    <Link to="/">{getLang() === 'zh' ? '对话权限' : 'Conversation permissions'}</Link>
                   </div>
                   <div className="mt-4 divide-y divide-default">
                     {(center.data_access?.resources || []).map(item => {

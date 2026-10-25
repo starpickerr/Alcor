@@ -63,6 +63,6 @@ export default function DataUsage({ state, busy, save }: { state: DataSnapshot; 
           onClick={() => { setAdding(consumer.id); setSelectedSource('') }}><Plus size={17} />{c('添加信息源', 'Add source')}</button>}
       </section>
     })}
-    <p className="text-xs leading-relaxed text-content-secondary">{c('此处选择功能使用哪些来源。访问权限仍在安全中管理，停用关系不会删除来源数据。', 'These selections control which sources a feature uses. Access remains managed in Security; disabling a relation does not delete source data.')}</p>
+    <p className="text-xs leading-relaxed text-content-secondary">{c('此处选择功能使用哪些来源。已有访问限制继续生效，停用关系不会删除来源数据。', 'These selections control which sources a feature uses. Existing access restrictions remain in effect; disabling a relation does not delete source data.')}</p>
   </div>
 }

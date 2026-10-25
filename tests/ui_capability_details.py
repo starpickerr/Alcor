@@ -74,14 +74,14 @@ def backend(route):
                 )
                 return
             tabs = (
-                ["overview"]
+                []
                 if row["kind"] == "tools"
-                else ["overview", "content"]
+                else ["content"]
                 if row["kind"] == "skills"
-                else ["overview", "features", "runtime"]
+                else ["features", "configuration", "about"]
             )
             if row["kind"] == "plugins":
-                tabs = ["overview", "features", "configuration", "runtime"]
+                tabs = ["features", "configuration", "about"]
             data["detail"] = {
                 **row,
                 "tabs": tabs,
@@ -247,7 +247,7 @@ with sync_playwright() as p:
         page.screenshot(path="/tmp/stella-capability-directory.png", full_page=True)
         page.get_by_role("link", name="读取文件", exact=True).click()
         detail = page.locator("[data-capability-detail]")
-        expect(detail.get_by_role("tab")).to_have_text(["概览"])
+        expect(detail.get_by_role("tab")).to_have_count(0)
         expect(detail.get_by_role("heading", name="真实说明")).to_be_visible()
         expect(detail.get_by_role("button", name="设置", exact=True)).to_have_count(0)
         expect(detail.get_by_role("button", name="更多", exact=True)).to_have_count(0)
@@ -348,7 +348,7 @@ with sync_playwright() as p:
         expect(note).to_have_value("before")
         expect(page.get_by_role("textbox", name="密钥", exact=True)).to_have_count(0)
         note.fill("draft")
-        page.get_by_role("tab", name="概览", exact=True).click()
+        page.get_by_role("tab", name="关于", exact=True).click()
         page.get_by_role("tab", name="配置", exact=True).click()
         expect(note).to_have_value("draft")
         conflict[0] = True
@@ -382,7 +382,7 @@ with sync_playwright() as p:
         page.goto(URL + '/#/skills?tab=mcp', wait_until='networkidle')
         expect(page.get_by_role('link', name='Documents MCP', exact=True)).to_contain_text('Find published documents')
         page.get_by_role('link', name='Documents MCP', exact=True).click()
-        expect(page.get_by_text('Published MCP documentation', exact=True)).to_be_visible()
+        expect(page.get_by_text('Find published documents', exact=True)).to_be_visible()
         english_only[0] = False
         page.goto(URL + "/#/skills/tools/not-found", wait_until="networkidle")
         expect(page.get_by_role("alert")).to_contain_text("Capability not found")
@@ -390,7 +390,7 @@ with sync_playwright() as p:
         expect(page).to_have_url(URL + "/#/skills?tab=tools")
         assert not errors, errors
         print(
-            "PASS: all types, search, Markdown, builtin overview, save recovery, stale read/write, partial inventory retry, install, configuration draft/CAS recovery, malformed configuration, navigation and mobile layout"
+            "PASS: all types, search, Markdown, builtin description, save recovery, stale read/write, partial inventory retry, install, configuration draft/CAS recovery, malformed configuration, navigation and mobile layout"
         )
     finally:
         browser.close()

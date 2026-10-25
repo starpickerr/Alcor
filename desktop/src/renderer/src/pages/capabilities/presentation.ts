@@ -23,17 +23,6 @@ export const sourceLabel = (source: string) => ({ builtin: c('Stella 内置', 'B
 export const panel = 'rounded-card border border-default bg-surface'
 export const button = 'inline-flex items-center justify-center gap-2 rounded-btn px-4 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50'
 
-/** Registry lifecycle and connection readiness do not describe task execution. */
-export const providerStateLabel = (kind: CapabilityKind, state: string) => {
-  if (kind === 'plugins') return ({
-    active: c('已加载', 'Loaded'), stopped: c('未加载', 'Not loaded'),
-    validating: c('校验中', 'Validating'), starting: c('加载中', 'Loading'),
-    draining: c('卸载中', 'Unloading'), degraded: c('加载异常', 'Degraded'),
-    blocked: c('加载受阻', 'Blocked'),
-  }[state] || stateLabel(state))
-  return stateLabel(state)
-}
-
 /** User availability summary, separate from provider lifecycle and task execution. */
 export const capabilityStatusLabel = (item: CapabilityItem) => {
   if (item.kind !== 'plugins' && item.kind !== 'mcp') return stateLabel(item.state)

@@ -39,24 +39,19 @@ def backend(route):
     elif path == '/api/sessions/access':
         if request.method == 'POST':
             body = json.loads(request.post_data)
-            assert body['id'] == 'one' and body['connection_id'] == 'browser'
-            assert body['revision'] == 7 and body['allowed'] is True
+            assert body['id'] == 'one'
             saved.append(body)
-        data.update(grants=[], subjects=[dict(id='session:default:one', kind='session', subject='one')], available=[], inherited=[],
-                    restrictions=[dict(id='browser', allowed=request.method == 'POST', scopes=['read'], revision=8 if request.method == 'POST' else 7)])
-    elif path == '/api/data/access':
-        if request.method == 'POST':
-            body = json.loads(request.post_data)
-            assert body['id'] == 'school'
-            saved.append(body)
-            if body['action'] == 'issue':
+            if body['action'] == 'connection':
+                assert body['connection_id'] == 'browser' and body['revision'] == 7 and body['allowed'] is True
+            elif body['action'] == 'issue':
                 grants.append({**body, 'grant_id': 'grant-one', 'revision': 1, 'effective': True, 'revoked': False})
             elif body['action'] == 'revoke':
                 grants[0].update(revoked=True, effective=False, revision=2)
             elif body['action'] == 'legacy':
                 legacy_grant.update({key: value for key, value in body.items() if key not in {'action', 'id', 'legacy_id'}}, revision=legacy_grant['revision'] + 1)
-        data.update(grants=grants, subjects=[{'id': 'session:default:one', 'kind': 'session', 'subject': 'one', 'agent': 'default'}],
-            available=[{'kind': 'folder', 'id': 'school', 'name': '测试邮箱', 'operations': ['read']}], inherited=[legacy_grant])
+        data.update(grants=grants, subjects=[dict(id='session:default:one', kind='session', subject='one')],
+                    available=[dict(kind='folder', id='school', name='测试邮箱', operations=['read'])], inherited=[legacy_grant],
+                    restrictions=[dict(id='browser', allowed=request.method == 'POST', scopes=['read'], revision=8 if request.method == 'POST' else 7)])
     elif path == '/api/security/runtime-trust':
         if request.method == 'POST':
             runtime_choices.append(json.loads(request.post_data))
@@ -120,7 +115,7 @@ with sync_playwright() as p:
     chip.get_by_role('button', name='设置对话权限', exact=True).click()
     expect(chip.get_by_role('radiogroup', name='权限模式')).to_be_visible()
     page.evaluate("""async () => {
-      const module = await import('/src/__test__/SecurityAuthorizationHarness.tsx'); module.mountSecurityAuthorizationTest()
+      const module = await import('/src/__test__/SecurityAuthorizationHarness.tsx'); module.mountSecurityAuthorizationTest({module:'sessions', id:'one', agent:'default'})
     }""")
     page.get_by_label('授权主体').select_option('session:default:one')
     page.get_by_label('特定资源').select_option('folder:school')

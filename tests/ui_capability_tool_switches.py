@@ -17,7 +17,7 @@ def backend(route):
     if path == '/api/capabilities':
         q = parse_qs(urlparse(route.request.url).query)
         kind, provider = q.get('kind', ['mcp'])[0], q.get('id', ['elearning'])[0]
-        data['detail'] = dict(kind=kind, id=provider, name='eLearning', description='原有介绍', overview='原有概览', enabled=True, state='ready', source='configured', version=None, tabs=['overview','features','configuration','runtime'], runtime=dict(state='ready'), configuration=dict(settingsUrl='/elearning') if provider == 'elearning' else {}, features=[dict(id=k, type='tools', name=v, userSummary='原有简介', userDetails='旧展开详情', enabled=intent[k], toggleId='canonical_'+k) for k,v in names.items()])
+        data['detail'] = dict(kind=kind, id=provider, name='eLearning', description='原有介绍', overview='原有概览', enabled=True, state='ready', source='configured', version=None, tabs=['features','configuration','about'], runtime=dict(state='ready'), configuration=dict(settingsUrl='/elearning') if provider == 'elearning' else {}, features=[dict(id=k, type='tools', name=v, userSummary='原有简介', userDetails='旧展开详情', enabled=intent[k], toggleId='canonical_'+k) for k,v in names.items()])
     elif path == '/api/tools' and route.request.method == 'POST':
         body = json.loads(route.request.post_data); saved.append(body); intent[body['id']] = body['enabled']
     elif path == '/api/briefings/elearning':
@@ -47,7 +47,7 @@ with sync_playwright() as p:
         expect(switch).to_have_attribute('aria-checked','true'); switch.click()
         expect(switch).to_have_attribute('aria-checked','false')
         expect(panel.locator('[data-feature-id="fetch"]').get_by_role('switch')).to_have_attribute('aria-checked','true')
-        page.get_by_role('tab',name='概览',exact=True).click()
+        page.get_by_role('tab',name='关于',exact=True).click()
         page.get_by_role('tab',name='功能',exact=True).click()
         expect(row.get_by_role('switch')).to_have_attribute('aria-checked','false')
         page.reload(wait_until='networkidle'); expect(row.get_by_role('switch')).to_have_attribute('aria-checked','false')

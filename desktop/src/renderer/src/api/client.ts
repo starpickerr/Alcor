@@ -81,7 +81,7 @@ export interface ResourceGrant {
   purposes: string[]; valid_until: string | null; revoked: boolean; revision: number; effective: boolean
   legacy_scope?: string
 }
-export interface FeatureAccessContext { module: 'data' | 'sessions' | 'capabilities'; id: string; kind?: 'connection'; agent?: string }
+export interface FeatureAccessContext { module: 'sessions' | 'capabilities'; id: string; kind?: 'connection'; agent?: string }
 export interface FeatureAccessState extends ApiResult {
   retired?: boolean
   restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
@@ -817,6 +817,10 @@ class ApiClient {
 
   async toggleTool(id: string, enabled: boolean): Promise<ApiResult> {
     return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ id, enabled }) })
+  }
+
+  async discoverMcpTools(name: string): Promise<ApiResult> {
+    return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, action: 'discover' }) })
   }
 
   async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {

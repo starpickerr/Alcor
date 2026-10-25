@@ -21,12 +21,12 @@ export const sourceOrigin = (source: DataSourceInfo) => source.connection?.start
   ? `MCP · ${source.connection.slice(4)}`
   : source.connection?.startsWith('plugin:') ? c('插件', 'Plugin') : source.provider
 export function settingsPath(source: DataSourceInfo): string | undefined {
-  if (source.connection?.startsWith('plugin:')) return detailPath('plugins', source.connection.slice(7), 'configuration')
-  if (source.connection?.startsWith('mcp:')) {
+  if (source.connection?.startsWith('plugin:') && source.connection.slice(7).trim()) return detailPath('plugins', source.connection.slice(7), 'configuration')
+  if (source.connection?.startsWith('mcp:') && source.connection.slice(4).trim()) {
     const owner = source.connection.slice(4)
-    return detailPath('mcp', owner, ['email', 'elearning'].includes(owner) ? 'configuration' : undefined)
+    return detailPath('mcp', owner, 'configuration')
   }
-  if (['/email', '/elearning'].includes(source.settings_url || '')) return detailPath('mcp', source.settings_url!.slice(1), 'configuration')
+  if (!source.connection && ['/email', '/elearning'].includes(source.settings_url || '')) return detailPath('mcp', source.settings_url!.slice(1), 'configuration')
   return undefined
 }
 
@@ -36,11 +36,18 @@ export const sourceName = (source: DataSourceInfo) => source.name.toLowerCase() 
 
 export function groupSources(sources: DataSourceInfo[]) {
   const groups = new Map<string, DataSourceInfo[]>()
+  const owners = new Map<string, Set<string>>()
+  for (const source of sources) {
+    const key = settingsPath(source) || `unmapped:${source.connection || source.id}`
+    const keys = owners.get(source.provider) || new Set<string>()
+    keys.add(key); owners.set(source.provider, keys)
+  }
   for (const source of sources) {
     if (source.provider === 'workspace') continue // Ignore retired entries from older snapshots.
-    const group = groups.get(source.provider) || []
+    const key = (owners.get(source.provider)?.size || 0) > 1 ? `${source.provider}:${source.connection || source.id}` : source.provider
+    const group = groups.get(key) || []
     group.push(source)
-    groups.set(source.provider, group)
+    groups.set(key, group)
   }
   return [...groups].map(([id, items]) => {
     const source = items[0]
@@ -48,7 +55,7 @@ export function groupSources(sources: DataSourceInfo[]) {
     const status = items.every(item => !item.enabled) ? 'disabled'
       : !available ? 'unavailable' : available === items.length ? 'available' : 'partial'
     return { id, source, items, available, status,
-      name: id === 'email' ? 'Email' : sourceName(source),
+      name: source.provider === 'email' ? 'Email' : sourceName(source),
       accounts: new Set(items.map(item => item.account_id || item.id)).size }
   })
 }
@@ -59,7 +66,5 @@ export const sourceStatus = (group: SourceGroup) => ({
 }[group.status])
 
 export function groupSettingsPath(group: SourceGroup) {
-  const path = settingsPath(group.source)
-    || (group.source.connection?.startsWith('mcp:') ? '/skills?tab=mcp' : '/skills?tab=plugins')
-  return path
+  return settingsPath(group.source)
 }

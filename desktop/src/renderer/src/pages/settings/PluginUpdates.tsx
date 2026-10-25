@@ -4,10 +4,7 @@ import apiClient from '../../api/client'
 import { t } from '../../i18n'
 import { Group, Row } from './primitives'
 
-type UpdatePlan = {
-  updates: { pluginId: string; fromVersion: string; toVersion: string }[]
-  blocked: { pluginId: string; reason: string }[]
-}
+import { checkPluginUpdates, type UpdatePlan } from './pluginUpdatePlan'
 
 export default function PluginUpdates({ baseUrl }: { baseUrl: string }) {
   const [plan, setPlan] = useState<UpdatePlan | null>(null)
@@ -21,8 +18,7 @@ export default function PluginUpdates({ baseUrl }: { baseUrl: string }) {
     setError('')
     setPlan(null)
     try {
-      const data = await apiClient.pluginRequest<UpdatePlan>('dual-update-plan')
-      if (!Array.isArray(data.updates) || !Array.isArray(data.blocked)) throw new Error(t('settings_plugins_invalid_plan'))
+      const data = await checkPluginUpdates(apiClient)
       setPlan(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

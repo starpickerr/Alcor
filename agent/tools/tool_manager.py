@@ -623,11 +623,9 @@ class ToolManager:
 
     def _load_mcp_tools_async(self, configs, generations=None):
         from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry
-        from agent.tools.mcp.mcp_tool import McpTool
         with self._mcp_lock:
             if self._mcp_registry is None:
                 self._mcp_registry = McpClientRegistry()
-            registry = self._mcp_registry
             if generations is None:
                 generations = {}
                 for cfg in configs:
@@ -654,45 +652,7 @@ class ToolManager:
                         if self._mcp_admitted(name, generation):
                             self._mcp_status[name] = 'needs_auth' if getattr(client, 'needs_auth', False) else 'failed'
                     continue
-                schemas = client.list_tools()
-                agent_tools = cfg.get('agentTools')
-                tools = []
-                from agent.permission.gateway import Capability, register_tool
-                from core.security.capabilities import mcp_descriptor
-                for schema in schemas:
-                    if not schema.get('name') or (agent_tools is not None and schema['name'] not in agent_tools):
-                        continue
-                    tool = McpTool(client, schema, name)
-                    tool.capability_descriptor = mcp_descriptor(name, schema['name'], cfg)
-                    tool._capability_settings = self.capability_settings
-                    tool._admission_check = lambda n=name, g=generation: self._mcp_admitted(n, g)
-                    if cfg.get('settingsUrl') == '/' + name:
-                        tool._managed_invoke = lambda method, arguments, cancel, n=name: self.call_mcp_tool(
-                            n, method, arguments, cancel_event=cancel)
-                    else:
-                        from core.security.service import SecurityService
-                        tool._resource_check = lambda n=name, op=tool.capability_descriptor.operation: SecurityService.authorize_connection(n, op)
-                    try:
-                        from core.mcp.managed import LOCAL_READS
-                        local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS
-                        register_tool(tool.name, Capability.READ if local_read else Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only,
-                                      filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning',
-                                      descriptor=mcp_descriptor(name, schema['name'], cfg))
-                    except ValueError:
-                        continue
-                    tools.append(tool)
-                with self._mcp_lock:
-                    if not self._mcp_admitted(name, generation):
-                        continue
-                    for tool in tools:
-                        self._mcp_tool_instances[tool.name] = tool
-                    with registry._registry_lock:
-                        registry._clients[name] = client
-                    if not hasattr(self, '_mcp_schemas'):
-                        self._mcp_schemas = {}
-                    self._mcp_schemas[name] = {row['name']:row for row in schemas}
-                    self._mcp_status[name] = 'ready'
-                    published = True
+                published = self._publish_mcp_tools(cfg, client, generation, client.list_tools())
             except Exception:
                 with self._mcp_lock:
                     if self._mcp_admitted(name, generation):
@@ -706,6 +666,90 @@ class ToolManager:
                         client.shutdown()
                     except Exception:
                         logger.warning('[MCP] Failed to close unselected server %s', name)
+
+    def _publish_mcp_tools(self, cfg, client, generation, schemas):
+        """One generation-checked publication path for initial and refreshed tools."""
+        from agent.tools.mcp.mcp_tool import McpTool
+        name = cfg.get('name', '<unnamed>')
+        registry = self._mcp_registry
+        with self._mcp_lock:
+            if not self._mcp_admitted(name, generation):
+                return False
+            agent_tools = cfg.get('agentTools')
+            tools = []
+            from agent.permission.gateway import Capability, register_tool
+            from core.security.capabilities import mcp_descriptor
+            for schema in schemas:
+                if not schema.get('name') or (agent_tools is not None and schema['name'] not in agent_tools):
+                    continue
+                tool = McpTool(client, schema, name)
+                tool.capability_descriptor = mcp_descriptor(name, schema['name'], cfg)
+                tool._capability_settings = self.capability_settings
+                tool._admission_check = lambda n=name, g=generation, t=tool: (self._mcp_admitted(n, g) and self._mcp_status.get(n) == 'ready' and self._mcp_tool_instances.get(t.name) is t)
+                if cfg.get('settingsUrl') == '/' + name:
+                    tool._managed_invoke = lambda method, arguments, cancel, n=name: self.call_mcp_tool(
+                        n, method, arguments, cancel_event=cancel)
+                else:
+                    from core.security.service import SecurityService
+                    tool._resource_check = lambda n=name, op=tool.capability_descriptor.operation: SecurityService.authorize_connection(n, op)
+                try:
+                    from core.mcp.managed import LOCAL_READS
+                    local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS
+                    register_tool(tool.name, Capability.READ if local_read else Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only,
+                                  filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning',
+                                  descriptor=mcp_descriptor(name, schema['name'], cfg))
+                except ValueError as exc:
+                    raise ValueError('MCP tool registration failed') from exc
+                tools.append(tool)
+            for key, old in list(self._mcp_tool_instances.items()):
+                if old.server_name == name:
+                    self._mcp_tool_instances.pop(key, None)
+                    self._mcp_tool_vectors.pop(key, None)
+            for tool in tools:
+                self._mcp_tool_instances[tool.name] = tool
+            with registry._registry_lock:
+                registry._clients[name] = client
+            if not hasattr(self, '_mcp_schemas'):
+                self._mcp_schemas = {}
+            self._mcp_schemas[name] = {row['name']:row for row in schemas}
+            self._mcp_status[name] = 'ready'
+        return True
+
+    def discover_mcp_tools(self, server_name):
+        """Explicit discovery never changes the persisted enablement intent."""
+        with self._mcp_lock:
+            config = next((cfg for cfg in self._load_mcp_configs()
+                           if cfg.get('name') == server_name), None)
+            if config is None:
+                raise ValueError('MCP server not found')
+            if not self._mcp_enabled(config):
+                raise PermissionError('Enable this MCP server before discovering tools')
+            if self._mcp_status.get(server_name) == 'pending':
+                return
+            client = self._mcp_registry.get(server_name) if self._mcp_registry else None
+            if (client is None or self._mcp_active_configs.get(server_name) != config
+                    or self._mcp_status.get(server_name) != 'ready'):
+                if server_name in self._mcp_active_configs:
+                    self._teardown_mcp_server(server_name)
+                self._queue_mcp_servers([config])
+                return
+            generation = self._mcp_generations[server_name]
+            self._mcp_status[server_name] = 'pending'
+            self._mcp_pending_clients[(server_name, generation)] = client
+            from common.runtime_identity import use_identity
+            def refresh():
+                with use_identity(self.identity):
+                    try:
+                        self._publish_mcp_tools(config, client, generation, client.list_tools())
+                    except Exception:
+                        with self._mcp_lock:
+                            if self._mcp_admitted(server_name, generation):
+                                self._mcp_status[server_name] = 'failed'
+                        logger.warning('[MCP] Tool discovery failed for %s', server_name)
+                    finally:
+                        with self._mcp_lock:
+                            self._mcp_pending_clients.pop((server_name, generation), None)
+            threading.Thread(target=refresh, name='mcp-discovery', daemon=True).start()
 
     def reload_mcp_server(self, server_name, *, generation=None):
         with self._mcp_lock:
@@ -734,9 +778,12 @@ class ToolManager:
                 config = configs.get(name, {'name': name})
                 enabled = self._mcp_enabled(config)
                 state = statuses.get(name, 'not_started') if enabled else 'disabled'
+                client = self._mcp_registry.get(name) if self._mcp_registry else None
+                version = getattr(client, 'server_version', None)
                 description = clean_copy(config.get('description'))
                 result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
                     **({'description': description} if description else {}),
+                    **({'version': version} if isinstance(version, str) and version else {}),
                     'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
                         {'name': tool.remote_name, 'description': tool.description,
                          'enabled': self.capability_settings.enabled('tool', McpTool.name_for(name, tool.remote_name)),
@@ -788,7 +835,8 @@ class ToolManager:
                 if isinstance(tool, McpTool)
             }
             replaced = {name for name in registry_names & agent_mcp_names
-                        if agent_tools[name].client is not current[name].client}
+                        if (agent_tools[name].client is not current[name].client or
+                            agent_tools[name]._admission_check is not current[name]._admission_check)}
             added = registry_names - agent_mcp_names | replaced
             removed = agent_mcp_names - registry_names
             if not (added or removed):
@@ -803,7 +851,8 @@ class ToolManager:
                 t.name for t in agent_tools if isinstance(t, McpTool)
             }
             replaced = {tool.name for tool in agent_tools if tool.name in registry_names
-                        and isinstance(tool, McpTool) and tool.client is not current[tool.name].client}
+                        and isinstance(tool, McpTool) and (tool.client is not current[tool.name].client
+                            or tool._admission_check is not current[tool.name]._admission_check)}
             added = registry_names - agent_mcp_names | replaced
             removed = agent_mcp_names - registry_names | replaced
             if not (added or removed):

@@ -6,6 +6,7 @@ import type { DataSnapshot } from '../api/dataTypes'
 import { t } from '../i18n'
 import PageHeader from '../components/PageHeader'
 import DataUsage from './data/DataUsage'
+import { useRestoreScroll } from './settings/origin'
 import DataStorage from './data/DataStorage'
 import DataSources from './data/DataSources'
 import DataOverview from './data/DataOverview'
@@ -78,6 +79,7 @@ export default function DataManagementPage() {
     setError(''); setMessage('')
     navigate(sectionPath(next), { replace: true })
   }
+  useRestoreScroll(!loading && !!state)
   const groups = groupSources(state?.sources || [])
   return <div className="flex-1 flex flex-col min-h-0 min-w-0">
     <PageHeader className="flex items-start justify-between gap-4">
