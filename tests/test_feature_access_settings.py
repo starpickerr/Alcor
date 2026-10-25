@@ -25,48 +25,20 @@ def access(monkeypatch, tmp_path):
         yield FeatureAccessControl, store
 
 
-def test_source_settings_preserve_existing_rows_and_effective_denials(access):
-    control, store = access
-    first = store.issue(user_id='owner', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-a'}, operations=['read'])
-    other = store.issue(user_id='owner', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-b'}, operations=['read'])
-    store.revoke(first['grant_id'], user_id='owner', expected_revision=1)
-    before = store.list_owned('owner')
-    result = control('data', 'source-a').inventory()
-    assert [row['grant_id'] for row in result['grants']] == [first['grant_id']]
-    assert result['grants'][0]['effective'] is False
-    assert store.list_owned('owner') == before
-    with pytest.raises(PermissionError):
-        control('data', 'source-a').save({'action': 'revoke', 'grant_id': other['grant_id'], 'revision': 1})
-
-
-def test_source_cannot_issue_other_resources_or_unknown_subjects(access):
-    control, store = access
-    api = control('data', 'source-a')
-    body = dict(action='issue', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-b'}, operations=['read'])
-    with pytest.raises(PermissionError):
-        api.save(body)
-    body['resource']['id'] = 'account-a'
-    body['subject'] = 'session:other:forged'
-    with pytest.raises(ValueError):
-        api.save(body)
-    assert store.list_owned('owner') == []
-
-
-def test_existing_expired_child_grants_are_not_reset_by_settings(access):
+def test_removed_source_management_preserves_expired_and_revoked_facts(access):
     control, store = access
     parent = store.issue(user_id='owner', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-a'}, operations=['read'])
-    child = store.delegate(parent['grant_id'], user_id='owner', subject='plugin:example.plugin', operations=['read'], purposes=['interactive'])
+    store.delegate(parent['grant_id'], user_id='owner', subject='plugin:example.plugin', operations=['read'], purposes=['interactive'])
     with store.transaction() as db:
         store._write(db, {**parent, 'valid_until': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()})
     before = store.list_owned('owner')
-    result = control('data', 'source-a').inventory()
-    assert len(result['grants']) == 2 and all(not row['effective'] for row in result['grants'])
+    with pytest.raises(ValueError, match='removed'):
+        control('data', 'source-a').inventory()
     assert store.list_owned('owner') == before
-    with pytest.raises(ValueError):
-        control('data', 'source-a').save(dict(action='revoke', grant_id=child['grant_id'], revision=0))
+    assert all(not row['effective'] for row in before)
 
 
-@pytest.mark.parametrize('module,kind', [('tasks', None), ('capabilities', 'mcp'), ('capabilities', 'plugins')])
+@pytest.mark.parametrize('module,kind', [('data', None), ('tasks', None), ('capabilities', 'mcp'), ('capabilities', 'plugins')])
 def test_removed_authorization_management_does_not_modify_existing_facts(access, module, kind):
     control, store = access
     store.issue(user_id='owner', subject='task:default:task-a', resource={'kind': 'folder', 'id': 'account-a'}, operations=['read'], purposes=['background'])
@@ -92,17 +64,17 @@ def test_feature_endpoints_bind_context_and_authenticate_before_access(access, m
     calls = []
     monkeypatch.setattr(desktop, '_require_auth', lambda: calls.append('auth'))
     monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: dict(id='source-a', kind='', agent=''))
-    reply = json.loads(desktop.DataAccessSettingsHandler().GET())
+    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: dict(id='chat', kind='', agent='default'))
+    reply = json.loads(desktop.SessionAccessSettingsHandler().GET())
     assert calls == ['auth'] and reply['available'][0]['id'] == 'account-a'
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(dict(id='source-a', action='issue',
-        subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-b'}, operations=['read'])).encode())
-    assert json.loads(desktop.DataAccessSettingsHandler().POST())['status'] == 'error'
+    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(dict(id='chat', agent='default', action='issue',
+        subject='session:default:chat', resource={'kind': 'folder', 'id': 'unknown-account'}, operations=['read'])).encode())
+    assert json.loads(desktop.SessionAccessSettingsHandler().POST())['status'] == 'error'
     assert store.list_owned('owner') == []
     def deny():
         raise PermissionError('unauthenticated')
     monkeypatch.setattr(desktop, '_require_auth', deny)
-    for handler in (desktop.DataAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler):
+    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler):
         with pytest.raises(PermissionError):
             handler().POST()
 
@@ -115,29 +87,30 @@ def test_old_authorization_remains_enforced_by_security_service(access):
     original = grants.ResourceGrantStore
     grants.ResourceGrantStore = lambda: store
     try:
-        api = control('data', 'source-a')
-        state = api.save(dict(action='issue', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-a'}, operations=['read']))
+        grant = store.issue(user_id='owner', subject='session:default:chat', resource={'kind': 'folder', 'id': 'account-a'}, operations=['read'])
+        with pytest.raises(ValueError, match='removed'):
+            control('data', 'source-a').inventory()
         with identity_scope(agent_id='default', session_id='chat'):
             SecurityService.authorize_resource({'kind': 'folder', 'id': 'account-a'}, 'read')
             with pytest.raises(PermissionError):
                 SecurityService.authorize_resource({'kind': 'folder', 'id': 'account-a'}, 'write')
-        api.save(dict(action='revoke', grant_id=state['grants'][0]['grant_id'], revision=1))
+        store.revoke(grant['grant_id'], user_id='owner', expected_revision=1)
         with identity_scope(agent_id='default', session_id='chat'), pytest.raises(PermissionError):
             SecurityService.authorize_resource({'kind': 'folder', 'id': 'account-a'}, 'read')
     finally:
         grants.ResourceGrantStore = original
 
 
-def test_source_can_revoke_legacy_course_no_longer_selected(access, monkeypatch):
+def test_removed_source_management_cannot_rewrite_legacy_courses(access, monkeypatch):
     control, _ = access
     grant = dict(id='old', server='elearning', consumer='example.plugin', scoped=True,
                  resources=[dict(kind='course', id='account:42')], revision=2, revoked=False)
-    monkeypatch.setattr(control, '_sources', lambda self: [dict(id='courses', provider='elearning', config=dict(account_id='account', course_ids=['43']))])
     monkeypatch.setattr('agent.permission.mcp_access.inventory', lambda: [grant])
     updates = []
     monkeypatch.setattr('agent.permission.mcp_access.update', lambda body: updates.append(body))
-    control('data', 'courses').save(dict(action='legacy', id='old', revision=2, revoked=True, resources=grant['resources']))
-    assert updates[0]['revoked'] is True
+    with pytest.raises(ValueError, match='removed'):
+        control('data', 'courses').save(dict(action='legacy', id='old', revision=2, revoked=True))
+    assert updates == []
 
 
 def test_non_mcp_restriction_can_be_managed_in_capabilities_without_mcp_prefix(access):
@@ -155,7 +128,7 @@ def test_retired_mcp_remains_discoverable_from_capability_catalog(access, tmp_pa
     store.issue(user_id='owner', subject='session:default:chat', resource=dict(kind='connection', id='mcp:removed'), operations=['read'])
     catalog = CapabilityCatalog(tmp_path, mcp_rows=lambda: [])
     detail = catalog.detail('mcp', 'removed')
-    assert detail['tabs'] == ['overview', 'configuration']
+    assert detail['tabs'] == ['features', 'configuration', 'about']
     assert detail['enabled'] is False and detail['features'] == []
 
 
@@ -175,3 +148,10 @@ def test_legacy_connection_settings_are_discoverable_before_first_business_edit(
     rows = owner_connection_settings()
     assert next(row for row in rows if row['id'] == 'browser')['allowed'] is False
     assert 'mcp:email' in retained_connections()
+
+
+def test_data_access_route_and_handler_removed():
+    from channel.desktop import desktop_channel as desktop
+    from pathlib import Path
+    assert not hasattr(desktop, 'DataAccessSettingsHandler')
+    assert "'/api/data/access'" not in Path(desktop.__file__).read_text()

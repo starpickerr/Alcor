@@ -232,6 +232,7 @@ class McpClient:
         self._oauth = None  # OAuthHandler instance
         # Set to True once a 401 could not be satisfied and the user must
         # complete the browser authorization. Callers can surface this state.
+        self.server_version: str | None = None
         self.needs_auth: bool = False
 
         # Shared state
@@ -273,22 +274,33 @@ class McpClient:
 
         Each item is a dict: {"name": str, "description": str, "inputSchema": dict}
         """
-        try:
-            resp = self._send_request("tools/list", {})
-            tools = resp.get("result", {}).get("tools", [])
-            return [
-                {
-                    "name": t.get("name", ""),
-                    "description": t.get("description", ""),
-                    "inputSchema": t.get("inputSchema", {}),
-                    **({'title': t['title']} if isinstance(t.get('title'), str) else {}),
-                    **({'outputSchema': t['outputSchema']} if isinstance(t.get('outputSchema'), dict) else {}),
-                }
-                for t in tools
-            ]
-        except Exception as e:
-            logger.warning(f"[MCP:{self.name}] list_tools failed: {e}")
-            return []
+        tools, names, cursors = [], set(), set()
+        params = {}
+        while True:
+            response = self._send_request("tools/list", params)
+            result = response.get('result') if isinstance(response, dict) and 'error' not in response else None
+            if not isinstance(result, dict) or not isinstance(result.get('tools'), list):
+                raise ValueError('Invalid MCP tools/list response')
+            for tool in result['tools']:
+                if (not isinstance(tool, dict) or not isinstance(tool.get('name'), str)
+                        or not tool['name'].strip() or tool['name'] in names
+                        or not isinstance(tool.get('inputSchema', {}), dict)):
+                    raise ValueError('Invalid MCP tool definition')
+                names.add(tool['name'])
+                tools.append({
+                    'name': tool['name'],
+                    'description': tool.get('description', ''),
+                    'inputSchema': tool.get('inputSchema', {}),
+                    **({'title': tool['title']} if isinstance(tool.get('title'), str) else {}),
+                    **({'outputSchema': tool['outputSchema']} if isinstance(tool.get('outputSchema'), dict) else {}),
+                })
+            cursor = result.get('nextCursor')
+            if cursor is None:
+                return tools
+            if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                raise ValueError('Invalid MCP tools/list cursor')
+            cursors.add(cursor)
+            params = {'cursor': cursor}
 
     def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
         started = time.monotonic()
@@ -1057,6 +1069,9 @@ class McpClient:
             if self._closed:
                 self._initialized = False
                 return False
+        info = (resp.get('result') or {}).get('serverInfo', {})
+        version = info.get('version') if isinstance(info, dict) else None
+        self.server_version = version.strip()[:256] if isinstance(version, str) and version.strip() else None
         self._send_notification("notifications/initialized", {})
         with self._lifecycle_lock:
             if self._closed:

@@ -1,5 +1,7 @@
 # 功能内访问设置：验证记录
 
+> 此文保留当时实施与验证记录；现行标签、来源入口和管理接口见[统一能力详情验收](capability-details-sources-validation.md)。
+
 分支：`refactor/remove-resource-authorization`；基线：`192d4997`。本轮未提交或合并；复核针对工作区差异，后续实现变化需要重验。
 
 ## 结果

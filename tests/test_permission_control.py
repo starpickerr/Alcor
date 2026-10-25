@@ -63,7 +63,7 @@ def test_resource_and_runtime_http_routes_require_auth(monkeypatch):
     def reject():
         raise PermissionError('unauthenticated')
     monkeypatch.setattr(desktop, '_require_auth', reject)
-    for handler in (desktop.DataAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityRuntimeTrustHandler, desktop.SecurityMigrationHandler):
+    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityRuntimeTrustHandler, desktop.SecurityMigrationHandler):
         with pytest.raises(PermissionError):
             handler().GET()
         with pytest.raises(PermissionError):
@@ -201,7 +201,7 @@ def test_resource_catalog_uses_exact_folder_and_account_qualified_course_ids(mon
         {'id': 'email-source', 'provider': 'email', 'name': 'Mailbox', 'account_id': 'school'},
         {'id': 'learning-source', 'provider': 'elearning', 'name': 'Courses',
          'config': {'account_id': 'student-account', 'course_ids': ['42', '43']}}]))
-    resources = [row for source in FeatureAccessControl('data', 'unused')._sources() for row in FeatureAccessControl._source_resources(source)]
+    resources = [row for source in FeatureAccessControl('sessions', 'unused')._sources() for row in FeatureAccessControl._source_resources(source)]
     assert {'kind': 'course', 'id': 'student-account:42', 'name': 'Courses · 42', 'operations': ['read']} in resources
     assert {'kind': 'folder', 'id': 'school', 'name': 'Mailbox', 'operations': ['read']} in resources
 

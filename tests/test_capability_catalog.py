@@ -42,19 +42,19 @@ def test_list_has_four_types_and_does_not_duplicate_plugin_adapters(catalog):
     assert next(row for row in result['items'] if row['kind'] == 'mcp')['state'] == 'not_started'
 
 
-def test_builtin_has_only_overview_and_real_localized_copy(catalog):
+def test_builtin_has_no_tabs_and_real_localized_copy(catalog):
     detail = catalog[0].detail('tools', 'read')
-    assert detail['tabs'] == ['overview']
+    assert detail['tabs'] == []
     assert detail['overview'] == {'zh': '仅在授权范围读取文件。'}
     assert detail['source'] == 'builtin'
 
 
-def test_plugin_readme_and_features_use_registered_package_without_running_it(catalog):
+def test_plugin_features_use_registered_package_without_reading_docs(catalog):
     service, _ = catalog
     detail = service.detail('plugins', 'fixture.plugin')
-    assert detail['overview'].startswith('# Fixture plugin')
-    assert detail['state'] == 'stopped' and detail['technical']['generation'] == 0
-    assert detail['tabs'] == ['overview', 'features', 'configuration', 'runtime']
+    assert detail['overview'] == 'Plugin description'
+    assert detail['state'] == 'stopped' and 'technical' not in detail
+    assert detail['tabs'] == ['features', 'configuration', 'about']
     assert any(item['id'] == 'fixture.tool' for item in detail['features'])
 
 
@@ -63,7 +63,7 @@ def test_skill_content_and_mcp_runtime_are_real_metadata(catalog):
     assert service.detail('skills', 'review')['content'] == '# Review\nCheck changes.'
     mcp = service.detail('mcp', 'docs')
     assert mcp['runtime'] == {'state': 'not_started'}
-    assert mcp['technical'] == {'transport': 'stdio'}
+    assert 'technical' not in mcp
     assert 'DO_NOT_EXPOSE' not in json.dumps(mcp)
     assert not mcp['features']
 
@@ -120,7 +120,7 @@ def test_handler_list_and_detail_contract(monkeypatch, catalog):
     assert len(json.loads(desktop.CapabilitiesHandler().GET())['items']) == 4
     monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: SimpleNamespace(kind='tools', id='read'))
     response = json.loads(desktop.CapabilitiesHandler().GET())
-    assert response['status'] == 'success' and response['detail']['tabs'] == ['overview']
+    assert response['status'] == 'success' and response['detail']['tabs'] == []
 
 
 def test_plugin_adapters_appear_as_features_without_duplicate_builtin_rows(catalog):
@@ -222,22 +222,39 @@ def test_plugin_runtime_separates_registration_and_redacts_real_diagnostics(cata
                error='Load failed: token=private-test-secret')
     service.plugin_manager.inventory = lambda user: [row]
     detail = service.detail('plugins', 'fixture.plugin')
-    assert detail['technical'] == {'generation': 7, 'services': ['fixture.service@1']}
+    assert 'technical' not in detail
     assert detail['runtime'] == {'state': 'failed', 'error': 'Load failed: token=[REDACTED]'}
     assert 'private-test-secret' not in json.dumps(detail)
 
 
 @pytest.mark.parametrize('state,error,has_runtime', [('', None, False), ('stopped', None, True), ('', 'Load failed', True)])
-def test_runtime_tab_requires_observable_state_or_diagnostics(catalog, state, error, has_runtime):
+def test_runtime_tab_is_removed_for_all_states(catalog, state, error, has_runtime):
     service, _ = catalog
     row = service.plugin_manager.inventory('local-default')[0]
     row.update(state=state, error=error)
     service.plugin_manager.inventory = lambda user: [row]
     detail = service.detail('plugins', 'fixture.plugin')
-    assert ('runtime' in detail['tabs']) is has_runtime
+    assert 'runtime' not in detail['tabs']
 
 
 def test_mcp_without_connection_state_has_no_empty_runtime_tab(catalog):
     service, _ = catalog
     service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='', tools=[])]
-    assert service.detail('mcp', 'docs')['tabs'] == ['overview', 'features', 'configuration']
+    assert service.detail('mcp', 'docs')['tabs'] == ['features', 'configuration', 'about']
+
+
+@pytest.mark.parametrize('kind,identifier,tabs', [
+    ('plugins', 'fixture.plugin', ['features', 'configuration', 'about']),
+    ('mcp', 'docs', ['features', 'configuration', 'about']),
+    ('skills', 'review', ['content']), ('tools', 'read', []),
+])
+def test_detail_uses_content_specific_tabs_without_technical(catalog, kind, identifier, tabs):
+    detail = catalog[0].detail(kind, identifier)
+    assert detail['tabs'] == tabs
+    assert 'technical' not in detail
+
+
+def test_mcp_version_is_provider_reported(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[], version='3.4')]
+    assert service.detail('mcp', 'docs')['version'] == '3.4'

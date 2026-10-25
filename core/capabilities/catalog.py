@@ -8,17 +8,6 @@ KINDS = ('plugins', 'mcp', 'skills', 'tools')
 DOCUMENT_LIMIT = 262_144
 
 
-def _document(root):
-    root = Path(root).resolve()
-    for name in ('README.md', 'readme.md', 'README.MD'):
-        path = root / name
-        if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
-            continue
-        with path.open('rb') as stream:
-            return stream.read(DOCUMENT_LIMIT).decode('utf-8', errors='replace').strip()
-    return ''
-
-
 class CapabilityCatalog:
     def __init__(self, workspace_root, *, plugin_manager=None, skill_manager=None,
                  tool_rows=None, mcp_rows=None):
@@ -78,14 +67,14 @@ class CapabilityCatalog:
             from core.security.access_settings import retained_plugins
             known = {row['pluginId'] for row in rows}
             rows = [*rows, *[dict(pluginId=key, name=key, intent='removed', state='stopped', version=None, retained=True,
-                manifest={'description': {'zh': '插件已移除，旧访问范围仍保留，可在配置中查看和撤销。', 'en': 'Plugin removed. Review and revoke retained access in Configuration.'}})
+                manifest={'description': {'zh': '插件已移除，旧访问限制仍继续生效。', 'en': 'Plugin removed. Existing access restrictions remain in effect.'}})
                 for key in sorted(retained_plugins()) if key not in known]]
         if kind == 'mcp':
             from core.security.access_settings import retained_connections
             known = {row['name'] for row in rows}
             rows = [*rows, *[dict(name=key[4:], enabled=False, state='disabled', transport='retained', tools=[], retained=True,
-                description={'zh': '连接已移除。现有访问限制仍保留，可在配置中查看和撤销旧授权。',
-                             'en': 'Connection removed. Review and revoke retained access in Configuration.'})
+                description={'zh': '连接已移除。现有访问限制仍继续生效。',
+                             'en': 'Connection removed. Existing access restrictions remain in effect.'})
                 for key in sorted(retained_connections()) if key.startswith('mcp:') and key[4:] not in known]]
         return rows
 
@@ -103,7 +92,7 @@ class CapabilityCatalog:
                         source=row.get('source', {}).get('type', 'builtin'), version=None)
         if kind == 'mcp':
             return dict(kind=kind, id=row['name'], name=row['name'], description=description,
-                        enabled=row['enabled'], state=row['state'], source=row['transport'], version=None,
+                        enabled=row['enabled'], state=row['state'], source=row['transport'], version=row.get('version'),
                         **({'retained': True} if row.get('retained') else {}))
         return dict(kind=kind, id=row['name'], name=row.get('display_name') or row['name'],
                     description=description, enabled=row['enabled'],
@@ -132,44 +121,31 @@ class CapabilityCatalog:
         row = next((item for item in self._raw(kind) if item.get(keys[kind]) == identifier), None)
         if row is None:
             raise KeyError('Capability not found')
-        detail = {**self._summary(kind, row), 'tabs': ['overview'], 'overview': '', 'features': [], 'runtime': {}}
+        detail = {**self._summary(kind, row), 'tabs': [], 'overview': '', 'features': [], 'runtime': {}}
         detail['overview'] = detail['description']
         if kind == 'tools':
             detail['overview'] = clean_copy(row.get('detail')) or detail['description']
             detail['reason'] = row.get('reason')
         elif kind == 'skills':
             entry = self.skill_manager.get_skill(identifier)
-            detail.update(tabs=['overview', 'content'], content=entry.skill.content[:DOCUMENT_LIMIT] if entry else '')
+            detail.update(tabs=['content'], content=entry.skill.content[:DOCUMENT_LIMIT] if entry else '')
         elif kind == 'mcp':
-            detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
+            detail['tabs'] = ['features', 'configuration', 'about']
             detail['features'] = mcp_features(row)
             if row.get('settings_url'):
                 detail['configuration'] = dict(settingsUrl=row['settings_url'])
-            detail['technical'] = dict(transport=row['transport'])
             detail['runtime'] = dict(state=row['state'])
         else:
-            detail['tabs'] = ['overview', 'features', 'configuration', 'runtime']
-            detail['technical'] = dict(generation=row.get('generation', 0), services=row.get('services', []))
+            detail['tabs'] = ['features', 'configuration', 'about']
             detail['runtime'] = dict(state=row['state'])
             if row.get('error'):
                 from core.log_redaction import redact
                 detail['runtime']['error'] = redact(row['error'])[:12000]
-            if row.get('digest'):
-                current = self.plugin_manager.packages.current_package(identifier)
-                if current:
-                    try:
-                        from core.plugins.package_ops import _sha256_tree
-                        if current.get('digest') == row['digest'] and _sha256_tree(Path(current['path'])) == row['digest']:
-                            detail['overview'] = _document(current['path']) or detail['description']
-                    except OSError:
-                        pass
             try:
                 adapters = self.tool_rows()
             except Exception:
                 adapters = []  # A broken adapter catalog must not hide declared pages.
             detail['features'] = plugin_features(row, adapters)
         if row.get('retained'):
-            detail.update(tabs=['overview', 'configuration'], features=[], runtime={})
-        if 'runtime' in detail['tabs'] and not any(detail['runtime'].get(key) for key in ('state', 'error')):
-            detail['tabs'].remove('runtime')
+            detail.update(features=[], runtime={})
         return detail

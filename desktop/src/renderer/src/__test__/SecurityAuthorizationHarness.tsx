@@ -5,7 +5,7 @@ import FeatureAccessEditor from '../components/FeatureAccessEditor'
 import { createRoot } from 'react-dom/client'
 import { RuntimeAuthorizationPanel } from '../components/SecurityAuthorizationPanels'
 
-export function mountSecurityAuthorizationTest(context: FeatureAccessContext = { module: 'data', id: 'school' }) {
+export function mountSecurityAuthorizationTest(context: FeatureAccessContext = { module: 'sessions', id: 'chat', agent: 'default' }) {
   apiClient.setBaseUrl('http://127.0.0.1:9876')
   const host = document.createElement('main')
   host.style.cssText = 'position:absolute;inset:0;z-index:100001;overflow:auto;background:var(--color-surface);padding:20px'

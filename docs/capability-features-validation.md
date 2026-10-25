@@ -1,5 +1,7 @@
 # 能力详情功能列表
 
+> 此文保留当时实施与验证记录；现行标签、来源入口和管理接口见[统一能力详情验收](capability-details-sources-validation.md)。
+
 2026-10-24，Core任务分支 `feat/capability-feature-list`，基线 `6fb57e77`。两个默认MCP的工具标题由各自Server发布；本次不修改插件业务、配置表单、权限规则或工具执行逻辑。
 
 ## 行为和数据来源

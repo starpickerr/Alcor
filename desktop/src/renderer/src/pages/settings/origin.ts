@@ -14,12 +14,13 @@ export function currentSettingsOrigin(pathname: string, search: string): Setting
   }
 }
 
-export function useRestoreScroll() {
+export function useRestoreScroll(ready = true) {
   const location = useLocation()
   useEffect(() => {
+    if (!ready) return
     const scroll = (location.state as { restoreScroll?: number } | null)?.restoreScroll
     if (typeof scroll !== 'number') return
     const scroller = document.querySelector('[data-stella-scroll]')
     if (scroller instanceof HTMLElement) scroller.scrollTop = scroll
-  }, [location.state])
+  }, [location.state, ready])
 }

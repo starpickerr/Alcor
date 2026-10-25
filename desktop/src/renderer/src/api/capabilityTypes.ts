@@ -18,7 +18,6 @@ export interface CapabilityFeature {
 export interface CapabilityDetail extends CapabilityItem {
   configuration?: { settingsUrl?: string }
   tabs: string[]; overview: CapabilityCopy; content?: string; reason?: CapabilityCopy | null
-  technical?: { transport?: string; generation?: number; services?: string[] }
   features: CapabilityFeature[]; runtime: Record<string, string | number | string[]>
 }
 export interface CapabilityInventory { status: string; items: CapabilityItem[]; connectionSettings?: string[]; errors: Partial<Record<CapabilityKind, string>> }

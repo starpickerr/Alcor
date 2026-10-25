@@ -1,5 +1,7 @@
 # 能力详情的工具开关与配置归属
 
+> 此文保留当时实施与验证记录；现行标签、来源入口和管理接口见[统一能力详情验收](capability-details-sources-validation.md)。
+
 本轮分支 `feat/capability-tool-switches`，基于 develop `192d4997` 创建；之前的未提交改动原样保留。本轮未提交、合并或推送。
 
 ## 实现

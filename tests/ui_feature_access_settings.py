@@ -41,7 +41,7 @@ with sync_playwright() as p:
         page.add_init_script("localStorage.setItem('stella_lang','zh')")
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.route('http://127.0.0.1:9876/**', backend)
-        for value in [dict(module='data', id='school'), dict(module='sessions', id='chat', agent='default')]:
+        for value in [dict(module='sessions', id='chat', agent='default')]:
             context.clear()
             context.update(value)
             page.goto(URL, wait_until='networkidle')
@@ -70,6 +70,6 @@ with sync_playwright() as p:
             page.screenshot(path=f"/tmp/stella-access-{value['module']}-{value.get('kind', 'source')}.png", full_page=True)
             page.set_viewport_size({'width': 1280, 'height': 950})
         assert not errors, errors
-        print('PASS: source/task/plugin/MCP contexts, fixed subjects, independent purposes, scoped writes, revision rejection and narrow layout')
+        print('PASS: retained conversation access context, scoped writes and narrow layout')
     finally:
         browser.close()
