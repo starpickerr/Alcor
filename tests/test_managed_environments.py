@@ -173,6 +173,44 @@ def handle(method, params):
         session.dispose()
 
 
+def test_maintenance_worker_keeps_selected_environment_and_cannot_write_live_private_storage(tmp_path):
+    import shutil
+    from core.plugins.host import PluginSession
+    from core.plugins.registry import PluginRegistry
+    from core.plugins.storage import private_data_handle
+    from core.runtime.environments import EnvironmentStore
+
+    package = tmp_path / 'plugin'
+    shutil.copytree('samples/plugins/alpha', package)
+    store = EnvironmentStore()
+    old = store.prepare_python(kind='plugin', identifier='stella.sample.alpha', user='alice',
+                               package=package, digest='a'*64)
+    store.activate(old, validate=lambda candidate: True)
+    private = Path(private_data_handle('stella.sample.alpha', 'alice', ensure=True)['dataDir'])
+    sentinel = private / 'kept.txt'
+    sentinel.write_text('KEEP_PRIVATE_DATA')
+    scratch = tmp_path / 'scratch'
+    (package / 'backend/main.py').write_text(f'''from pathlib import Path
+try:
+    Path({str(sentinel)!r}).write_text('CORRUPTED')
+except OSError:
+    pass
+def handle(method, params):
+    return {{'status': 'succeeded', 'sideEffects': 'none', 'value': None}}
+''')
+    session = PluginSession(package, source_label='maintenance', registry=PluginRegistry(),
+        user_id='alice', maintenance=True,
+        data_handle={'namespace': 'stella.sample.alpha', 'dataDir': str(scratch)})
+    try:
+        session.start()
+        runtime_storage = Path(session._storage_directory)
+        assert sentinel.read_text() == 'KEEP_PRIVATE_DATA', 'Candidate changed live private storage'
+        assert store.current('plugin', 'stella.sample.alpha', 'alice')['id'] == old['id']
+    finally:
+        session.dispose()
+    assert not runtime_storage.exists(), 'Maintenance HOME/cache must be discarded after the worker exits'
+
+
 def test_agent_file_tools_cannot_mutate_managed_runtime_policy_or_dependencies(
     monkeypatch, tmp_path
 ):

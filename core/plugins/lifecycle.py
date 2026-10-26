@@ -7,10 +7,11 @@ reinstall changes a removed intent. Inventory never starts a worker.
 from __future__ import annotations
 
 import importlib
+import tempfile
 from pathlib import Path
 
 from core.plugins.distribution import check_plugin_api_compatibility, fetch_and_install_from_catalog, load_catalog
-from core.plugins.host import PluginSession
+from core.plugins.host import PluginSession, stop_plugin_sessions
 from core.plugins.locks import package_lock
 from core.plugins.management import ManagementStore
 from core.plugins.manifest import load_manifest
@@ -54,13 +55,14 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
     return private_data_handle(plugin_id, user_id)
 
 
-def stop_session(plugin_id: str):
+def stop_session(plugin_id: str, *, user_id: str | None = None):
+    stop_plugin_sessions(plugin_id, user_id=user_id)
     domain = DOMAINS.get(plugin_id)
     if not domain:
         return
     gateway = importlib.import_module(f'core.services.{domain}_gateway')
     session = gateway._SESSION
-    if session is not None:
+    if session is not None and (user_id is None or session.user_id == user_id):
         # Admission is already closed. Interrupt long RPC before waiting for
         # the gateway's serialization lock, then discard its stale cache.
         session.dispose()
@@ -86,8 +88,10 @@ class PluginManager:
             raise PermissionError('plugin requires migration recovery before enabling')
         if intent != 'enabled':
             self.management.set_runtime(plugin_id, user_id, 'draining')
-            stop_session(plugin_id)
-            DEFAULT_REGISTRY.revoke(plugin_id)
+            stop_session(plugin_id, user_id=user_id)
+            snapshot = DEFAULT_REGISTRY.get(plugin_id)
+            if snapshot and snapshot.user_id == user_id:
+                DEFAULT_REGISTRY.revoke(plugin_id, snapshot.generation)
         with package_lock(self.management.root, plugin_id + ':policy', exclusive=True):
             result = self.management.set_intent(plugin_id, user_id, intent)
             self.management.set_runtime(plugin_id, user_id, 'stopped')
@@ -123,6 +127,8 @@ class PluginManager:
             raise ValueError('not a package selection operation')
         if operation['stage'] == 'completed':
             return operation
+        if operation['stage'] == 'failed':
+            raise ValueError('candidate preflight failed; start a new install operation')
         return self._complete_install(operation, checkpoint=checkpoint)
 
     def _complete_install(self, operation: dict, *, checkpoint=None) -> dict:
@@ -140,11 +146,6 @@ class PluginManager:
         if manifest['id'] != plugin_id or not check_plugin_api_compatibility(core_api='1.0.0', package_host_api=manifest['hostApi']).ok:
             raise PermissionError('fixed candidate identity/API mismatch')
         users = sorted(set(self.management.users(plugin_id)) | {user_id})
-        for user in users:
-            if not self.management.has_instance(plugin_id, user):
-                self.management.set_intent(plugin_id, user, 'enabled')
-            self.management.set_runtime(plugin_id, user, 'maintenance')
-        stop_session(plugin_id)
 
         def advance(stage, extra=None):
             nonlocal operation
@@ -152,16 +153,38 @@ class PluginManager:
             if checkpoint:
                 checkpoint(stage, operation)
 
-        try:
-            if operation['stage'] == 'staged':
-                # Handshake and descriptor preflight are not an activation.
+        # Prepare every owner's dependency environment before touching the
+        # selected package, live worker, intent or business data. Maintenance
+        # sessions never publish contributions or select an environment.
+        if operation['stage'] in {'staged', 'prepared'}:
+            try:
                 if manifest.get('runtime'):
-                    session = PluginSession(candidate, source_label='candidate', registry=PluginRegistry(), maintenance=True)
-                    try:
-                        session.start()
-                    finally:
-                        session.dispose()
-                advance('prepared')
+                    for user in users:
+                        with tempfile.TemporaryDirectory(prefix='stella-plugin-preflight-') as scratch:
+                            session = PluginSession(candidate, source_label='candidate', registry=PluginRegistry(),
+                                maintenance=True, user_id=user,
+                                data_handle={'namespace': plugin_id, 'dataDir': scratch})
+                            try:
+                                session.start()
+                            finally:
+                                session.dispose()
+                if _sha256_tree(candidate) != facts['digest']:
+                    raise PermissionError('fixed candidate changed during preflight')
+            except Exception as exc:
+                self.management.advance(op_id, 'failed', error=str(exc))
+                raise
+            advance('prepared')
+
+        try:
+            # Persist the unsafe-to-reopen boundary before closing admission or
+            # starting any migration; recovery retains maintenance from here.
+            if operation['stage'] == 'prepared':
+                advance('draining')
+            for user in users:
+                if not self.management.has_instance(plugin_id, user):
+                    self.management.set_intent(plugin_id, user, 'enabled')
+                self.management.set_runtime(plugin_id, user, 'maintenance')
+            stop_session(plugin_id)
             migrations = dict(operation['facts'].get('migrations') or {})
             if manifest.get('data'):
                 for user in users:

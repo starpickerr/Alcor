@@ -108,3 +108,16 @@
 ### 2026-10-26 阶段提交授权
 
 用户最新要求「及时提交」，覆盖此前等待全部任务完成后才提交的时机约束。仅提交本任务已验证的阶段变更，保留原有无关改动；不合并 develop、不推送、不发布。完整目标保持实施中，最终独立审查及未实现项继续保留。
+
+## 2026-10-26 候选环境预检与生命周期回收
+
+- 更新预检移到维护窗口之前，按实际用户准备候选依赖并完成真实 Worker 握手；使用临时数据句柄和临时 HOME/cache，维护 Worker 不切换正式环境。预检失败仅记录 failed，旧包/环境/启停/活跃进程继续有效；不能复用失败操作绕过预检。
+- 原进程持有集合接入 PluginManager 的更新、停用和移除；覆盖没有专用域网关的插件。按用户停用只回收该用户的进程，包更新回收所有旧实例。Worker 启动使用原 admission lease，拒绝已停用、维护中及过期选包。账号与业务存储保留。
+- 回归真实复现并修复：候选可改写正式私有文件、验证失败使旧版进入维护、普通插件留下旧进程、已停用/旧版仍可启动、停用一个用户影响其他用户。candidate-owner-lifecycle-green.log 为 15 PASS；早先迁移/环境范围 candidate-lifecycle-regression.log 为 75 PASS。完整测试正在执行，终态另行记录。
+- Ruling: 仅预检失败恢复旧版持续可用；进入 draining/真实数据迁移后失败继续阻止访问——可能已提交新数据，不能为了“回滚”让旧代码读取不兼容存储；代价是迁移错误仍需显式修复/恢复。
+
+完整计划尚未完成，原生 guardian、受保护目录事务、Keychain、签名/冻结发行、多来源安装/剩余生命周期与受控连接器/来源传播/长期网站授权/公共浏览器及最终独立审查继续保留。
+
+本轮补充验证：candidate-lifecycle-final-regression.log 为 106 PASS（生命周期、维护隔离、真实迁移/恢复、管理、分发与 bootstrap）。project-pytest-candidate-lifecycle.log 全量中间快照为 2646 PASS /1 FAIL /22 SKIP，354.41 秒，5 项既有警告；唯一失败 test_worker_crash_reaps_owned_cli_groups 的 fixture 在创建文件后尚未写入完成就被读取，JSONDecodeError 输入为空字符串。已将两个 PID 握手文件写完后原子发布，不修改生产进程回收或降低断言；candidate-cli-fixture-green.log 25 PASS。新增 draining 持久阶段中断/恢复覆盖。最新全量 project-pytest-candidate-final.log：2649 PASS /22 SKIP /0 FAIL，350.74 秒，5 项既有警告。运行命令：python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（使用 /opt/anaconda3/envs/Stella/bin/python）。
+
+本轮验收：上述最新完整后端测试终态通过；相关 5 个 Python 文件 Ruff 和 git diff --check 通过。原生系统 guardian / Keychain / 完整多来源与冻结发行 / 受控连接器和外发来源链路等完整目标仍未完成，不执行合并、推送或发布。

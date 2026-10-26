@@ -7,6 +7,7 @@ import platform
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -35,6 +36,13 @@ class PluginHostError(RuntimeError):
 
 
 _LIVE_SESSIONS = weakref.WeakSet()
+
+
+def stop_plugin_sessions(plugin_id, *, user_id=None):
+    """Drain all Core-owned workers, including plugins without domain gateways."""
+    for session in list(_LIVE_SESSIONS):
+        if session.plugin_id == plugin_id and (user_id is None or session.user_id == user_id):
+            session.dispose()
 
 
 def revoke_runtime_trust(user_id, plugin_id, digest):
@@ -217,6 +225,7 @@ class PluginSession:
         self._method_descriptors = {}
         self.sandbox_state = {'mode': 'unavailable', 'reason': 'Worker has not started.'}
         self.environment = None
+        self._maintenance_storage = None
         _LIVE_SESSIONS.add(self)
 
     def matches_storage(self, handle):
@@ -265,11 +274,18 @@ class PluginSession:
         from core.mcp.retired import RETIRED_PLUGIN_IDS
         if self.plugin_id in RETIRED_PLUGIN_IDS:
             raise PluginHostError('This capability has migrated to MCP; the old plugin cannot start')
-        from core.plugins.caller import invocation_budget, invocation_lock
+        from core.plugins.caller import invocation_budget, invocation_lock, managed_data_lease, managed_plugin
 
-        with invocation_budget(), invocation_lock(self._lock):
+        admission = nullcontext() if self.maintenance else managed_data_lease(self.plugin_id, user_id=self.user_id)
+        with invocation_budget(), admission, invocation_lock(self._lock):
             if self._proc is not None:
                 raise PluginHostError("session already started")
+            if not self.maintenance and managed_plugin(self.plugin_id, self.user_id):
+                from core.plugins.management import default_store
+                from core.plugins.package_ops import PackageStore
+                current = PackageStore(default_store().root).current_package(self.plugin_id)
+                if not current or current['digest'] != self.package_digest:
+                    raise PermissionError('worker package selection changed; resolve the current package before starting')
             try:
                 return self._start()
             except Exception:
@@ -310,7 +326,13 @@ class PluginSession:
             from core.security.extension_sandbox import prepare_extension
             from core.security.runtime_trust import plugin_trusted
             from core.plugins.storage import private_data_handle
-            storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
+            if self.maintenance:
+                # A candidate/migration may only touch its explicit scratch
+                # handle. Its HOME/cache must not grant access to live data.
+                self._maintenance_storage = tempfile.TemporaryDirectory(prefix='stella-plugin-maintenance-')
+                storage = self._maintenance_storage.name
+            else:
+                storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
             self._storage_directory = storage
             from core.plugins.storage import storage_paths
             domain, legacy_reads = storage_paths(self._bound_data_handle, legacy=self.maintenance)
@@ -388,7 +410,7 @@ class PluginSession:
                     services=tuple(service_ids),
                     user_id=self.user_id,
                 )
-            if self.environment:
+            if self.environment and not self.maintenance:
                 from core.runtime.environments import EnvironmentStore
                 EnvironmentStore().activate(self.environment, validate=lambda candidate: self._proc is not None and self._proc.poll() is None)
             if not self.maintenance:
@@ -684,6 +706,9 @@ class PluginSession:
                     self._proc = None
                 if self._stderr_thread:
                     self._stderr_thread.join(timeout=1)
+                if self._maintenance_storage:
+                    self._maintenance_storage.cleanup()
+                    self._maintenance_storage = None
 
     def _drain_stderr(self, process) -> None:
         # Only the runner's bounded diagnostic envelopes may reach host logs.
