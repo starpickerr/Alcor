@@ -231,3 +231,14 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 两个真实 stdio 初始化都报告 SDK 1.30.0，分别与 eLearning 1.0.3/email 1.0.2 的原发行元数据不符（*-version-red-venv.log）。修复为显式传入随包发布的 __version__，并同步版本为 eLearning 1.0.4/email 1.0.3；真实握手测试逐项核对 pyproject 发行版本，避免通过其他安装的同名包推测版本。未将刷新或重新连接当成检查更新。两个提供者完整测试分别 123 PASS +12 subtests、48 PASS，Ruff/空白检查通过。Core 整包来源摘要同步更新，原来源 pin 与撤销逻辑未放宽。
 
 验证过程纠正：最初 Core 解释器没有 MCP SDK，握手测试导入失败不是产品 RED；改用各仓库已有 .venv 后才取得上述真实版本不符 RED。我在首次 Core 全量期间新增 MCP 测试文件，而原整包摘要包含测试文件，破坏快照一致性。该运行已主动中止并保留：1486 PASS /16 FAIL /4 SKIP，298.43 秒，其中四项未注册身份已由 48 项回归验证修正，其余项同时受到未更新来源 pin 的影响，不能当作最终产品结论。现在固定两个 MCP 的完整内容和 Core 摘要重新执行 project-pytest-source-and-versions-final.log，等待终态。不会复用被中止运行冒称全量通过。
+
+
+## 本轮固定快照验证终态
+
+- project-pytest-source-and-versions-final.log：**2728 PASS /2 FAIL /22 SKIP，438.98 秒，5 项既有警告**。完整命令：/opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。
+- FAIL 1：tests/test_todos_plugin_gateway.py::test_application_port_routes_todos_via_plugin，同样使用未注册 test-agent。复用 registered_agent 补齐注册，保留真实待办业务与权限断言，无生产回退。
+- FAIL 2：tests/test_briefing_peer_authorization.py::test_nondefault_user_uses_only_its_own_owner_grants[alice]，原生跨 Worker 创建待办返回 failed。全量日志未显示 receipt.error（字典被断言格式截断），单项 1 PASS、整个原生权限模块 33 PASS；仍未定位原因，不能视为已修复或直接认定既有失败。已调整该项断言失败说明仅明确展示 error/result，成功条件不变，便于后续稳定复现诊断。
+- source-scope-todos-peer-final.log：上述夹具和诊断变更后 **50 PASS，8.94 秒**，Ruff/空白检查通过。未再次运行完整后端，不将该局部通过代替有两项失败的完整结果。
+- 本轮提交：Core 5c89bdf3（源码/执行文件读取范围）、026abe3d（自动化/账单/简报身份夹具）、16071ad4（真实版本对应来源 pin）；eLearning 67cc9cf、email 7d471f7（真实服务版本）。后续待办夹具/失败诊断和本记录独立提交。两个提供者源摘要已再次核对匹配，账号、凭据和业务配置未变更，用户原有 7 项无关改动保留。
+
+完整目标继续实施，未做最终独立审查；本轮不合并 develop、不推送、不发布。接续优先调查非默认用户简报间歇失败，并推进已有数据归属确认/受控迁移、Keychain/可信连接器、环境多来源生命周期和外发链路。ES entitlement/原生 guardian 仍不可用，Core/Electron 不宣称已保护；Linux 按用户要求 NOT RUN。

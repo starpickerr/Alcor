@@ -130,7 +130,7 @@ def test_disabled_owner_hides_enrichment_and_preserves_pending_projection(peers,
 def test_nondefault_user_uses_only_its_own_owner_grants(peers):
     item = peers.publish()['items'][0]['id']
     receipt = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
-    assert receipt['state'] == 'succeeded', receipt
+    assert receipt['state'] == 'succeeded', {'error': receipt.get('error'), 'result': receipt.get('result')}
     assert peers.authz.scoped_grants('local-default') == []
 
 
