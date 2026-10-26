@@ -100,6 +100,9 @@ class RuntimeControl:
         from agent.tools.mcp.mcp_client import LIVE_CLIENTS
         from agent.tools.tool_manager import ToolManager
         from core.security.mcp_runtime import launch_identity
+        from core.plugins.lifecycle import dependency_rebuild_support
+        from core.plugins.manifest import load_manifest
+        from core.runtime.environments import EnvironmentStore
         user = current_identity().user_id or 'local-default'
         packages = PackageStore(default_store().root)
         rows = []
@@ -114,7 +117,27 @@ class RuntimeControl:
                 continue
             session = next((row for row in list(_LIVE_SESSIONS) if row.plugin_id == identifier and row.user_id == user
                             and row._proc is not None and row._proc.poll() is None), None)
-            rows.append({'kind': 'plugin', 'id': identifier, 'digest': package['digest'], 'environment': getattr(session, 'environment', None),
+            supported, rebuild_reason = dependency_rebuild_support(load_manifest(Path(package['path'])))
+            store = default_store()
+            enrolled = store.has_instance(identifier, user)
+            if not enrolled or store.instance(identifier, user)['intent'] == 'removed':
+                supported, rebuild_reason = False, 'Enable or install this plugin before rebuilding'
+            pending = store.unfinished(identifier)
+            resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                      and pending[0]['kind'] == 'rebuild' and pending[0]['userId'] == user else None)
+            if pending or store.runtime_state(identifier, user) in {'maintenance', 'draining'}:
+                supported, rebuild_reason = False, 'A pending operation needs recovery first'
+            environment = getattr(session, 'environment', None)
+            environment_error = None
+            if environment is None:
+                try:
+                    environment = EnvironmentStore().current('plugin', identifier, user)
+                except (ValueError, OSError):
+                    environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+            rows.append({'kind': 'plugin', 'id': identifier, 'digest': package['digest'], 'environment': environment,
+                'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                **({'rebuild_operation': resume} if resume else {}),
+                **({'environment_error': environment_error} if environment_error else {}),
                 'running': session is not None, 'mode': session.sandbox_state['mode'] if session else 'stopped',
                 'reason': session.sandbox_state.get('reason') if session else 'Worker has not started.'})
         manager = ToolManager()

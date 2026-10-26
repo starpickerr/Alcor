@@ -7,6 +7,36 @@ import sys
 import pytest
 
 
+def test_restart_reuses_selected_rebuild_instead_of_an_older_matching_cache(tmp_path):
+    from core.runtime.environments import EnvironmentStore
+    store = EnvironmentStore(tmp_path / 'runtimes')
+    inputs = dict(kind='plugin', identifier='example.rebuild', user='alice',
+                  package=tmp_path / 'package', digest='a'*64)
+    old = store.prepare_python(**inputs)
+    store.activate(old, validate=lambda candidate: True)
+    rebuilt = store.prepare_python(**inputs, rebuild=True)
+    assert rebuilt['id'] != old['id']
+    assert store.current('plugin', 'example.rebuild', 'alice')['id'] == old['id']
+    store.activate(rebuilt, validate=lambda candidate: store.run(candidate, ['-I', '-c', 'print("VALID")']).returncode == 0)
+    assert store.prepare_python(**inputs)['id'] == rebuilt['id']
+
+
+@pytest.mark.parametrize('operation', ['current', 'prepare'])
+def test_selected_environment_cannot_borrow_another_owners_record(tmp_path, operation):
+    from core.runtime.environments import EnvironmentStore
+    store = EnvironmentStore(tmp_path / 'runtimes')
+    inputs = dict(kind='plugin', identifier='example.owner', package=tmp_path / 'source', digest='a'*64)
+    alice = store.prepare_python(**inputs, user='alice')
+    bob = store.prepare_python(**inputs, user='bob')
+    pointer = Path(alice['path']).parent / 'current.json'
+    pointer.write_text(json.dumps(bob))
+    with pytest.raises(PermissionError, match='owner'):
+        if operation == 'current':
+            store.current('plugin', 'example.owner', 'alice')
+        else:
+            store.prepare_python(**inputs, user='alice')
+
+
 def test_python_environments_share_base_but_do_not_inherit_core_packages(tmp_path):
     from core.runtime.environments import EnvironmentStore
 

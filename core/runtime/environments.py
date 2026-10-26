@@ -43,6 +43,27 @@ class EnvironmentStore:
         return folder
 
     @staticmethod
+    def _owned_record(marker, kind, identifier, user):
+        if marker.is_symlink() or marker.parent.is_symlink():
+            raise PermissionError('Environment metadata cannot use symlinks')
+        record = json.loads(marker.read_text())
+        if not isinstance(record, dict) or (record.get('kind'), record.get('identifier'), record.get('user')) != (kind, identifier, user):
+            raise PermissionError('Environment metadata owner changed')
+        return record
+
+    def _cached(self, kind, identifier, user, fingerprint):
+        folder = self._folder(kind, identifier, user)
+        # A successful rebuild selects a new physical environment with the
+        # same fingerprint. Restart must not choose an older matching cache.
+        for marker in [folder / 'current.json', *folder.glob('*/environment.json')]:
+            if not marker.exists() and not marker.is_symlink():
+                continue
+            record = self._owned_record(marker, kind, identifier, user)
+            if record.get('fingerprint') == fingerprint and record.get('state') == 'ready':
+                return self._record(record)
+        return None
+
+    @staticmethod
     def _base():
         executable = Path(getattr(sys, '_base_executable', sys.executable)).resolve()
         digest = sha256(executable.read_bytes()).hexdigest()
@@ -138,10 +159,9 @@ class EnvironmentStore:
         fingerprint = sha256(inputs.encode()).hexdigest()
         with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True, timeout=130):
             if not rebuild:
-                for marker in folder.glob('*/environment.json'):
-                    record = json.loads(marker.read_text())
-                    if record.get('fingerprint') == fingerprint and record.get('state') == 'ready':
-                        return self._record(record)
+                cached = self._cached(kind, identifier, user, fingerprint)
+                if cached:
+                    return cached
             candidate = folder / uuid.uuid4().hex
             candidate.mkdir(parents=True, mode=0o700)
             python = candidate / 'python' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
@@ -196,10 +216,9 @@ class EnvironmentStore:
         fingerprint = sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True, timeout=130):
             if not rebuild:
-                for marker in folder.glob('*/environment.json'):
-                    record = json.loads(marker.read_text())
-                    if record.get('fingerprint') == fingerprint and record.get('state') == 'ready':
-                        return self._record(record)
+                cached = self._cached(kind, identifier, user, fingerprint)
+                if cached:
+                    return cached
             candidate = folder / uuid.uuid4().hex
             candidate.mkdir(parents=True, mode=0o700)
             project = candidate / 'project'
@@ -242,6 +261,13 @@ class EnvironmentStore:
                 raise
 
     def _record(self, record):
+        required = {'kind', 'identifier', 'user', 'id', 'path', 'base', 'state', 'package', 'package_digest', 'fingerprint'}
+        if (not isinstance(record, dict) or not required <= set(record)
+                or not isinstance(record['id'], str) or not isinstance(record['path'], str)):
+            raise PermissionError('Environment metadata is invalid; rebuild required')
+        executable = 'node' if record.get('runtime') == 'node' else 'python'
+        if not isinstance(record.get(executable), str):
+            raise PermissionError('Environment executable metadata is invalid; rebuild required')
         owner = self._folder(record['kind'], record['identifier'], record['user'])
         if not re.fullmatch('[0-9a-f]{32}', record['id']):
             raise PermissionError('Invalid environment identity')
@@ -249,6 +275,8 @@ class EnvironmentStore:
         if candidate.is_symlink() or candidate.resolve() != Path(record['path']) or not candidate.resolve().is_relative_to(self.root):
             raise PermissionError('Environment escaped managed storage')
         saved = json.loads((candidate / 'environment.json').read_text())
+        if not isinstance(saved, dict):
+            raise PermissionError('Environment metadata is invalid; rebuild required')
         base = self._node_base() if saved.get('runtime') == 'node' else self._base()
         if saved != record or saved['state'] != 'ready' or saved['base'] != base:
             raise PermissionError('Environment or shared runtime changed; rebuild required')
@@ -274,11 +302,27 @@ class EnvironmentStore:
             _atomic_json(folder / 'current.json', record)
         return record
 
+    def fail_candidate(self, record):
+        """A rejected, unselected candidate must not be reused as a ready cache."""
+        folder = self._folder(record['kind'], record['identifier'], record['user'])
+        with package_lock(self.root, self._owner(record['kind'], record['identifier'], record['user']), exclusive=True):
+            record = self._record(record)
+            pointer = folder / 'current.json'
+            if pointer.is_file():
+                try:
+                    selected = self._owned_record(pointer, record['kind'], record['identifier'], record['user'])
+                except (ValueError, OSError):
+                    selected = {}  # Invalid metadata grants no selected identity.
+                if selected.get('id') == record['id']:
+                    return False
+            _atomic_json(Path(record['path']) / 'environment.json', {**record, 'state': 'failed'})
+        return True
+
     def current(self, kind, identifier, user):
         pointer = self._folder(kind, identifier, user) / 'current.json'
-        if not pointer.is_file():
+        if not pointer.exists() and not pointer.is_symlink():
             return None
-        return self._record(json.loads(pointer.read_text()))
+        return self._record(self._owned_record(pointer, kind, identifier, user))
 
     def remove(self, kind, identifier, user):
         with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True):

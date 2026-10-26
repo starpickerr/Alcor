@@ -27,6 +27,23 @@ DOMAINS = {'stella.memory': 'memory', 'stella.knowledge': 'knowledge', 'stella.b
 FIRST_PARTY_PLUGIN_IDS = frozenset(DOMAINS) | frozenset({'stella.agent-hub'})
 
 
+def dependency_rebuild_support(manifest):
+    from core.plugins.host import resolve_runner_command, RUNNER_DEV_MODULE
+    from agent.permission.process_sandbox import capability
+    if not manifest.get('runtime'):
+        return False, 'This plugin has no independent dependency runtime'
+    state = capability()
+    if state['status'] != 'enabled':
+        return False, state['reason']
+    try:
+        command = resolve_runner_command()
+    except RuntimeError:
+        return False, 'The installed worker is unavailable'
+    if len(command) != 3 or command[1:] != ['-m', RUNNER_DEV_MODULE]:
+        return False, 'This packaged worker does not support independent dependency rebuilding'
+    return True, ''
+
+
 def domain_data_handle(plugin_id: str, user_id: str) -> dict:
     from common.runtime_identity import identity_scope
     from common import state_dir
@@ -124,6 +141,12 @@ class PluginManager:
 
     def resume(self, operation_id: str, *, checkpoint=None) -> dict:
         operation = self.management.operation(operation_id)
+        if operation['kind'] == 'rebuild':
+            if operation['stage'] == 'completed':
+                return operation
+            if operation['stage'] == 'failed':
+                raise ValueError('environment rebuild failed; start a new operation')
+            return self._complete_rebuild(operation, checkpoint=checkpoint)
         if operation['kind'] != 'install':
             raise ValueError('not a package selection operation')
         if operation['stage'] == 'completed':
@@ -131,6 +154,94 @@ class PluginManager:
         if operation['stage'] == 'failed':
             raise ValueError('candidate preflight failed; start a new install operation')
         return self._complete_install(operation, checkpoint=checkpoint)
+
+    def rebuild(self, plugin_id, *, user_id, checkpoint=None):
+        with package_lock(self.management.root, plugin_id + ':management', exclusive=True):
+            if self.management.unfinished(plugin_id):
+                raise PermissionError('A pending plugin operation needs recovery before rebuilding')
+            if not self.management.has_instance(plugin_id, user_id):
+                raise PermissionError('User is not enrolled in this plugin')
+            if self.management.instance(plugin_id, user_id)['intent'] == 'removed':
+                raise PermissionError('Removed plugins must be explicitly installed again')
+            if self.management.runtime_state(plugin_id, user_id) in {'maintenance', 'draining'}:
+                raise PermissionError('Finish the pending maintenance operation before rebuilding')
+            current = self.packages.current_package(plugin_id)
+            if not current or _sha256_tree(Path(current['path'])) != current['digest']:
+                raise PermissionError('Installed package is missing or changed; repair the package first')
+            manifest = load_manifest(Path(current['path']))
+            supported, reason = dependency_rebuild_support(manifest)
+            if manifest['id'] != plugin_id or not supported:
+                raise ValueError(reason or 'Plugin identity does not match the selected package')
+            operation = self.management.begin_operation(plugin_id, user_id, 'rebuild',
+                {'candidate': current['path'], 'digest': current['digest']})
+            return self._rebuild_locked(operation, checkpoint=checkpoint)
+
+    def _complete_rebuild(self, operation, *, checkpoint=None):
+        with package_lock(self.management.root, operation['pluginId'] + ':management', exclusive=True):
+            return self._rebuild_locked(operation, checkpoint=checkpoint)
+
+    def _rebuild_locked(self, operation, *, checkpoint=None):
+        from core.runtime.environments import EnvironmentStore
+        plugin_id, user_id, op_id = operation['pluginId'], operation['userId'], operation['operationId']
+        facts = operation['facts']
+        environments = EnvironmentStore()
+        environment = facts.get('environment')
+        drained = operation['stage'] in {'draining', 'selected'}
+        if any(row['operationId'] != op_id for row in self.management.unfinished(plugin_id)):
+            raise PermissionError('Another pending plugin operation needs recovery first')
+
+        def fixed_source():
+            current = self.packages.current_package(plugin_id)
+            return (current is not None and current['digest'] == facts['digest'] and
+                    current['path'] == facts['candidate'] and _sha256_tree(Path(current['path'])) == facts['digest'])
+
+        def advance(stage, extra=None):
+            nonlocal operation
+            operation = self.management.advance(op_id, stage, extra)
+            if checkpoint:
+                checkpoint(stage, operation)
+
+        try:
+            if not fixed_source() or self.management.instance(plugin_id, user_id)['intent'] == 'removed':
+                raise PermissionError('Selected package or owner intent changed; rebuild was cancelled')
+            if operation['stage'] == 'staged':
+                with tempfile.TemporaryDirectory(prefix='stella-plugin-rebuild-') as scratch:
+                    session = PluginSession(Path(facts['candidate']), source_label='candidate',
+                        registry=PluginRegistry(), user_id=user_id, maintenance=True, rebuild_environment=True,
+                        data_handle={'namespace': plugin_id, 'dataDir': scratch})
+                    try:
+                        session.start()
+                    finally:
+                        environment = session.environment
+                        session.dispose()
+                if environment is None:
+                    raise ValueError('Worker did not prepare an independent dependency environment')
+                advance('prepared', {'environment': environment})
+            if environment is None or (environment['kind'], environment['identifier'], environment['user'],
+                    environment['package_digest']) != ('plugin', plugin_id, user_id, facts['digest']):
+                raise PermissionError('Rebuild candidate does not belong to this owner and package')
+            advance('draining')
+            drained = True
+            self.management.set_runtime(plugin_id, user_id, 'maintenance')
+            stop_session(plugin_id, user_id=user_id)
+            environments.activate(environment, validate=lambda candidate: fixed_source())
+            advance('selected')
+            self.management.bump_source_revision(plugin_id, user_id)
+            self.management.set_runtime(plugin_id, user_id, 'stopped')
+            advance('completed')
+            return operation
+        except Exception as exc:
+            if environment is not None:
+                try:
+                    environments.fail_candidate(environment)
+                except (ValueError, OSError):
+                    pass  # An invalid candidate cannot overwrite the old selection.
+            self.management.advance(op_id, 'failed', error=str(exc))
+            if drained and fixed_source():
+                # Source and domain schema never change during dependency-only
+                # rebuilds. A later call may safely start the retained selection.
+                self.management.set_runtime(plugin_id, user_id, 'failed', error=str(exc))
+            raise
 
     def _complete_install(self, operation: dict, *, checkpoint=None) -> dict:
         with package_lock(self.management.root, operation['pluginId'] + ':management', exclusive=True):

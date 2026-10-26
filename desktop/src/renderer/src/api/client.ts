@@ -100,7 +100,7 @@ export interface FeatureAccessState extends ApiResult {
 export interface RuntimeStatusState extends ApiResult {
   isolation: { status: string; reason: string }
   application_isolation?: { status: string; protected: boolean; reason: string; unprotected: string[] }
-  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; environment?: { base: { version: string }; state: string } | null }[]
+  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; environment?: { base: { version: string }; state: string } | null }[]
 }
 export interface SensitiveResourceState extends ApiResult {
   credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
@@ -671,6 +671,14 @@ class ApiClient {
   async runtimeStatus(): Promise<RuntimeStatusState> {
     const result = await this.request<RuntimeStatusState>('/api/security/runtime')
     if (result.status !== 'success') throw new Error(result.message || '执行环境状态不可用')
+    return result
+  }
+
+  async rebuildRuntime(kind: 'plugin' | 'mcp', id: string, operationId?: string): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
+      method: 'POST', body: JSON.stringify({ action: operationId ? 'resume' : 'rebuild', kind, id, ...(operationId ? { operationId } : {}) }),
+    })
+    if (result.status !== 'success') throw new Error(result.message || '依赖环境重建失败')
     return result
   }
 

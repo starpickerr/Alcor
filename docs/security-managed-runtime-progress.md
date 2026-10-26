@@ -139,3 +139,19 @@
 project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，352.20 秒，5 项警告。唯一失败 test_native_reminder_configuration_reaches_task_owner；日志显示前一个创建待办的业务状态已 failed，但原断言只检查操作封套 succeeded，随后提醒无有效关联待办。已加强先前业务状态断言，不改业务/权限规则。单用例 1 PASS、整文件 33 PASS、前置 42 个模块 401 PASS /4 SKIP；保留完整测试模块导入但只执行同一前缀也为 401 PASS /4 SKIP（2283 deselected）。尚未重现原始业务失败的具体原因，不能宣称问题已修复或归为既有失败。新完整测试 project-pytest-distribution-verified.log 使用增强断言继续核验；无论结果均保留本次失败证据。
 
 本轮最新完整验证 project-pytest-distribution-verified.log：**2666 PASS /22 SKIP /0 FAIL，346.11 秒，5 项既有警告**。运行命令为 python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（/opt/anaconda3/envs/Stella/bin/python）。增强断言后的简报用例本次通过，先前间歇业务失败仍未稳定复现，不标为已修复；保留原失败与 401 项顺序复现证据。相关 Python Ruff、git diff --check 通过。最终独立审查、原生 guardian、Keychain、多来源安装/剩余生命周期、签名冻结发行、受控连接器和完整来源传播/长期授权/公共浏览器仍待完成；不合并、不推送、不发布。
+
+## 2026-10-26 插件依赖环境重建与恢复
+
+- 在现有安全 → 运行隔离列表接通已安装源码插件的重建及中断后继续重建；复用 ManagementStore operation、EnvironmentStore 和 PluginSession，不从 catalog 更新代码，不增加凭据或工具开关存储。按实际用户固定候选，通过临时数据/维护 HOME 中的真实 Worker 握手后才停止该用户旧进程并选择新依赖环境；账号、配置、业务数据和启停保留。其他用户进程不停止，已停用插件不自动启用。
+- 普通 Python/Node 准备优先使用当前已选中且匹配的环境，避免重建后又回到旧缓存；元数据绑定真实 owner，非法/损坏记录保守拒绝并允许显式重建恢复。候选验证失败标记 failed，保留旧指针和旧 Worker，不能被当作 ready 缓存。
+- 使用原 prepared/draining/selected/completed 事实恢复，UI 只提供当前用户自己的重建恢复。其他未完成安装/迁移存在时不允许重建或恢复重建重新开放访问；固定源或启停意图已变更时拒绝。Agent/任务身份不能触发 API，旧 trusted/digest 输入也拒绝。
+- 本轮仅接通源码插件环境；冻结 runner/无独立依赖运行时/缺少 OS 隔离显示实际不支持原因，远程 MCP 不出现本地重建按钮。MCP 的同等生命周期与冻结发行仍属于完整目标待办，没有将其标为完成。
+- RED→GREEN：旧缓存选择、跨 owner 元数据、真实 Worker 新环境、失败保留、损坏指针恢复、停用/多用户、阶段中断、并行未完成操作、API owner 和 UI 成败/恢复。plugin-rebuild-backend-regression.log 79 PASS；plugin-rebuild-resume-api-green.log 27 PASS；损坏指针回归初次出现 9 项 fixture 错误，原因是测试在共享环境命名空间留下故意损坏指针，现将该 fixture 的 shared_root 按 tmp_path 隔离；plugin-rebuild-repair-regression.log 为 86 PASS（2 项 pydub 警告）。
+- project-pytest-plugin-rebuild.log（损坏指针补充前快照）：2679 PASS /22 SKIP /0 FAIL，339.82 秒。最新完整后端 project-pytest-plugin-rebuild-final.log：2680 PASS /1 FAIL /22 SKIP，342.34 秒，5 项警告。唯一失败 test_mcp_download_repeats_and_cancellation_prevents_late_publication：取消后未发布 PDF，但输出目录遗留 .elearning-* 临时文件。不能把旧全绿快照当作当前结果，也未将该失败归为既有缺陷；需继续定位取消/进程终止与临时文件清理竞态。
+- 浏览器先复用到辅助脚本遗留的本次 Vite 子进程，HMR 期间对话切换测试出现状态不一致；已核对 PID/启动命令/目录后仅清理本次进程，改用 exec 启动直接管理 Vite，之后完整五页/权限/凭据回归恢复通过，没有修改产品对话权限逻辑。plugin-rebuild-browser-clean-server.log 与后续 verified 日志保留；320px 下使用现有折叠侧栏验证操作可达，无横向溢出。目视截图发现执行环境标题颜色过浅，增加现有 text-content token，并以实际对比度浏览器断言 RED→GREEN；未改全局 UI 设计。
+- Ruling: 重建仅切换依赖，不迁移或回退业务 schema，成功后按现有按需机制在下次使用启动新 Worker——保留数据与原机制；代价是主动重建会停止该用户当前 Worker，UI 已明确说明。
+- Ruling: 未完成的其他安装/迁移先恢复，不让依赖重建绕过维护门——避免旧源重新读取已迁移的数据；代价是需在原操作链完成恢复后再重建。
+
+完整目标仍实施中，尚未合并/推送/发布。后续优先处理 MCP 取消遗留文件与统一生命周期；原生 guardian/目录身份事务、Keychain、多来源安装、签名/冻结发行、可信连接器、来源传播/长期授权/公共浏览器、五页最终视觉验收和完整独立审查继续保留。先前简报待办间歇业务失败仍保留追踪，未宣称已修复。
+
+本轮交付浏览器日志 plugin-rebuild-browser-delivery.log：完整流程 PASS，含重建忙态/失败保留/重试/中断继续、Owner 请求体、现有五页与凭据流程、320px 折叠侧栏下按钮滚动可达、执行环境标题对比度。TypeScript renderer/main 与相关 ESLint、Python Ruff、空白检查 PASS。最新全量仍为 2680 PASS /1 FAIL /22 SKIP，不以早先 2679 全绿快照覆盖当前 MCP 取消临时文件失败。

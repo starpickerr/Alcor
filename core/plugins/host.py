@@ -195,6 +195,7 @@ class PluginSession:
         authz: PluginAuthorizationStore | None = None,
         runner_command: list[str] | None = None,
         maintenance: bool = False,
+        rebuild_environment: bool = False,
         data_handle: Mapping[str, Any] | None = None,
     ) -> None:
         self.plugin_root = Path(plugin_root).resolve()
@@ -213,6 +214,9 @@ class PluginSession:
         self._python = python_executable or sys.executable
         self._runner_command = runner_command
         self.maintenance = maintenance
+        if rebuild_environment and not maintenance:
+            raise ValueError('Environment rebuild requires candidate maintenance validation')
+        self._rebuild_environment = rebuild_environment
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.RLock()
         self._inflight: set[str] = set()
@@ -321,7 +325,7 @@ class PluginSession:
             if len(cmd) == 3 and cmd[1:] == ['-m', RUNNER_DEV_MODULE]:
                 from core.runtime.environments import EnvironmentStore
                 self.environment = EnvironmentStore().prepare_python(kind='plugin', identifier=self.plugin_id,
-                    user=self.user_id, package=self.plugin_root, digest=self.package_digest)
+                    user=self.user_id, package=self.plugin_root, digest=self.package_digest, rebuild=self._rebuild_environment)
                 cmd = [self.environment['python'], *cmd[1:]]
             from core.security.extension_sandbox import prepare_extension
             from core.security.runtime_trust import plugin_trusted

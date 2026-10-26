@@ -71,7 +71,8 @@ def test_resource_and_runtime_http_routes_require_auth(monkeypatch):
                 handler().POST()
     with pytest.raises(PermissionError):
         desktop.SecurityRuntimeTrustHandler().GET()
-    assert not hasattr(desktop.SecurityRuntimeTrustHandler, 'POST')
+    with pytest.raises(PermissionError):
+        desktop.SecurityRuntimeTrustHandler().POST()
 
 
 def test_desktop_task_creation_persists_the_selected_business_capabilities(tmp_path):

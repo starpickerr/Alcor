@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -22,6 +23,17 @@ DEFINITIONS = [
 saved = []
 secret_saves = []
 connection_saves = []
+runtime_rebuilds = []
+runtime_resumes = []
+pending_rebuild = []
+runtime_rows = [
+    {'kind': 'plugin', 'id': 'stella.example-rebuild', 'mode': 'stopped', 'running': False,
+     'reason': 'Worker has not started.', 'can_rebuild': True,
+     'environment': {'id': 'old', 'base': {'version': '3.12.8'}, 'state': 'ready'}},
+    {'kind': 'mcp', 'id': 'remote-example', 'mode': 'remote', 'reason': 'Remote connection.'},
+    {'kind': 'plugin', 'id': 'stella.interrupted', 'mode': 'stopped', 'can_rebuild': False,
+     'reason': 'Worker has not started.', 'rebuild_operation': 'resume-own'},
+]
 connection = {'id': 'service-test', 'name': 'Test service', 'endpoint': 'https://service.invalid', 'owners': ['mcp:test'], 'enabled': True, 'revision': 0, 'active_requests': 0}
 project_chat = [False]
 project_mode = ["full-access"]
@@ -55,7 +67,19 @@ def backend(route):
             connection.update(enabled=body['enabled'], revision=connection['revision'] + 1)
         data['connections'] = [connection]
     elif path in ('/api/security/runtime-trust', '/api/security/runtime'):
-        data.update(runtimes=[], isolation={'status': 'enabled', 'reason': 'OS isolation'}, application_isolation={'protected': False, 'status': 'unavailable', 'reason': 'Not deployed', 'unprotected': ['core', 'desktop-main', 'desktop-helpers']})
+        if route.request.method == 'POST':
+            body = route.request.post_data_json
+            if body['action'] == 'resume':
+                runtime_resumes.append(body)
+                runtime_rows[2].pop('rebuild_operation')
+                runtime_rows[2]['can_rebuild'] = True
+            else:
+                runtime_rebuilds.append(body)
+                if len(runtime_rebuilds) == 1:
+                    pending_rebuild.append(route)
+                    return
+                runtime_rows[0]['environment']['id'] = 'rebuilt'
+        data.update(runtimes=runtime_rows, isolation={'status': 'enabled', 'reason': 'OS isolation'}, application_isolation={'protected': False, 'status': 'unavailable', 'reason': 'Not deployed', 'unprotected': ['core', 'desktop-main', 'desktop-helpers']})
     elif path == '/api/security/migration':
         data.update(verification={'status': 'applied', 'valid': True}, preview={'pending': 0, 'needs_confirmation': 0, 'fingerprint': 'test'})
     if path == '/api/health':
@@ -179,8 +203,46 @@ with sync_playwright() as playwright:
         expect(toggle).not_to_be_checked()
         assert connection_saves[-1] == {'id':'service-test', 'enabled':False, 'revision':0}
         nav.get_by_role('button', name='运行隔离', exact=True).click()
+        colors = page.get_by_role('heading', name='执行环境', exact=True).evaluate('''node => ({
+          foreground: getComputedStyle(node).color,
+          background: getComputedStyle(node.closest('.bg-surface')).backgroundColor
+        })''')
+        def luminance(value):
+            channels = [float(channel) / 255 for channel in re.findall(r'[\d.]+', value)[:3]]
+            linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
+            return sum(channel * weight for channel, weight in zip(linear, [0.2126, 0.7152, 0.0722]))
+        light, dark = sorted([luminance(colors['foreground']), luminance(colors['background'])], reverse=True)
+        assert (light + 0.05) / (dark + 0.05) >= 4.5, colors
         expect(page.get_by_text('应用级保护未就绪。Core 和 Electron 不在下述子进程沙箱的保护范围内。', exact=True)).to_be_visible()
         expect(page.get_by_role('checkbox')).to_have_count(0)
+        rebuild = page.get_by_role('button', name='重建 stella.example-rebuild 的依赖环境', exact=True)
+        expect(rebuild).to_be_visible()
+        expect(page.get_by_role('button', name='重建 remote-example 的依赖环境', exact=True)).to_have_count(0)
+        rebuild.click()
+        expect(rebuild).to_be_disabled()
+        assert runtime_rebuilds == [{'action': 'rebuild', 'kind': 'plugin', 'id': 'stella.example-rebuild'}]
+        pending_rebuild.pop().fulfill(json={'status': 'error', 'message': 'Candidate validation failed; previous environment retained'},
+            headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
+        expect(page.get_by_role('alert')).to_contain_text('previous environment retained')
+        expect(rebuild).to_be_enabled()
+        rebuild.click()
+        expect(page.get_by_role('status').filter(has_text='依赖环境已重建')).to_be_visible()
+        assert len(runtime_rebuilds) == 2
+        resume = page.get_by_role('button', name='继续重建 stella.interrupted 的依赖环境', exact=True)
+        expect(resume).to_be_visible()
+        resume.click()
+        expect(resume).to_have_count(0)
+        assert runtime_resumes == [{'action': 'resume', 'kind': 'plugin', 'id': 'stella.interrupted', 'operationId': 'resume-own'}]
+        page.set_viewport_size({'width': 320, 'height': 800})
+        page.get_by_role('button', name='收起侧栏').click()
+        expect(rebuild).to_be_visible()
+        rebuild.scroll_into_view_if_needed()
+        expect(rebuild).to_be_in_viewport()
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-runtime-rebuild-narrow.png', full_page=True)
+        page.set_viewport_size({'width': 1280, 'height': 900})
+        page.get_by_role('button', name='展开侧栏').click()
         nav.get_by_role('button', name='敏感资源保护', exact=True).click()
         expect(page.get_by_role('heading', name='凭据目录', exact=True)).to_be_visible()
         expect(page.get_by_role('heading', name='受保护文件夹', exact=True)).to_be_visible()

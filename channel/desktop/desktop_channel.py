@@ -6191,6 +6191,35 @@ class CapabilityAccessSettingsHandler(FeatureAccessSettingsHandler):
 
 
 class SecurityRuntimeTrustHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.control import RuntimeControl, require_owner
+        try:
+            require_owner()
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('Environment action must be an object')
+            action = body.get('action')
+            fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else set())
+            if (set(body) != fields or action not in {'rebuild', 'resume'} or body['kind'] != 'plugin'
+                    or not isinstance(body['id'], str) or not body['id']):
+                raise ValueError('Select a supported installed plugin environment to rebuild')
+            manager, user = _plugin_manager(), _plugin_user()
+            if action == 'rebuild':
+                manager.rebuild(body['id'], user_id=user)
+            else:
+                if not isinstance(body['operationId'], str) or not body['operationId']:
+                    raise ValueError('Rebuild operation is required')
+                operation = manager.management.operation(body['operationId'])
+                if operation['userId'] != user or operation['pluginId'] != body['id'] or operation['kind'] != 'rebuild':
+                    raise PermissionError('Rebuild operation does not belong to this user and plugin')
+                manager.resume(operation['operationId'])
+            return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
+        except (KeyError, ValueError, PermissionError, OSError, RuntimeError) as error:
+            return _api_reject('Environment rebuild', error)
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
