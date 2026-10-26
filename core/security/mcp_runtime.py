@@ -120,16 +120,21 @@ def output_temporary(scope):
         os.close(parent)
 
 
-def launch_identity(config):
+def _launch_inputs(config):
     command = shutil.which(config['command']) or config['command']
-    digest = sha256(json.dumps(config, sort_keys=True, ensure_ascii=False).encode())
     files = [Path(command)] + [Path(arg) for arg in config.get('args', [])
                               if isinstance(arg, str) and Path(arg).suffix in {'.py', '.js', '.mjs', '.cjs', '.sh'}]
+    package = files[1].resolve().parent if len(files) > 1 and files[1].is_file() else Path(command).resolve().parent
+    return files, package
+
+
+def launch_identity(config):
+    files, package = _launch_inputs(config)
+    digest = sha256(json.dumps(config, sort_keys=True, ensure_ascii=False).encode())
     for path in files:
         if path.is_file():
             digest.update(str(path.resolve()).encode())
             digest.update(path.read_bytes())
-    package = files[1].resolve().parent if len(files) > 1 and files[1].is_file() else Path(command).resolve().parent
     if ((len(files) > 1 and files[1].is_file())
             or (files[0].is_file() and files[0].read_bytes().startswith(b'#!'))):
         # Bind trust to local imported implementation too, without opening
@@ -250,13 +255,25 @@ def prepare_mcp(config, env):
     # Wire/configuration environment cannot grant output staging authority.
     env.pop('STELLA_MCP_OUTPUT_TEMP', None)
     from common.runtime_identity import current_identity
-    from core.security.extension_sandbox import prepare_extension
+    from core.security.extension_sandbox import prepare_extension, validate_source_root
     user_id = current_identity().user_id or 'local-default'
+    from core.mcp.managed import ManagedMcpConfig
+    from agent.tools.utils.credentials import is_credential_path
+    files, package = _launch_inputs(config)
+    if is_credential_path(str(files[0].resolve())):
+        raise PermissionError('MCP executable is inside Core private storage')
+    script_command = False
+    if files[0].is_file():
+        with files[0].open('rb') as entry:
+            script_command = entry.read(2) == b'#!'
+    read_package = (len(files) > 1 or script_command or isinstance(config, ManagedMcpConfig)
+                    and bool(config.data_root is not None or config.legacy_roots) and bool(config.package_digest))
+    if read_package:
+        validate_source_root(package)
     digest, package = launch_identity(config)
     key = dict(user_id=user_id, kind='mcp', identifier=config['name'], digest=digest)
     if RuntimeTrustStore().choice(**key) is False:
         raise PermissionError('MCP runtime identity was revoked')
-    from core.mcp.managed import ManagedMcpConfig
     from core.runtime.paths import source_digest
     _verify_bound_implementation(config, package)
     if isinstance(config, ManagedMcpConfig) and config.output_scope is not None:
@@ -312,6 +329,9 @@ def prepare_mcp(config, env):
     if environment and environment.get('runtime') == 'node':
         reads.append(environment['base']['prefix'])
         libraries = environment['base']['libraries']
+    elif environment is None and not read_package:
+        executable = Path(shutil.which(config['command']) or config['command']).resolve()
+        libraries = [executable, *EnvironmentStore._native_libraries(executable)]
     writes = []
     if isinstance(config, ManagedMcpConfig) and config.data_root is not None:
         for root in [config.data_root, *config.legacy_roots]:
@@ -325,7 +345,7 @@ def prepare_mcp(config, env):
     directory_reads = (tuple(config.output_scope.root.parents)
                        if isinstance(config, ManagedMcpConfig) and config.output_scope is not None else ())
     plan = prepare_extension(command, package, storage, env, read_roots=reads, write_roots=writes,
-                             executable_reads=libraries, directory_reads=directory_reads)
+                             executable_reads=libraries, directory_reads=directory_reads, read_package=read_package)
     if environment:
         plan.state['environment'] = environment
     return plan, key

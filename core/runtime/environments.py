@@ -149,6 +149,8 @@ class EnvironmentStore:
     def prepare_python(self, *, kind, identifier, user, package, digest, build=None, rebuild=False, launch_digest=None):
         folder = self._folder(kind, identifier, user, launch_digest)
         package = Path(package).resolve()
+        from core.security.extension_sandbox import validate_source_root
+        validate_source_root(package)
         lock = package / 'requirements.lock'
         if ((package / 'requirements.txt').is_file() or (package / 'pyproject.toml').is_file()) and not lock.is_file():
             raise ValueError('Extension dependencies require a pinned requirements.lock with hashes')
@@ -210,6 +212,8 @@ class EnvironmentStore:
     def prepare_node(self, *, kind, identifier, user, package, digest, build=None, rebuild=False, launch_digest=None):
         folder = self._folder(kind, identifier, user, launch_digest)
         package = Path(package).resolve()
+        from core.security.extension_sandbox import validate_source_root
+        validate_source_root(package)
         if not (package / 'package-lock.json').is_file():
             raise ValueError('Node dependencies require package-lock.json')
         # The snapshot must never dereference an extension-controlled alias into

@@ -50,6 +50,8 @@ class PackageStore:
         self.ops_dir.mkdir(parents=True, exist_ok=True)
 
     def stage(self, source_dir: Path) -> PackageOperation:
+        from core.security.extension_sandbox import validate_source_root
+        validate_source_root(source_dir)
         _validate_package_tree(Path(source_dir), allow_root_alias=True)
         manifest = load_manifest(source_dir)
         digest = _sha256_tree(Path(source_dir))

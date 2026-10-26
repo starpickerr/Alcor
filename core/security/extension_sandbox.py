@@ -15,9 +15,28 @@ class ExtensionPlan:
     state: dict
 
 
+def validate_source_root(package):
+    """Public extension inputs cannot include registered Core private state."""
+    from agent.tools.utils.credentials import (
+        is_credential_path, protected_credential_folders, protected_credential_paths,
+    )
+    package = Path(package).resolve()
+    if is_credential_path(str(package)) or any(
+            Path(path).is_relative_to(package)
+            for path in {*protected_credential_paths(), *protected_credential_folders()}):
+        raise PermissionError('Extension source overlaps Core credential or private storage; select a separate source directory')
+    return package
+
+
 def prepare_extension(command, package, storage, env, *, trusted=False, writable=True,
-                      read_roots=(), write_roots=(), executable_reads=(), directory_reads=(), network=False):
+                      read_roots=(), write_roots=(), executable_reads=(), directory_reads=(), network=False,
+                      read_package=True):
     package, storage = Path(package).resolve(), Path(storage).resolve()
+    # Builders may execute a snapshot inside their already-bound candidate.
+    # Raw source roots are validated before copying into that namespace.
+    if read_package and not any(package.is_relative_to(Path(root).resolve())
+                                for root in (storage, *read_roots, *write_roots)):
+        validate_source_root(package)
     storage.mkdir(parents=True, exist_ok=True, mode=0o700)
     storage.chmod(0o700)
     clean = {key: str(value) for key, value in env.items() if not key.startswith(('LD_', 'DYLD_', 'PYTHON')) and
@@ -42,7 +61,8 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
                  PYTHONDONTWRITEBYTECODE='1')
     # Core chooses import roots; no caller import injection survives.
     roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/Library', '/private/etc',
-             sys.prefix, sys.base_prefix, str(core / 'core'), str(package), *map(str, read_roots)) if Path(path).exists()]
+             sys.prefix, sys.base_prefix, str(core / 'core'),
+             *([str(package)] if read_package else []), *map(str, read_roots)) if Path(path).exists()]
     executable_reads = (*executable_reads, core / 'common' / '__init__.py', core / 'common' / 'log.py')
     if sys.platform == 'darwin':
         def literal(path):

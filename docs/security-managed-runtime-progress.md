@@ -212,3 +212,12 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 中间全量 project-pytest-mcp-private-storage.log：2722 PASS /2 FAIL /22 SKIP，436.86 秒，5 项既有警告。失败为 test_mcp_disable_terminates_a_real_process_during_initialize、test_mcp_trust_revoke_stops_ordinary_descendant；两者夹具写死旧运行根，进程提前 FileNotFoundError，现将子进程标记写入实际 cwd，父进程用可信 private_storage 推导同一位置，保留关闭/撤销回收与心跳停止断言。mcp-private-process-fixtures-green.log：69 PASS（2 项 pydub 警告）。额外 mcp-private-hardlink.log：1 PASS，真实 Seatbelt 不允许另一个提供者通过硬链接读取/改写私有文件。当前产品代码未因夹具适配改变，正在执行含全部 13 个私有目录用例的最终完整验证。原生 guardian/任意别名与旧句柄一致性仍未实现，不能以这次静态隔离测试宣称全应用保护完成。
 
 最终私有目录快照 project-pytest-mcp-private-storage-final.log：**2725 PASS /22 SKIP /0 FAIL，428.25 秒，5 项既有警告**，包含 13 个新私有目录用例及修正后的真实启停/撤销夹具。命令为 /opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。相关 Python Ruff 与空白检查通过；本轮未改变前端、MCP 提供者源码、账号或凭据存储。此前简报间歇失败本次未出现，仍未标为已修复。完整目标与归属/更新迁移流程仍未完成；不合并、推送或发布。
+
+
+## 本地扩展源码读取边界
+
+- 普通原生 MCP 可执行入口只获得自身文件及运行库的读取权限，不再自动开放父目录。真实 C 探针先在无沙箱对照中读到相邻合成私有文件，再确认 Seatbelt 中程序已启动、仅文件读取失败（退出码 3），避免将加载失败算作隔离成功。
+- Python/Node 源码执行、依赖准备及本地插件暂存前，统一检查源码根是否覆盖已登记的 Core 凭据/私有存储；发现重叠即拒绝，不扫描普通文件寻找凭据，也不复制或删除原数据。Core 已绑定的构建候选继续复用原沙箱授权。
+- 原运行信任摘要算法与第一方实现 pin 保持不变；本轮没有改变工具开关、业务配置、凭据存储或前端。
+- RED 已由原生相邻文件泄漏、含 Core config.json 的源码启动以及 Python/Node/插件暂存实测确认。相关回归 source-read-scope-regression.log：113 PASS（2 项既有 pydub 警告）；加强程序启动断言后 source-read-probe-confirmed.log：5 PASS。相关 Ruff 与空白检查通过。完整后端 project-pytest-source-read-scope.log 正在运行，尚不报告其终态。
+- 尚未完成：完整 owner 数据归属迁移、多来源安装/更新/卸载、Keychain/可信连接器、原生保护组件与目录事务、完整外发链路及最终独立审查。此次局部隔离不代表 Core/Electron 已被保护；不合并、推送或发布。
