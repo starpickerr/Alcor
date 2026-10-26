@@ -121,3 +121,21 @@
 本轮补充验证：candidate-lifecycle-final-regression.log 为 106 PASS（生命周期、维护隔离、真实迁移/恢复、管理、分发与 bootstrap）。project-pytest-candidate-lifecycle.log 全量中间快照为 2646 PASS /1 FAIL /22 SKIP，354.41 秒，5 项既有警告；唯一失败 test_worker_crash_reaps_owned_cli_groups 的 fixture 在创建文件后尚未写入完成就被读取，JSONDecodeError 输入为空字符串。已将两个 PID 握手文件写完后原子发布，不修改生产进程回收或降低断言；candidate-cli-fixture-green.log 25 PASS。新增 draining 持久阶段中断/恢复覆盖。最新全量 project-pytest-candidate-final.log：2649 PASS /22 SKIP /0 FAIL，350.74 秒，5 项既有警告。运行命令：python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（使用 /opt/anaconda3/envs/Stella/bin/python）。
 
 本轮验收：上述最新完整后端测试终态通过；相关 5 个 Python 文件 Ruff 和 git diff --check 通过。原生系统 guardian / Keychain / 完整多来源与冻结发行 / 受控连接器和外发来源链路等完整目标仍未完成，不执行合并、推送或发布。
+
+## 2026-10-26 插件分发下载与签名包边界
+
+- 原 catalog 远程下载改用既有受控 HTTP 和 connection leases；关闭 public-packages 或实际服务会拒绝新下载并撤销活跃 socket，重新开启不复活旧请求。保留本地相对包/file URL 的离线安装。下载/解包使用每次独立临时 staging，失败完整清理；旧选包及原有账号/配置/业务数据不变。
+- 继续校验原签名及源码树摘要；解包前限制包装大小、展开大小及成员数，拒绝路径跳转、大小写/Unicode 别名、重复成员、文件/目录冲突与特殊文件/链接。先验证并提取到临时目录，再发布全新候选；不会删除或覆盖已有解包目标。未变更既有签名格式或凭据/信任锚，完整签名发行仍未验收。
+- 真实 HTTP 测试 4 项 RED→GREEN，覆盖连接停用/进行中撤销/重开/错误响应与重定向拒绝；真实签名非法 ZIP 6 项 RED→GREEN。下载失败原因改为保留可信拒绝说明，PluginManager 传递给用户，避免仅显示笼统 failed；原始远程响应正文和本地路径异常不外显。
+- distribution-boundary-regression.log：99 PASS（1 项构造重复 ZIP 的预期警告）；追加原因传递后 distribution-reason-green.log：39 PASS（同一预期警告，现已由 pytest.warns 收集）。Ruff/空白检查通过。中间完整后端 project-pytest-distribution-final.log 为 2658 PASS /1 FAIL /22 SKIP，失败及处理记录见后文。合成测试仅在 fixture 限定一个 loopback origin，生产公共地址限制不变；没有访问真实账户。
+- Ruling: 解包只接受未占用的目标目录，不替换调用者已有目录——下载路径使用独立 staging，不需要覆盖旧目录；代价是历史手工重用同一解包路径必须由调用者明确另选路径，避免错误清理有效数据。
+
+完整目标仍实施中：原生 guardian 与目录事务、Keychain、完整多来源安装/剩余生命周期、签名/冻结发行、可信连接器和来源传播/长期授权/公共浏览器及最终独立审查继续保留。
+
+本地导入关联修复：原 copytree 会跟随项目内文件/目录/清单链接，已用实际文件 3 项 RED 复现；PackageStore 在读取 manifest、复制、inspect/prepare/commit 前拒绝内部链接，复制时保留链接并复查，复用原 FAILED 状态。显式选择的根目录别名仍兼容。补充内容相同但链接替换的提交绕过 RED→GREEN。distribution-local-boundary-regression.log 为 106 PASS，无警告。阶段提交 9087e80a。这不等于已证明应用级目录身份/旧句柄/任意 OS 竞争无窗口，原生 guardian 与一致性事务仍待完成。
+
+全量中间快照 project-pytest-distribution-final.log：2658 PASS /1 FAIL /22 SKIP，362.73 秒，5 项既有警告；唯一失败 test_absolute_http_url_installs_signed_package 原先把 loopback 当作公共 CDN，现被受控传输正确拒绝。已在该测试先断言私网地址拒绝且不安装，再以 fixture 仅允许该单一合成 origin，保留真实下载、签名校验和 bootstrap 行为；没有修改生产私网策略。distribution-loopback-boundary-green.log：27 PASS，无警告。随后完整后端（包含本地 alias 修复）project-pytest-distribution-boundary-final.log 为 2665 PASS /1 FAIL /22 SKIP，详见后文简报失败诊断。
+
+project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，352.20 秒，5 项警告。唯一失败 test_native_reminder_configuration_reaches_task_owner；日志显示前一个创建待办的业务状态已 failed，但原断言只检查操作封套 succeeded，随后提醒无有效关联待办。已加强先前业务状态断言，不改业务/权限规则。单用例 1 PASS、整文件 33 PASS、前置 42 个模块 401 PASS /4 SKIP；保留完整测试模块导入但只执行同一前缀也为 401 PASS /4 SKIP（2283 deselected）。尚未重现原始业务失败的具体原因，不能宣称问题已修复或归为既有失败。新完整测试 project-pytest-distribution-verified.log 使用增强断言继续核验；无论结果均保留本次失败证据。
+
+本轮最新完整验证 project-pytest-distribution-verified.log：**2666 PASS /22 SKIP /0 FAIL，346.11 秒，5 项既有警告**。运行命令为 python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（/opt/anaconda3/envs/Stella/bin/python）。增强断言后的简报用例本次通过，先前间歇业务失败仍未稳定复现，不标为已修复；保留原失败与 401 项顺序复现证据。相关 Python Ruff、git diff --check 通过。最终独立审查、原生 guardian、Keychain、多来源安装/剩余生命周期、签名冻结发行、受控连接器和完整来源传播/长期授权/公共浏览器仍待完成；不合并、不推送、不发布。

@@ -101,7 +101,8 @@ class PluginManager:
         result = fetch_and_install_from_catalog(catalog_path=self.catalog_path, plugin_id=plugin_id,
                                                package_store=self.packages, prepare_only=True)
         if result['status'] != 'prepared':
-            raise ValueError(f"package preflight failed: {result['status']}")
+            reason = result.get('error') or result['status']
+            raise ValueError(f"package preflight failed: {reason}")
         operation = self.management.begin_operation(plugin_id, user_id, 'install', {
             'packageOperationId': result['operationId'], 'candidate': result['path'], 'digest': result['digest'],
             'dataHandle': data_handle, 'migrations': {},

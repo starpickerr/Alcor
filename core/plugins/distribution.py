@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import urllib.request
+import tempfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from core.plugins.package_ops import PackageStore, _iter_package_files, _sha256_tree
 from core.plugins.manifest import load_manifest
@@ -161,6 +162,34 @@ def _resolve_catalog_entry_source(catalog_path: Path, entry: dict[str, Any]) -> 
     return path
 
 
+def _download_archive(url: str, catalog_path: Path, destination: Path) -> None:
+    """Public downloads use the same address checks and revocable IO as tools."""
+    from core.security.http_transport import open_request
+    from core.plugins.signing import MAX_ARCHIVE_BYTES
+
+    parsed = urlsplit(url)
+    with ExitStack() as stack:
+        if parsed.scheme in {'https', 'http'}:
+            source = stack.enter_context(open_request('GET', url, category='public-packages', maximum=MAX_ARCHIVE_BYTES))
+            if source.status != 200:
+                raise RuntimeError('Package service did not return a downloadable artifact')
+        else:
+            if parsed.scheme == 'file' and parsed.netloc in {'', 'localhost'} and not parsed.query and not parsed.fragment:
+                local = Path(unquote(parsed.path))
+            elif not parsed.scheme:
+                local = catalog_path.resolve().parent / url
+            else:
+                raise PermissionError('Unsupported package source protocol')
+            source = stack.enter_context(local.open('rb'))
+        output = stack.enter_context(destination.open('xb'))
+        total = 0
+        while block := source.read(65536):
+            total += len(block)
+            if total > MAX_ARCHIVE_BYTES:
+                raise ValueError('Plugin archive exceeds size limit')
+            output.write(block)
+
+
 def fetch_and_install_from_catalog(
     *,
     catalog_path: Path,
@@ -188,27 +217,35 @@ def fetch_and_install_from_catalog(
     source = _resolve_catalog_entry_source(catalog_file, entry)
     url = (entry.get("url") or "").strip()
     if url and (source is None or not source.exists()):
-        dest = package_store.staging / f"download-{plugin_id}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists():
-            shutil.rmtree(dest)
-        dest.mkdir(parents=True)
-        archive = dest / "package.bin"
-        fetch_url = url
-        if "://" not in url:
-            # Relative to the catalog file (portable local/release layouts).
-            local = (catalog_file.resolve().parent / url).resolve()
-            fetch_url = local.as_uri()
-        urllib.request.urlretrieve(fetch_url, archive)  # noqa: S310 - catalog trusted URL
-        try:
-            from core.plugins.signing import unpack_signed_zip
+        # Concurrent attempts never share an extraction directory. No failure
+        # may delete another attempt, a selected package or an owner path.
+        with tempfile.TemporaryDirectory(prefix='download-', dir=package_store.staging) as temporary:
+            dest = Path(temporary)
+            archive = dest / 'package.bin'
+            try:
+                _download_archive(url, catalog_file, archive)
+            except (PermissionError, RuntimeError) as exc:
+                reason = str(exc) if getattr(exc, 'errno', None) is None else 'Local package archive is not readable'
+                return {'status': 'failed', 'pluginId': plugin_id, 'phase': 'download', 'error': reason}
+            except ValueError:
+                return {'status': 'failed', 'pluginId': plugin_id, 'phase': 'download',
+                        'error': 'Package URL is invalid or the archive exceeds its size limit'}
+            except Exception:
+                return {'status': 'failed', 'pluginId': plugin_id, 'phase': 'download',
+                        'error': 'Package service or local archive is unavailable'}
+            try:
+                from core.plugins.signing import unpack_signed_zip
+                source = unpack_signed_zip(archive, dest / 'unpacked')
+            except PermissionError as exc:
+                return {"status": "signature_invalid", "pluginId": plugin_id, "error": str(exc)}
+            except Exception:
+                return {"status": "failed", "pluginId": plugin_id, 'phase': 'verification',
+                        'error': 'Plugin package verification failed'}
+            return _install_catalog_source(source, entry, plugin_id, package_store, prepare_only)
+    return _install_catalog_source(source, entry, plugin_id, package_store, prepare_only)
 
-            source = unpack_signed_zip(archive, dest / "unpacked")
-        except PermissionError as exc:
-            return {"status": "signature_invalid", "pluginId": plugin_id, "error": str(exc)}
-        except Exception as exc:  # noqa: BLE001 - surface as failed install
-            return {"status": "failed", "pluginId": plugin_id, "error": str(exc)}
 
+def _install_catalog_source(source, entry, plugin_id, package_store, prepare_only):
     if source is None or not source.exists():
         return {"status": "missing_source", "pluginId": plugin_id}
 
