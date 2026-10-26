@@ -7,6 +7,57 @@ import pytest
 from core.plugins.package_ops import PackageStage, PackageStore
 
 
+@pytest.mark.parametrize('linked', ['file', 'directory', 'manifest'])
+def test_import_refuses_nested_links_before_copying_owner_files(tmp_path, linked):
+    import shutil
+    source = tmp_path / 'source'
+    shutil.copytree('samples/plugins/alpha', source)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'secret.txt').write_text('OWNER_CONTENT_MUST_NOT_BE_IMPORTED')
+    if linked == 'manifest':
+        shutil.copy2(source / 'plugin.json', outside / 'plugin.json')
+        (source / 'plugin.json').unlink()
+        (source / 'plugin.json').symlink_to(outside / 'plugin.json')
+    elif linked == 'file':
+        (source / 'outside.txt').symlink_to(outside / 'secret.txt')
+    else:
+        (source / 'outside').symlink_to(outside, target_is_directory=True)
+    store = PackageStore(tmp_path / 'store')
+    with pytest.raises(PermissionError, match='link'):
+        store.stage(source)
+    assert list(store.staging.iterdir()) == []
+    assert store.current_package('stella.sample.alpha') is None
+
+
+def test_import_allows_an_explicit_root_alias_without_following_nested_aliases(tmp_path):
+    source = tmp_path / 'chosen-source'
+    source.symlink_to(Path('samples/plugins/alpha').resolve(), target_is_directory=True)
+    store = PackageStore(tmp_path / 'store')
+    operation = store.stage(source)
+    assert store.inspect(operation.operation_id).stage == PackageStage.VERIFIED
+
+
+@pytest.mark.parametrize('phase', ['inspect', 'prepare', 'commit'])
+def test_link_substitution_cannot_be_published_even_when_contents_match(tmp_path, phase):
+    store = PackageStore(tmp_path / 'store')
+    operation = store.stage(Path('samples/plugins/alpha'))
+    candidate = store.staging / operation.operation_id
+    if phase in {'prepare', 'commit'}:
+        operation = store.inspect(operation.operation_id)
+    if phase == 'commit':
+        operation = store.prepare(operation.operation_id)
+        candidate = Path(operation.target_path)
+    module = candidate / 'backend/main.py'
+    replacement = tmp_path / 'outside.py'
+    replacement.write_bytes(module.read_bytes())
+    module.unlink()
+    module.symlink_to(replacement)
+    result = getattr(store, phase)(operation.operation_id)
+    assert result.stage == PackageStage.FAILED
+    assert store.current_package('stella.sample.alpha') is None
+
+
 def test_stage_inspect_prepare_commit(tmp_path):
     store = PackageStore(tmp_path / "pkg")
     op = store.stage(Path("samples/plugins/alpha"))

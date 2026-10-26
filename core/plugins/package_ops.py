@@ -50,6 +50,7 @@ class PackageStore:
         self.ops_dir.mkdir(parents=True, exist_ok=True)
 
     def stage(self, source_dir: Path) -> PackageOperation:
+        _validate_package_tree(Path(source_dir), allow_root_alias=True)
         manifest = load_manifest(source_dir)
         digest = _sha256_tree(Path(source_dir))
         op_id = str(uuid.uuid4())
@@ -72,6 +73,10 @@ class PackageStore:
     def inspect(self, operation_id: str) -> PackageOperation:
         op = self._load(operation_id)
         staged = self.staging / operation_id
+        try:
+            _validate_package_tree(staged)
+        except PermissionError as exc:
+            return self._fail(op, str(exc))
         manifest = load_manifest(staged)
         if manifest["id"] != op.plugin_id or manifest["version"] != op.version:
             return self._fail(op, "manifest identity changed after stage")
@@ -90,6 +95,12 @@ class PackageStore:
         target = self.packages / op.plugin_id / op.version / op.digest
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = self.staging / operation_id
+        try:
+            _validate_package_tree(staged)
+            if target.exists():
+                _validate_package_tree(target)
+        except PermissionError as exc:
+            return self._fail(op, str(exc))
         # Immutable content-addressed cache: never delete an existing digest tree.
         if target.exists():
             existing = _sha256_tree(target)
@@ -108,6 +119,10 @@ class PackageStore:
         if op.stage != PackageStage.PREPARED or not op.target_path:
             return self._fail(op, f"commit requires prepared, have {op.stage}")
         target = Path(op.target_path)
+        try:
+            _validate_package_tree(target)
+        except PermissionError as exc:
+            return self._fail(op, str(exc))
         if not target.is_dir() or _sha256_tree(target) != op.digest:
             return self._fail(op, "prepared package digest mismatch")
         # Atomic pointer: current → digest
@@ -190,6 +205,19 @@ _SKIP_DIR_NAMES = frozenset({
 })
 
 
+def _validate_package_tree(root: Path, *, allow_root_alias=False) -> None:
+    """A chosen root alias is allowed; package contents never follow links."""
+    if root.is_symlink() and not allow_root_alias:
+        raise PermissionError('Managed plugin candidate cannot be a symlink')
+    for directory, folders, files in os.walk(Path(root).resolve(), followlinks=False):
+        for name in [*folders, *files]:
+            if name in _SKIP_DIR_NAMES or Path(name).suffix in {'.pyc', '.pyo'}:
+                continue
+            if (Path(directory) / name).is_symlink():
+                raise PermissionError('Plugin source contents cannot contain symlinks')
+        folders[:] = [name for name in folders if name not in _SKIP_DIR_NAMES and Path(name).suffix not in {'.pyc', '.pyo'}]
+
+
 def _iter_package_files(root: Path):
     """Files that participate in package digests (ignore caches/VCS)."""
     for path in sorted(p for p in Path(root).rglob("*") if p.is_file()):
@@ -202,11 +230,15 @@ def _iter_package_files(root: Path):
 
 def _copy_package_tree(source_dir: Path, destination: Path) -> None:
     """Copy package sources without local caches/VCS into the content-addressed store."""
+    _validate_package_tree(source_dir, allow_root_alias=True)
 
     def _ignore(directory: str, names: list[str]) -> set[str]:
         return {name for name in names if name in _SKIP_DIR_NAMES or Path(name).suffix in {".pyc", ".pyo"}}
 
-    shutil.copytree(source_dir, destination, ignore=_ignore)
+    # Preserve an alias introduced during copy rather than dereferencing it;
+    # post-validation then rejects it before the candidate can be published.
+    shutil.copytree(source_dir, destination, ignore=_ignore, symlinks=True)
+    _validate_package_tree(destination)
 
 
 def _sha256_tree(root: Path) -> str:
