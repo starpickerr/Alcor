@@ -280,8 +280,8 @@ class AgentInitializer:
         env_file = expand_path("~/.stella/.env")
         if os.path.exists(env_file):
             try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file, override=True)
+                from core.security.env_store import load_environment
+                load_environment(env_file, override=True)
             except ImportError:
                 logger.warning("[AgentInitializer] python-dotenv not installed")
             except Exception as e:

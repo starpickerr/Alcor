@@ -249,3 +249,15 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 前一目标回合分类为 progress：已提交源码读取边界、身份夹具、真实 MCP 版本与来源 pin。此回合固定同一源码/依赖/摘要快照运行 peer-failure-ordered-diagnostic.log：**2730 PASS /22 SKIP /0 FAIL，436.00 秒，5 项既有警告**；命令与前轮完整后端一致，额外 -x 以便捕获首个失败，但本次全部完成。40 个独立非默认用户真实 Worker 重复用例 peer-native-reproduction-cases.log：40 PASS，16.30 秒，没有复现。最初重复同一 pytest node 参数被去重，仅 1 PASS，未误报为 30 次验证。探针在隔离临时目录，生产代码、测试来源与两个 MCP pin 均未变更。
 
 本次全量通过证明待办注册夹具后的现有快照可通过完整回归，不能证明简报间歇问题已修复；保留前轮业务 failed 与所有失败日志，现有成功条件不变，后续继续依据 receipt.error/result 诊断，不猜测增加授权或自动重试。
+
+
+## 环境凭据接入 macOS Keychain
+
+- EnvironmentFile 保持原 owner API/配置路径，macOS 保存采用 Security.framework 的精确 service/account 引用，不使用带密钥的命令行或扫描系统钥匙串。先创建新的随机版本、回读比对，再用原 private_atomic_write 发布 .env 引用；引用绑定规范配置路径与字段，复制到另一个配置目录不能解密。旧明文仅在 owner 成功保存时切换，读取旧文件不会自动改写。非 macOS 保留原存储兼容，无法解析 macOS 引用时拒绝把引用当作凭据使用；Linux 实测仍 NOT RUN。
+- 启动与热加载复用同一解析器；条目丢失/锁定时清理相关旧环境值，绝不把引用原样传给业务。原凭据目录只查询已登记条目的属性，不请求原文，不枚举系统 Keychain。真实锁定测试不触发认证 UI，原文件保持不变。Agent/任务仍无法使用 owner 管理接口；真实 Seatbelt Worker 即使可读测试 Keychain 密文文件，也不能经系统服务解密。
+- 原设置保存失败时不提前改进程环境；文件发布前失败保留旧值。额外故障注入发现 rename 已成功、后续 fsync 报错时若清理新 Keychain 值会破坏已发布引用，已改为发布状态不确定时保留新旧加密版本，不冒称原子回滚；要求重新加载核对实际状态。加密旧项清理异常只记录无原文的待清理状态，不修改资源授权。
+- RED：原 .env 明文保存、Keychain 不可用仍覆盖、启动/原子发布（4 FAIL）；发布后 I/O 异常（1 FAIL）；空凭据状态（1 FAIL）。对 owner 元数据与保存进程环境的回归还实际切回 HEAD 原 center 逻辑复现 2 FAIL，随后恢复实现，没有弱化断言。
+- keychain-native-boundaries.log：13 PASS（真实临时 Keychain、锁定、丢失、配置域隔离、回读、发布不确定、启动/热加载、元数据、Worker 拒绝）。keychain-credential-regression-final.log：**114 PASS，7.44 秒，2 项既有 pydub 警告**；Ruff/空白检查通过。所有测试使用各自临时 Keychain，创建后立即恢复原搜索列表，退出时仅解锁/删除自己创建的测试 Keychain，不访问真实账号。
+- 中间关联回归 112 PASS /2 FAIL 为新测试对 os.environ 的残留，导致原 MCP 入口测试先被原始凭据检查拒绝。现以 monkeypatch.setenv 注册加载前状态并自动恢复，原入口和原拒绝检查不变。过早启动的全量已主动停止（258 PASS /1 SKIP，49.47 秒），不是完整验证；固定最终测试夹具后另行执行全量，结果待后文。
+
+本阶段覆盖原环境凭据存储；模型 config.json、邮箱/课程、MCP/OAuth 的安全存储与可信连接器迁移、数据归属迁移、原生保护组件/目录事务、其余托管来源和外发链路仍属完整目标，未标为全部完成。Core/Electron 仍无已验证的原生 guardian。没有改动真实账号、MCP/插件源码、工具开关或对话/任务权限。

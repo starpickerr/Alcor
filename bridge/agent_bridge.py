@@ -1594,7 +1594,7 @@ class AgentBridge:
             Number of agent instances refreshed
         """
         import os
-        from dotenv import load_dotenv
+        from core.security.env_store import load_environment
         from common.state_dir import env_file as workspace_env_file
 
         refreshed_count = 0
@@ -1606,7 +1606,7 @@ class AgentBridge:
             workspace_root = getattr(agent, "workspace_dir", None)
             env_file = str(workspace_env_file(base=workspace_root)) if workspace_root else None
             if env_file and env_file not in loaded_env_files and os.path.exists(env_file):
-                load_dotenv(env_file, override=True)
+                load_environment(env_file, override=True)
                 loaded_env_files.add(env_file)
                 logger.info(
                     f"[AgentBridge] Reloaded environment variables from {env_file}"

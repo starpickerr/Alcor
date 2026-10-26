@@ -74,16 +74,20 @@ def secrets() -> list[dict]:
     from core.security.control import require_owner
     require_owner()
     from config import MODEL_CONFIG_TO_ENV, conf
-    names = {name: "credential store" for name in _env_keys()}
+    from core.security.env_store import environment_statuses
+    configured = environment_statuses(_env_path())
+    names = {name: "credential store" for name in configured}
     display_names = {}
     cfg = conf()
     for key, value in cfg.items():
         if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
             name = MODEL_CONFIG_TO_ENV.get(key, key.upper())
             names[name] = "model configuration" if name not in names else "model configuration + credential store"
+            configured[name] = True
     search = (cfg.get("tools") or {}).get("web_search") or {}
     if search.get("bocha_api_key"):
         names["BOCHA_API_KEY"] = "model configuration"
+        configured['BOCHA_API_KEY'] = True
     for entry in cfg.get("custom_providers") or []:
         if not isinstance(entry, dict):
             continue
@@ -93,11 +97,12 @@ def secrets() -> list[dict]:
             continue
         name = f"CUSTOM:{provider_id}"
         names[name] = "custom model provider"
+        configured[name] = True
         display_name = entry.get("name")
         if isinstance(display_name, str) and display_name.strip():
             display_names[name] = display_name.strip()
     return [
-        {"name": name, "source": source, "configured": True,
+        {"name": name, "source": source, "configured": configured[name],
          **({"display_name": display_names[name]} if name in display_names else {})}
         for name, source in sorted(names.items())
     ]
@@ -180,11 +185,13 @@ def set_secret(name: str, value: str | None) -> None:
     entries = tool._read_env_file()
     if value is None:
         entries.pop(name, None)
-        os.environ.pop(name, None)
     else:
         entries[name] = value
-        os.environ[name] = value
     tool._write_env_file(entries)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
     record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
            decision="policy_change", reason="Credential status changed in the credential store.")
 

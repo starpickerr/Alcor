@@ -228,4 +228,4 @@ def native_settings_action():
         yield
 
 # Optional real dependency integration uses hash-verified, offline public artifacts.
-pytest_plugins = ['tests.fixtures.runtime_artifacts']
+pytest_plugins = ['tests.fixtures.runtime_artifacts', 'tests.fixtures.keychain']
