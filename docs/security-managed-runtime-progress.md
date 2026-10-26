@@ -224,3 +224,10 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 
 
 全量中间运行暴露 automation 两项、bills 一项、briefing 一项集成测试使用未注册的 agent-a/test-agent。分别独立复现 StateDirError 后，三个测试文件复用现有 registered_agent 夹具补齐真实注册，保留 CRUD、任务权限上限、路由、租约和业务模型断言；没有为未知身份添加生产回退。source-scope-registered-fixtures.log：48 PASS，7.92 秒，相关 Ruff PASS。首次全量仍在运行，其四项已发生的失败会保留并报告，不能将此运行改称全绿。
+
+
+## 第一方 MCP 版本报告与联合验证
+
+两个真实 stdio 初始化都报告 SDK 1.30.0，分别与 eLearning 1.0.3/email 1.0.2 的原发行元数据不符（*-version-red-venv.log）。修复为显式传入随包发布的 __version__，并同步版本为 eLearning 1.0.4/email 1.0.3；真实握手测试逐项核对 pyproject 发行版本，避免通过其他安装的同名包推测版本。未将刷新或重新连接当成检查更新。两个提供者完整测试分别 123 PASS +12 subtests、48 PASS，Ruff/空白检查通过。Core 整包来源摘要同步更新，原来源 pin 与撤销逻辑未放宽。
+
+验证过程纠正：最初 Core 解释器没有 MCP SDK，握手测试导入失败不是产品 RED；改用各仓库已有 .venv 后才取得上述真实版本不符 RED。我在首次 Core 全量期间新增 MCP 测试文件，而原整包摘要包含测试文件，破坏快照一致性。该运行已主动中止并保留：1486 PASS /16 FAIL /4 SKIP，298.43 秒，其中四项未注册身份已由 48 项回归验证修正，其余项同时受到未更新来源 pin 的影响，不能当作最终产品结论。现在固定两个 MCP 的完整内容和 Core 摘要重新执行 project-pytest-source-and-versions-final.log，等待终态。不会复用被中止运行冒称全量通过。
