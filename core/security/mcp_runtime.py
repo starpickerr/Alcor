@@ -150,6 +150,60 @@ def environment_identity(config):
                             'env': config.get('env') or {}})[0]
 
 
+class McpStorageMigrationRequired(PermissionError):
+    """Unattributed historical files cannot be assigned to a new provider."""
+
+
+def _check_private_storage_path(path):
+    if any(part.is_symlink() for part in (path, *path.parents) if str(part) not in {'/var', '/tmp'}):
+        raise PermissionError('MCP private storage cannot use symlinks')
+
+
+def _has_private_storage_data(directory):
+    if not directory.is_dir():
+        return True
+    for entry in directory.iterdir():
+        if (entry.name not in {'.home', '.tmp'} or entry.is_symlink() or not entry.is_dir()
+                or next(entry.iterdir(), None) is not None):
+            return True
+    return False
+
+
+def private_storage(config, user, execution_digest=None):
+    """Derive a private namespace without creating or importing any data."""
+    from common.state_dir import user_root
+    from core.mcp.managed import ManagedMcpConfig, _installed_digest
+    root = user_root() / 'mcp-runtime'
+    legacy = root / sha256(config['name'].encode()).hexdigest()
+    _check_private_storage_path(legacy)
+    # These adapters own explicit business roots, not the historical runtime
+    # HOME. Keep all old cache files but never grant that directory to a child.
+    bound_connector = (isinstance(config, ManagedMcpConfig) and config.data_root is not None
+                       and config['name'] in {'email', 'elearning'}
+                       and config.package_digest == _installed_digest(config['name']))
+    if legacy.exists() and not bound_connector and _has_private_storage_data(legacy):
+        raise McpStorageMigrationRequired('旧版 MCP 私有数据的归属尚未确认，原目录已保留。完成迁移后才能启动此服务。')
+    digest = execution_digest or environment_identity(config)
+    # The family identifies configured executable inputs without code content.
+    # Code versions stay separate until a verified update migrates private data.
+    family = sha256(json.dumps([config['name'], user, config['command'], config.get('args', []),
+                               config.get('env') or {}], sort_keys=True).encode()).hexdigest()
+    directory = root / 'identities' / family
+    _check_private_storage_path(directory)
+    if directory.exists() and not bound_connector:
+        for previous in directory.iterdir():
+            if previous.name == digest:
+                continue
+            _check_private_storage_path(previous)
+            if _has_private_storage_data(previous):
+                raise McpStorageMigrationRequired('MCP 实现已变更，旧私有数据已保留，需通过已验证的更新流程迁移后再启动。')
+    # A sibling of legacy directories: an old process's recursive grant must
+    # not include the new namespaces.
+    storage = directory / digest
+    _check_private_storage_path(storage)
+    return storage
+
+
 def _fixed_executable_entry(config):
     if Path(config['command']).name in {'npx', 'uvx', 'bunx'} or set(config.get('args', [])) & {'-m', '-c', '-e', '--eval'}:
         return False
@@ -196,7 +250,6 @@ def prepare_mcp(config, env):
     # Wire/configuration environment cannot grant output staging authority.
     env.pop('STELLA_MCP_OUTPUT_TEMP', None)
     from common.runtime_identity import current_identity
-    from common.state_dir import user_root
     from core.security.extension_sandbox import prepare_extension
     user_id = current_identity().user_id or 'local-default'
     digest, package = launch_identity(config)
@@ -233,6 +286,9 @@ def prepare_mcp(config, env):
             raise PermissionError('Raw credentials cannot be passed to a local MCP; use a trusted connector')
     if not _fixed_executable_entry(config):
         raise PermissionError('Select a fixed local implementation and explicit script entry')
+    storage = (config.maintenance_storage if maintenance else
+               private_storage(config, user_id, environment_digest))
+    _check_private_storage_path(storage)
     environment = None
     command = [config['command'], *args]
     from core.runtime.environments import EnvironmentStore
@@ -251,14 +307,6 @@ def prepare_mcp(config, env):
         environment = EnvironmentStore().prepare_node(kind='mcp', identifier=config['name'], user=user_id,
             package=package, digest=source_digest(package), rebuild=maintenance, launch_digest=environment_digest)
         command = [environment['node'], str(Path(environment['path']) / 'project' / Path(args[0]).name), *args[1:]]
-    storage = (config.maintenance_storage if maintenance else
-               user_root() / 'mcp-runtime' / sha256(config['name'].encode()).hexdigest())
-    if any(path.is_symlink() for path in [storage, *storage.parents] if path != Path('/')):
-        # macOS /var aliases are canonicalized by user_root; only actual storage
-        # ancestors are considered below by resolving the configured root.
-        root = user_root().resolve()
-        if storage.is_symlink() or storage.parent.is_symlink() or root != user_root().absolute():
-            raise PermissionError('MCP private storage cannot use symlinks')
     reads = [Path(environment['path'])] if environment else []
     libraries = []
     if environment and environment.get('runtime') == 'node':

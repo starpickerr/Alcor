@@ -86,7 +86,7 @@ def protected_credential_paths() -> set[str]:
 
 def protected_credential_folders() -> set[str]:
     """Private connector files and Core lifecycle state, including migration copies."""
-    from common.state_dir import briefing_db, shared_root
+    from common.state_dir import briefing_db, shared_root, user_root
     user = briefing_db(ensure=False).parent.parent
     folders = {
         user / 'email', user / 'elearning', user / 'data', user / 'plugins',
@@ -94,6 +94,7 @@ def protected_credential_folders() -> set[str]:
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
         shared_root() / 'managed-runtimes',
+        user_root() / 'mcp-runtime',
     }
     # Historical directory migrations left retired data next to the active
     # directory. Keep these protected while new operations use the fixed root.
@@ -128,7 +129,14 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
             return True
     if is_elearning_credential_path(absolute_path):
         return True
-    from common.state_dir import briefing_db
+    from common.state_dir import briefing_db, shared_root
+    # A fixed Core layout, not a scan of other users' private folders.
+    users = os.path.realpath(shared_root() / 'users').replace(os.sep, '/')
+    for candidate in candidates:
+        if candidate.startswith(users + '/'):
+            parts = candidate[len(users) + 1:].split('/')
+            if len(parts) > 1 and parts[1] == 'mcp-runtime':
+                return True
     user = os.path.realpath(briefing_db(ensure=False).parent.parent)
     for candidate in candidates:
         if candidate.startswith(user + '/'):

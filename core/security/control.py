@@ -141,7 +141,7 @@ class RuntimeControl:
                 'running': session is not None, 'mode': session.sandbox_state['mode'] if session else 'stopped',
                 'reason': session.sandbox_state.get('reason') if session else 'Worker has not started.'})
         from core.mcp.lifecycle import McpLifecycle, rebuild_support
-        from core.security.mcp_runtime import _verify_bound_implementation, environment_identity
+        from core.security.mcp_runtime import _verify_bound_implementation, environment_identity, private_storage
         manager = ToolManager()
         for config in manager._load_mcp_configs():
             if config.get('type', 'stdio') != 'stdio':
@@ -151,6 +151,7 @@ class RuntimeControl:
             try:
                 digest, package = launch_identity(config)
                 _verify_bound_implementation(config, package)
+                execution_digest = environment_identity(config)
                 client = next((row for row in list(LIVE_CLIENTS) if row._runtime_key and
                                row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name']
                                and row._runtime_key['digest'] == digest and row._proc is not None
@@ -166,17 +167,23 @@ class RuntimeControl:
                 environment_error = None
                 if environment is None:
                     try:
-                        environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=environment_identity(config))
+                        environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=execution_digest)
                         if environment and Path(environment['package']) != package:
                             environment = None
                     except (ValueError, OSError):
                         environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+                storage_error = None
+                try:
+                    private_storage(config, user, execution_digest)
+                except (ValueError, OSError) as error:
+                    storage_error = str(error)
                 rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
-                    'mode': client.sandbox_state['mode'] if client else 'stopped', 'running': client is not None,
+                    'mode': 'unavailable' if storage_error else client.sandbox_state['mode'] if client else 'stopped',
+                    'running': client is not None,
                     'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
                     **({'rebuild_operation': resume} if resume else {}),
                     **({'environment_error': environment_error} if environment_error else {}),
-                    'reason': client.sandbox_state.get('reason') if client else 'Server has not started.'})
+                    'reason': storage_error or (client.sandbox_state.get('reason') if client else 'Server has not started.')})
             except (ValueError, OSError) as error:
                 rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable', 'reason': str(error)})
         from core.security.isolation import application_isolation

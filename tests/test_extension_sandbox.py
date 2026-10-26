@@ -325,17 +325,15 @@ def test_local_mcp_handshake_cancellation_reaps_the_unpublished_process(tmp_path
 def test_mcp_trust_revoke_stops_ordinary_descendant(tmp_path):
     import time
     from agent.tools.mcp.mcp_client import McpClient
-    from core.security.mcp_runtime import launch_identity
+    from core.security.mcp_runtime import launch_identity, private_storage
     from core.security.runtime_trust import RuntimeTrustStore
-    from common.state_dir import user_root
-    from hashlib import sha256
     # A child may write only its owner's private runtime storage, regardless
     # of retained trust facts. Revocation must still reap that child.
-    heartbeat = user_root() / 'mcp-runtime' / sha256(b'trust-descendant').hexdigest() / 'heartbeat'
-    child = "import time; from pathlib import Path; p=Path(" + repr(str(heartbeat)) + ");\nwhile True: p.write_text(str(time.monotonic())); time.sleep(.03)"
+    child = "import time; from pathlib import Path; p=Path('heartbeat');\nwhile True: p.write_text(str(time.monotonic())); time.sleep(.03)"
     script = tmp_path / 'server.py'
     script.write_text('import subprocess, sys\nsubprocess.Popen([sys.executable, "-c", ' + repr(child) + '])\n' + Path('tests/fixtures/mcp_echo_server.py').read_text().replace('from __future__ import annotations', ''))
     config = {'name': 'trust-descendant', 'command': sys.executable, 'args': [str(script)]}
+    heartbeat = private_storage(config, 'local-default') / 'heartbeat'
     key = dict(user_id='local-default', kind='mcp', identifier=config['name'], digest=launch_identity(config)[0])
     store = RuntimeTrustStore()
     store.set(**key, trusted=True)

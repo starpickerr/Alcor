@@ -197,3 +197,18 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - 尚未完成的相关范围：普通 MCP 的私有运行 HOME 目前仍按 name/user 派生（mcp_runtime.prepare_mcp），同名不同启动配置的历史私有文件归属仍需验证迁移，不能以依赖环境分离宣称业务私有目录迁移已完成。旧目录缺少可靠来源元数据，后续必须保留旧数据且避免猜测归属/自动扩大访问。此项继续属于完整目标待办。
 
 最终快照 project-pytest-mcp-rebuild-scoped-final.log：**2712 PASS /22 SKIP /0 FAIL，432.37 秒，5 项既有警告**。命令：/opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。包含最终执行身份、独立当前指针、同用户同名不同服务维护期间可用、重新启用复用候选、Agent/任务拒绝、实际 Python/Node/Seatbelt 与旧测试 scoped lookup。mcp-scoped-selection-lookup-green.log 单项 1 PASS。浏览器桌面/320px、TypeScript renderer/main、相关 ESLint/Ruff/空白检查通过，相关前端代码在执行身份补充后未变化；先前失败日志均保留，没有把中间全绿结果当作最终范围证据。先前简报间歇业务失败本次未出现，仍未宣称已修复。完整目标及最终独立审查仍未完成；本轮仅提交已验证阶段，不合并/推送/发布。
+
+## 2026-10-27 MCP 私有运行目录边界
+
+- 真实 stdio/Seatbelt RED 复现：同用户同名的两个不同服务可共用 HOME 读取/改写私有文件；完全访问下文件工具与 Shell 可读其他逻辑用户的 MCP 私有文件。现在普通 MCP 按实际配置族与实现摘要持有独立 HOME/cwd/tmp，新目录是旧递归授权根的兄弟目录，旧进程的递归访问不覆盖新目录。
+- 复用原统一凭据/文件检查保护已知 mcp-runtime 根；固定 Core users 布局的 MCP 私有路径同样拒绝跨用户文件读取，不扫描其他人的文件。Shell 将 Core 管理的 users 私有数据根作为受保护范围（原本已保护当前用户根），避免完全访问模式跨逻辑用户读取；普通工作区布局保持原机制。
+- 旧数据只检查 Core 已知路径的目录项，不读取文件内容、不遍历或跟随链接、不清空/移动目录。普通第三方旧目录含来源不明数据时阻止自动启动；实现变化且上一版本已有私有数据时也阻止静默切换空目录或直接继承，保留全部旧文件。运行隔离清单只读展示真实迁移原因，不通过查询启动或修改提供者。
+- 固定 Core pin 的 eLearning/email 连接器继续其已声明的同一业务 data_root/旧迁移根；历史运行缓存保留且不授予新子进程。账号/密码/课程范围仍由原存储与原 API 管理，不建立第二份配置或访问授权。验证了真实 eLearning 保存账号后重连保持原配置，输出不含原始密码。
+- RED→GREEN：同名实际服务互访、文件工具当前/其他用户读取、其他用户 Shell 读取、源码更新保留旧私有数据、空旧目录不复用、旧递归授权不覆盖新目录、链接不跟随，以及只读运行清单的迁移原因。mcp-private-boundary-regression.log：97 PASS，46.45 秒（2 项 pydub 既有警告）；相关 Ruff/空白检查通过。完整后端正在执行，终态另记。
+- Ruling: 来源不明旧数据或新实现的既有私有数据，不自动归给新的 Worker——优先防止跨提供者读取及隐式丢失/继承；代价是这类普通 MCP 暂停启动，仍需完整目标中的来源确认/受控更新迁移入口，不能把磁盘保留或拒绝执行标为迁移完成。
+
+尚未完成：归属不明/版本变化数据的 owner 迁移流程与状态入口、完整 MCP 安装更新卸载及签名冻结发行、Keychain/可信连接器、原生 guardian/目录一致性事务、外发来源/网站授权/浏览器及最终独立审查。仍未合并、推送或发布。
+
+中间全量 project-pytest-mcp-private-storage.log：2722 PASS /2 FAIL /22 SKIP，436.86 秒，5 项既有警告。失败为 test_mcp_disable_terminates_a_real_process_during_initialize、test_mcp_trust_revoke_stops_ordinary_descendant；两者夹具写死旧运行根，进程提前 FileNotFoundError，现将子进程标记写入实际 cwd，父进程用可信 private_storage 推导同一位置，保留关闭/撤销回收与心跳停止断言。mcp-private-process-fixtures-green.log：69 PASS（2 项 pydub 警告）。额外 mcp-private-hardlink.log：1 PASS，真实 Seatbelt 不允许另一个提供者通过硬链接读取/改写私有文件。当前产品代码未因夹具适配改变，正在执行含全部 13 个私有目录用例的最终完整验证。原生 guardian/任意别名与旧句柄一致性仍未实现，不能以这次静态隔离测试宣称全应用保护完成。
+
+最终私有目录快照 project-pytest-mcp-private-storage-final.log：**2725 PASS /22 SKIP /0 FAIL，428.25 秒，5 项既有警告**，包含 13 个新私有目录用例及修正后的真实启停/撤销夹具。命令为 /opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。相关 Python Ruff 与空白检查通过；本轮未改变前端、MCP 提供者源码、账号或凭据存储。此前简报间歇失败本次未出现，仍未标为已修复。完整目标与归属/更新迁移流程仍未完成；不合并、推送或发布。

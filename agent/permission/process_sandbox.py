@@ -123,6 +123,9 @@ def _protected_paths() -> tuple[list[str], list[str]]:
     folders.append(str(user_root() / 'briefing' / 'elearning-sessions'))
     folders.append(str(shared_root() / "skills"))
     folders.append(str(user_root()))
+    # Core-managed tenant data is private even when another user appears
+    # after this process starts. Ordinary workspace roots remain separate.
+    folders.append(str(shared_root() / 'users'))
     return files, folders
 
 
