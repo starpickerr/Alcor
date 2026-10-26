@@ -232,3 +232,66 @@ def test_owner_can_remove_a_missing_reference_and_preserve_other_unavailable_ite
     set_secret('OWNER_TOKEN', None)
     assert _entries(store.env_path) == {'OTHER_TOKEN': before['OTHER_TOKEN']}
     assert 'OWNER_TOKEN' not in os.environ
+
+
+@pytest.mark.parametrize('mode', ['read-only', 'workspace-write', 'full-access'])
+def test_shell_cannot_decrypt_keychain_in_any_execution_mode(tmp_path, monkeypatch, mode):
+    import shlex
+    import shutil
+    import subprocess
+    from agent.permission import process_sandbox
+    from agent.permission.security_policy import PRESETS
+    from core.security.env_store import _account, _entries
+    store = owner_file(tmp_path, monkeypatch)
+    store._write_env_file({'OWNER_TOKEN': 'SYNTHETIC_SHELL_SECRET'})
+    reference = _entries(store.env_path)['OWNER_TOKEN']
+    code = '''import ctypes as c,sys,importlib.util
+spec=importlib.util.spec_from_file_location('keychain_probe',sys.argv[4])
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+backend=module.MacOSKeychain(sys.argv[1])
+backend.security.SecKeychainOpen.argtypes=[c.c_char_p,c.POINTER(c.c_void_p)]
+ref=c.c_void_p()
+try:
+ status=backend.security.SecKeychainOpen(sys.argv[2].encode(),c.byref(ref))
+ if status: raise PermissionError('blocked')
+ backend.keychain=ref
+ print(backend.get(sys.argv[3]) or 'blocked')
+except PermissionError: print('blocked')
+from pathlib import Path
+print(Path('ordinary.txt').read_text())
+'''
+    workspace = tmp_path / 'workspace'
+    workspace.mkdir()
+    (workspace / 'ordinary.txt').write_text('ordinary-workspace-readable')
+    command = shlex.join([sys.executable, '-c', code, store.env_path, str(tmp_path / 'test.keychain-db'),
+                          _account('OWNER_TOKEN', reference), str(Path('core/security/keychain.py').resolve())])
+    env = {**os.environ, 'PYTHONPATH': str(Path.cwd())}
+    # The ciphertext file is explicitly inside the allowed read scope. This
+    # must still fail at the OS service boundary, independently of file guards.
+    plan = process_sandbox.prepare(command, str(workspace), [str(tmp_path)],
+                                    {'preset': mode, 'rules': PRESETS[mode]}, env)
+    try:
+        result = subprocess.run(plan.argv, shell=plan.shell, cwd=workspace, env=env,
+                                capture_output=True, text=True, timeout=10)
+    finally:
+        if plan.temp_dir:
+            shutil.rmtree(plan.temp_dir)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ['blocked', 'ordinary-workspace-readable']
+    assert store._read_env_file()['OWNER_TOKEN'] == 'SYNTHETIC_SHELL_SECRET'
+
+
+def test_full_access_agent_file_tool_cannot_read_os_keychain_storage(tmp_path, monkeypatch):
+    from agent.tools.read.read import Read
+    from common.runtime_identity import identity_scope
+    folder = tmp_path / 'Library/Keychains'
+    folder.mkdir(parents=True)
+    private = folder / 'synthetic.keychain-db'
+    private.write_text('SYNTHETIC_KEYCHAIN_DATABASE')
+    monkeypatch.setenv('HOME', str(tmp_path))
+    from core.security.run_policy import save_run_policy
+    save_run_policy('session', 'full-access-keychain', {'filesystem_mode': 'full-access'})
+    with identity_scope(session_id='full-access-keychain'):
+        result = Read().execute({'path': str(private)})
+    assert result.status == 'error'
+    assert 'SYNTHETIC_KEYCHAIN_DATABASE' not in str(result.result)

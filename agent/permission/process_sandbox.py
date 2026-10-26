@@ -179,6 +179,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         # Operation permissions never grant a raw socket to an untrusted child.
         # Networking must use a Core-owned connector, independent of this mode.
         permissions += " (deny network*)"
+        # Host services can decrypt credentials or proxy private file/network
+        # access. Execution modes never authorize a child to become a trusted
+        # Keychain client; connectors remain in Core.
+        permissions += " (deny mach-lookup)"
         work = os.path.realpath(context.work_root)
         private_rules = [f"(deny file-read* file-write* (literal {_seatbelt_literal(work)}))"]
         for name in ("sessions", "automations", "shared"):

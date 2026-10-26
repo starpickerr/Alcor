@@ -271,3 +271,14 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - 浏览器中间运行在原会话切换竞态断言失败（store 仍为 project-chat），尚未进入新增凭据三态步骤；同一实现完整重跑通过。未为此修改权限逻辑或弱化竞态断言，不标为已修复。Keychain 全量中间快照 project-pytest-keychain-environment-final.log 因新恢复 RED 主动停止（880 PASS /4 SKIP，157.58 秒），不是最终完整证据；固定恢复/UI 最终代码后另行验证。
 
 阶段 7cb4c2c3 已提交 .env Keychain 存储；本次恢复与状态作为后续阶段独立提交。真实业务凭据仍未在开发环境执行迁移；其他模型/账号/OAuth 安全存储及整个托管/原生保护/外发目标仍未完成，无合并/推送/发布。
+
+
+## Shell 的 macOS 凭据服务边界
+
+- 真实 full-access Shell RED 复现：即使不读取 .env、只持有测试提供的 service/account，原 allow-default Seatbelt 可经系统服务解密合成 Keychain 值（keychain-shell-boundary-red.log，1 FAIL）。严格插件 Worker 已拒绝，但 Shell 必须同样拒绝；不能以随机引用难猜或原文件黑名单代替这个边界。
+- 原 Shell Seatbelt 增加 deny mach-lookup，阻止向宿主服务代理凭据/文件/网络访问，三档执行权限均不可覆盖。既有统一文件保护增加固定 macOS Keychains 目录（用户/系统），不扫描账号、不触碰真实存储，不改变资源授权、对话/任务模式或原受控连接器。
+- 真实 Keychain 探针明确将密文文件纳入允许读取范围，子进程正常启动、调用系统接口后返回 blocked，同时成功读取普通工作区文件，Core owner 仍可回读原值。read-only/workspace-write/full-access 三档和实际 full-access 文件工具均覆盖；不是将程序加载失败算成隔离成功。
+- 受限模式探针最初因 Core 包父目录不在沙箱读取范围而导入失败，后改为从已有 Core 只读根显式加载探针模块；修正期间误改 Worker 参数的夹具失败亦保留日志，生产沙箱未为探针扩大读取范围。keychain-shell-probes-final.log：19 PASS。keychain-shell-regression-final.log：**147 PASS，13.83 秒，2 项既有 pydub 警告**；Ruff/空白检查通过。macOS 真 Keychain 创建/锁定/删除、Worker 与 Shell 实测无 Mock。
+- project-pytest-keychain-recovery-final.log 在发现此实际越权 RED 后主动停止（1250 PASS /4 SKIP，210.82 秒），不是完整验证，也不是超时重启。现在固定整个 Keychain/恢复/UI/Shell 最终快照重新执行完整后端；旧日志全部保留。
+
+本次只证明这些子进程的静态隔离与凭据通路；Core/Electron 的全应用原生保护、任意别名/旧句柄与策略切换事务仍未具备，不宣称已保护。完整目标仍实施中，不合并/推送/发布。

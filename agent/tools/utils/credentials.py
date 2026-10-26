@@ -96,6 +96,10 @@ def protected_credential_folders() -> set[str]:
         shared_root() / 'managed-runtimes',
         user_root() / 'mcp-runtime',
     }
+    import sys
+    if sys.platform == 'darwin':
+        # Fixed OS credential stores, not a scan or enumeration of accounts.
+        folders.update({Path.home() / 'Library/Keychains', Path('/Library/Keychains'), Path('/private/var/Keychains')})
     # Historical directory migrations left retired data next to the active
     # directory. Keep these protected while new operations use the fixed root.
     folders.update(user.glob('.stella-migrate-*'))
