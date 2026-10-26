@@ -147,7 +147,8 @@ def test_native_worker_reads_need_no_plugin_grant(peers):
 
 def test_native_reminder_configuration_reaches_task_owner(peers):
     item = peers.publish()['items'][0]['id']
-    peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
+    created = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
+    assert created['state'] == 'succeeded', created
     reminder = peers.ok('update_action', item_id=item, payload={
         'operation': 'create', 'kind': 'reminder', 'remind_at': '2099-10-24T08:00:00Z'})
     assert reminder['business']['remind_at'] == '2099-10-24T08:00:00+00:00'
