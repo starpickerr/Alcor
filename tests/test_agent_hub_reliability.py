@@ -183,7 +183,7 @@ def test_cli_completion_does_not_leave_descendants(tmp_path, native_settings_act
     import signal
     import sys
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("child.pid","w").write(str(p.pid))\nprint("complete")\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nwith open("child.tmp","w") as output: output.write(str(p.pid))\nos.replace("child.tmp","child.pid")\nprint("complete")\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
@@ -216,7 +216,7 @@ def test_worker_crash_reaps_owned_cli_groups(tmp_path, native_settings_action):
     import signal
     import sys
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("children.json","w").write(json.dumps([os.getpid(),p.pid]))\ntime.sleep(30)\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nwith open("children.tmp","w") as output: output.write(json.dumps([os.getpid(),p.pid]))\nos.replace("children.tmp","children.json")\ntime.sleep(30)\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
