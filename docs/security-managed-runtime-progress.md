@@ -221,3 +221,6 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - 原运行信任摘要算法与第一方实现 pin 保持不变；本轮没有改变工具开关、业务配置、凭据存储或前端。
 - RED 已由原生相邻文件泄漏、含 Core config.json 的源码启动以及 Python/Node/插件暂存实测确认。相关回归 source-read-scope-regression.log：113 PASS（2 项既有 pydub 警告）；加强程序启动断言后 source-read-probe-confirmed.log：5 PASS。相关 Ruff 与空白检查通过。完整后端 project-pytest-source-read-scope.log 正在运行，尚不报告其终态。
 - 尚未完成：完整 owner 数据归属迁移、多来源安装/更新/卸载、Keychain/可信连接器、原生保护组件与目录事务、完整外发链路及最终独立审查。此次局部隔离不代表 Core/Electron 已被保护；不合并、推送或发布。
+
+
+全量中间运行暴露 automation 两项、bills 一项、briefing 一项集成测试使用未注册的 agent-a/test-agent。分别独立复现 StateDirError 后，三个测试文件复用现有 registered_agent 夹具补齐真实注册，保留 CRUD、任务权限上限、路由、租约和业务模型断言；没有为未知身份添加生产回退。source-scope-registered-fixtures.log：48 PASS，7.92 秒，相关 Ruff PASS。首次全量仍在运行，其四项已发生的失败会保留并报告，不能将此运行改称全绿。

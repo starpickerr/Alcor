@@ -274,7 +274,8 @@ def _patch_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(briefing_facade, "_db_path", lambda: tmp_path / "briefing.db")
 
 
-def test_application_port_routes_briefing_via_plugin_with_core_models(tmp_path, monkeypatch):
+def test_application_port_routes_briefing_via_plugin_with_core_models(tmp_path, monkeypatch, registered_agent):
+    registered_agent('test-agent')
     from agent.briefing.models import Briefing, BriefingItem, FilterRule, SyncCursor
     from application.api import Application
     from common.runtime_identity import RuntimeIdentity, use_identity

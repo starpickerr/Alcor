@@ -257,9 +257,10 @@ def _store(tmp_path):
 
 
 @pytest.fixture
-def identity():
+def identity(registered_agent):
     from common.runtime_identity import RuntimeIdentity, use_identity
 
+    registered_agent(AGENT)
     with use_identity(RuntimeIdentity(agent_id=AGENT, user_id=USER)):
         yield
 

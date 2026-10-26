@@ -16,7 +16,8 @@ def _cleanup_gateway():
     bills_gateway.shutdown_bills_session()
 
 
-def test_application_port_routes_bills_via_plugin(tmp_path, monkeypatch):
+def test_application_port_routes_bills_via_plugin(tmp_path, monkeypatch, registered_agent):
+    registered_agent('test-agent')
     monkeypatch.setenv("STELLA_BILLS_PLUGIN", "1")
     monkeypatch.setenv(
         "STELLA_BILLS_PLUGIN_ROOT",
