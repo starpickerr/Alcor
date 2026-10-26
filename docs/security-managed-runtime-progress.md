@@ -242,3 +242,10 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - 本轮提交：Core 5c89bdf3（源码/执行文件读取范围）、026abe3d（自动化/账单/简报身份夹具）、16071ad4（真实版本对应来源 pin）；eLearning 67cc9cf、email 7d471f7（真实服务版本）。后续待办夹具/失败诊断和本记录独立提交。两个提供者源摘要已再次核对匹配，账号、凭据和业务配置未变更，用户原有 7 项无关改动保留。
 
 完整目标继续实施，未做最终独立审查；本轮不合并 develop、不推送、不发布。接续优先调查非默认用户简报间歇失败，并推进已有数据归属确认/受控迁移、Keychain/可信连接器、环境多来源生命周期和外发链路。ES entitlement/原生 guardian 仍不可用，Core/Electron 不宣称已保护；Linux 按用户要求 NOT RUN。
+
+
+## 顺序验证与间歇失败诊断
+
+前一目标回合分类为 progress：已提交源码读取边界、身份夹具、真实 MCP 版本与来源 pin。此回合固定同一源码/依赖/摘要快照运行 peer-failure-ordered-diagnostic.log：**2730 PASS /22 SKIP /0 FAIL，436.00 秒，5 项既有警告**；命令与前轮完整后端一致，额外 -x 以便捕获首个失败，但本次全部完成。40 个独立非默认用户真实 Worker 重复用例 peer-native-reproduction-cases.log：40 PASS，16.30 秒，没有复现。最初重复同一 pytest node 参数被去重，仅 1 PASS，未误报为 30 次验证。探针在隔离临时目录，生产代码、测试来源与两个 MCP pin 均未变更。
+
+本次全量通过证明待办注册夹具后的现有快照可通过完整回归，不能证明简报间歇问题已修复；保留前轮业务 failed 与所有失败日志，现有成功条件不变，后续继续依据 receipt.error/result 诊断，不猜测增加授权或自动重试。
