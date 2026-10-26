@@ -31,13 +31,14 @@ class ManagedMcpConfig(dict):
     """Core factory provenance; a user JSON field cannot create this type."""
 
     def __init__(self, *args, data_root=None, legacy_roots=(), package_digest=None,
-                 filesystem_outputs=None, output_scope=None, credential_env=(), **kwargs):
+                 filesystem_outputs=None, output_scope=None, output_temporary=None, credential_env=(), **kwargs):
         super().__init__(*args, **kwargs)
         self.data_root = Path(data_root).absolute() if data_root is not None else None
         self.legacy_roots = tuple(Path(path).absolute() for path in legacy_roots)
         self.package_digest = package_digest
         self.filesystem_outputs = dict(filesystem_outputs or {})
         self.output_scope = output_scope
+        self.output_temporary = output_temporary
         self.credential_env = frozenset(credential_env)
 
 

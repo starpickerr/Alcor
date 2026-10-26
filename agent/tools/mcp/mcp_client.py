@@ -350,35 +350,36 @@ class McpClient:
     def _call_with_output_scope(self, name, arguments, cancel_event, *, meta):
         """A short-lived child gets one output root; the control process does not."""
         from core.mcp.managed import ManagedMcpConfig
-        from core.security.mcp_runtime import check_mcp, output_scope
+        from core.security.mcp_runtime import check_mcp, output_scope, output_temporary
         _check_cancelled(cancel_event)
         method, field = self.config.filesystem_outputs[name]
         settings = self._call_tool_result(method, {}, cancel_event)['structuredContent']['value']
         scope = output_scope(settings.get(field) or '')
-        config = ManagedMcpConfig(self.config, data_root=self.config.data_root,
-            legacy_roots=self.config.legacy_roots, package_digest=self.config.package_digest, output_scope=scope,
-            credential_env=self.config.credential_env)
-        child = McpClient(config)
-        with self._lifecycle_lock:
-            if self._closed:
-                child.shutdown()
-                raise RuntimeError('MCP connection is closed')
-            self._operation_clients.add(child)
-        try:
-            if not child.initialize(cancel_event=cancel_event):
-                _check_cancelled(cancel_event)
-                raise RuntimeError('MCP isolated output process could not start')
-            _check_cancelled(cancel_event)
-            check_mcp(self)
-            scope.check()
-            result = child._call_tool_result(name, arguments, cancel_event, meta=meta)
-            scope.check()
-            check_mcp(self)
-            return result
-        finally:
-            child.shutdown()
+        with output_temporary(scope) as temporary:
+            config = ManagedMcpConfig(self.config, data_root=self.config.data_root,
+                legacy_roots=self.config.legacy_roots, package_digest=self.config.package_digest, output_scope=scope, output_temporary=temporary,
+                credential_env=self.config.credential_env)
+            child = McpClient(config)
             with self._lifecycle_lock:
-                self._operation_clients.discard(child)
+                if self._closed:
+                    child.shutdown()
+                    raise RuntimeError('MCP connection is closed')
+                self._operation_clients.add(child)
+            try:
+                if not child.initialize(cancel_event=cancel_event):
+                    _check_cancelled(cancel_event)
+                    raise RuntimeError('MCP isolated output process could not start')
+                _check_cancelled(cancel_event)
+                check_mcp(self)
+                scope.check()
+                result = child._call_tool_result(name, arguments, cancel_event, meta=meta)
+                scope.check()
+                check_mcp(self)
+                return result
+            finally:
+                child.shutdown()
+                with self._lifecycle_lock:
+                    self._operation_clients.discard(child)
 
     def call_tool(self, name: str, arguments: dict, cancel_event=None) -> str:
         result=self.call_tool_result(name,arguments,cancel_event=cancel_event)

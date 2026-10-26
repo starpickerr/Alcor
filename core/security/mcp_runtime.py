@@ -1,11 +1,14 @@
 """Core-owned local MCP launch identity and live trust checks."""
 import ast
+from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import shutil
+import secrets
+import stat
 import sys
 
 from core.security.runtime_trust import RuntimeTrustStore
@@ -40,6 +43,81 @@ def output_scope(value):
     SecurityService.authorize_filesystem(root, operation='write')
     stat = root.stat()
     return McpOutputScope(root, stat.st_dev, stat.st_ino)
+
+
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+
+
+def _directory_identity(descriptor):
+    value = os.fstat(descriptor)
+    return value.st_dev, value.st_ino
+
+
+def _clear_output_temporary(descriptor):
+    """Only visit the operation-owned namespace; never follow directory links."""
+    for name in os.listdir(descriptor):
+        entry = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISDIR(entry.st_mode):
+            child = os.open(name, _DIRECTORY_FLAGS, dir_fd=descriptor)
+            try:
+                if _directory_identity(child) != (entry.st_dev, entry.st_ino):
+                    raise PermissionError('MCP temporary directory changed during cleanup')
+                _clear_output_temporary(child)
+            finally:
+                os.close(child)
+            current = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (entry.st_dev, entry.st_ino):
+                raise PermissionError('MCP temporary directory changed during cleanup')
+            os.rmdir(name, dir_fd=descriptor)
+        else:
+            os.unlink(name, dir_fd=descriptor)
+
+
+@dataclass(frozen=True)
+class McpOutputTemporary:
+    scope: McpOutputScope
+    name: str
+    parent: int
+    descriptor: int
+
+    @property
+    def path(self):
+        return self.scope.root / self.name
+
+    def _check_entry(self):
+        current = os.stat(self.name, dir_fd=self.parent, follow_symlinks=False)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != _directory_identity(self.descriptor):
+            raise PermissionError('MCP temporary directory changed; retry the operation')
+
+    def check(self):
+        self.scope.check()
+        self._check_entry()
+
+
+@contextmanager
+def output_temporary(scope):
+    """Keep cleanup ownership alive even if the short-lived output Worker dies."""
+    scope.check()
+    parent = os.open(scope.root, _DIRECTORY_FLAGS)
+    descriptor = None
+    name = '.stella-mcp-output-' + secrets.token_hex(16)
+    try:
+        if _directory_identity(parent) != (scope.device, scope.inode):
+            raise PermissionError('MCP output directory changed; retry the operation')
+        os.mkdir(name, mode=0o700, dir_fd=parent)
+        descriptor = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent)
+        temporary = McpOutputTemporary(scope, name, parent, descriptor)
+        try:
+            temporary.check()
+            yield temporary
+        finally:
+            _clear_output_temporary(descriptor)
+            temporary._check_entry()
+            os.rmdir(name, dir_fd=parent)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
 
 
 def launch_identity(config):
@@ -108,6 +186,9 @@ def _verify_bound_implementation(config, package):
 
 
 def prepare_mcp(config, env):
+    env = dict(env)
+    # Wire/configuration environment cannot grant output staging authority.
+    env.pop('STELLA_MCP_OUTPUT_TEMP', None)
     from common.runtime_identity import current_identity
     from common.state_dir import user_root
     from core.security.extension_sandbox import prepare_extension
@@ -121,6 +202,12 @@ def prepare_mcp(config, env):
     _verify_bound_implementation(config, package)
     if isinstance(config, ManagedMcpConfig) and config.output_scope is not None:
         config.output_scope.check()
+    if isinstance(config, ManagedMcpConfig) and config.output_temporary is not None:
+        temporary = config.output_temporary
+        if not isinstance(temporary, McpOutputTemporary) or temporary.scope != config.output_scope:
+            raise PermissionError('MCP temporary output requires a matching Core-owned scope')
+        temporary.check()
+        env['STELLA_MCP_OUTPUT_TEMP'] = str(temporary.path)
     name = Path(config['command']).name.lower()
     args = config.get('args', [])
     if name in {'npx', 'uvx', 'bunx', 'npm', 'pip', 'pip3', 'uv'}:

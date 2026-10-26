@@ -239,6 +239,53 @@ def fake_config(domain, data):
     return config
 
 
+@pytest.mark.parametrize('stop', ['worker-exit', 'parent-stop'])
+def test_output_process_exit_reclaims_only_owned_temporary_files(tmp_path, native_settings_action, stop):
+    import threading
+    import time
+    from contextvars import copy_context
+    data, output = tmp_path / 'data', tmp_path / 'output'
+    output.mkdir()
+    sentinel = output / '.elearning-user-kept'
+    sentinel.write_text('KEEP_USER_DATA')
+    client = McpClient(fake_config('elearning', data))
+    thread = None
+    failures = []
+    try:
+        assert client.initialize()
+        client.call_tool('save_settings', {'payload': {'username': 'test', 'password': 'fake',
+            'courses': ['42'], 'file_sync_root': str(output)}})
+        (data / 'slow-download').touch()
+        def download():
+            try:
+                client.call_tool('sync_files', {})
+            except Exception as error:
+                failures.append(type(error).__name__)
+        thread = threading.Thread(target=copy_context().run, args=(download,))
+        thread.start()
+        deadline = time.monotonic() + 5
+        while not (data / 'download-started').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert (data / 'download-started').exists()
+        child = next(iter(client._operation_clients))
+        if stop == 'worker-exit':
+            child._proc.kill()
+            child._proc.wait(timeout=3)
+        else:
+            client.shutdown()
+        thread.join(4)
+        assert not thread.is_alive() and failures
+        actual = {path.relative_to(output).as_posix() for path in output.rglob('*') if path.is_file()}
+        assert actual == {'.elearning-user-kept'}, actual
+        assert sentinel.read_text() == 'KEEP_USER_DATA'
+        if stop == 'worker-exit':
+            assert json.loads(client.call_tool('get_settings', {}))['value']['username'] == 'test'
+    finally:
+        client.shutdown()
+        if thread is not None:
+            thread.join(5)
+
+
 def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_path, native_settings_action):
     import threading
     import time

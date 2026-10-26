@@ -155,3 +155,16 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 完整目标仍实施中，尚未合并/推送/发布。后续优先处理 MCP 取消遗留文件与统一生命周期；原生 guardian/目录身份事务、Keychain、多来源安装、签名/冻结发行、可信连接器、来源传播/长期授权/公共浏览器、五页最终视觉验收和完整独立审查继续保留。先前简报待办间歇业务失败仍保留追踪，未宣称已修复。
 
 本轮交付浏览器日志 plugin-rebuild-browser-delivery.log：完整流程 PASS，含重建忙态/失败保留/重试/中断继续、Owner 请求体、现有五页与凭据流程、320px 折叠侧栏下按钮滚动可达、执行环境标题对比度。TypeScript renderer/main 与相关 ESLint、Python Ruff、空白检查 PASS。最新全量仍为 2680 PASS /1 FAIL /22 SKIP，不以早先 2679 全绿快照覆盖当前 MCP 取消临时文件失败。
+
+## 2026-10-26 MCP 输出操作临时文件回收
+
+- 真实强制终止测试复现 .elearning-* 残留：Worker 的异常清理无法覆盖进程被终止。现在 Core 为单次输出操作创建并持有独立临时目录的目录句柄，子进程退出后清理该命名空间；不扫描用户输出目录、不按文件名前缀删除文件。
+- eLearning 1.0.3 使用该临时目录下载，验证后仍通过原独占硬链接发布；原账号、课程范围、输出配置、文件/游标存储及本地编辑保留。独立运行未提供 Core 临时目录时继续原行为。Core 源码 pin 已同步；MCP 阶段提交 3a5f792。
+- 临时目录清理不跟随链接，输出根移动后仍只回收原目录；命名空间被替换时保留替换目录并报告异常。普通配置的 STELLA_MCP_OUTPUT_TEMP 不构成授权，只从匹配的 Core 内部操作对象注入。该局部回收不等于应用 guardian、Core 崩溃恢复或任意旧句柄保护已经完成。
+- RED→GREEN：强制退出残留、命名空间/输出根替换、链接不跟随、Core 参数防伪与真实 Seatbelt 相邻目录拒绝。mcp-output-final-regression.log：40 PASS，26.23 秒。MCP 全套：122 PASS /12 subtests PASS，0.74 秒；相关 Ruff 和空白检查通过，未访问真实账号。
+- 首次不带 tests/ 的 pytest 误收集 references/ 中第三方测试，17 项收集错误（zstandard/deepseek_harness 缺失、CODEX_REPO_ROOT 未设置及同名测试模块冲突），日志 project-pytest-mcp-temporary.log 保留。现按 Makefile 的 tests/ 项目范围完整执行；终态另行记录。
+- Ruling: 临时下载与最终输出必须可进行同文件系统独占发布；目标子目录跨挂载导致硬链接失败时明确失败，不退回失去 Core 回收归属的目标目录临时文件——代价是此类特殊目录布局暂不支持同步。
+
+完整目标仍实施中：应用级 guardian/目录事务、Keychain、MCP/多来源完整生命周期、签名冻结发行、可信连接器/来源传播/网站授权/公共浏览器及最终独立审查仍待完成。Linux 按用户要求 NOT RUN，Apple ES 资格不足的事实不变；不合并、推送或发布。
+
+本轮最新完整验证 project-pytest-mcp-temporary-final.log：**2687 PASS /22 SKIP /0 FAIL，346.09 秒，5 项既有警告**。命令按项目 Makefile 范围运行：python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（/opt/anaconda3/envs/Stella/bin/python）。上轮取消残留文件失败本次通过，另有强制退出稳定复现测试覆盖；先前简报间歇业务失败本轮未出现，仍不标为已修复。Core 的 email/eLearning 两项源 pin 与实际源树核对一致，MCP 122 项测试与相关静态检查通过。完整目标及最终独立审查仍未完成，尚未合并/推送/发布。
