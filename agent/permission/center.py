@@ -129,9 +129,7 @@ def set_secret(name: str, value: str | None) -> None:
         if name in _env_keys():
             from core.security.env_store import EnvironmentFile
             tool = EnvironmentFile()
-            entries = tool._read_env_file()
-            entries.pop(name, None)
-            tool._write_env_file(entries)
+            tool.update_secret(name, None)
         if value:
             os.environ[name] = value
         else:
@@ -161,9 +159,7 @@ def set_secret(name: str, value: str | None) -> None:
         if name in _env_keys():
             from core.security.env_store import EnvironmentFile
             env_tool = EnvironmentFile()
-            entries = env_tool._read_env_file()
-            entries.pop(name, None)
-            env_tool._write_env_file(entries)
+            env_tool.update_secret(name, None)
         path = Path(get_data_root()) / "config.json"
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
         data[config_key] = value or ""
@@ -182,12 +178,7 @@ def set_secret(name: str, value: str | None) -> None:
     from core.security.env_store import EnvironmentFile
     tool = EnvironmentFile()
     tool._ensure_env_file()
-    entries = tool._read_env_file()
-    if value is None:
-        entries.pop(name, None)
-    else:
-        entries[name] = value
-    tool._write_env_file(entries)
+    tool.update_secret(name, value)
     if value is None:
         os.environ.pop(name, None)
     else:

@@ -430,7 +430,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
             {tab === 'overview' && <PermissionMigrationPanel />}
             {tab === 'agent-permissions' && <AgentPermissionsPanel />}
             {tab === 'resources' && <div className="space-y-5"><SensitiveResourcesPanel />
-              {credentialName && <section className={card}><h2 className={heading}>{copy.manageSecret} · {credentialName}</h2><CredentialEditor name={credentialName} configured={center.secrets.some(item => item.name === credentialName)} /></section>}
+              {credentialName && <section className={card}><h2 className={heading}>{copy.manageSecret} · {credentialName}</h2><CredentialEditor name={credentialName} configured={center.secrets.find(item => item.name === credentialName)?.configured} /></section>}
             </div>}
             {tab === 'connections' && <ExternalConnectionsPanel />}
             {tab === 'runtime' && <div className={card}><RuntimeAuthorizationPanel /></div>}

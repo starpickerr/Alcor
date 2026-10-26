@@ -201,3 +201,34 @@ except PermissionError:
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == 'blocked'
     assert store._read_env_file()['OWNER_TOKEN'] == 'SYNTHETIC_ORIGINAL'
+
+
+def test_owner_can_repair_a_missing_reference_without_reading_other_credentials(tmp_path, monkeypatch, isolated_keychain):
+    from agent.permission.center import set_secret
+    from core.security.env_store import _entries, _account
+    store = owner_file(tmp_path, monkeypatch)
+    store._write_env_file({'OWNER_TOKEN': 'SYNTHETIC_OLD', 'OTHER_TOKEN': 'SYNTHETIC_OTHER'})
+    before = _entries(store.env_path)
+    backend = isolated_keychain(store.env_path)
+    backend.delete(_account('OWNER_TOKEN', before['OWNER_TOKEN']))
+    # Register the old process state for teardown before exercising the real API.
+    monkeypatch.setenv('OWNER_TOKEN', 'SYNTHETIC_STALE')
+    set_secret('OWNER_TOKEN', 'SYNTHETIC_NEW')
+    assert store._read_env_file() == {'OWNER_TOKEN': 'SYNTHETIC_NEW', 'OTHER_TOKEN': 'SYNTHETIC_OTHER'}
+    assert _entries(store.env_path)['OTHER_TOKEN'] == before['OTHER_TOKEN']
+    assert os.environ['OWNER_TOKEN'] == 'SYNTHETIC_NEW'
+
+
+def test_owner_can_remove_a_missing_reference_and_preserve_other_unavailable_items(tmp_path, monkeypatch, isolated_keychain):
+    from agent.permission.center import set_secret
+    from core.security.env_store import _entries, _account
+    store = owner_file(tmp_path, monkeypatch)
+    store._write_env_file({'OWNER_TOKEN': 'SYNTHETIC_OLD', 'OTHER_TOKEN': 'SYNTHETIC_OTHER'})
+    before = _entries(store.env_path)
+    backend = isolated_keychain(store.env_path)
+    for name, reference in before.items():
+        backend.delete(_account(name, reference))
+    monkeypatch.setenv('OWNER_TOKEN', 'SYNTHETIC_STALE')
+    set_secret('OWNER_TOKEN', None)
+    assert _entries(store.env_path) == {'OTHER_TOKEN': before['OTHER_TOKEN']}
+    assert 'OWNER_TOKEN' not in os.environ

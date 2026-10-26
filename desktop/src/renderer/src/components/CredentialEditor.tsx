@@ -4,7 +4,7 @@ import { getLang } from '../i18n'
 import { notifySecurityPolicyChanged } from '../store/securityPolicyEvents'
 
 /** Reuse the protected owner API. No stored value is fetched into this form. */
-export default function CredentialEditor({ name, configured = false }: { name: string; configured?: boolean }) {
+export default function CredentialEditor({ name, configured = false }: { name: string; configured?: boolean | null }) {
   const en = getLang() === 'en'
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
@@ -32,7 +32,7 @@ export default function CredentialEditor({ name, configured = false }: { name: s
     finally { request.busy = false; if (owner.current === request) setBusy(false) }
   }
   return <div className="min-w-0 space-y-3 text-content">
-    <div className="flex flex-wrap items-center gap-3 text-sm"><span className="text-content-secondary">{present ? (en ? 'Credential configured' : '已配置凭据') : (en ? 'Credential not configured' : '尚未配置凭据')}</span>
+    <div className="flex flex-wrap items-center gap-3 text-sm"><span className="text-content-secondary">{present === null ? (en ? 'Credential status unavailable' : '凭据状态不可用') : present ? (en ? 'Credential configured' : '已配置凭据') : (en ? 'Credential not configured' : '尚未配置凭据')}</span>
       <button type="button" className="min-h-10 text-accent" onClick={() => { setOpen(!open); setValue('') }}>{en ? 'Configure credential' : '配置凭据'}</button></div>
     {open && <div className="space-y-3">
       <label className="block text-sm">{en ? 'Key or password' : '密钥或密码'}<input className="mt-2 block min-h-10 w-full rounded-btn border border-default bg-surface px-3 py-2 text-content" type="password" autoComplete="new-password" disabled={busy} value={value} onChange={event => setValue(event.target.value)} /></label>

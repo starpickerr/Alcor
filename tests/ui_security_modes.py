@@ -115,6 +115,8 @@ def backend(route):
                 {'id': 'mcp:github', 'name': 'GitHub MCP', 'connected': True, 'allowed': False, 'scopes': ['read'], 'last_access': None},
                 {'id': 'github', 'name': 'GitHub', 'connected': False, 'allowed': True, 'scopes': [], 'last_access': None},
             ], secrets=[
+                {'name': 'EMPTY_TOKEN', 'source': 'credential store', 'configured': False},
+                {'name': 'UNAVAILABLE_TOKEN', 'source': 'credential store', 'configured': None},
                 {'name': 'DEEPSEEK_API_KEY', 'source': 'model configuration', 'configured': True},
                 {'name': 'CUSTOM:6891955f', 'display_name': 'packyapi',
                  'source': 'custom model provider', 'configured': True},
@@ -369,6 +371,15 @@ with sync_playwright() as playwright:
           } finally {api.getSessionSettings = original}
         }""")
         assert cleared == {'session': None, 'cfg': None, 'loading': False}, cleared
+        # Exact owner metadata, including unavailable encrypted references,
+        # must drive the editor rather than the mere presence of a list item.
+        page.goto(url + '/#/security?tab=resources&credential=EMPTY_TOKEN', wait_until='networkidle')
+        expect(page.get_by_text('尚未配置凭据', exact=True)).to_be_visible()
+        page.goto(url + '/#/security?tab=resources&credential=UNAVAILABLE_TOKEN', wait_until='networkidle')
+        expect(page.get_by_text('凭据状态不可用', exact=True)).to_be_visible()
+        page.get_by_role('button', name='配置凭据', exact=True).click()
+        expect(page.get_by_label('密钥或密码', exact=True)).to_have_value('')
+
         # A credential request for the previous owner cannot alter the new form.
         page.evaluate("""async () => {
           const {default: api} = await import('/src/api/client.ts')

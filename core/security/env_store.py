@@ -99,13 +99,19 @@ class EnvironmentFile:
         require_owner()
         return read_environment(self.env_path)
 
-    def _write_env_file(self, env_vars: Dict[str, str]):
+    def update_secret(self, name, value):
+        """Replace/remove one owner-selected field without decrypting its old value."""
+        self._write_env_file({name: value}, replace=False)
+
+    def _write_env_file(self, env_vars: Dict[str, str], *, replace=True):
         """Write all key-value pairs to .env file"""
         require_owner()
         from core.security.storage import private_atomic_write
 
-        if not isinstance(env_vars, dict) or any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)
-                or not isinstance(value, str) or '\n' in value or '\r' in value for key, value in env_vars.items()):
+        if not isinstance(env_vars, dict) or any(not isinstance(key, str)
+                or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)
+                or not (value is None and not replace or isinstance(value, str) and '\n' not in value and '\r' not in value)
+                for key, value in env_vars.items()):
             raise ValueError('Invalid environment credential values')
         from core.plugins.locks import package_lock
         with package_lock(Path(self.env_dir), 'environment-credentials', exclusive=True):
@@ -116,7 +122,13 @@ class EnvironmentFile:
             created = []
             publication_started = False
             try:
-                for name, value in env_vars.items():
+                selected = env_vars if replace else {**before, **env_vars}
+                for name, value in selected.items():
+                    if value is None:
+                        continue
+                    if not replace and name not in env_vars and value.startswith(_REFERENCE):
+                        saved[name] = value
+                        continue
                     if backend is None or not value:
                         saved[name] = value
                         continue
@@ -143,7 +155,7 @@ class EnvironmentFile:
                 raise
             if backend:
                 for name, reference in before.items():
-                    if reference.startswith(_REFERENCE):
+                    if reference.startswith(_REFERENCE) and reference != saved.get(name):
                         try:
                             backend.delete(_account(name, reference))
                         except (OSError, PermissionError):

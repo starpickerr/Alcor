@@ -147,7 +147,7 @@ export interface SecurityCenterState extends ApiResult {
   projects: { path: string; name: string; policy: SecurityPolicy }[]
   conversation_policy: SecurityPolicy
   connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null; revision?: number }[]
-  secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
+  secrets: { name: string; display_name?: string; source: string; configured: boolean | null }[]
   background_tasks?: SecurityBackgroundTask[]
   privacy?: SecurityPrivacyInventory
   data_access?: { inherited_grants?: InheritedMcpGrant[]; available: boolean; resources: { id: string; name: string; provider: string; account_id: string; connection?: string }[]; external_transfers: NonNullable<SecurityPrivacyInventory['external_transfers']> }

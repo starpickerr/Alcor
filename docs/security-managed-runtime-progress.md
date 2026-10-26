@@ -261,3 +261,13 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - 中间关联回归 112 PASS /2 FAIL 为新测试对 os.environ 的残留，导致原 MCP 入口测试先被原始凭据检查拒绝。现以 monkeypatch.setenv 注册加载前状态并自动恢复，原入口和原拒绝检查不变。过早启动的全量已主动停止（258 PASS /1 SKIP，49.47 秒），不是完整验证；固定最终测试夹具后另行执行全量，结果待后文。
 
 本阶段覆盖原环境凭据存储；模型 config.json、邮箱/课程、MCP/OAuth 的安全存储与可信连接器迁移、数据归属迁移、原生保护组件/目录事务、其余托管来源和外发链路仍属完整目标，未标为全部完成。Core/Electron 仍无已验证的原生 guardian。没有改动真实账号、MCP/插件源码、工具开关或对话/任务权限。
+
+
+## 环境凭据的 owner 修复与状态展示
+
+- 实际缺失条目修复 RED：旧入口在保存前读取全部凭据，导致缺失旧值时无法重新设置。现在 EnvironmentFile 的同一原子保存实现支持按字段更新/删除：未改动的加密引用原样保留，无需解密其他凭据；旧明文仍在 owner 保存时验证迁移。复用原 set_secret 管理 API，不引入第二套配置或授权。缺失条目可以重新设置/删除，其他同样不可用的条目不被清除或解密。
+- 配置表单此前按列表存在性显示“已配置”，导致 configured=False/None 不真实；浏览器 RED 已复现。现按实际三态显示已配置、未配置或状态不可用，保持原布局与空密码输入。TypeScript renderer/main、对应三文件 ESLint、Ruff 与空白检查通过。
+- keychain-owner-recovery-green.log：67 PASS；keychain-recovery-final-regression.log：**116 PASS，9.11 秒，2 项既有 pydub 警告**。新增两项真实 Keychain 修复/删除验证保留其他原始引用。keychain-editor-status-browser-confirmation.log：完整五页、账号编辑返回、三态、原会话竞态断言与窄窗流程 PASS。
+- 浏览器中间运行在原会话切换竞态断言失败（store 仍为 project-chat），尚未进入新增凭据三态步骤；同一实现完整重跑通过。未为此修改权限逻辑或弱化竞态断言，不标为已修复。Keychain 全量中间快照 project-pytest-keychain-environment-final.log 因新恢复 RED 主动停止（880 PASS /4 SKIP，157.58 秒），不是最终完整证据；固定恢复/UI 最终代码后另行验证。
+
+阶段 7cb4c2c3 已提交 .env Keychain 存储；本次恢复与状态作为后续阶段独立提交。真实业务凭据仍未在开发环境执行迁移；其他模型/账号/OAuth 安全存储及整个托管/原生保护/外发目标仍未完成，无合并/推送/发布。
