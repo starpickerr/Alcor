@@ -282,3 +282,12 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 - project-pytest-keychain-recovery-final.log 在发现此实际越权 RED 后主动停止（1250 PASS /4 SKIP，210.82 秒），不是完整验证，也不是超时重启。现在固定整个 Keychain/恢复/UI/Shell 最终快照重新执行完整后端；旧日志全部保留。
 
 本次只证明这些子进程的静态隔离与凭据通路；Core/Electron 的全应用原生保护、任意别名/旧句柄与策略切换事务仍未具备，不宣称已保护。完整目标仍实施中，不合并/推送/发布。
+
+
+## Keychain 环境凭据最终快照验证
+
+最终固定代码快照 project-pytest-keychain-boundary-final.log：**2749 PASS /22 SKIP /0 FAIL，432.02 秒，5 项既有警告**。完整命令：/opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。包含最终 19 项真实 Keychain/owner 修复/Shell 三模式/Worker/文件工具用例，以及既有 MCP/插件、任务权限与业务回归；测试代码和生产代码在该运行中未变更。TypeScript renderer/main、对应 ESLint、Python Ruff/空白检查和五页/三态/账号配置返回/窄窗浏览器通过；此前浏览器会话竞态和简报间歇失败仍保留证据，没有宣称已修复。两个第一方 MCP 的来源 pin 与当前提供者源码仍匹配。
+
+本轮任务阶段提交：d97c15b9（前阶段顺序验证证据）、7cb4c2c3（既有环境凭据 Keychain）、aca83a82（owner 修复与真实三态 UI）、f61e626d（Shell 系统凭据服务边界）。保留原有 7 项无关工作区改动，无合并/推送/发布。目标回合为 progress，不是完成整个目标。
+
+接续工作：模型配置保存位于 channel/desktop/desktop_channel.py 的 ModelsHandler 与 ConfigHandler（_read_config_file_for_write / _config_path 等），安全页 set_secret 模型分支仍写 config.json；config.load_config JSON 自愈分支仅应处理结构损坏，后续 Keychain 不可用不能被误判为 JSON 损坏而隔离/覆盖用户配置。应复用本次已验证的精确引用/回读/发布/owner 修复模式覆盖已声明的模型字段与自定义提供者，继续原入口和同一配置；普通值/模型绑定不额外复制。该事项尚未实施。另有业务账号/OAuth 可信连接器、已有 MCP 数据归属迁移、完整来源环境生命周期、外发范围/网站信任/公共浏览器、原生 guardian/目录切换与最终独立审查未完成。ES 资格不足、Core/Electron 未保护、Linux 按用户要求 NOT RUN 的事实不变。
