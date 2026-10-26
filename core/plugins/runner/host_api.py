@@ -125,7 +125,13 @@ def mutate(params, operation):
     remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
     if remaining <= 0:
         raise PermissionError('mutation deadline expired')
-    with package_lock(root / '.stella-runtime', 'domain-writes', exclusive=True, timeout=min(10, remaining)):
+    token = CancellationToken(params)
+    def check_active():
+        if token.is_set():
+            raise PermissionError('mutation cancelled or expired')
+        return (deadline - datetime.now(timezone.utc)).total_seconds()
+    with package_lock(root / '.stella-runtime', 'domain-writes', exclusive=True,
+                      timeout=min(10, remaining), check_active=check_active):
         if CancellationToken(params).is_set():
             raise PermissionError('mutation cancelled or expired')
         return _mutate_receipt(params, operation)

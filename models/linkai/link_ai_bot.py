@@ -3,7 +3,7 @@
 
 import re
 import time
-import requests
+from models import transport_requests as requests
 import json
 import config
 from models.bot import Bot

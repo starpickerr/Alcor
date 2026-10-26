@@ -774,7 +774,7 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   notification_route?: NotificationRoute | null
-  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
   run_policy?: import('./api/client').RunPolicy
   owner_agent_id?: string
   permission_needs_confirmation?: boolean

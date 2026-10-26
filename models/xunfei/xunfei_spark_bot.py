@@ -34,6 +34,7 @@ reply_map = dict()
 
 class XunFeiBot(Bot):
     def __init__(self):
+        raise PermissionError('This SDK/WebSocket provider has no controlled transport adapter; existing configuration is preserved.')
         super().__init__()
         self.app_id = conf().get("xunfei_app_id")
         self.api_key = conf().get("xunfei_api_key")

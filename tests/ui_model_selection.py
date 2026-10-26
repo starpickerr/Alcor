@@ -109,7 +109,7 @@ with sync_playwright() as playwright:
 
         # Editing vendor models refreshes downstream menus without reloading.
         card('模型厂商').get_by_role('button', name='Alpha').click()
-        expect(page.get_by_role('dialog').get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=CUSTOM%3Aalpha')
+        expect(page.get_by_role('dialog').get_by_role('button', name='配置凭据', exact=True)).to_be_visible()
         expect(page.locator('input[placeholder="sk-..."]')).to_have_count(0)
         dialog = page.get_by_role('dialog')
         dialog.get_by_role('button', name='添加模型', exact=True).click()
@@ -125,14 +125,14 @@ with sync_playwright() as playwright:
         image.get_by_role('button', name='保存', exact=True).click()
         expect(image.get_by_text('已保存', exact=True)).to_be_visible()
         assert saved[-1]['model'] == 'alpha-new-image', saved
-        # Built-in and search credentials point to the same Security owner.
+        # Credentials are edited in the existing provider/search configuration.
         card('模型厂商').get_by_role('button', name='OpenAI').click()
         dialog = page.get_by_role('dialog')
-        expect(dialog.get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=OPENAI_API_KEY')
+        expect(dialog.get_by_role('button', name='配置凭据', exact=True)).to_be_visible()
         expect(dialog.locator('input[type="password"]')).to_have_count(0)
         dialog.get_by_role('button', name='取消', exact=True).click()
-        expect(card('联网搜索').get_by_role('link', name='在安全中管理凭据')).to_have_attribute('href', '#/security?tab=secrets&secret=BOCHA_API_KEY')
-        # First-run setup saves model routing, then sends missing credentials to Security.
+        expect(card('联网搜索').get_by_role('button', name='配置凭据', exact=True)).to_be_visible()
+        # First-run setup saves routing, then opens the owning model credential editor.
         providers[2]['configured'] = False
         page.evaluate("""async () => {
           const {useOnboardingStore} = await import('/src/store/onboardingStore.ts')
@@ -147,7 +147,9 @@ with sync_playwright() as playwright:
         expect(page.get_by_text('保存失败，请检查后重试', exact=True)).to_be_visible()
         reject_provider_save[0] = False
         page.get_by_role('button', name='继续配置凭据', exact=True).click()
-        expect(page).to_have_url(test_url + '/#/security?tab=secrets&secret=OPENAI_API_KEY')
+        expect(page).to_have_url(test_url + '/#/models?credential=OPENAI_API_KEY')
+        expect(page.get_by_role('dialog').get_by_role('button', name='配置凭据', exact=True)).to_be_visible()
+        page.get_by_role('dialog').get_by_role('button').filter(has_text='×').click()
         assert saved[-2]['action'] == 'set_provider' and 'api_key' not in saved[-2]
         assert saved[-1]['action'] == 'set_capability' and saved[-1]['provider_id'] == 'openai'
         page.evaluate("""async () => {

@@ -23,7 +23,8 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-import requests
+from models import transport_requests as requests
+from core.security.requests_transport import web_requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.url_safety import validate_url_safe
@@ -173,8 +174,8 @@ class Vision(BaseTool):
                 "The main model does not support vision and no other API keys are configured.\n"
                 "Options:\n"
                 "  1. Switch to a multimodal model (e.g. claude-sonnet-5, qwen3.7-plus, gemini-2.0-flash, ernie-4.5-turbo-vl)\n"
-                "  2. Configure OPENAI_API_KEY: env_config(action=\"set\", key=\"OPENAI_API_KEY\", value=\"your-key\")\n"
-                "  3. Configure LINKAI_API_KEY: env_config(action=\"set\", key=\"LINKAI_API_KEY\", value=\"your-key\")"
+                "  2. Configure OpenAI credentials in model settings\n"
+                "  3. Configure LinkAI credentials in model settings"
             )
 
         try:
@@ -755,7 +756,7 @@ class Vision(BaseTool):
     @staticmethod
     def _download_to_data_url(url: str) -> dict:
         """Download a remote image and return it as a base64 data URL."""
-        resp = requests.get(url, timeout=30)
+        resp = web_requests.get(url, timeout=30)
         if resp.status_code != 200:
             raise VisionAPIError(f"Failed to download image: HTTP {resp.status_code}")
         content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()

@@ -82,14 +82,27 @@ def authorization(policy, descriptor):
     if mode not in {'read-only', 'workspace-write', 'full-access'}:
         return 'deny'
     if descriptor.operation == 'read':
-        return 'allow'
-    if mode == 'read-only':
-        return 'deny'
-    if mode == 'full-access':
-        return 'allow'
-    if descriptor.operation == 'system_execute':
-        return 'allow' if descriptor.filesystem else 'confirm'
-    return 'allow' if descriptor.operation == 'write' else 'confirm'
+        granted = 'allow'
+    elif mode == 'read-only':
+        granted = 'deny'
+    elif mode == 'full-access':
+        granted = 'allow'
+    elif descriptor.operation == 'system_execute':
+        granted = 'allow' if descriptor.filesystem else 'confirm'
+    else:
+        granted = 'allow' if descriptor.operation == 'write' else 'confirm'
+    if policy.get('permission_mode') == 'custom':
+        from agent.permission.security_policy import rule
+        operation_rules = {
+            'read': ('workspace_read',), 'write': ('workspace_write',),
+            'delete': ('workspace_write', 'high_risk'),
+            'external_send': ('external', 'network', 'high_risk'),
+            'system_execute': ('shell',) if descriptor.filesystem else ('shell', 'managed', 'high_risk'),
+            'unknown': ('external', 'shell', 'high_risk'),
+        }
+        order = {'deny': 0, 'confirm': 1, 'allow': 2}
+        granted = min((granted, *(rule(policy, key) for key in operation_rules.get(descriptor.operation, ('high_risk',)))), key=order.get)
+    return granted
 
 
 def method_operation(method, arguments=None):

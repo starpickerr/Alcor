@@ -30,6 +30,28 @@ OPERATIONS = {
 class ManagedMcpConfig(dict):
     """Core factory provenance; a user JSON field cannot create this type."""
 
+    def __init__(self, *args, data_root=None, legacy_roots=(), package_digest=None,
+                 filesystem_outputs=None, output_scope=None, credential_env=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data_root = Path(data_root).absolute() if data_root is not None else None
+        self.legacy_roots = tuple(Path(path).absolute() for path in legacy_roots)
+        self.package_digest = package_digest
+        self.filesystem_outputs = dict(filesystem_outputs or {})
+        self.output_scope = output_scope
+        self.credential_env = frozenset(credential_env)
+
+
+def _installed_digest(domain):
+    """Only Core's distribution catalog may bind a provider to private state."""
+    core = Path(__file__).resolve().parents[2]
+    root = Path(getattr(sys, '_MEIPASS', core)) if getattr(sys, 'frozen', False) else core
+    try:
+        catalog = json.loads((root / 'resources/mcp-providers.json').read_text())
+        row = catalog['providers'][domain]
+        return row.get('bundleSha256' if getattr(sys, 'frozen', False) else 'sourceSha256')
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
 
 def _package_description(root, domain):
     """Read only bounded public metadata, without importing Server code."""
@@ -95,6 +117,9 @@ def configurations(manager):
             paths = import_module("core.services." + domain + "_facade")._paths()
             data = paths[0].parent if domain == "email" else paths[0]
             legacy = paths[1].parent if domain == "email" else paths[1]
+            legacy_reads = ([legacy / 'mailbox.json'] if domain == 'email' else
+                            [legacy / name for name in ('elearning.json', 'elearning-sessions',
+                                                        'elearning-courses', 'elearning-file-sync')])
             enabled = store.instance("stella." + domain, user)["intent"] == "enabled"
             if os.environ.get(f"STELLA_{domain.upper()}_PLUGIN", "").lower() in {
                 "0",
@@ -131,7 +156,6 @@ def configurations(manager):
                             "IMAP_PASSWORD",
                             "IMAP_PORT",
                             "IMAP_FOLDER",
-                            "CANVAS_TOKEN",
                         ]
                     },
                     "enabled": enabled,
@@ -140,7 +164,9 @@ def configurations(manager):
                     "settingsUrl": "/" + domain,
                     "toolOperations": dict(OPERATIONS[domain]),
                     "filesystemTools": ['sync_files'] if domain == 'elearning' else [],
-                })
+                }, data_root=data, legacy_roots=legacy_reads, package_digest=_installed_digest(domain),
+                    filesystem_outputs={'sync_files': ('get_settings', 'file_sync_root')} if domain == 'elearning' else {},
+                    credential_env={'IMAP_PASSWORD'} if domain == 'email' and user == 'local-default' else ())
             )
         return configs
 

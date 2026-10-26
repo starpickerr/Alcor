@@ -1,5 +1,6 @@
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import PermissionSelector from '../components/PermissionSelector'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -15,6 +16,6 @@ export async function mountPermissionSelector(sessionId: string) {
     document.body.append(host)
     root = createRoot(host)
   }
-  root.render(<PermissionSelector sessionId={sessionId} />)
+  root.render(<MemoryRouter><PermissionSelector sessionId={sessionId} /></MemoryRouter>)
   await useSessionSettingsStore.getState().refresh(sessionId)
 }

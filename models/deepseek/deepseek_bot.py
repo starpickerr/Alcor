@@ -24,7 +24,7 @@ import json
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
 from models.session_manager import SessionManager

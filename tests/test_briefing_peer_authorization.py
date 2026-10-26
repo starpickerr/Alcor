@@ -26,7 +26,7 @@ def peers(tmp_path, monkeypatch, request):
         for name, gateway in gateways.items():
             getattr(gateway, f'shutdown_{name}_session')()
             domain = 'tasks' if name == 'todos' else name
-            root = Path('stella-plugins-workspace/plugins') / domain
+            root = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins' / domain
             op = packages.stage(root)
             packages.inspect(op.operation_id)
             packages.prepare(op.operation_id)
@@ -250,3 +250,14 @@ def test_background_obeys_mode_while_native_ui_does_not(peers):
             peers.call('dispatch_outbox')
     with caller_origin_scope('desktop'):
         assert peers.ok('dispatch_outbox')['pending'] == 0
+
+
+def test_native_background_workflow_does_not_replace_a_tasks_readonly_snapshot(peers):
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    from core.plugins.caller import caller_origin_scope
+    peers.publish()
+    save_run_policy('task', 'readonly-briefing-task', {'filesystem_mode': 'read-only'})
+    with identity_scope(task_id='readonly-briefing-task'), caller_origin_scope('scheduler'):
+        with pytest.raises(PermissionError):
+            peers.call('dispatch_outbox')

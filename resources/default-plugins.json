@@ -9,7 +9,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "bills"
-      ]
+      ],
+      "sourceSha256": "21a22fb3dd104bd335ef893c1fb4e01e019385944bc3eae9357b41b28ac61363"
     },
     {
       "pluginId": "stella.calendar",
@@ -18,7 +19,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "calendar"
-      ]
+      ],
+      "sourceSha256": "7e8d134a4b71b47f849f9f314401aef93db5548c8b04d2e7470ad6812263d8d8"
     },
     {
       "pluginId": "stella.tasks",
@@ -27,7 +29,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "tasks"
-      ]
+      ],
+      "sourceSha256": "e441b7c9ac32b17159ac5b4d714adc812ce3eb292d0d8f3415415c05d57aed70"
     },
     {
       "pluginId": "stella.briefing",
@@ -36,7 +39,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "briefing"
-      ]
+      ],
+      "sourceSha256": "08d730b546dd5687377cb9b37b7bc7e4acc1bbb36398d6da4c2f1be7a69f689e"
     },
     {
       "pluginId": "stella.automation",
@@ -45,7 +49,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "automation"
-      ]
+      ],
+      "sourceSha256": "80ea5c374e8deb7ba6d5e78000f0e98a313d1888d26f9839225f568cc77abab2"
     },
     {
       "pluginId": "stella.agent-hub",
@@ -54,7 +59,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "agent-hub"
-      ]
+      ],
+      "sourceSha256": "1b5a02c236edcfdd6335212c9a0bbd2076af3e23b4c00c88e8ba42b3781347bc"
     },
     {
       "pluginId": "stella.knowledge",
@@ -63,7 +69,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "knowledge"
-      ]
+      ],
+      "sourceSha256": "81af98446a5fa691825fd55c7478b2ddf52db9fa85ff69bca052f3823833f3b4"
     },
     {
       "pluginId": "stella.memory",
@@ -72,7 +79,8 @@
       "defaultEnabled": true,
       "requiredFor": [
         "memory"
-      ]
+      ],
+      "sourceSha256": "ab423231890d818f984dbbd7f9d057b84dfb388de7224adc702166862459561d"
     }
   ]
 }

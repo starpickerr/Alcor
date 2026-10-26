@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "email": {
+      "sourceSha256": "679fff5f9069688d04f7b34db3131eb633609e8a342f351dea2b4b83ae72e166"
+    },
+    "elearning": {
+      "sourceSha256": "4c441b271db34cdfab1172792015a7ca254ba38484c5d3d0a47f96c74e4a07b6"
+    }
+  }
+}

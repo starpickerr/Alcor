@@ -333,12 +333,7 @@ class AgentInitializer:
                         logger.debug("[AgentInitializer] evolution_undo skipped - self-evolution disabled")
                         continue
 
-                # Special handling for EnvConfig tool
-                if tool_name == "env_config":
-                    from agent.tools import EnvConfig
-                    tool = EnvConfig({"agent_bridge": self.agent_bridge})
-                else:
-                    tool = tool_manager.create_tool(tool_name)
+                tool = tool_manager.create_tool(tool_name)
 
                 if tool:
                     # Apply workspace config to file operation tools.

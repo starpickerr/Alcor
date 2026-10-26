@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck, RefreshCw, ChevronRight, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, ArrowUpRight, type LucideIcon } from 'lucide-react'
+import { ShieldCheck, RefreshCw, ChevronRight, Clock3, Link2, KeyRound, Activity, Database, LockKeyhole, type LucideIcon } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
 import type { SecurityActivityCounts, SecurityCenterState, SecurityRecord } from '../api/client'
 import { getLang } from '../i18n'
-import PluginSettings from './settings/PluginSettings'
+import SensitiveResourcesPanel from '../components/SensitiveResourcesPanel'
+import ExternalConnectionsPanel from '../components/ExternalConnectionsPanel'
+import CredentialEditor from '../components/CredentialEditor'
+import { useRestoreScroll } from './settings/origin'
 import PageHeader from '../components/PageHeader'
+import AgentPermissionsPanel from '../components/AgentPermissionsPanel'
 import { RuntimeAuthorizationPanel, PermissionMigrationPanel } from '../components/SecurityAuthorizationPanels'
 import { useSessionStore } from '../store/sessionStore'
 import { SECURITY_POLICY_CHANGED } from '../store/securityPolicyEvents'
 import type { ToolInfo } from '../types'
 import {
-  commonCredentials,
   securityCopy,
   securityReason,
   securityResource,
@@ -25,11 +28,12 @@ const toolTitle = (toolId: string, catalog: ToolInfo[]) => {
   return match?.title?.[lang] || match?.title?.zh || toolId
 }
 
-const tabs = ['overview', 'secrets', 'activity', 'privacy', 'plugins'] as const
+const tabs = ['overview', 'agent-permissions', 'runtime', 'connections', 'resources'] as const
 type Tab = (typeof tabs)[number]
 const tabIcons: Record<Tab, LucideIcon> = {
   overview: ShieldCheck,
-  secrets: KeyRound, activity: Activity, privacy: Database, plugins: LockKeyhole,
+  'agent-permissions': ShieldCheck,
+  resources: KeyRound, connections: Link2, runtime: LockKeyhole,
 }
 
 const modeLabel = (
@@ -82,9 +86,33 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const tab: Tab = (tabs as readonly string[]).includes(requestedTab || '') ? requestedTab as Tab : 'overview'
   const setTab = (next: Tab) => navigate(next === 'overview' ? '/security' : `/security?tab=${next}`)
   const [center, setCenter] = useState<SecurityCenterState | null>(null)
+  useRestoreScroll(!!center)
   useEffect(() => {
-    if (requestedTab === 'connections') navigate('/data?section=sources', { replace: true })
-    if (requestedTab === 'permissions') navigate('/security', { replace: true })
+    const aliases: Record<string, string> = { secrets: 'resources', plugins: 'runtime', activity: 'overview', permissions: 'agent-permissions' }
+    const ownerCredential = new URLSearchParams(location.search).get('credential') || new URLSearchParams(location.search).get('secret') || ''
+    if ((requestedTab === 'secrets' || requestedTab === 'resources') && (ownerCredential.endsWith('_API_KEY') && ownerCredential !== 'BOCHA_API_KEY' || ownerCredential.startsWith('CUSTOM:'))) {
+      navigate('/models?credential=' + encodeURIComponent(ownerCredential), { replace: true, state: { from: '/security?tab=resources', scroll: 0 } })
+      return
+    }
+    if (requestedTab && aliases[requestedTab]) {
+      const query = new URLSearchParams(location.search)
+      const plugin = query.get('plugin')
+      if (requestedTab === 'plugins' && plugin) {
+        navigate(`/skills/plugins/${encodeURIComponent(plugin)}?section=configuration`, { replace: true, state: { from: '/security?tab=runtime', scroll: 0 } })
+        return
+      }
+      const secret = query.get('secret') || ''
+      if (requestedTab === 'secrets' && (secret.endsWith('_API_KEY') || secret.startsWith('CUSTOM:'))) {
+        navigate('/models?credential=' + encodeURIComponent(secret), { replace: true, state: { from: '/security?tab=resources', scroll: 0 } })
+        return
+      }
+      const target = aliases[requestedTab]
+      query.delete('tab'); query.delete('plugin')
+      if (query.has('secret')) { query.set('credential', query.get('secret') || ''); query.delete('secret') }
+      if (target !== 'overview') query.set('tab', target)
+      navigate('/security' + (query.size ? '?' + query.toString() : ''), { replace: true })
+    }
+    if (requestedTab === 'privacy') navigate('/data?section=usage', { replace: true })
     if (requestedTab === 'background') navigate('/tasks', { replace: true })
   }, [requestedTab, navigate, location.hash, center])
   const [records, setRecords] = useState<SecurityRecord[]>([])
@@ -109,9 +137,6 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [secretName, setSecretName] = useState('')
-  const [customSecretName, setCustomSecretName] = useState('')
-  const [secretValue, setSecretValue] = useState('')
   const [password, setPassword] = useState('')
 
   const load = useCallback(async () => {
@@ -165,14 +190,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
       setBusy(false)
     }
   }
-  const credentialName = secretName === 'other' ? customSecretName.trim().toUpperCase() : secretName
-  const requestedSecret = new URLSearchParams(location.search).get('secret') || ''
-  useEffect(() => { setSecretName(requestedSecret); setSecretValue('') }, [requestedSecret])
-  const credentialOptions = [...new Set([
-    ...commonCredentials.map(([name]) => name),
-    ...(center?.secrets.map(item => item.name) || []),
-    ...(secretName && secretName !== 'other' ? [secretName] : []),
-  ])]
+  const credentialName = new URLSearchParams(location.search).get('credential') || ''
   const eventList = (items: SecurityRecord[]) =>
     items.length ? (
       <div className="divide-y divide-default">
@@ -269,8 +287,8 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           <RefreshCw size={17} />
         </button>
       </PageHeader>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 sm:py-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div data-stella-scroll className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 sm:py-6">
+      <div data-stella-scroll-content className="max-w-5xl mx-auto space-y-6 text-content">
         <nav aria-label={copy.title} className="flex gap-1 overflow-x-auto border-b border-default pb-3">
           {tabs.map((name) => {
             const Icon = tabIcons[name]
@@ -302,7 +320,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
         ) : (
           <>
             {tab === 'overview' && (() => {
-              const globalMode = 'read-only'
+              const globalMode = center.global_policy.permission_mode || center.global_policy.preset
               const taskSummary = center.summary.background_tasks
               const connectionPreview = center.connections.slice(0, 3)
               const secretPreview = center.secrets.slice(0, 4)
@@ -311,7 +329,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
                 <section className={`${overviewCard} lg:col-span-2 flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8`}>
                   <div className="min-w-0 flex-1">
-                    <SectionTitle icon={ShieldCheck} to="/">{copy.presetsTitle}</SectionTitle>
+                    <SectionTitle icon={ShieldCheck} to="/security?tab=agent-permissions">{copy.presetsTitle}</SectionTitle>
                     <p className={`${faded} mt-3`}>{copy.overviewDefaultHelp}</p>
                   </div>
                   <div className="shrink-0 rounded-btn bg-accent-soft px-5 py-4 lg:min-w-52">
@@ -346,7 +364,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   )}
                 </section>
                 <section className={overviewCard}>
-                  <SectionTitle icon={Link2} to="/skills?tab=mcp">{copy.overviewConnectionsTitle}</SectionTitle>
+                  <SectionTitle icon={Link2} to="/security?tab=connections">{copy.overviewConnectionsTitle}</SectionTitle>
                   <div className="mt-5 mb-4 flex items-end gap-2">
                     <p className={metricValue}>
                       {typeof center.summary.connection_count === 'number'
@@ -373,7 +391,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                   </div>
                 </section>
                 <section className={overviewCard}>
-                  <SectionTitle icon={KeyRound} to="/security?tab=secrets">{copy.overviewSecretsTitle}</SectionTitle>
+                  <SectionTitle icon={KeyRound} to="/security?tab=resources">{copy.overviewSecretsTitle}</SectionTitle>
                   <div className="mt-5 mb-4 flex items-end gap-2">
                     <p className={metricValue}>
                       {typeof center.summary.secret_count === 'number'
@@ -398,26 +416,9 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     )}
                   </div>
                 </section>
-                <section className={overviewCard}>
-                  <SectionTitle icon={Activity} to="/security?tab=activity">{copy.overviewActivityTitle}</SectionTitle>
-                  <p className="text-xs text-content-secondary mt-3">{copy.activityStatsTitle}</p>
-                  {!activityCounts ? (
-                    <p className={`${faded} mt-4`}>{copy.overviewUnavailable}</p>
-                  ) : (
-                    <div className="mt-5">
-                      <OverviewMetrics items={[
-                        { label: copy.autoAllow, value: activityCounts.auto_allow },
-                        { label: copy.userAuthorized, value: activityCounts.user_authorized },
-                        { label: copy.deniedCount, value: activityCounts.denied },
-                      ]} />
-                      {activityCounts.uncertain && (
-                        <p className="mt-5 border-t border-default pt-3 text-xs leading-5 text-content-secondary">{copy.activityStatsUncertain}</p>
-                      )}
-                    </div>
-                  )}
-                </section>
+
                 <section className={`${overviewCard} lg:col-span-2`}>
-                  <SectionTitle icon={Database} to="/security?tab=privacy">{copy.overviewPrivacyTitle}</SectionTitle>
+                  <SectionTitle icon={Database} to="/data?section=usage">{copy.overviewPrivacyTitle}</SectionTitle>
                   <div className="mt-4 space-y-2 text-sm">
                     {dataResources.slice(0, 4).map(item => <p key={item.id}>{item.name} <span className="text-content-secondary">{item.provider}</span></p>)}
                     <Link className="text-accent" to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
@@ -427,110 +428,13 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
               )
             })()}
             {tab === 'overview' && <PermissionMigrationPanel />}
-            {tab === 'secrets' && (
-              <div className="space-y-5">
-                <section className={card}>
-                  <SectionTitle icon={KeyRound}>{copy.secretsTitle}</SectionTitle>
-                  <p className={`${faded} mt-3`}>{copy.secretsHelp}</p>
-                  <div className="mt-5 divide-y divide-default border-y border-default">
-                    {center.secrets.length === 0 && <p className={`${faded} py-3`}>{copy.noSecrets}</p>}
-                    {center.secrets.map((item) => {
-                      const custom = item.name.startsWith('CUSTOM:')
-                      const title = securitySecretName(copy, item.name, item.display_name)
-                      return (
-                      <div key={item.name} className="flex justify-between items-center gap-3 py-4 text-sm">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span aria-hidden="true" className="hidden sm:flex size-10 shrink-0 items-center justify-center rounded-btn bg-surface-2 text-content-secondary font-semibold text-base">
-                            {title.slice(0, 1).toUpperCase()}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-[15px] font-semibold break-words">{title}</p>
-                            <p className="text-xs leading-relaxed text-content-secondary mt-1 break-words">
-                              {(copy.secretSources as Record<string, string>)[item.source] ||
-                                copy.secretSources['credential store']}
-                            </p>
-                          </div>
-                        </div>
-                        {custom ? (
-                          <button type="button" aria-label={`${copy.manageSecret} ${title}`}
-                            onClick={() => { setSecretName(item.name); setSecretValue('') }}
-                            className={`${input} flex items-center gap-1.5 shrink-0`}>
-                            {copy.manageSecret}<ArrowUpRight size={14} aria-hidden="true" />
-                          </button>
-                        ) : <button
-                          type="button"
-                          disabled={busy}
-                          className="min-h-10 px-3 rounded-btn text-danger hover:bg-danger-soft shrink-0 focus-visible:outline-2 focus-visible:outline-accent"
-                          aria-label={`${copy.deleteSecret} ${title}`}
-                          onClick={() => void mutate(() => apiClient.deleteSecuritySecret(item.name))}
-                        >
-                          {copy.deleteSecret}
-                        </button>}
-                      </div>
-                    )})}
-                  </div>
-                  <div className="grid lg:grid-cols-[1fr_1fr_auto] gap-3 mt-5">
-                    <label className="min-w-0 text-sm font-medium">
-                      {copy.selectService}
-                    <select
-                      className={`${input} block w-full mt-2 font-normal`}
-                      aria-label={copy.selectService}
-                      value={secretName}
-                      onChange={(event) => { setSecretName(event.target.value); setSecretValue('') }}
-                    >
-                      <option value="">{copy.selectService}</option>
-                      {credentialOptions.map((name) => (
-                        <option key={name} value={name}>
-                          {securitySecretName(copy, name, center.secrets.find(item => item.name === name)?.display_name)}
-                        </option>
-                      ))}
-                      <option value="other">{copy.otherCredential}</option>
-                    </select>
-                    </label>
-                    <>
-                    <label className="min-w-0 text-sm font-medium">
-                      {copy.secretValue}
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      className={`${input} block w-full mt-2 font-normal`}
-                      aria-label={copy.secretValue}
-                      placeholder={copy.secretValue}
-                      value={secretValue}
-                      onChange={(event) => setSecretValue(event.target.value)}
-                    />
-                    </label>
-                    <button
-                      disabled={busy || !credentialName || !secretValue}
-                      className={`${action} self-end`}
-                      onClick={() => {
-                        void mutate(() => apiClient.saveSecuritySecret(credentialName, secretValue)).then(
-                          (ok) => {
-                            if (ok) setSecretValue('')
-                          },
-                        )
-                      }}
-                    >
-                      {copy.saveSecret}
-                    </button>
-                    {credentialName && center.secrets.some(item => item.name === credentialName) && <button
-                      disabled={busy} className="text-sm text-danger self-end min-h-10"
-                      onClick={() => void mutate(() => apiClient.deleteSecuritySecret(credentialName))}>{copy.deleteSecret}</button>}
-                    </>
-
-                  </div>
-                  {secretName === 'other' && (
-                    <label className="block text-xs text-content-secondary mt-3">
-                      {copy.customCredentialName}
-                      <input
-                        className={`${input} block w-full mt-1`}
-                        value={customSecretName}
-                        onChange={(event) => setCustomSecretName(event.target.value.toUpperCase())}
-                      />
-                      <span className="block mt-1">{copy.secretNameHelp}</span>
-                    </label>
-                  )}
-                </section>
+            {tab === 'agent-permissions' && <AgentPermissionsPanel />}
+            {tab === 'resources' && <div className="space-y-5"><SensitiveResourcesPanel />
+              {credentialName && <section className={card}><h2 className={heading}>{copy.manageSecret} · {credentialName}</h2><CredentialEditor name={credentialName} configured={center.secrets.some(item => item.name === credentialName)} /></section>}
+            </div>}
+            {tab === 'connections' && <ExternalConnectionsPanel />}
+            {tab === 'runtime' && <div className={card}><RuntimeAuthorizationPanel /></div>}
+            {tab === 'overview' && <details className="rounded-card border border-default"><summary className="cursor-pointer px-5 py-4 text-sm text-content">{copy.appPassword}</summary>
                 <section className={card}>
                   <SectionTitle icon={LockKeyhole}>{copy.appPassword}</SectionTitle>
                   <p className={`${faded} mt-3`}>{copy.appPasswordHelp}</p>
@@ -564,14 +468,12 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                     }}>{getLang() === 'zh' ? '清除访问密码' : 'Clear access password'}</button>}
                   </div>
                 </section>
-              </div>
-            )}
-            {tab === 'plugins' && <div className="space-y-6"><div className={card}><RuntimeAuthorizationPanel /></div><PluginSettings baseUrl={baseUrl} pluginId={new URLSearchParams(location.search).get('plugin')} onPluginChange={plugin => navigate(`/security?tab=plugins&plugin=${encodeURIComponent(plugin)}`, { replace: true })} /></div>}
-            {tab === 'activity' && (
+            </details>}
+            {tab === 'overview' && (
               <section className={card}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
                   <div>
-                    <h2 className={heading}>{copy.activityTitle}</h2>
+                    <SectionTitle icon={Activity}>{copy.activityTitle}</SectionTitle>
                     <p className={`${faded} mt-1`}>{copy.activityHelp}</p>
                   </div>
                   <button
@@ -717,36 +619,7 @@ const SecurityPage: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
                 {eventList(records)}
               </section>
             )}
-            {tab === 'privacy' && (
-              <div className="space-y-5">
-                <section className={card}>
-                  <h2 className={heading}>{copy.privacyTitle}</h2>
-                  <p className={`${faded} mt-1`}>{copy.privacyHelp}</p>
-                  <div className="mt-4 flex flex-wrap gap-4 text-sm text-accent">
-                    <Link to="/data">{getLang() === 'zh' ? '管理数据' : 'Manage data'}</Link>
-                    <Link to="/skills?tab=mcp">{getLang() === 'zh' ? '管理能力连接' : 'Manage capability connections'}</Link>
-                    <Link to="/">{getLang() === 'zh' ? '对话权限' : 'Conversation permissions'}</Link>
-                  </div>
-                  <div className="mt-4 divide-y divide-default">
-                    {(center.data_access?.resources || []).map(item => {
-                      const connection = center.connections.find(row => row.id === item.connection)
-                      return <div key={item.id} className="py-3 space-y-1 text-sm">
-                        <p className="font-medium">{item.name}</p>
-                        <p className="text-content-secondary break-all">{item.provider} · {item.account_id}</p>
-                        <p className="text-content-secondary">{getLang() === 'zh' ? '连接策略：' : 'Connection policy: '}{connection?.allowed === false ? (getLang() === 'zh' ? '已拒绝' : 'Denied') : (getLang() === 'zh' ? '依照当前权限检查' : 'Checked against current permissions')}</p>
-                        <details className="text-xs text-content-secondary"><summary>{getLang() === 'zh' ? '资源标识' : 'Resource ID'}</summary><p className="mt-1 break-all">{item.id}</p></details>
-                      </div>
-                    })}
-                  </div>
-                </section>
-                <section className={card}>
-                  <h2 className={heading}>{copy.privacyExternalTitle}</h2>
-                  <div className="mt-3 space-y-3 text-sm">
-                    {(center.data_access?.external_transfers || center.privacy?.external_transfers || []).map(item => <div key={item.id}><p className="font-medium">{item.name}</p><p className="mt-1 text-content-secondary">{item.note[getLang() === 'en' ? 'en' : 'zh']}</p></div>)}
-                  </div>
-                </section>
-              </div>
-            )}
+
           </>
         )}
       </div>

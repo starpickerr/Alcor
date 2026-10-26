@@ -2,7 +2,7 @@
 Shared credential-path guard for file tools.
 
 The agent's API keys live in ~/.stella/.env and must only ever be reached through
-the env_config tool. Every tool that can surface file contents to the model has
+the owning feature settings. Every tool that can surface file contents to the model has
 to apply the same check - guarding only the read tool leaves the others as
 bypasses (a successful edit, for example, returns a diff containing the
 surrounding lines).
@@ -16,17 +16,18 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from common.utils import expand_path
 
 # Paths whose CONTENT mirrors the process environment (and thus any secrets
-# loaded from ~/.stella/.env). Reading them bypasses the env_config boundary.
+# loaded from ~/.stella/.env). Reading them bypasses the owner configuration boundary.
 # Matches /proc/self/environ, /proc/thread-self/environ and /proc/<pid>/environ.
 _PROC_ENVIRON_RE = re.compile(r"^/proc/(\d+|self|thread-self)/environ$")
 
 DENIED_MESSAGE = (
     "Error: Access denied. API keys and credentials must be accessed "
-    "through the env_config tool only."
+    "through their owning feature settings only."
 )
 ELEARNING_DENIED_MESSAGE = (
     "Error: Direct access to eLearning login settings and session cookies is denied; "
@@ -63,6 +64,8 @@ def protected_credential_paths() -> set[str]:
     elearning_config = briefing_db(ensure=False).with_name('elearning.json')
     return {os.path.realpath(path) for path in (
         expand_path("~/.stella/.env"),
+        expand_path("~/.stella/mcp_oauth.json"),
+        expand_path("~/.stella/mcp_oauth.json.tmp"),
         os.path.join(get_data_root(), "config.json"),
         get_weixin_credentials_path(),
         str(mcp_config_file()),
@@ -90,11 +93,13 @@ def protected_credential_folders() -> set[str]:
         user / 'bills', user / 'todos', user / 'calendar', user / 'agent-hub', user / 'briefing' / 'elearning-sessions',
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
+        shared_root() / 'managed-runtimes',
     }
     # Historical directory migrations left retired data next to the active
     # directory. Keep these protected while new operations use the fixed root.
     folders.update(user.glob('.stella-migrate-*'))
     folders.update(user.glob('.stella-retired-*'))
+    folders.update(Path(path).parent / '.security-private-writes' for path in protected_credential_paths())
     return {os.path.realpath(path) for path in folders}
 
 

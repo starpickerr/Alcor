@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from core.runtime.paths import is_runtime_path
 from agent.permission.policy import MODES
 from agent.permission.shell_scope import _parse_segments, _command_name, _redirect_targets, _positional_paths, _DESTINATION_ONLY_COMMANDS, _PATH_MUTATING_COMMANDS
 from agent.permission.security_policy import legacy_policy, rule
@@ -255,6 +256,7 @@ class SecurityGateway:
         create_pending: bool = True,
         capability_descriptor=None,
         inherited_approval: bool = False,
+        require_confirmation: bool = False,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -318,6 +320,8 @@ class SecurityGateway:
             if is_credential_path(real):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 hard_reason = credential_denial_message(real)
+            elif tool_name in ('write', 'edit') and is_runtime_path(real):
+                hard_reason = 'Shared runtimes and application code require their dedicated installation flow.'
             elif _managed(real):
                 resource_kind, policy_key = ResourceKind.AGENT_MANAGED, "managed"
                 resource = "Agent Skill Store" if _skill_store(real) else "Agent Config/Internal State"
@@ -418,13 +422,14 @@ class SecurityGateway:
                             break
                     if hard_reason:
                         break
+        elif tool_name == 'model_egress':
+            resource_kind, resource = ResourceKind.EXTERNAL, str(args.get('receiver') or 'external service')
+            event, risk, policy_key = 'external_access', 'L3', 'network'
+            prerequisites.append('external')
         elif tool_name == "env_config":
             resource_kind, resource = ResourceKind.CREDENTIAL, "Credential Store"
             event = "secret_use"
-            if action in ("set", "delete"):
-                risk, policy_key = "L3", "high_risk"
-            else:
-                risk, policy_key = "L0", "managed"
+            hard_reason = 'Credentials require their owning feature settings; Agent access is unavailable.'
         elif tool_name == "skill":
             resource_kind, resource, policy_key = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed"
             event = "skill_install" if action == "create" else "skill_modify"
@@ -562,6 +567,8 @@ class SecurityGateway:
                 selected = granted
                 policy_key = descriptor.capability_id + '/' + descriptor.operation
                 risk = 'L0' if operation == 'read' else 'L1' if operation == 'write' else 'L3'
+        if require_confirmation and selected == 'allow':
+            selected, risk = 'confirm', 'L3'
         trace = (f"Action: {operation}", f"Resource classification: {resource_kind.value} ({resource})",
                  f"Risk evaluation: {risk}", f"Policy: {policy_key}={selected}") + tuple(
                      f"Required policy: {name}={value}" for name, value in required.items())
@@ -572,7 +579,7 @@ class SecurityGateway:
         elif "deny" in required.values():
             refused = next(name for name, value in required.items() if value == "deny")
             kind, reason = DecisionKind.DENY, f"Policy denied {operation} on {resource_kind.value} ({resource}); required rule {refused}."
-        elif inherited_approval:
+        elif inherited_approval and not require_confirmation:
             kind, reason = DecisionKind.ALLOW, 'Approved operation retained by its Core service adapter.'
         elif not create_pending and (selected == "confirm" or "confirm" in required.values()):
             kind, reason = DecisionKind.CONFIRM, "Authorization required. Adjust the policy and rerun this task manually; it will not resume automatically."
@@ -638,6 +645,8 @@ class SecurityGateway:
 
     @staticmethod
     def pending() -> list[dict]:
+        from common.runtime_identity import current_identity
+        user = current_identity().user_id or 'local-default'
         now = time.time()
         with _lock:
             for request_id, request in list(_pending.items()):
@@ -654,7 +663,7 @@ class SecurityGateway:
                 if expires < now:
                     del _claims[request_id]
             return [{"id": request_id, **{k: request[k] for k in ("tool", "session", "summary", "resource", "risk", "reason", "expanded_scope", "effect")}}
-                    for request_id, request in _pending.items()]
+                    for request_id, request in _pending.items() if (request.get('user') or 'local-default') == user]
 
     @staticmethod
     def has_pending_session(session_id: str | None) -> bool:
@@ -667,11 +676,15 @@ class SecurityGateway:
 
     @staticmethod
     def approve(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
+        from common.runtime_identity import current_identity
+        owner = current_identity().user_id or 'local-default'
+        if user_id is not None and user_id != owner:
+            return False
         with _lock:
             request = _pending.get(request_id)
             if (not request or request["expires"] < time.time()
                     or (session_id is not None and request["session"] != session_id)
-                    or (user_id is not None and request["user"] != user_id)):
+                    or (request.get('user') or 'local-default') != owner):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],
@@ -693,11 +706,15 @@ class SecurityGateway:
 
     @staticmethod
     def reject(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
+        from common.runtime_identity import current_identity
+        owner = current_identity().user_id or 'local-default'
+        if user_id is not None and user_id != owner:
+            return False
         with _lock:
             request = _pending.get(request_id)
             if (not request or request["expires"] < time.time()
                     or (session_id is not None and request["session"] != session_id)
-                    or (user_id is not None and request["user"] != user_id)):
+                    or (request.get('user') or 'local-default') != owner):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],

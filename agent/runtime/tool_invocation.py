@@ -164,7 +164,11 @@ def _permission_denial(
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
         from core.security.service import SecurityService
-        if SecurityService.native_user_operation():
+        capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
+        from core.security.capabilities import describe_tool
+        descriptor = capability_descriptor or describe_tool(tool_name, arguments)
+        if (SecurityService.native_user_operation() or
+                SecurityService.native_background_operation(descriptor, arguments)):
             # UI and UI-rooted service calls do not borrow the default Agent
             # mode. Gateway identity, private paths and connection constraints
             # still run against the same trusted execution context.
@@ -173,9 +177,6 @@ def _permission_denial(
             native_policy.pop('error', None)
             check_kwargs['policy'] = native_policy
             mode = 'full-access'
-        capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
-        from core.security.capabilities import describe_tool
-        descriptor = capability_descriptor or describe_tool(tool_name, arguments)
         inherited_approval = inherited(descriptor, binding, arguments)
         decision = SecurityGateway.check(mode, tool_name, arguments,
                                          capability_descriptor=capability_descriptor,

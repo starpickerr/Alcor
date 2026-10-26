@@ -9,6 +9,8 @@ def create_voice(voice_type):
     :param voice_type: voice type code
     :return: voice instance
     """
+    if voice_type in {'baidu', 'google', 'azure', 'elevenlabs', 'edge', 'xunfei', 'tencent', 'dashscope'}:
+        raise PermissionError('This voice SDK has no controlled egress adapter; its configuration is preserved')
     if voice_type == "baidu":
         from voice.baidu.baidu_voice import BaiduVoice
 

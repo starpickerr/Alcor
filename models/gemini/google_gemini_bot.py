@@ -14,7 +14,7 @@ import re
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.session_manager import SessionManager
 from bridge.context import ContextType, Context

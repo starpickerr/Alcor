@@ -2,7 +2,7 @@
 
 import time
 
-import requests
+from models import transport_requests as requests
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const

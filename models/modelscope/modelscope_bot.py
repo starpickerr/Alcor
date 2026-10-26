@@ -2,7 +2,7 @@
 
 import json
 import time
-import requests
+from models import transport_requests as requests
 
 from models.bot import Bot
 from models.session_manager import SessionManager

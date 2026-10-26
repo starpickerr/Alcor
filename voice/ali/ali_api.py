@@ -8,10 +8,9 @@ Description:
 
 """
 
-import http.client
 import json
 import time
-import requests
+from core.security.requests_transport import voice_requests as requests
 import datetime
 import hashlib
 import hmac
@@ -95,20 +94,15 @@ def speech_to_text_aliyun(url, audioContent, appkey, token):
     if enableVoiceDetection :
         request = request + '&enable_voice_detection=' + 'true'
         
-    host = 'nls-gateway-cn-shanghai.aliyuncs.com'
 
     # 设置HTTPS请求头部
     httpHeaders = {
         'X-NLS-Token': token,
-        'Content-type': 'application/octet-stream',
-        'Content-Length': len(audioContent)
+        'Content-type': 'application/octet-stream'
         }
 
-    conn = http.client.HTTPSConnection(host)
-    conn.request(method='POST', url=request, body=audioContent, headers=httpHeaders)
-
-    response = conn.getresponse()
-    body = response.read()
+    response = requests.post(request, data=audioContent, headers=httpHeaders, timeout=60)
+    body = response.content
     try:
         body = json.loads(body)
         status = body['status']
@@ -116,13 +110,13 @@ def speech_to_text_aliyun(url, audioContent, appkey, token):
             result = body['result']
             if result :
                 logger.info(f"阿里云语音识别到了：{result}")
-            conn.close()
+            response.close()
             return result
         else :
             logger.error(f"语音识别失败，状态码: {status}")
     except ValueError:
         logger.error(f"语音识别失败，收到非JSON格式的数据: {body}")
-    conn.close()
+    response.close()
     return None
 
 

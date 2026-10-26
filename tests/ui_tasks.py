@@ -10,6 +10,7 @@ from playwright.sync_api import expect, sync_playwright
 
 test_url = os.environ.get('STELLA_TEST_URL', 'http://localhost:5173')
 created = []
+default_requests = []
 tasks = [
     dict(id='plain-1', name='Standalone digest', enabled=True, created_at='', updated_at='',
          schedule={'type': 'cron', 'expression': '0 8 * * *'},
@@ -71,6 +72,9 @@ def backend(route):
         else:
             subject = parse_qs(urlparse(route.request.url).query).get('subject', ['default'])[0]
             task = next((task for task in tasks if task['id'] == subject), {})
+            if subject == 'default':
+                default_requests.append(route)
+                return
             policy = task.get('run_policy') or {'filesystem_mode': task.get('run_permission_mode') or 'read-only', 'capabilities': {}, 'policy_revision': 1}
         data.update(policy=policy, capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True}],
                     migration_status='complete', compatibility_restrictions={})
@@ -102,11 +106,14 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='新增任务', exact=True).click()
         fresh = page.get_by_role('dialog')
         expect(fresh.get_by_role('button', name='独立任务', exact=True)).to_be_visible()
-        expect(fresh.get_by_role('radio', name='只读', exact=True)).to_be_checked()
         expect(fresh.get_by_text('选择关联对话', exact=True)).to_have_count(0)
         fresh.get_by_role('button', name='独立任务', exact=True).click()
         page.get_by_text('关联已有对话', exact=True).click()
         expect(fresh.get_by_text('选择关联对话', exact=True)).to_be_visible()
+        assert default_requests, 'Default request should still be pending'
+        for pending in list(default_requests):
+            pending.fulfill(json={'status': 'success', 'policy': {'filesystem_mode': 'full-access', 'permission_mode': 'custom', 'rules': {'network': 'deny'}, 'policy_revision': 3}, 'migration_status': 'complete', 'compatibility_restrictions': {}, 'capabilities': []}, headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
+        expect(fresh.get_by_role('button', name='保存', exact=True)).to_be_enabled()
         expect(fresh.get_by_role('radio', name='只读', exact=True)).to_be_checked()
         fresh.get_by_role('button', name='关联已有对话', exact=True).click()
         page.get_by_text('独立任务', exact=True).click()
@@ -115,7 +122,9 @@ with sync_playwright() as playwright:
         fresh.get_by_role('button', name='保存', exact=True).click()
         expect(fresh).to_be_hidden()
         assert created[-1]['action']['conversation_mode'] == 'independent'
-        assert created[-1]['run_policy']['filesystem_mode'] == 'read-only'
+        assert created[-1]['run_policy']['permission_mode'] == 'custom'
+        assert created[-1]['run_policy']['rules'] == {'network': 'deny'}
+        assert created[-1]['run_policy']['filesystem_mode'] == 'full-access'
         assert 'source_session_id' not in created[-1]['action']
         assert 'session_id' not in created[-1]
         page.get_by_text('Linked reminder').click()
@@ -154,7 +163,7 @@ with sync_playwright() as playwright:
         expect(editor.get_by_text('数据与连接访问', exact=True)).to_have_count(0)
         expect(editor.get_by_text('授予资源访问', exact=True)).to_have_count(0)
         expect(editor.get_by_role('radio', name='只读', exact=True)).to_be_checked()
-        assert editor.get_by_role('radio').count() == 3
+        assert editor.get_by_role('radio').count() == 4
         editor.get_by_role('radio', name='完全访问', exact=True).check()
         editor.get_by_role('button', name='保存权限', exact=True).click()
         expect(editor.get_by_role('status').filter(has_text='权限已保存')).to_be_visible()

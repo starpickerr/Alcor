@@ -298,7 +298,7 @@ class SearchFiles(BaseTool):
         root = self._resolve_path(path)
         if self._is_credential_path(root):
             return ToolResult.fail(
-                "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
+                "Error: Access denied. API keys and credentials must be accessed through their owning feature settings only."
             )
         if not os.path.exists(root):
             return ToolResult.fail(

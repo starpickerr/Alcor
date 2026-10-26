@@ -226,3 +226,6 @@ def native_settings_action():
     from core.plugins.caller import caller_origin_scope
     with caller_origin_scope('desktop'):
         yield
+
+# Optional real dependency integration uses hash-verified, offline public artifacts.
+pytest_plugins = ['tests.fixtures.runtime_artifacts']

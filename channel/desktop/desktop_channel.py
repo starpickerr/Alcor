@@ -2049,10 +2049,13 @@ class DesktopChannel(ChatChannel):
             '/api/runs/pending', 'PendingRunsHandler',
             '/api/security/activity', 'SecurityActivityHandler',
             '/api/security/center', 'SecurityCenterHandler',
+            '/api/security/sensitive-resources', 'SecuritySensitiveResourcesHandler',
             '/api/security/policy', 'SecurityPolicyHandler',
             '/api/security/run-policy', 'SecurityRunPolicyHandler',
             '/api/security/migration', 'SecurityMigrationHandler',
             '/api/security/runtime-trust', 'SecurityRuntimeTrustHandler',
+            '/api/security/runtime', 'SecurityRuntimeTrustHandler',
+            '/api/security/connections', 'SecurityConnectionsHandler',
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/security/privacy', 'SecurityPrivacyHandler',
@@ -2863,138 +2866,7 @@ class StreamHandler:
 
 class ConfigHandler:
 
-    _RECOMMENDED_MODELS = [
-        const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
-        const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
-        # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
-        const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
-        const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
-        const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
-        const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
-        const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
-        const.MIMO_V2_5_PRO, const.MIMO_V2_5,
-    ]
-
-    # Generic placeholder hints surfaced in the web console. We deliberately
-    # show the version-path tail (e.g. "/v1") so users are reminded to type
-    # the full base URL. The form is intentionally vague (`...../v1`) so it
-    # never looks like a real default a user might paste verbatim — and we
-    # never auto-rewrite anything on the server side.
-    _PLACEHOLDER_V1 = "https://...../v1"
-    _PLACEHOLDER_QIANFAN = "https://...../v2"
-    _PLACEHOLDER_ZHIPU = "https://...../api/paas/v4"
-    _PLACEHOLDER_DOUBAO = "https://...../api/v3"
-    _PLACEHOLDER_GEMINI = "https://....."
-
-    PROVIDER_MODELS = OrderedDict([
-        ("deepseek", {
-            "label": "DeepSeek",
-            "api_key_field": "deepseek_api_key",
-            "api_base_key": "deepseek_api_base",
-            "api_base_default": "https://api.deepseek.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
-        }),
-        ("claudeAPI", {
-            "label": "Claude",
-            "api_key_field": "claude_api_key",
-            "api_base_key": "claude_api_base",
-            "api_base_default": "https://api.anthropic.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
-        }),
-        ("openai", {
-            "label": "OpenAI",
-            "api_key_field": "open_ai_api_key",
-            "api_base_key": "open_ai_api_base",
-            "api_base_default": "https://api.openai.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
-        }),
-        ("gemini", {
-            "label": "Gemini",
-            "api_key_field": "gemini_api_key",
-            "api_base_key": "gemini_api_base",
-            "api_base_default": "https://generativelanguage.googleapis.com",
-            "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
-        }),
-        ("minimax", {
-            "label": "MiniMax",
-            "api_key_field": "minimax_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.MINIMAX_M3, const.MINIMAX_M2_7, const.MINIMAX_M2_7_HIGHSPEED],
-        }),
-        ("zhipu", {
-            "label": {"zh": "智谱AI", "en": "GLM"},
-            "api_key_field": "zhipu_ai_api_key",
-            "api_base_key": "zhipu_ai_api_base",
-            "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
-            "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
-        }),
-        ("dashscope", {
-            "label": {"zh": "通义千问", "en": "Qwen"},
-            "api_key_field": "dashscope_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
-        }),
-        ("moonshot", {
-            "label": "Kimi",
-            "api_key_field": "moonshot_api_key",
-            "api_base_key": "moonshot_base_url",
-            "api_base_default": "https://api.moonshot.cn/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
-        }),
-        ("doubao", {
-            "label": {"zh": "豆包", "en": "Doubao"},
-            "api_key_field": "ark_api_key",
-            "api_base_key": "ark_base_url",
-            "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_base_placeholder": _PLACEHOLDER_DOUBAO,
-            "models": [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE],
-        }),
-        ("qianfan", {
-            "label": {"zh": "百度千帆", "en": "ERNIE"},
-            "api_key_field": "qianfan_api_key",
-            "api_base_key": "qianfan_api_base",
-            "api_base_default": "https://qianfan.baidubce.com/v2",
-            "api_base_placeholder": _PLACEHOLDER_QIANFAN,
-            "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
-        }),
-        ("mimo", {
-            "label": {"zh": "小米 MiMo", "en": "MiMo"},
-            "api_key_field": "mimo_api_key",
-            "api_base_key": "mimo_api_base",
-            "api_base_default": "https://api.xiaomimimo.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
-        }),
-        ("linkai", {
-            "label": "LinkAI",
-            "api_key_field": "linkai_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": _RECOMMENDED_MODELS,
-        }),
-        ("custom", {
-            "label": {"zh": "自定义", "en": "Custom"},
-            "api_key_field": "custom_api_key",
-            "api_base_key": "custom_api_base",
-            "api_base_default": "",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [],
-        }),
-    ])
+    from models.catalog import PROVIDER_MODELS, _RECOMMENDED_MODELS
 
     EDITABLE_KEYS = {
         "stella_lang",
@@ -6150,6 +6022,45 @@ class SecurityActivityHandler:
         }, ensure_ascii=False)
 
 
+class SecurityConnectionsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.connections import ConnectionControl
+        try:
+            return json.dumps({'status': 'success', **ConnectionControl().inventory()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Connections', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.security.connections import ConnectionControl
+        try:
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) != {'id', 'enabled', 'revision'}:
+                raise ValueError('Invalid connection control fields')
+            result = ConnectionControl().save(body['id'], enabled=body['enabled'], expected_revision=body['revision'])
+            return json.dumps({'status': 'success', 'connection': result}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Connections', error)
+
+
+class SecuritySensitiveResourcesHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.credentials import CredentialDirectory
+        from core.security.isolation import application_isolation
+        try:
+            return json.dumps({'status': 'success', **CredentialDirectory().inventory(),
+                'folder_protection': application_isolation()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Sensitive resources', error)
+
+
 class SecurityCenterHandler:
     def GET(self):
         _require_auth()
@@ -6178,8 +6089,10 @@ class SecurityRunPolicyHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        params = web.input(kind='template', subject='default', agent='')
+        params = web.input(kind='template', subject='default', agent='', view='')
         try:
+            if getattr(params, 'view', '') == 'inventory':
+                return json.dumps({'status': 'success', **_permission_control().inventory()}, ensure_ascii=False)
             return json.dumps({'status': 'success', **_permission_control().read(
                 params.kind, params.subject, params.agent or None)}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
@@ -6288,14 +6201,6 @@ class SecurityRuntimeTrustHandler:
         except (ValueError, PermissionError, OSError) as error:
             return _api_reject('Execution environment', error)
 
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from core.security.control import RuntimeControl
-        try:
-            return json.dumps({'status': 'success', **RuntimeControl().save(json.loads(web.data() or b'{}'))}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Execution environment', error)
 
 
 class SecurityPolicyHandler:
@@ -6336,7 +6241,7 @@ class SecuritySecretsHandler:
                 raise ValueError("credential value required")
             set_secret(str(body.get("name") or ""), body["value"])
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
     def DELETE(self):
@@ -6347,7 +6252,7 @@ class SecuritySecretsHandler:
             body = json.loads(web.data() or b"{}")
             set_secret(str(body.get("name") or ""), None)
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
 
@@ -6370,7 +6275,7 @@ class SecurityPrivacyHandler:
             body = json.loads(web.data() or b"{}")
             result = cleanup(str(body.get("action") or ""))
             return json.dumps({**result, **inventory()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
 
@@ -7819,7 +7724,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
     global_policy = resolve(global_permission)
     source = "independent"
-    modes = [row for row in MODE_DEFINITIONS if row['id'] != 'custom']
+    modes = MODE_DEFINITIONS
     from agent.permission.process_sandbox import capability
     isolation = capability()
     if effective_mode(effective_policy) == "full-access":
@@ -7839,7 +7744,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "source": source,
             "preset": effective_policy["preset"],
             "global_preset": global_policy["preset"],
-            "mode": effective_policy.get("filesystem_mode", effective_mode(effective_policy)),
+            "mode": effective_policy.get("permission_mode", effective_policy.get("filesystem_mode", effective_mode(effective_policy))),
             "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
             "rules": effective_rules(effective_policy),
             "policy": effective_policy,

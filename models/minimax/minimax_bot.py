@@ -4,7 +4,7 @@ import time
 import json
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 
 from models.bot import Bot
 from models.minimax.minimax_session import MinimaxSession

@@ -14,6 +14,7 @@ import tempfile
 import threading
 
 from agent.permission.security_policy import rule
+from core.runtime.paths import runtime_readonly_roots
 
 
 class SandboxUnavailable(RuntimeError):
@@ -172,8 +173,9 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                 f"(allow file-write* (subpath {_seatbelt_literal(path)}))" for path in write_roots)
             if approved_target:
                 permissions += f" (allow file-read* file-write* (literal {_seatbelt_literal(approved_target)}))"
-        if rule(policy, "network") == "deny":
-            permissions += " (deny network*)"
+        # Operation permissions never grant a raw socket to an untrusted child.
+        # Networking must use a Core-owned connector, independent of this mode.
+        permissions += " (deny network*)"
         work = os.path.realpath(context.work_root)
         private_rules = [f"(deny file-read* file-write* (literal {_seatbelt_literal(work)}))"]
         for name in ("sessions", "automations", "shared"):
@@ -189,13 +191,13 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
             private_rules.append(f"(allow file-read* (literal {file_path}))")
             if row["access"] == "write" or row["owner_session"] == context.session_id:
                 private_rules.append(f"(allow file-write* (literal {file_path}))")
-        profile = f"(version 1) (allow default) {permissions} {protected} {' '.join(private_rules)}"
+        immutable = ' '.join(f'(deny file-write* (subpath {_seatbelt_literal(path)}))'
+                             for path in runtime_readonly_roots())
+        profile = f"(version 1) (allow default) {permissions} {protected} {' '.join(private_rules)} {immutable}"
         argv = [sandbox_executable(), "-p", profile, "/bin/sh", "-c", command]
     else:
         executable = sandbox_executable()
-        isolation = ["--unshare-pid"]
-        if rule(policy, "network") == "deny":
-            isolation.append("--unshare-net")
+        isolation = ["--unshare-pid", "--unshare-net"]
         if constrained:
             argv = [executable, "--die-with-parent", *isolation, "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev"]
@@ -244,6 +246,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                             sandbox_options.extend(["--dir", os.path.dirname(path)])
                             writable = row["access"] == "write" or row["owner_session"] == context.session_id
                             sandbox_options.extend(["--bind" if writable else "--ro-bind", path, path])
+        # Bind last so a broad workspace grant cannot remount runtime code RW.
+        for path in runtime_readonly_roots():
+            if os.path.isdir(path):
+                sandbox_options.extend(['--ro-bind', path, path])
         argv[argv.index("--"):argv.index("--")] = sandbox_options
     leases = tuple((row["id"], row["path"], context.session_id, context.agent_id)
                    for row in shared if row["recipient_session"] == context.session_id and row["active"])

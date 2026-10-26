@@ -153,7 +153,7 @@ SAFETY:
         # Security check: Prevent direct access to the credential file
         if re.search(r'\.stella[/\\]\.env', command):
             return ToolResult.fail(
-                "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
+                "Error: Access denied. API keys and credentials must be accessed through their owning feature settings only."
             )
 
         # Optional safety check - only warn about extremely dangerous commands

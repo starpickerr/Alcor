@@ -32,7 +32,7 @@ class RuntimeTrustStore(RunPolicyStore):
             from agent.tools.mcp.mcp_client import LIVE_CLIENTS
             key = dict(user_id=user_id, kind=kind, identifier=identifier, digest=digest)
             for client in list(LIVE_CLIENTS):
-                if client._runtime_key == key and client.sandbox_state.get('mode') == 'trusted':
+                if client._runtime_key == key:
                     client.shutdown()
 
     def choice(self, *, user_id, kind, identifier, digest):
@@ -52,17 +52,18 @@ def verified_first_party(root, plugin_id, digest):
     core = Path(__file__).resolve().parents[2]
     if getattr(sys, 'frozen', False):
         catalogs = [Path(sys.executable).resolve().parents[2] / 'plugin-catalog.json',
-                    Path(getattr(sys, '_MEIPASS', core)) / 'resources/plugin-catalog.json']
+                    Path(getattr(sys, '_MEIPASS', core)) / 'resources/plugin-catalog.json',
+                    Path(getattr(sys, '_MEIPASS', core)) / 'resources/default-plugins.json']
     else:
         catalogs = [core / 'resources/plugin-catalog.json',
                     core / 'desktop/resources/plugin-catalog.json',
-                    core.parent / 'Stella-Plugins/catalog/official.json']
+                    core / 'resources/default-plugins.json']
     try:
         for path in catalogs:
             if not path.is_file():
                 continue
             pins = json.loads(path.read_text())
-            if any(row.get('pluginId') == plugin_id and row.get('sha256') == digest
+            if any(row.get('pluginId') == plugin_id and (row.get('sourceSha256') or row.get('sha256')) == digest
                    for row in pins.get('plugins', [])):
                 return _sha256_tree(Path(root)) == digest
     except (OSError, ValueError, KeyError):
@@ -72,4 +73,4 @@ def verified_first_party(root, plugin_id, digest):
 
 def plugin_trusted(root, plugin_id, digest, user_id):
     choice = RuntimeTrustStore().choice(user_id=user_id, kind='plugin', identifier=plugin_id, digest=digest)
-    return choice if choice is not None else verified_first_party(root, plugin_id, digest)
+    return choice is not False and verified_first_party(root, plugin_id, digest)

@@ -610,7 +610,8 @@ def test_remote_mcp_disable_during_preparation_never_dispatches(monkeypatch, pha
     assert results == [False] and client._initialized is False
 
 
-def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
+@pytest.mark.parametrize("notification_stream", [False, True])
+def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch, notification_stream):
     import threading
     from agent.tools.mcp.mcp_client import McpClient
 
@@ -644,10 +645,17 @@ def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
             assert release.wait(3)
         return Response()
 
-    monkeypatch.setattr("urllib.request.urlopen", remote)
+    monkeypatch.setattr(client, "_open_remote", remote)
     monkeypatch.setattr(client, "_url_allowed", lambda url: True)
     monkeypatch.setattr(client, "_maybe_load_oauth", lambda: None)
-    worker = threading.Thread(target=lambda: results.append(client.initialize()))
+    def read_late_response():
+        from urllib.request import Request
+        try:
+            with client._remote_response(Request('https://mcp.invalid', data=b'{}'), 3):
+                raise AssertionError('Closed generation accepted a late response')
+        except RuntimeError:
+            results.append(False)
+    worker = threading.Thread(target=read_late_response if notification_stream else lambda: results.append(client.initialize()))
     worker.start()
     try:
         assert entered.wait(3)
@@ -657,7 +665,7 @@ def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
         worker.join(3)
     assert not worker.is_alive()
     assert results == [False]
-    assert requests == [("POST", None), ("DELETE", "late-session")]
+    assert requests == [("POST", None)]  # Revocation must never emit a new cleanup request.
     assert client._http_session_id is None and client._initialized is False
     assert closed
 

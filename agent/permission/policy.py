@@ -42,5 +42,6 @@ def legacy_global_mode() -> str:
 
 
 def global_mode() -> str:
-    """New execution contexts always start read-only; old values are migration inputs."""
-    return READ_ONLY
+    """Current owner default's base; callers resolve the full independent policy."""
+    from core.security.run_policy import default_template
+    return default_template()['filesystem_mode']

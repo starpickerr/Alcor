@@ -12,7 +12,6 @@ policies = {name: {'filesystem_mode': 'workspace-write', 'capabilities': {
 saved = []
 reject = [False]
 grants = []
-runtime_choices = []
 legacy_grant = {'id': 'legacy-course', 'server': 'email', 'consumer': 'stella.briefing', 'capabilities': ['email.read'],
     'methods': ['fetch_messages'], 'resources': [{'kind': 'folder', 'id': 'school'}], 'purposes': ['interactive'],
     'valid_until': None, 'revision': 1, 'revoked': True, 'scoped': True}
@@ -52,11 +51,9 @@ def backend(route):
         data.update(grants=grants, subjects=[dict(id='session:default:one', kind='session', subject='one')],
                     available=[dict(kind='folder', id='school', name='测试邮箱', operations=['read'])], inherited=[legacy_grant],
                     restrictions=[dict(id='browser', allowed=request.method == 'POST', scopes=['read'], revision=8 if request.method == 'POST' else 7)])
-    elif path == '/api/security/runtime-trust':
-        if request.method == 'POST':
-            runtime_choices.append(json.loads(request.post_data))
+    elif path == '/api/security/runtime':
         data.update(isolation={'status': 'enabled', 'reason': 'OS isolation enabled'}, runtimes=[
-            {'kind': 'plugin', 'id': 'example.plugin', 'digest': 'a' * 64, 'trusted': bool(runtime_choices), 'running': True,
+            {'kind': 'plugin', 'id': 'example.plugin', 'digest': 'a' * 64, 'trusted': False, 'running': True,
              'mode': 'isolated', 'reason': 'OS file and network isolation enabled.'}])
     elif path.endswith('/settings') and '/sessions/' in path:
         subject = path.split('/')[-2]
@@ -83,12 +80,12 @@ with sync_playwright() as p:
     one = page.get_by_test_id('policy-one')
     two = page.get_by_test_id('policy-two')
     expect(one.get_by_role('radiogroup', name='权限模式')).to_be_visible()
-    assert one.get_by_role('radio').count() == 3
+    assert one.get_by_role('radio').count() == 4
     expect(one.get_by_text('Agent 可用能力', exact=True)).to_have_count(0)
     one.get_by_role('radio', name='只读', exact=True).check()
     one.get_by_role('button', name='保存权限', exact=True).click()
     expect(one.get_by_role('status')).to_contain_text('已保存')
-    assert saved[-1]['policy'] == {'filesystem_mode': 'read-only', 'policy_revision': 1}
+    assert saved[-1]['policy'] == {'filesystem_mode': 'read-only', 'permission_mode': 'read-only', 'policy_revision': 1}
     expect(two.get_by_role('radio', name='工作区写入', exact=True)).to_be_checked()
     one.get_by_text('保留的连接访问范围', exact=True).click()
     expect(one.get_by_label('允许访问此连接')).not_to_be_checked()
@@ -110,7 +107,7 @@ with sync_playwright() as p:
     page.locator('#permission-test-root').evaluate("node => { node.style.zIndex = '100000' }")
     chip = page.locator('#permission-selector-chip')
     chip.get_by_role('button').first.click()
-    expect(chip.get_by_text('自定义', exact=True)).to_have_count(0)
+    expect(chip.get_by_role('button', name='自定义', exact=True)).to_be_visible()
     expect(chip.get_by_text('切换将同步此项目的其他对话。')).to_have_count(0)
     chip.get_by_role('button', name='设置对话权限', exact=True).click()
     expect(chip.get_by_role('radiogroup', name='权限模式')).to_be_visible()
@@ -131,9 +128,8 @@ with sync_playwright() as p:
     page.get_by_role('button', name='保存旧授权', exact=True).click()
     expect(page.get_by_role('status').filter(has_text='旧授权已保存')).to_be_visible()
     assert saved[-1]['purposes'] == ['background'] and saved[-1]['revoked'] is False
-    page.get_by_label('受信任运行 example.plugin').check()
-    page.get_by_role('button', name='保存运行选择', exact=True).click()
-    expect(page.get_by_role('status').filter(has_text='运行选择已保存')).to_be_visible()
-    assert runtime_choices[-1]['digest'] == 'a' * 64 and runtime_choices[-1]['trusted']
+    expect(page.get_by_role('checkbox', name='受信任运行 example.plugin')).to_have_count(0)
+    expect(page.get_by_role('button', name='保存运行选择', exact=True)).to_have_count(0)
+    expect(page.get_by_text('example.plugin', exact=True)).to_be_visible()
     browser.close()
-print('PASS: independent policies, three filesystem modes, all capabilities follow mode, revision error, desktop and narrow UI')
+print('PASS: independent policies, four permission modes, revision error, desktop and narrow UI')

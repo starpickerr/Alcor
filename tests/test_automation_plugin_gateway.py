@@ -401,7 +401,7 @@ def test_commit_automation_package_and_invoke_service(tmp_path):
     op = store.commit(op.operation_id)
     assert op.stage == PackageStage.COMMITTED
     current = store.current_package("stella.automation")
-    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, user_id=USER)
+    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, user_id=USER, data_handle={'dbPath':str(tmp_path/'a.db')})
     try:
         assert session.start()["initialize"]["pluginId"] == "stella.automation"
         handle = {"dbPath": str(tmp_path / "a.db"), "agentId": AGENT, "userId": ""}

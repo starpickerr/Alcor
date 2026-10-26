@@ -4,7 +4,7 @@ import datetime
 import os
 import random
 
-import requests
+from core.security.requests_transport import voice_requests as requests
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger

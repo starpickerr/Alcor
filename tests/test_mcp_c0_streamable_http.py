@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.tools.mcp.mcp_client import McpClient
 from tests.fixtures.mcp_streamable_http_server import start_server
+from tests.fixtures.egress import approve_synthetic_egress
 
 
 def test_streamable_http_echo_roundtrip():
@@ -13,7 +14,8 @@ def test_streamable_http_echo_roundtrip():
         assert client.initialize() is True
         tools = client.list_tools()
         assert "echo" in {t.get("name") for t in tools}
-        text = client.call_tool("echo", {"text": "http"})
+        with approve_synthetic_egress(url):
+            text = client.call_tool("echo", {"text": "http"})
         assert "echo:http" in text
     finally:
         client.shutdown()

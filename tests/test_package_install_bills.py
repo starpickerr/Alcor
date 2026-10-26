@@ -22,7 +22,7 @@ def test_commit_bills_package_and_ping_service(tmp_path):
         Path(current["path"]),
         source_label="local-cache",
         registry=DEFAULT_REGISTRY,
-    )
+     data_handle={'dbPath':str(tmp_path/'bills.db')})
     try:
         started = session.start()
         assert started["initialize"]["pluginId"] == "stella.bills"

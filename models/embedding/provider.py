@@ -243,7 +243,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     def _call_api(self, input_data):
         """Call OpenAI-compatible /embeddings endpoint"""
-        import requests
+        from models import transport_requests as requests
 
         url = f"{self.api_base}/embeddings"
         headers = {
@@ -366,7 +366,7 @@ class DoubaoEmbeddingProvider(EmbeddingProvider):
         """One call → one embedding. multimodal endpoint takes a single
         document represented as a list of typed parts; we send a single
         text part."""
-        import requests
+        from models import transport_requests as requests
 
         url = f"{self.api_base}/embeddings/multimodal"
         headers = {

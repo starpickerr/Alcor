@@ -16,7 +16,7 @@ class ExtensionPlan:
 
 
 def prepare_extension(command, package, storage, env, *, trusted=False, writable=True,
-                      read_roots=(), write_roots=(), executable_reads=(), network=False):
+                      read_roots=(), write_roots=(), executable_reads=(), directory_reads=(), network=False):
     package, storage = Path(package).resolve(), Path(storage).resolve()
     storage.mkdir(parents=True, exist_ok=True, mode=0o700)
     storage.chmod(0o700)
@@ -25,9 +25,8 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
     core = Path(__file__).resolve().parents[2]
     clean['PYTHONPATH'] = str(core)
     clean['PYTHONDONTWRITEBYTECODE'] = '1'
-    if trusted:
-        return ExtensionPlan(list(command), str(storage), clean,
-                             {'mode': 'trusted', 'reason': 'This digest is trusted to use the host runtime.'})
+    # Legacy trust facts establish neither OS isolation nor permission to skip
+    # it. First-party and third-party workers use the same process boundary.
     state = capability()
     if state['status'] != 'enabled':
         raise SandboxUnavailable(state['reason'])
@@ -42,7 +41,7 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
                  TEMP=str(temporary), XDG_CACHE_HOME=str(private_home), XDG_CONFIG_HOME=str(private_home),
                  PYTHONDONTWRITEBYTECODE='1')
     # Core chooses import roots; no caller import injection survives.
-    roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/Library', '/private/etc',
+    roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/Library', '/private/etc',
              sys.prefix, sys.base_prefix, str(core / 'core'), str(package), *map(str, read_roots)) if Path(path).exists()]
     executable_reads = (*executable_reads, core / 'common' / '__init__.py', core / 'common' / 'log.py')
     if sys.platform == 'darwin':
@@ -60,6 +59,9 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
         profile += ' '.join(f'(allow file-write* (subpath {literal(path)}))'
                             for path in (owned_roots if writable else [private_home, temporary]))
         profile += ' '.join(f'(allow file-read* (literal {literal(Path(path).resolve())}))' for path in executable_reads)
+        # Descriptor-relative file APIs open each ancestor with O_DIRECTORY.
+        # Permit only those directory objects, never their descendants.
+        profile += ' '.join(f'(allow file-read* (literal {literal(Path(path).resolve())}))' for path in directory_reads)
         profile += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))'
         argv = [sandbox_executable(), '-p', profile, *command]
     else:

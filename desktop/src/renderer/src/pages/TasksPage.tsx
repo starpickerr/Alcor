@@ -165,7 +165,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="font-medium text-sm text-content truncate">{task.name || task.id}</span>
                       <div className="flex-1" />
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
-                      <span className="text-xs text-content-tertiary">{t(permissionLabel(task.run_permission_mode))}</span>
+                      <span className="text-xs text-content-tertiary">{task.run_permission_mode === 'custom' ? (getLang() === 'en' ? 'Custom' : '自定义') : t(permissionLabel(task.run_permission_mode))}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
                     {task.linked_todo_id && <button type="button" className="text-xs text-accent mb-2 hover:underline"
@@ -230,6 +230,21 @@ const TaskEditModal: React.FC<{
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', policy_revision: 0 })
+  const policyDraftVersion = useRef(0)
+  const [defaultPolicy, setDefaultPolicy] = useState<RunPolicy | null>(null)
+  const [defaultError, setDefaultError] = useState('')
+  useEffect(() => {
+    if (!isCreate) return
+    let active = true
+    const draftVersion = policyDraftVersion.current
+    void apiClient.getRunPolicy('template', 'default').then(result => {
+      if (!active) return
+      if (result.migration_status !== 'complete') throw new Error(getLang() === 'en' ? 'Default permissions require confirmation in Security Center.' : '请先在安全中心确认默认权限。')
+      setDefaultPolicy(result.policy)
+      if (draftVersion === policyDraftVersion.current) setNewPolicy(result.policy)
+    }).catch(cause => { if (active) setDefaultError(cause instanceof Error ? cause.message : String(cause)) })
+    return () => { active = false }
+  }, [isCreate])
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -390,7 +405,8 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           ...(conversationMode === 'independent' ? {} : { session_id: sourceSessionId || sessionId }),
-          run_policy: { filesystem_mode: newPolicy.filesystem_mode },
+          run_policy: { filesystem_mode: newPolicy.filesystem_mode, permission_mode: newPolicy.permission_mode || newPolicy.filesystem_mode,
+            ...(newPolicy.permission_mode === 'custom' ? { rules: newPolicy.rules || {} } : {}) },
           ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -466,7 +482,7 @@ const TaskEditModal: React.FC<{
             {t('task_cancel')}
           </Btn>
           {!linked && (
-            <Btn variant="primary" onClick={save} disabled={saving}>
+            <Btn variant="primary" onClick={save} disabled={saving || isCreate && !defaultPolicy}>
               {t('task_save')}
             </Btn>
           )}
@@ -486,7 +502,9 @@ const TaskEditModal: React.FC<{
       </div>
 
       {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'Permissions apply only to this task. Resource access is checked separately. Background operations requiring confirmation stop with a recorded reason.' : '权限仅作用于当前任务，资源访问授权仍需分别检查。后台遇到需要确认的操作会停止该操作并记录原因。'}</p>
-        <PolicyFields value={newPolicy} onChange={setNewPolicy} disabled={saving} />
+        {defaultError && <p role="alert" className="mb-3 text-sm text-danger">{defaultError}</p>}
+        <PolicyFields value={newPolicy} onChange={value => { policyDraftVersion.current++; setNewPolicy(value) }} disabled={saving || !defaultPolicy} />
+        {newPolicy.permission_mode === 'custom' && <p className="mt-3 text-xs text-content-secondary">{getLang() === 'en' ? 'Custom rules are copied independently. Save this task, then edit its rules in Security → Agent permissions.' : '自定义规则会独立复制。保存任务后，可前往安全 → Agent 权限编辑该任务的具体规则。'}</p>}
       </div>}
 
       <Field label={t('task_schedule_type')}>
@@ -556,7 +574,13 @@ const TaskEditModal: React.FC<{
         </Field>
       </>}
       <Field label={t('task_conversation_mode')}>
-        <Dropdown value={conversationMode} onChange={(value) => setConversationMode(value as 'independent' | 'source' | 'reuse' | 'new')}
+        <Dropdown value={conversationMode} onChange={(value) => {
+          setConversationMode(value as 'independent' | 'source' | 'reuse' | 'new')
+          if (isCreate) {
+            policyDraftVersion.current++
+            setNewPolicy(value === 'independent' && defaultPolicy ? defaultPolicy : { filesystem_mode: 'read-only', permission_mode: 'read-only', policy_revision: 0 })
+          }
+        }}
           options={[
             { value: 'independent', label: t('task_conversation_independent') },
             { value: 'source', label: t('task_conversation_source') },

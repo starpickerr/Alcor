@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import apiClient from '../api/client'
-import type { RuntimeTrustState } from '../api/client'
+import type { RuntimeStatusState } from '../api/client'
 import { getLang } from '../i18n'
 
 const button = 'min-h-10 rounded-btn bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent'
 const secondary = 'min-h-9 rounded-btn border border-default px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent'
-const loadRuntime = () => apiClient.runtimeTrust()
+const loadRuntime = () => apiClient.runtimeStatus()
 const loadMigration = async () => {
   const result = await apiClient.permissionMigration()
   if (result.status !== 'success') throw new Error(result.message || '无法核对历史权限')
@@ -38,19 +38,13 @@ export function Feedback({ error, notice, busy }: { error: string; notice: strin
   return <>{error && <p role="alert" className="text-sm text-danger">{error}</p>}{notice && <p role="status" className="text-sm text-accent">{notice}</p>}{busy && <p className="text-xs text-content-secondary">{getLang() === 'en' ? 'Updating…' : '正在读取或更新…'}</p>}</>
 }
 
-function RuntimeChoice({ row, busy, save }: { row: RuntimeTrustState['runtimes'][number]; busy: boolean; save: (trusted: boolean) => void }) {
+function RuntimeStatus({ row }: { row: RuntimeStatusState['runtimes'][number] }) {
   const en = getLang() === 'en'
-  const [trusted, setTrusted] = useState(!!row.trusted)
-  useEffect(() => setTrusted(!!row.trusted), [row.trusted, row.digest])
-  const mode = ({ isolated: 'OS 隔离', trusted: '受信任运行', stopped: '未运行', unavailable: '不可用', remote: '远程连接' } as Record<string, string>)[row.mode] || row.mode
-  return <div className="space-y-3 border-b border-default py-4">
+  const mode = ({ isolated: 'OS 隔离', trusted: '旧进程需要重启', stopped: '未运行', unavailable: '不可用', remote: '远程连接' } as Record<string, string>)[row.mode] || row.mode
+  return <div className="space-y-2 border-b border-default py-4">
     <div className="flex flex-wrap justify-between gap-2"><p className="break-all text-sm font-semibold">{row.id}</p><span className="text-xs text-content-secondary">{en ? row.mode : mode}</span></div>
-    <p className="text-xs leading-relaxed text-content-secondary">{row.reason}</p>
-    {row.digest && <><p className="break-all text-xs text-content-tertiary">SHA256 {row.digest}</p>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={trusted} disabled={busy} aria-label={en ? `Trusted runtime ${row.id}` : `受信任运行 ${row.id}`} onChange={event => setTrusted(event.target.checked)} />{en ? 'Trust this exact package' : '允许此版本受信任运行'}</label>
-      {trusted && <p className="rounded-btn bg-surface-2 p-3 text-xs leading-relaxed">{en ? 'Trusted code can access host files and network. Package changes invalidate this choice. Revoking trust stops trusted workers; enabling trust takes effect on the next launch.' : '受信任代码可访问宿主文件和网络。选择绑定当前包版本，内容改变后失效。撤销会停止受信任进程；启用在下次启动生效。'}</p>}
-      <button type="button" className={secondary} disabled={busy || trusted === !!row.trusted} onClick={() => save(trusted)}>{en ? 'Save runtime choice' : '保存运行选择'}</button>
-    </>}
+    <p className="text-xs leading-6 text-content-secondary">{row.reason}</p>
+    {row.environment && <p className="break-all text-xs leading-5 text-content-secondary">{en ? 'Independent dependency environment' : '独立依赖环境'} · {row.environment.base.version} · {row.environment.state}</p>}
   </div>
 }
 
@@ -59,9 +53,10 @@ export function RuntimeAuthorizationPanel() {
   const state = useSecurityData(loadRuntime)
   return <section className="min-w-0 space-y-4 text-content"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{en ? 'Execution environment' : '执行环境'}</h2><button type="button" className={secondary} disabled={state.busy} onClick={() => void state.refresh()}>{en ? 'Refresh' : '刷新'}</button></div>
     <Feedback {...state} />
+    {state.data?.application_isolation && <p role="status" className="rounded-btn border border-default p-3 text-sm leading-6">{state.data.application_isolation.protected ? (en ? 'Application-wide native protection is active.' : '应用级原生保护已启用。') : (en ? 'Application-wide protection is not ready. Core and Electron are not covered by the child-process sandbox.' : '应用级保护未就绪。Core 和 Electron 不在下述子进程沙箱的保护范围内。')}</p>}
     {state.data && <><p className="text-sm leading-relaxed text-content-secondary">{state.data.isolation.status === 'enabled' ? (en ? 'OS isolation is available. Each runtime below reports its actual boundary.' : '当前平台支持 OS 隔离。各进程的实际边界如下。') : (en ? 'OS isolation is unavailable. Untrusted local extensions cannot start.' : '当前平台无法提供 OS 隔离，未受信任的本地扩展将拒绝启动。')}</p>
       {!state.data.runtimes.length && <p className="text-sm text-content-secondary">{en ? 'No installed local extensions or configured MCP connections.' : '暂无已安装扩展或已配置的 MCP 连接。'}</p>}
-      {state.data.runtimes.map(row => <RuntimeChoice key={`${row.kind}:${row.id}`} row={row} busy={state.busy} save={trusted => { if (row.digest) void state.run(() => apiClient.runtimeTrust({ kind: row.kind, id: row.id, digest: row.digest!, trusted }), en ? 'Runtime choice saved.' : '运行选择已保存。') }} />)}
+      {state.data.runtimes.map(row => <RuntimeStatus key={`${row.kind}:${row.id}`} row={row} />)}
     </>}
   </section>
 }

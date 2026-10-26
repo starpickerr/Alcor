@@ -15,7 +15,8 @@ def isolated_hub(tmp_path, monkeypatch):
     monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN', '1')
     monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: tmp_path / 'hub.db')
     monkeypatch.setattr('common.state_dir.executions_dir', lambda **_: tmp_path / 'executions')
-    monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN_ROOT', str(Path('stella-plugins-workspace/plugins/agent-hub').resolve()))
+    plugin = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins/agent-hub'
+    monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN_ROOT', str(plugin))
     monkeypatch.setenv('STELLA_DATA_DIR', str(tmp_path / 'data'))
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))
     monkeypatch.setattr(agent_hub_gateway, 'apply_user_preferences', lambda: {})
@@ -177,7 +178,7 @@ def test_supervisor_revokes_descendants_after_leader_exit(tmp_path):
 
 
 @pytest.mark.skipif(__import__('os').name == 'nt', reason='POSIX process groups')
-def test_cli_completion_does_not_leave_descendants(tmp_path):
+def test_cli_completion_does_not_leave_descendants(tmp_path, native_settings_action):
     import os
     import signal
     import sys
@@ -209,7 +210,7 @@ def test_cli_completion_does_not_leave_descendants(tmp_path):
 
 
 @pytest.mark.skipif(__import__('os').name == 'nt', reason='POSIX session ownership')
-def test_worker_crash_reaps_owned_cli_groups(tmp_path):
+def test_worker_crash_reaps_owned_cli_groups(tmp_path, native_settings_action):
     import json
     import os
     import signal

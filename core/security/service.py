@@ -7,6 +7,13 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
+    def authorize_egress(url, body, *, sources, wait=True, cancel_event=None, method="POST", headers=None, category=None):
+        # Sources are supplied by Core adapters, never accepted from tool/MCP
+        # parameters. The same gateway owns the one-use approval and audit.
+        from core.security.egress import authorize
+        return authorize(url, body, sources=sources, wait=wait, cancel_event=cancel_event, method=method, headers=headers, category=category)
+
+    @staticmethod
     def native_user_operation():
         from common.runtime_identity import current_identity
         from core.execution.context import current_execution_context
@@ -21,6 +28,11 @@ class SecurityService:
         return (current_caller_origin() == 'ui' and current_invocation_purpose() != 'background' and
                 (active is None or active.purpose == 'interactive') and
                 not (identity.session_id or identity.task_id or identity.run_id or identity.execution_session_id))
+
+    @staticmethod
+    def native_background_operation(descriptor, arguments):
+        from core.security.briefing_peers import native_background_operation
+        return native_background_operation(descriptor, arguments)
 
     @staticmethod
     def policy_binding(*, origin=None, agent_id=None, session_id=None):
@@ -87,6 +99,34 @@ class SecurityService:
                 active and active.origin in {'tool', 'job'}):
             return SecurityService.authorize_resource({'kind': 'connection', 'id': 'mcp:' + server},
                                                       'system_execute' if operation == 'unknown' else operation)
+
+    @staticmethod
+    def authorize_filesystem(path, *, operation):
+        """Check a trusted adapter's concrete target using the existing gateway.
+
+        This is an additional file boundary inside an already authorized
+        operation, not a second Agent tool or permission store.
+        """
+        if operation not in {'read', 'write'}:
+            raise ValueError('invalid filesystem operation')
+        from common.runtime_identity import current_identity
+        from agent.runtime.tool_invocation import _current_authorization
+        from agent.permission.gateway import SecurityGateway
+        identity = current_identity()
+        SecurityService.check_execution()
+        mode, kwargs, _ = _current_authorization(None, identity.agent_id, identity.session_id, None, False)
+        if SecurityService.native_user_operation():
+            policy = dict(kwargs['policy'])
+            policy.update(preset='full-access', filesystem_mode='full-access', rules={}, migration_status='complete')
+            policy.pop('error', None)
+            kwargs['policy'], mode = policy, 'full-access'
+        # The owning operation has already checked its tool allowlist/switch.
+        # Only the actual filesystem authority is evaluated here.
+        kwargs.pop('allowlist', None)
+        decision = SecurityGateway.check(mode, operation, {'path': str(path)}, create_pending=False, **kwargs)
+        if not decision.allowed:
+            raise PermissionError(decision.reason)
+        SecurityService.check_execution()
 
     @staticmethod
     def legacy_connection_restrictions(connection, *, session_id=None, agent_id=None):

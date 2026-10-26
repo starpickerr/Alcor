@@ -67,11 +67,23 @@ def from_legacy(value):
 
 def validate_policy(value):
     from agent.permission.security_policy import validate_patch
-    if not isinstance(value, dict) or set(value) - {'filesystem_mode', 'capabilities', 'connections', 'extra_roots', 'policy_revision'}:
+    if not isinstance(value, dict) or set(value) - {'filesystem_mode', 'capabilities', 'connections', 'extra_roots', 'policy_revision', 'permission_mode', 'rules'}:
         raise ValueError('invalid run policy fields')
     result = deepcopy(value)
     if 'filesystem_mode' in value and value['filesystem_mode'] not in MODES:
         raise ValueError('invalid filesystem mode')
+    permission_mode = value.get('permission_mode')
+    if permission_mode is not None:
+        if permission_mode not in (*MODES, 'custom'):
+            raise ValueError('invalid permission mode')
+        if 'filesystem_mode' not in value or (permission_mode != 'custom' and permission_mode != value['filesystem_mode']):
+            raise ValueError('permission mode requires a matching filesystem base')
+    if 'rules' in value:
+        if permission_mode != 'custom':
+            raise ValueError('custom rules require an explicit custom mode')
+        result['rules'] = validate_patch({'rules': value['rules']})['rules']
+    if permission_mode == 'custom' and 'rules' not in value:
+        raise ValueError('custom mode requires explicit rules')
     capabilities = value.get('capabilities', {})
     if not isinstance(capabilities, dict) or len(capabilities) > 2000:
         raise ValueError('invalid capability authorization')
@@ -89,8 +101,21 @@ def validate_policy(value):
 
 
 def default_template():
-    # Retired templates remain in storage solely as migration evidence.
-    return {**_seed({'filesystem_mode': READ_ONLY, 'capabilities': {}}), 'policy_revision': 1}
+    # The retired 'default' row is migration evidence, never the new default.
+    # A versioned key prevents a retired wide global template from reviving.
+    key = subject_key('template', 'owner-default-v2')
+    store = RunPolicyStore()
+    initial = _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
+    policy = None
+    try:
+        policy = store.ensure(key, initial)
+        checked = _seed({key: value for key, value in policy.items()
+                         if key in {'filesystem_mode', 'permission_mode', 'rules', 'capabilities',
+                                    'connections', 'extra_roots', 'policy_revision'}})
+        return checked
+    except (ValueError, TypeError, KeyError):
+        return {**initial, 'policy_revision': policy['policy_revision'] if policy else 0,
+                'migration_status': 'needs_confirmation'}
 
 
 @contextmanager
@@ -158,6 +183,12 @@ def save_run_policy(subject_kind, subject_id, policy, *, agent_id=None, expected
     def change(current):
         base = current or _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
         base = deepcopy(base)
+        if (base.get('permission_mode') == 'custom' and 'filesystem_mode' in clean
+                and 'permission_mode' not in clean):
+            raise ValueError('This custom policy requires a custom-aware client')
+        if clean.get('permission_mode') != 'custom' and 'filesystem_mode' in clean:
+            base.pop('rules', None)
+            base.pop('permission_mode', None)
         if 'filesystem_mode' in clean:
             # Replacing an untranslatable policy requires a complete explicit
             # choice; ordinary edits continue to preserve valid legacy denies.
@@ -172,8 +203,17 @@ def save_run_policy(subject_kind, subject_id, policy, *, agent_id=None, expected
 
 
 def gateway_policy(policy):
-    return {'preset': policy['filesystem_mode'], 'filesystem_mode': policy['filesystem_mode'],
-            'rules': deepcopy(policy.get('legacy_restrictions') or {}),
+    custom = policy.get('permission_mode') == 'custom'
+    rules = deepcopy(policy.get('legacy_restrictions') or {})
+    if custom:
+        from agent.permission.security_policy import PRESETS
+        order = {'deny': 0, 'confirm': 1, 'allow': 2}
+        base_rules = PRESETS[policy['filesystem_mode']]
+        rules.update({name: min((value, base_rules[name]), key=order.get)
+                      for name, value in (policy.get('rules') or {}).items()})
+    return {'preset': 'custom' if custom else policy['filesystem_mode'], 'filesystem_mode': policy['filesystem_mode'],
+            **({'permission_mode': 'custom', 'base_preset': policy['filesystem_mode']} if custom else {}),
+            'rules': rules,
             'connections': deepcopy(policy.get('connections') or {}),
             'extra_roots': list(policy.get('extra_roots') or []),
             'capabilities': deepcopy(policy['capabilities']), 'policy_revision': policy.get('policy_revision', 1),

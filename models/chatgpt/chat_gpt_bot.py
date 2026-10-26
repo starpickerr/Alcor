@@ -10,7 +10,7 @@ from models.openai.openai_compat import (
     wrap_http_error,
 )
 from models.openai.openai_http_client import OpenAIHTTPClient, OpenAIHTTPError
-import requests
+from models import transport_requests as requests
 from common import const
 from common.i18n import t as _t
 from models.bot import Bot

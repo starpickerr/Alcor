@@ -36,6 +36,7 @@ MULTIMODAL_MODEL_PREFIXES = ("qwen3.5-", "qwen3.6-", "qwen3.7-plus", "qwen3.8-")
 # Qwen对话模型API
 class DashscopeBot(Bot):
     def __init__(self):
+        raise PermissionError('This SDK/WebSocket provider has no controlled transport adapter; existing configuration is preserved.')
         super().__init__()
         self.sessions = SessionManager(DashscopeSession, model=conf().get("model") or "qwen3.7-plus")
         self.model_name = conf().get("model") or "qwen3.7-plus"

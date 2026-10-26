@@ -59,6 +59,7 @@ def test_agent_mode_blocks_bills_write_on_frozen_runner(tmp_path, monkeypatch):
         user_id=user,
         runner_command=runner,
         authz=authz,
+        data_handle={"dbPath": str(tmp_path / "bills.db"), "namespace": "stella.bills"},
     )
     db = tmp_path / "bills.db"
     try:

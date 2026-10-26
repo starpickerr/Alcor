@@ -63,11 +63,15 @@ def test_resource_and_runtime_http_routes_require_auth(monkeypatch):
     def reject():
         raise PermissionError('unauthenticated')
     monkeypatch.setattr(desktop, '_require_auth', reject)
-    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityRuntimeTrustHandler, desktop.SecurityMigrationHandler):
+    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityMigrationHandler, desktop.SecurityConnectionsHandler, desktop.SecuritySensitiveResourcesHandler):
         with pytest.raises(PermissionError):
             handler().GET()
-        with pytest.raises(PermissionError):
-            handler().POST()
+        if hasattr(handler, 'POST'):
+            with pytest.raises(PermissionError):
+                handler().POST()
+    with pytest.raises(PermissionError):
+        desktop.SecurityRuntimeTrustHandler().GET()
+    assert not hasattr(desktop.SecurityRuntimeTrustHandler, 'POST')
 
 
 def test_desktop_task_creation_persists_the_selected_business_capabilities(tmp_path):
@@ -150,7 +154,7 @@ def test_explicit_mode_replaces_hidden_legacy_file_denial():
         assert permission_denial('write', {'path': '/outside/blocked.txt', 'content': 'blocked'})
 
 
-def test_session_settings_report_independent_three_mode_policy(tmp_path, monkeypatch):
+def test_session_settings_report_independent_policy_and_four_mode_choices(tmp_path, monkeypatch):
     from channel.desktop import desktop_channel as desktop
     from agent.workspace import project_store
     project = tmp_path / 'project'
@@ -162,7 +166,7 @@ def test_session_settings_report_independent_three_mode_policy(tmp_path, monkeyp
     state = desktop._session_settings_state('report-one', None)['permission']
     assert state['source'] == 'independent'
     assert state['mode'] == 'workspace-write'
-    assert state['presets'] == ['read-only', 'workspace-write', 'full-access']
+    assert state['presets'] == ['read-only', 'workspace-write', 'full-access', 'custom']
 
 
 def test_legacy_http_cannot_change_project_permission_authority(tmp_path, monkeypatch):

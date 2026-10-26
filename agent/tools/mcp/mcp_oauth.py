@@ -60,19 +60,17 @@ def _load_store() -> dict:
 
 
 def _save_store(store: dict) -> None:
-    path = _store_path()
-    tmp = f"{path}.tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(store, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-        # Credentials file: restrict to owner read/write when possible.
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    except Exception as e:
-        logger.warning(f"[MCP-OAuth] Failed to persist token store: {e}")
+    from core.security.storage import private_atomic_write
+    private_atomic_write(_store_path(), json.dumps(store, ensure_ascii=False, indent=2))
+
+
+def credential_statuses():
+    """Owner-reported status for the fixed token store; never return records."""
+    from core.security.control import require_owner
+    require_owner()
+    with _STORE_LOCK:
+        return [dict(server=name, configured=bool(record.get('access_token') or record.get('refresh_token')))
+                for name, record in _load_store().items() if isinstance(name, str) and isinstance(record, dict)]
 
 
 def load_server_record(server_name: str) -> dict:

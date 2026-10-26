@@ -5,7 +5,7 @@ import re
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 
 from models.baidu.baidu_wenxin_session import BaiduWenxinSession
 from models.bot import Bot

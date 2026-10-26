@@ -38,19 +38,6 @@ def _import_optional_tools():
     from common.log import logger
     tools = {}
     
-    # EnvConfig Tool (requires python-dotenv)
-    try:
-        from agent.tools.env_config.env_config import EnvConfig
-        tools['EnvConfig'] = EnvConfig
-    except ImportError as e:
-        logger.error(
-            f"[Tools] EnvConfig tool not loaded - missing dependency: {e}\n"
-            f"  To enable environment variable management, run:\n"
-            f"    pip install python-dotenv>=1.0.0"
-        )
-    except Exception as e:
-        logger.error(f"[Tools] EnvConfig tool failed to load: {e}")
-    
     # Scheduler Tool (requires croniter)
     try:
         from agent.tools.scheduler.scheduler_tool import SchedulerTool
@@ -95,7 +82,6 @@ def _import_optional_tools():
 
 # Load optional tools
 _optional_tools = _import_optional_tools()
-EnvConfig = _optional_tools.get('EnvConfig')
 SchedulerTool = _optional_tools.get('SchedulerTool')
 WebSearch = _optional_tools.get('WebSearch')
 WebFetch = _optional_tools.get('WebFetch')
@@ -157,7 +143,7 @@ __all__ = [
     'TodosTool',
     'SkillTool',
     'AgentHubTool',
-    'EnvConfig',    'SchedulerTool',
+    'SchedulerTool',
     'WebSearch',
     'WebFetch',
     'Vision',

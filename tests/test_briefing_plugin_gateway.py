@@ -459,7 +459,7 @@ def test_commit_briefing_package_and_invoke_service(tmp_path):
     op = store.commit(op.operation_id)
     assert op.stage == PackageStage.COMMITTED
     current = store.current_package("stella.briefing")
-    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY)
+    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, data_handle={'dbPath':str(tmp_path/'b.db')})
     try:
         assert session.start()["initialize"]["pluginId"] == "stella.briefing"
         listed = session.invoke("list_briefings", {"_dataHandle": {"dbPath": str(tmp_path / "b.db")}})

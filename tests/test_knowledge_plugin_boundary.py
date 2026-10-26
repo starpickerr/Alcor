@@ -14,7 +14,7 @@ def test_knowledge_worker_owns_documents_and_searches_only_knowledge(tmp_path):
     (knowledge / 'notes/page.md').write_text('# Notes\n独立知识检索 boundarytoken', encoding='utf-8')
     (tmp_path / 'MEMORY.md').write_text('privatetoken', encoding='utf-8')
     session = PluginSession(ROOT, source_label='test', registry=PluginRegistry(),
-                            user_id='test-user', authz=PluginAuthorizationStore())
+                            user_id='test-user', authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.knowledge','dataDir':str(knowledge)})
     try:
         session.start()
         def invoke(method, **values):
@@ -46,7 +46,7 @@ def test_memory_worker_does_not_search_knowledge(tmp_path):
     (memory / 'knowledge').mkdir()
     (memory / 'knowledge/private.md').write_text('knowledgetoken', encoding='utf-8')
     session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(),
-                            user_id='test-user', authz=PluginAuthorizationStore())
+                            user_id='test-user', authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(memory)})
     try:
         session.start()
         for query, expected in [('memorytoken', True), ('knowledgetoken', False)]:
@@ -67,7 +67,7 @@ def test_knowledge_semantic_search_uses_host_models_without_memory(tmp_path, mon
     folder = tmp_path / 'knowledge'
     folder.mkdir()
     (folder / 'a.md').write_text('# automobile', encoding='utf-8')
-    session = PluginSession(ROOT, source_label='test', registry=PluginRegistry(), user_id='test', authz=PluginAuthorizationStore())
+    session = PluginSession(ROOT, source_label='test', registry=PluginRegistry(), user_id='test', authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.knowledge','dataDir':str(folder)})
     try:
         session.start()
         result = session.invoke('search', {'query': 'car', '_dataHandle': {'namespace': 'stella.knowledge', 'dataDir': str(folder)}})
@@ -158,7 +158,7 @@ def test_model_callback_deadline_bounds_the_host_wait(tmp_path, monkeypatch):
     folder.mkdir()
     (folder / 'a.md').write_text('# doc', encoding='utf-8')
     auth = PluginAuthorizationStore()
-    session = PluginSession(ROOT, source_label='test', registry=PluginRegistry(), user_id='test', authz=auth)
+    session = PluginSession(ROOT, source_label='test', registry=PluginRegistry(), user_id='test', authz=auth, data_handle={'namespace':'stella.knowledge','dataDir':str(folder)})
     try:
         session.start()
         auth.issue(grant_ref='deadline', plugin_id='stella.knowledge', user_id='test',
@@ -183,7 +183,7 @@ def test_memory_evolution_restore_does_not_overwrite_a_later_write(tmp_path):
     root = tmp_path / 'memory'
     root.mkdir()
     (root / 'MEMORY.md').write_text('before', encoding='utf-8')
-    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore())
+    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(root)})
     try:
         session.start()
         def call(method, **values):
@@ -237,7 +237,7 @@ def test_memory_restore_serializes_with_a_second_worker_write(tmp_path):
     data = tmp_path / 'data'
     data.mkdir()
     (data / 'MEMORY.md').write_text('before')
-    sessions = [PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore()) for _ in range(2)]
+    sessions = [PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(data)}) for _ in range(2)]
     from core.security.runtime_trust import RuntimeTrustStore
     RuntimeTrustStore().set(user_id=sessions[0].user_id, kind='plugin', identifier=sessions[0].plugin_id,
                            digest=sessions[0].package_digest, trusted=True)
@@ -282,7 +282,7 @@ def test_memory_search_forgets_deleted_documents_and_rebuilds_unchanged_files(tm
     (root / 'memory').mkdir(parents=True)
     file = root / 'memory/a.md'
     file.write_text('deletabletoken')
-    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore())
+    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(root)})
     try:
         session.start()
         def invoke(method, **values):
@@ -332,7 +332,7 @@ def test_memory_worker_remembers_flushed_messages_between_requests(tmp_path, mon
         def call(self, request):
             return {'content': 'A durable daily summary'}
     root = tmp_path / 'memory'
-    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore())
+    session = PluginSession(ROOT.parent / 'memory', source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(root)})
     token = bind_model(Model())
     try:
         session.start()
@@ -419,7 +419,7 @@ def test_partial_memory_restore_reports_unknown_and_can_resume(tmp_path):
     (root / 'memory').mkdir(parents=True)
     (root / 'MEMORY.md').write_text('before-a')
     (root / 'memory/b.md').write_text('before-b')
-    session = PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore())
+    session = PluginSession(package, source_label='test', registry=PluginRegistry(), authz=PluginAuthorizationStore(), data_handle={'namespace':'stella.memory','dataDir':str(root)})
     from core.security.runtime_trust import RuntimeTrustStore
     RuntimeTrustStore().set(user_id=session.user_id, kind='plugin', identifier=session.plugin_id,
                            digest=session.package_digest, trusted=True)
