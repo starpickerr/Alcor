@@ -47,10 +47,10 @@ function RuntimeStatus({ row, busy, onRebuild }: { row: RuntimeStatusState['runt
     <p className="text-xs leading-6 text-content-secondary">{row.reason}</p>
     {row.environment && <p className="break-all text-xs leading-5 text-content-secondary">{en ? 'Independent dependency environment' : '独立依赖环境'} · {row.environment.base.version} · {row.environment.state}</p>}
     {row.environment_error && <p className="text-xs leading-6 text-danger">{row.environment_error}</p>}
-    {row.kind === 'plugin' && (row.can_rebuild || resume) && <button type="button" className={secondary} disabled={busy}
+    {(row.can_rebuild || resume) && <button type="button" className={secondary} disabled={busy}
       aria-label={en ? `${resume ? 'Resume rebuilding' : 'Rebuild'} dependency environment for ${row.id}` : `${resume ? '继续重建' : '重建'} ${row.id} 的依赖环境`}
       onClick={() => onRebuild(row)}>{resume ? (en ? 'Resume rebuild' : '继续重建') : (en ? 'Rebuild environment' : '重建环境')}</button>}
-    {row.kind === 'plugin' && !row.can_rebuild && row.rebuild_reason && <p className="text-xs leading-6 text-content-secondary">{row.rebuild_reason}</p>}
+    {!row.can_rebuild && row.rebuild_reason && <p className="text-xs leading-6 text-content-secondary">{row.rebuild_reason}</p>}
   </div>
 }
 
@@ -66,7 +66,7 @@ export function RuntimeAuthorizationPanel() {
     {state.data?.application_isolation && <p role="status" className="rounded-btn border border-default p-3 text-sm leading-6">{state.data.application_isolation.protected ? (en ? 'Application-wide native protection is active.' : '应用级原生保护已启用。') : (en ? 'Application-wide protection is not ready. Core and Electron are not covered by the child-process sandbox.' : '应用级保护未就绪。Core 和 Electron 不在下述子进程沙箱的保护范围内。')}</p>}
     {state.data && <><p className="text-sm leading-relaxed text-content-secondary">{state.data.isolation.status === 'enabled' ? (en ? 'OS isolation is available. Each runtime below reports its actual boundary.' : '当前平台支持 OS 隔离。各进程的实际边界如下。') : (en ? 'OS isolation is unavailable. Untrusted local extensions cannot start.' : '当前平台无法提供 OS 隔离，未受信任的本地扩展将拒绝启动。')}</p>
       {!state.data.runtimes.length && <p className="text-sm text-content-secondary">{en ? 'No installed local extensions or configured MCP connections.' : '暂无已安装扩展或已配置的 MCP 连接。'}</p>}
-      {state.data.runtimes.some(row => row.can_rebuild) && <p className="text-xs leading-6 text-content-secondary">{en ? 'Rebuilding keeps accounts, settings and business data. Active processes for this plugin stop; the next use starts the new environment.' : '重建保留账号、配置和业务数据。该插件当前的进程会停止，下次使用时将启动新环境。'}</p>}
+      {state.data.runtimes.some(row => row.can_rebuild) && <p className="text-xs leading-6 text-content-secondary">{en ? 'Rebuilding keeps accounts, settings and business data. Active processes for this provider stop; the next use starts the new environment.' : '重建保留账号、配置和业务数据。该能力当前的进程会停止，下次使用时将启动新环境。'}</p>}
       {state.data.runtimes.map(row => <RuntimeStatus key={`${row.kind}:${row.id}`} row={row} busy={state.busy} onRebuild={rebuild} />)}
     </>}
   </section>

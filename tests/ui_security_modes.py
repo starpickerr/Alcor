@@ -33,6 +33,10 @@ runtime_rows = [
     {'kind': 'mcp', 'id': 'remote-example', 'mode': 'remote', 'reason': 'Remote connection.'},
     {'kind': 'plugin', 'id': 'stella.interrupted', 'mode': 'stopped', 'can_rebuild': False,
      'reason': 'Worker has not started.', 'rebuild_operation': 'resume-own'},
+    {'kind': 'mcp', 'id': 'local-mcp', 'mode': 'stopped', 'can_rebuild': True,
+     'reason': 'Server has not started.', 'environment': {'id': 'old-mcp', 'base': {'version': '3.12.8'}, 'state': 'ready'}},
+    {'kind': 'mcp', 'id': 'interrupted-mcp', 'mode': 'stopped', 'can_rebuild': False,
+     'reason': 'Server has not started.', 'rebuild_operation': 'resume-mcp'},
 ]
 connection = {'id': 'service-test', 'name': 'Test service', 'endpoint': 'https://service.invalid', 'owners': ['mcp:test'], 'enabled': True, 'revision': 0, 'active_requests': 0}
 project_chat = [False]
@@ -71,14 +75,15 @@ def backend(route):
             body = route.request.post_data_json
             if body['action'] == 'resume':
                 runtime_resumes.append(body)
-                runtime_rows[2].pop('rebuild_operation')
-                runtime_rows[2]['can_rebuild'] = True
+                selected_runtime = next(row for row in runtime_rows if row['id'] == body['id'])
+                selected_runtime.pop('rebuild_operation')
+                selected_runtime['can_rebuild'] = True
             else:
                 runtime_rebuilds.append(body)
                 if len(runtime_rebuilds) == 1:
                     pending_rebuild.append(route)
                     return
-                runtime_rows[0]['environment']['id'] = 'rebuilt'
+                next(row for row in runtime_rows if row['id'] == body['id'])['environment']['id'] = 'rebuilt'
         data.update(runtimes=runtime_rows, isolation={'status': 'enabled', 'reason': 'OS isolation'}, application_isolation={'protected': False, 'status': 'unavailable', 'reason': 'Not deployed', 'unprotected': ['core', 'desktop-main', 'desktop-helpers']})
     elif path == '/api/security/migration':
         data.update(verification={'status': 'applied', 'valid': True}, preview={'pending': 0, 'needs_confirmation': 0, 'fingerprint': 'test'})
@@ -233,11 +238,24 @@ with sync_playwright() as playwright:
         resume.click()
         expect(resume).to_have_count(0)
         assert runtime_resumes == [{'action': 'resume', 'kind': 'plugin', 'id': 'stella.interrupted', 'operationId': 'resume-own'}]
+        mcp_rebuild = page.get_by_role('button', name='重建 local-mcp 的依赖环境', exact=True)
+        expect(mcp_rebuild).to_be_visible()
+        mcp_rebuild.click()
+        expect(page.get_by_role('status').filter(has_text='依赖环境已重建')).to_be_visible()
+        assert runtime_rebuilds[-1] == {'action': 'rebuild', 'kind': 'mcp', 'id': 'local-mcp'}
+        mcp_resume = page.get_by_role('button', name='继续重建 interrupted-mcp 的依赖环境', exact=True)
+        mcp_resume.click()
+        expect(mcp_resume).to_have_count(0)
+        assert runtime_resumes[-1] == {'action': 'resume', 'kind': 'mcp', 'id': 'interrupted-mcp', 'operationId': 'resume-mcp'}
+        if os.environ.get('STELLA_UI_SCREENSHOTS'):
+            page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-runtime-mcp-desktop.png', full_page=True)
         page.set_viewport_size({'width': 320, 'height': 800})
         page.get_by_role('button', name='收起侧栏').click()
         expect(rebuild).to_be_visible()
         rebuild.scroll_into_view_if_needed()
         expect(rebuild).to_be_in_viewport()
+        mcp_rebuild.scroll_into_view_if_needed()
+        expect(mcp_rebuild).to_be_in_viewport()
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/security-runtime-rebuild-narrow.png', full_page=True)

@@ -268,7 +268,9 @@ class McpClient:
             _check_cancelled(cancel_event)
             self._ensure_open()
             if self.transport == "stdio":
-                return self._init_stdio()
+                from core.mcp.lifecycle import admission
+                with admission(self.config, key=self._runtime_key, environment=self.environment):
+                    return self._init_stdio()
             elif self.transport == "sse":
                 return self._init_sse()
             elif self.transport == "streamable-http":
@@ -288,6 +290,11 @@ class McpClient:
 
         Each item is a dict: {"name": str, "description": str, "inputSchema": dict}
         """
+        from core.mcp.lifecycle import admission
+        with admission(self.config, key=self._runtime_key, environment=self.environment):
+            return self._list_tools()
+
+    def _list_tools(self):
         tools, names, cursors = [], set(), set()
         params = {}
         while True:
@@ -319,7 +326,9 @@ class McpClient:
     def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
         started = time.monotonic()
         try:
-            result = self._call_tool_result(name, arguments, cancel_event, meta=meta)
+            from core.mcp.lifecycle import admission
+            with admission(self.config, key=self._runtime_key, environment=self.environment):
+                result = self._call_tool_result(name, arguments, cancel_event, meta=meta)
         except Exception as exc:
             logger.warning('[MCP:%s] tool=%s failed (%s)', self.name, name, type(exc).__name__)
             raise
@@ -541,7 +550,8 @@ class McpClient:
         ).start()
 
         connected = self._handshake()
-        if connected and self.environment:
+        from core.mcp.lifecycle import McpMaintenanceConfig
+        if connected and self.environment and not isinstance(self.config, McpMaintenanceConfig):
             from core.runtime.environments import EnvironmentStore
             EnvironmentStore().activate(self.environment, validate=lambda candidate: not self._closed and self._proc is not None and self._proc.poll() is None)
         if not connected:

@@ -140,19 +140,42 @@ class RuntimeControl:
                 **({'environment_error': environment_error} if environment_error else {}),
                 'running': session is not None, 'mode': session.sandbox_state['mode'] if session else 'stopped',
                 'reason': session.sandbox_state.get('reason') if session else 'Worker has not started.'})
+        from core.mcp.lifecycle import McpLifecycle, rebuild_support
+        from core.security.mcp_runtime import _verify_bound_implementation, environment_identity
         manager = ToolManager()
         for config in manager._load_mcp_configs():
             if config.get('type', 'stdio') != 'stdio':
-                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'remote', 'reason': 'Remote connection; local process isolation does not apply.'})
+                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'remote', 'reason': 'Remote connection; local process isolation does not apply.',
+                             'can_rebuild': False, 'rebuild_reason': 'Remote MCP connections have no local dependency environment.'})
                 continue
             try:
-                digest, _ = launch_identity(config)
+                digest, package = launch_identity(config)
+                _verify_bound_implementation(config, package)
                 client = next((row for row in list(LIVE_CLIENTS) if row._runtime_key and
-                               row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name'] and row._proc is not None
+                               row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name']
+                               and row._runtime_key['digest'] == digest and row._proc is not None
                                and row._proc.poll() is None), None)
+                supported, rebuild_reason = rebuild_support(config)
+                pending = McpLifecycle(manager).pending(config['name'])
+                resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                          and pending[0]['kind'] == 'mcp-rebuild'
+                          and pending[0]['facts'].get('workspace') == str(manager.workspace_root) else None)
+                if pending:
+                    supported, rebuild_reason = False, 'A pending MCP operation needs recovery first'
+                environment = getattr(client, 'environment', None)
+                environment_error = None
+                if environment is None:
+                    try:
+                        environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=environment_identity(config))
+                        if environment and Path(environment['package']) != package:
+                            environment = None
+                    except (ValueError, OSError):
+                        environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
                 rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
                     'mode': client.sandbox_state['mode'] if client else 'stopped', 'running': client is not None,
-                    'environment': getattr(client, 'environment', None),
+                    'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                    **({'rebuild_operation': resume} if resume else {}),
+                    **({'environment_error': environment_error} if environment_error else {}),
                     'reason': client.sandbox_state.get('reason') if client else 'Server has not started.'})
             except (ValueError, OSError) as error:
                 rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable', 'reason': str(error)})

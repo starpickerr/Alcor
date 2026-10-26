@@ -64,6 +64,7 @@ def make_manager(tmp_path, monkeypatch):
     config = {'name': 'discovery', 'type': 'stdio', 'agentTools': ['visible', 'second']}
     monkeypatch.setattr(manager, '_load_mcp_configs', lambda: [config])
     client = Mock()
+    client._runtime_key = None  # Protocol double has no local process or OS launch identity.
     client.needs_auth = False
     client.server_version = '2.3.4'
     client.initialize.return_value = True

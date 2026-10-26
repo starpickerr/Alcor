@@ -31,34 +31,39 @@ class EnvironmentStore:
         (self.root / 'bases').mkdir(exist_ok=True, mode=0o700)
 
     @staticmethod
-    def _owner(kind, identifier, user):
+    def _owner(kind, identifier, user, launch_digest=None):
         if kind not in {'plugin', 'mcp'} or not all(isinstance(value, str) and value and '\x00' not in value for value in (identifier, user)):
             raise ValueError('invalid environment owner')
-        return sha256(json.dumps([kind, identifier, user]).encode()).hexdigest()
+        if launch_digest is not None and (kind != 'mcp' or not isinstance(launch_digest, str)
+                                          or not re.fullmatch('[0-9a-f]{64}', launch_digest)):
+            raise ValueError('invalid MCP launch identity')
+        return sha256(json.dumps([kind, identifier, user] + ([launch_digest] if launch_digest is not None else [])).encode()).hexdigest()
 
-    def _folder(self, kind, identifier, user):
-        folder = self.root / 'environments' / self._owner(kind, identifier, user)
+    def _folder(self, kind, identifier, user, launch_digest=None):
+        folder = self.root / 'environments' / self._owner(kind, identifier, user, launch_digest)
         if any(path.is_symlink() for path in (self.root, folder.parent, folder)):
             raise PermissionError('Environment storage namespace cannot use symlinks')
         return folder
 
     @staticmethod
-    def _owned_record(marker, kind, identifier, user):
+    def _owned_record(marker, kind, identifier, user, launch_digest=None):
         if marker.is_symlink() or marker.parent.is_symlink():
             raise PermissionError('Environment metadata cannot use symlinks')
         record = json.loads(marker.read_text())
         if not isinstance(record, dict) or (record.get('kind'), record.get('identifier'), record.get('user')) != (kind, identifier, user):
             raise PermissionError('Environment metadata owner changed')
+        if record.get('launch_digest') != launch_digest:
+            raise PermissionError('Environment metadata launch identity changed')
         return record
 
-    def _cached(self, kind, identifier, user, fingerprint):
-        folder = self._folder(kind, identifier, user)
+    def _cached(self, kind, identifier, user, fingerprint, launch_digest=None):
+        folder = self._folder(kind, identifier, user, launch_digest)
         # A successful rebuild selects a new physical environment with the
         # same fingerprint. Restart must not choose an older matching cache.
         for marker in [folder / 'current.json', *folder.glob('*/environment.json')]:
             if not marker.exists() and not marker.is_symlink():
                 continue
-            record = self._owned_record(marker, kind, identifier, user)
+            record = self._owned_record(marker, kind, identifier, user, launch_digest)
             if record.get('fingerprint') == fingerprint and record.get('state') == 'ready':
                 return self._record(record)
         return None
@@ -141,8 +146,8 @@ class EnvironmentStore:
         finally:
             stop_process_tree(process, owned_session=True)
 
-    def prepare_python(self, *, kind, identifier, user, package, digest, build=None, rebuild=False):
-        folder = self._folder(kind, identifier, user)
+    def prepare_python(self, *, kind, identifier, user, package, digest, build=None, rebuild=False, launch_digest=None):
+        folder = self._folder(kind, identifier, user, launch_digest)
         package = Path(package).resolve()
         lock = package / 'requirements.lock'
         if ((package / 'requirements.txt').is_file() or (package / 'pyproject.toml').is_file()) and not lock.is_file():
@@ -155,11 +160,12 @@ class EnvironmentStore:
             uv = ManagedTools().uv()
             wheels = python_wheels(lock)
         base = self._base()
-        inputs = json.dumps([digest, source_digest(package) if package.exists() else '', base['id'], build], sort_keys=True)
+        inputs = json.dumps([digest, source_digest(package) if package.exists() else '', base['id'], build]
+                            + ([launch_digest] if launch_digest is not None else []), sort_keys=True)
         fingerprint = sha256(inputs.encode()).hexdigest()
-        with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True, timeout=130):
+        with package_lock(self.root, self._owner(kind, identifier, user, launch_digest), exclusive=True, timeout=130):
             if not rebuild:
-                cached = self._cached(kind, identifier, user, fingerprint)
+                cached = self._cached(kind, identifier, user, fingerprint, launch_digest)
                 if cached:
                     return cached
             candidate = folder / uuid.uuid4().hex
@@ -167,6 +173,8 @@ class EnvironmentStore:
             python = candidate / 'python' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
             record = dict(id=candidate.name, kind=kind, identifier=identifier, user=user, path=str(candidate), python=str(python),
                 base_id=base['id'], base=base, package=str(package), package_digest=digest, fingerprint=fingerprint, state='preparing')
+            if launch_digest is not None:
+                record['launch_digest'] = launch_digest
             _atomic_json(candidate / 'environment.json', record)
             try:
                 prepared = self._execute([base['executable'], '-I', '-m', 'venv', '--without-pip', str(candidate / 'python')],
@@ -199,8 +207,8 @@ class EnvironmentStore:
                 _atomic_json(candidate / 'environment.json', record)
                 raise
 
-    def prepare_node(self, *, kind, identifier, user, package, digest, build=None, rebuild=False):
-        folder = self._folder(kind, identifier, user)
+    def prepare_node(self, *, kind, identifier, user, package, digest, build=None, rebuild=False, launch_digest=None):
+        folder = self._folder(kind, identifier, user, launch_digest)
         package = Path(package).resolve()
         if not (package / 'package-lock.json').is_file():
             raise ValueError('Node dependencies require package-lock.json')
@@ -212,11 +220,11 @@ class EnvironmentStore:
                     raise PermissionError('Node source cannot contain symlinks')
             folders[:] = [name for name in folders if name not in {'.git', 'node_modules'}]
         base = self._node_base()
-        inputs = [digest, _sha256_tree(package), base['id'], build]
+        inputs = [digest, _sha256_tree(package), base['id'], build] + ([launch_digest] if launch_digest is not None else [])
         fingerprint = sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
-        with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True, timeout=130):
+        with package_lock(self.root, self._owner(kind, identifier, user, launch_digest), exclusive=True, timeout=130):
             if not rebuild:
-                cached = self._cached(kind, identifier, user, fingerprint)
+                cached = self._cached(kind, identifier, user, fingerprint, launch_digest)
                 if cached:
                     return cached
             candidate = folder / uuid.uuid4().hex
@@ -225,6 +233,8 @@ class EnvironmentStore:
             record = dict(id=candidate.name, runtime='node', kind=kind, identifier=identifier, user=user,
                 path=str(candidate), node=base['executable'], base_id=base['id'], base=base, package=str(package),
                 package_digest=digest, fingerprint=fingerprint, state='preparing')
+            if launch_digest is not None:
+                record['launch_digest'] = launch_digest
             _atomic_json(candidate / 'environment.json', record)
             reads = [base['prefix'], str(Path(base['installer']).parent.parent)]
             try:
@@ -268,7 +278,7 @@ class EnvironmentStore:
         executable = 'node' if record.get('runtime') == 'node' else 'python'
         if not isinstance(record.get(executable), str):
             raise PermissionError('Environment executable metadata is invalid; rebuild required')
-        owner = self._folder(record['kind'], record['identifier'], record['user'])
+        owner = self._folder(record['kind'], record['identifier'], record['user'], record.get('launch_digest'))
         if not re.fullmatch('[0-9a-f]{32}', record['id']):
             raise PermissionError('Invalid environment identity')
         candidate = owner / record['id']
@@ -294,8 +304,8 @@ class EnvironmentStore:
 
     def activate(self, record, *, validate):
         record = self._record(record)
-        folder = self._folder(record['kind'], record['identifier'], record['user'])
-        with package_lock(self.root, self._owner(record['kind'], record['identifier'], record['user']), exclusive=True):
+        folder = self._folder(record['kind'], record['identifier'], record['user'], record.get('launch_digest'))
+        with package_lock(self.root, self._owner(record['kind'], record['identifier'], record['user'], record.get('launch_digest')), exclusive=True):
             if validate(record) is not True:
                 raise RuntimeError('Candidate validation failed; the previous environment remains selected')
             self._record(record)
@@ -304,13 +314,13 @@ class EnvironmentStore:
 
     def fail_candidate(self, record):
         """A rejected, unselected candidate must not be reused as a ready cache."""
-        folder = self._folder(record['kind'], record['identifier'], record['user'])
-        with package_lock(self.root, self._owner(record['kind'], record['identifier'], record['user']), exclusive=True):
+        folder = self._folder(record['kind'], record['identifier'], record['user'], record.get('launch_digest'))
+        with package_lock(self.root, self._owner(record['kind'], record['identifier'], record['user'], record.get('launch_digest')), exclusive=True):
             record = self._record(record)
             pointer = folder / 'current.json'
             if pointer.is_file():
                 try:
-                    selected = self._owned_record(pointer, record['kind'], record['identifier'], record['user'])
+                    selected = self._owned_record(pointer, record['kind'], record['identifier'], record['user'], record.get('launch_digest'))
                 except (ValueError, OSError):
                     selected = {}  # Invalid metadata grants no selected identity.
                 if selected.get('id') == record['id']:
@@ -318,15 +328,15 @@ class EnvironmentStore:
             _atomic_json(Path(record['path']) / 'environment.json', {**record, 'state': 'failed'})
         return True
 
-    def current(self, kind, identifier, user):
-        pointer = self._folder(kind, identifier, user) / 'current.json'
+    def current(self, kind, identifier, user, launch_digest=None):
+        pointer = self._folder(kind, identifier, user, launch_digest) / 'current.json'
         if not pointer.exists() and not pointer.is_symlink():
             return None
-        return self._record(self._owned_record(pointer, kind, identifier, user))
+        return self._record(self._owned_record(pointer, kind, identifier, user, launch_digest))
 
-    def remove(self, kind, identifier, user):
-        with package_lock(self.root, self._owner(kind, identifier, user), exclusive=True):
-            pointer = self._folder(kind, identifier, user) / 'current.json'
+    def remove(self, kind, identifier, user, launch_digest=None):
+        with package_lock(self.root, self._owner(kind, identifier, user, launch_digest), exclusive=True):
+            pointer = self._folder(kind, identifier, user, launch_digest) / 'current.json'
             pointer.unlink(missing_ok=True)
             # Dependency cache may be collected later. Credential and business
             # storage are never passed to this service or recursively removed.

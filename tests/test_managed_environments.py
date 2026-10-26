@@ -371,7 +371,8 @@ def test_local_python_mcp_uses_independent_environment(tmp_path):
         from core.runtime.environments import EnvironmentStore
 
         assert (
-            EnvironmentStore().current("mcp", "environment-test", "local-default")["id"]
+            EnvironmentStore().current("mcp", "environment-test", "local-default",
+                                       launch_digest=client.environment["launch_digest"])["id"]
             == client.environment["id"]
         )
     finally:

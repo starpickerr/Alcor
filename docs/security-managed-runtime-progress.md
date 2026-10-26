@@ -168,3 +168,32 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 完整目标仍实施中：应用级 guardian/目录事务、Keychain、MCP/多来源完整生命周期、签名冻结发行、可信连接器/来源传播/网站授权/公共浏览器及最终独立审查仍待完成。Linux 按用户要求 NOT RUN，Apple ES 资格不足的事实不变；不合并、推送或发布。
 
 本轮最新完整验证 project-pytest-mcp-temporary-final.log：**2687 PASS /22 SKIP /0 FAIL，346.09 秒，5 项既有警告**。命令按项目 Makefile 范围运行：python scripts/run_isolated.py python -m pytest tests -q -o usefixtures=offline_runtime_artifacts（/opt/anaconda3/envs/Stella/bin/python）。上轮取消残留文件失败本次通过，另有强制退出稳定复现测试覆盖；先前简报间歇业务失败本轮未出现，仍不标为已修复。Core 的 email/eLearning 两项源 pin 与实际源树核对一致，MCP 122 项测试与相关静态检查通过。完整目标及最终独立审查仍未完成，尚未合并/推送/发布。
+
+## 2026-10-26 MCP 依赖环境重建与恢复
+
+- 本地显式 Python/Node MCP 接入现有 EnvironmentStore 候选重建和 ManagementStore operation 事实；使用保留命名空间 mcp:，未新增 MCP 启停、工具开关或账号配置存储。远程 MCP、冻结/不透明可执行入口不提供依赖重建，显示实际原因。
+- 候选使用 Core 内部维护配置、临时 HOME/业务目录、不带原迁移根及 owner 凭据环境变量；经过真实 initialize 与完整 tools/list 后才进入切换。普通 JSON 的 maintenance/rebuild_environment/maintenance_storage 不授予维护权限。真实 Seatbelt 探测证明候选读取原账号目录被拒绝，原 eLearning 业务文件字节保持一致。
+- 原选包、账号、业务记录及所有工具/提供者开关保留。候选失败保留旧活跃进程与指针，失败环境不可被 ready 缓存再选中。通过后停止当前应用对应 user/launch 的旧连接，复用 ToolManager teardown、代次与工具投影；下次使用按需启动新环境，其他用户进程继续运行。
+- 持久 draining/selected 维护门和原跨进程共享 admission lease 覆盖初始化、发现及工具调用；晚到发现还复查环境身份和连接代次。prepared/draining/selected 中断支持同一用户/工作区继续，其他工作区不能消耗或失败原操作；来源或该提供者开关变更拒绝原候选，其他提供者开关不误伤。Agent/任务不能调用重建 API。
+- 切换指针与操作记录跨存储，选择期间发生异常保留维护阻止与恢复入口，不将不确定结果标成 failed 后直接恢复调用。复用安全 → 运行隔离的按钮、API 和反馈，本地 MCP 与插件一致支持重建及继续；未改能力详情布局。
+- RED→GREEN：缺失重建/恢复模块、对象归属/单项 revision、API 投影、普通与维护进程、操作日志失败及浏览器 MCP 按钮。Node 实际进程初次因读取 Homebrew OpenSSL 配置被沙箱拒绝，现与隔离构建同样使用 /dev/null 配置；没有开放宿主配置目录。mcp-rebuild-isolated-node-green.log 为 22 PASS；mcp-rebuild-admission-green.log 为 4 PASS（含晚到初始化租约），mcp-rebuild-regression-green.log 是补充 Node/故障注入前 92 PASS 的中间快照。
+- 中间回归 4 项工具发现失败：协议 Mock 未声明 _runtime_key，自动生成了假的本地身份；夹具明确无进程身份，未削弱生产检查。真实域用例的离线依赖曾因测试先准备缓存、随后覆盖 shared_root 而失败，已保持同一隔离运行根，没有放宽网络限制。
+- 全量中间运行发现 test_runtime_inventory_separates_application_and_child_sandbox 失败：空 MCP 清单提前构造生命周期对象；改为只在实际本地提供者上构造，原应用保护断言保持不变。mcp-rebuild-inventory-green.log：73 PASS（2 项 pydub 既有警告）。中间全量终态及最新完整验证待后文记录。
+- 桌面/320px 浏览器重建、失败保留、继续恢复、Owner 请求体、五页和原凭据流程通过；TypeScript renderer/main、相关 ESLint、Python Ruff 和空白检查通过。
+- Ruling: 只复用既有 MCP 身份的操作事实与依赖选择；工作区绑定恢复入口，当前应用回收精确 user/launch 进程——避免跨用户/不同提供者误回收；代价是这不证明多个独立 Core 实例或脱离进程的即时全应用回收，仍需原生 guardian 验收。
+- Ruling: 选择结果不确定时保持维护并要求恢复，不冒称已回滚——跨文件/SQLite 无原子提交；代价是部分 I/O 故障需用户显式继续恢复，期间相关执行保持阻止。
+
+完整目标仍实施中：原生 guardian/目录事务、Keychain、完整多来源安装/更新/卸载及冻结签名发行、可信连接器/来源传播/限定网站授权/公共浏览器与最终独立审查仍待完成。macOS-only 实测约束、ES 资格不足和 Linux NOT RUN 的事实不变，不合并、推送或发布。
+
+本轮全量中间快照 project-pytest-mcp-rebuild.log：**2709 PASS /1 FAIL /22 SKIP，380.47 秒，5 项既有警告**。唯一失败 test_runtime_inventory_separates_application_and_child_sandbox 为上述空清单提前构造生命周期对象，已由 73 项相关回归确认修复。未把该中间快照标为全绿；正在执行最终代码快照 project-pytest-mcp-rebuild-final.log。mcp-rebuild-browser-visual.log 完整流程 PASS；桌面及 320px 折叠侧栏截图已目视检查，本地 MCP 重建按钮可达、内容无横向溢出；TypeScript renderer/main 和对应 ESLint 终态通过。
+
+## 2026-10-27 同名 MCP 执行环境身份边界补充
+
+- 先前 project-pytest-mcp-rebuild-final.log 为 2710 PASS /22 SKIP（374.49 秒，5 项既有警告），但随后作者复核发现同一用户同名、不同实际启动配置的环境指针/维护门互相干扰，不能作为最终快照。真实不同连接 RED 及停用重建后重启未使用候选 RED 均已保留。
+- 环境身份从真正的 command/args/env 和代码派生，扩展原 EnvironmentStore 的 owner 命名空间、指纹、当前选择及 admission lease；启停和展示字段不改变依赖身份。原 RuntimeTrust 的完整配置摘要匹配继续使用原算法，未重置旧撤销事实。维护配置绑定原执行身份，在临时数据目录验证，回到正式启动仍选择同一环境。
+- 同用户同名不同启动配置在另一方维护期间仍可调用，另一方完成重建后仍保留原进程/选择；停用时重建再启用使用同一候选。环境记录、指针与锁显式绑定执行摘要，原未范围化的依赖缓存保留，没有移动/清空账号或业务文件。插件和原无额外身份的 EnvironmentStore 调用保持原路径与指纹。
+- 中间代码出现函数与局部变量同名导致初始化 UnboundLocalError，已由 Ruff 与测试直接定位并改名；没有压低拒绝断言。后续范围化回归 mcp-rebuild-bound-scopes-green.log 为 102 PASS /1 FAIL；唯一失败是旧测试仍从无执行身份的槽位读取当前环境，现按实际 MCP 记录的 launch_digest 查询，独立环境/真实 echo 断言保留。最终范围回归与全量仍需后文终态。
+- Ruling: 执行环境范围排除 enabled、超时和 UI 元数据，但撤销身份不改算法——重建后重新启用不会丢失选择，不把不同真实启动配置当成同一个环境；代价是改变实际启动参数/环境值会准备新的私有依赖命名空间，旧依赖缓存暂保留。
+- 尚未完成的相关范围：普通 MCP 的私有运行 HOME 目前仍按 name/user 派生（mcp_runtime.prepare_mcp），同名不同启动配置的历史私有文件归属仍需验证迁移，不能以依赖环境分离宣称业务私有目录迁移已完成。旧目录缺少可靠来源元数据，后续必须保留旧数据且避免猜测归属/自动扩大访问。此项继续属于完整目标待办。
+
+最终快照 project-pytest-mcp-rebuild-scoped-final.log：**2712 PASS /22 SKIP /0 FAIL，432.37 秒，5 项既有警告**。命令：/opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts。包含最终执行身份、独立当前指针、同用户同名不同服务维护期间可用、重新启用复用候选、Agent/任务拒绝、实际 Python/Node/Seatbelt 与旧测试 scoped lookup。mcp-scoped-selection-lookup-green.log 单项 1 PASS。浏览器桌面/320px、TypeScript renderer/main、相关 ESLint/Ruff/空白检查通过，相关前端代码在执行身份补充后未变化；先前失败日志均保留，没有把中间全绿结果当作最终范围证据。先前简报间歇业务失败本次未出现，仍未宣称已修复。完整目标及最终独立审查仍未完成；本轮仅提交已验证阶段，不合并/推送/发布。

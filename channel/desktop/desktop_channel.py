@@ -6203,19 +6203,28 @@ class SecurityRuntimeTrustHandler:
                 raise ValueError('Environment action must be an object')
             action = body.get('action')
             fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else set())
-            if (set(body) != fields or action not in {'rebuild', 'resume'} or body['kind'] != 'plugin'
+            if (set(body) != fields or action not in ('rebuild', 'resume') or body['kind'] not in ('plugin', 'mcp')
                     or not isinstance(body['id'], str) or not body['id']):
-                raise ValueError('Select a supported installed plugin environment to rebuild')
-            manager, user = _plugin_manager(), _plugin_user()
-            if action == 'rebuild':
-                manager.rebuild(body['id'], user_id=user)
+                raise ValueError('Select a supported installed plugin or local MCP environment to rebuild')
+            if action == 'resume' and (not isinstance(body['operationId'], str) or not body['operationId']):
+                raise ValueError('Rebuild operation is required')
+            if body['kind'] == 'mcp':
+                from agent.tools.tool_manager import ToolManager
+                from core.mcp.lifecycle import McpLifecycle
+                lifecycle = McpLifecycle(ToolManager())
+                if action == 'rebuild':
+                    lifecycle.rebuild(body['id'])
+                else:
+                    lifecycle.resume(body['id'], body['operationId'])
             else:
-                if not isinstance(body['operationId'], str) or not body['operationId']:
-                    raise ValueError('Rebuild operation is required')
-                operation = manager.management.operation(body['operationId'])
-                if operation['userId'] != user or operation['pluginId'] != body['id'] or operation['kind'] != 'rebuild':
-                    raise PermissionError('Rebuild operation does not belong to this user and plugin')
-                manager.resume(operation['operationId'])
+                manager, user = _plugin_manager(), _plugin_user()
+                if action == 'rebuild':
+                    manager.rebuild(body['id'], user_id=user)
+                else:
+                    operation = manager.management.operation(body['operationId'])
+                    if operation['userId'] != user or operation['pluginId'] != body['id'] or operation['kind'] != 'rebuild':
+                        raise PermissionError('Rebuild operation does not belong to this user and plugin')
+                    manager.resume(operation['operationId'])
             return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
         except (KeyError, ValueError, PermissionError, OSError, RuntimeError) as error:
             return _api_reject('Environment rebuild', error)

@@ -144,6 +144,12 @@ def launch_identity(config):
     return digest.hexdigest(), package
 
 
+def environment_identity(config):
+    """Scope dependencies by executable inputs, independently of UI/enablement."""
+    return launch_identity({'command': config['command'], 'args': config.get('args', []),
+                            'env': config.get('env') or {}})[0]
+
+
 def _fixed_executable_entry(config):
     if Path(config['command']).name in {'npx', 'uvx', 'bunx'} or set(config.get('args', [])) & {'-m', '-c', '-e', '--eval'}:
         return False
@@ -208,6 +214,9 @@ def prepare_mcp(config, env):
             raise PermissionError('MCP temporary output requires a matching Core-owned scope')
         temporary.check()
         env['STELLA_MCP_OUTPUT_TEMP'] = str(temporary.path)
+    from core.mcp.lifecycle import McpMaintenanceConfig
+    maintenance = isinstance(config, McpMaintenanceConfig)
+    environment_digest = config.original_launch_digest if maintenance else environment_identity(config)
     name = Path(config['command']).name.lower()
     args = config.get('args', [])
     if name in {'npx', 'uvx', 'bunx', 'npm', 'pip', 'pip3', 'uv'}:
@@ -232,15 +241,18 @@ def prepare_mcp(config, env):
         if index is None or any(arg not in {'-u', '-I', '-B', '-s', '-E'} for arg in args[:index]) or not Path(args[index]).is_file():
             raise PermissionError('Python MCP requires a fixed local explicit script entry')
         environment = EnvironmentStore().prepare_python(kind='mcp', identifier=config['name'], user=user_id,
-            package=package, digest=source_digest(package))
+            package=package, digest=source_digest(package), rebuild=maintenance, launch_digest=environment_digest)
         command = [environment['python'], *args]
     elif name in {'node', 'nodejs'}:
+        # Match isolated npm/build preparation; do not load host OpenSSL config.
+        env['OPENSSL_CONF'] = os.devnull
         if not args or not isinstance(args[0], str) or not args[0].endswith(('.js', '.mjs', '.cjs')) or not Path(args[0]).is_file():
             raise ValueError('Node MCP requires a fixed explicit script entry')
         environment = EnvironmentStore().prepare_node(kind='mcp', identifier=config['name'], user=user_id,
-            package=package, digest=source_digest(package))
+            package=package, digest=source_digest(package), rebuild=maintenance, launch_digest=environment_digest)
         command = [environment['node'], str(Path(environment['path']) / 'project' / Path(args[0]).name), *args[1:]]
-    storage = user_root() / 'mcp-runtime' / sha256(config['name'].encode()).hexdigest()
+    storage = (config.maintenance_storage if maintenance else
+               user_root() / 'mcp-runtime' / sha256(config['name'].encode()).hexdigest())
     if any(path.is_symlink() for path in [storage, *storage.parents] if path != Path('/')):
         # macOS /var aliases are canonicalized by user_root; only actual storage
         # ancestors are considered below by resolving the configured root.
@@ -281,6 +293,20 @@ def check_mcp(client):
     except PermissionError:
         client.shutdown()
         raise
+    from core.mcp.lifecycle import McpMaintenanceConfig, check_admission
+    if not isinstance(client.config, McpMaintenanceConfig):
+        try:
+            check_admission(key['identifier'], key['user_id'], config=client.config,
+                            launch_digest=client.environment.get('launch_digest') if client.environment else None)
+            if client.environment is not None:
+                from core.runtime.environments import EnvironmentStore
+                selected = EnvironmentStore().current('mcp', key['identifier'], key['user_id'],
+                                                      launch_digest=client.environment.get('launch_digest'))
+                if selected and selected['fingerprint'] == client.environment['fingerprint'] and selected['id'] != client.environment['id']:
+                    raise PermissionError('MCP dependency environment changed; restart the connection')
+        except (ValueError, OSError):
+            client.shutdown()
+            raise
     choice = RuntimeTrustStore().choice(**key)
     if digest != key['digest'] or choice is False:
         client.shutdown()

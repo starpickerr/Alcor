@@ -372,6 +372,11 @@ class ToolManager:
         return self.capability_settings.enabled('mcp', config.get('name', '<unnamed>'), default=default)
 
     def _mcp_admitted(self, name, generation):
+        from core.mcp.lifecycle import check_admission
+        try:
+            check_admission(name, self.identity.user_id or 'local-default', config=self._mcp_active_configs.get(name))
+        except PermissionError:
+            return False
         with self._mcp_lock:
             config = self._mcp_active_configs.get(name)
             return bool(config is not None and self._mcp_generations.get(name) == generation
@@ -675,6 +680,8 @@ class ToolManager:
         with self._mcp_lock:
             if not self._mcp_admitted(name, generation):
                 return False
+            from core.security.mcp_runtime import check_mcp
+            check_mcp(client)
             agent_tools = cfg.get('agentTools')
             tools = []
             from agent.permission.gateway import Capability, register_tool
