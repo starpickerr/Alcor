@@ -163,6 +163,23 @@ with sync_playwright() as playwright:
         page.get_by_role('button', name='开始对话', exact=True).click()
         expect(page.get_by_role('button', name='开始对话', exact=True)).to_have_count(0)
         assert len(saved) == previous + 1 and saved[-1]['action'] == 'set_capability'
+        # Saved but inaccessible credentials retain the original repair/delete entry.
+        providers[2]['configured'] = False
+        providers[2]['api_key_masked'] = ''
+        for state, label in [('repair-required', '已保存的凭据需要修复'), ('unavailable', '凭据状态不可用')]:
+            providers[2]['credential_status'] = state
+            page.goto(test_url + '/#/models?credential=OPENAI_API_KEY', wait_until='networkidle')
+            page.reload(wait_until='networkidle')
+            dialog = page.get_by_role('dialog')
+            expect(dialog.get_by_text(label, exact=True)).to_be_visible()
+            expect(dialog.locator('input[type="password"]')).to_have_count(0)
+            dialog.get_by_role('button', name='配置凭据', exact=True).click()
+            expect(dialog.get_by_role('button', name='删除凭据', exact=True)).to_be_visible()
+            page.set_viewport_size({'width': 620, 'height': 900})
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=f'/tmp/stella-model-{state}-narrow.png', full_page=True)
+            dialog.get_by_role('button').filter(has_text='×').click()
+            expect(page.locator('button.group').filter(has_text='OpenAI')).to_be_visible()
         assert errors == [], errors
         print('Model selection: configured catalogs, six capabilities, vendor switching, manual models, reload, and vendor editing passed')
     finally:

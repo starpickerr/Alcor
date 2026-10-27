@@ -269,7 +269,7 @@ const VendorSection: React.FC<VendorSectionProps> = ({ data, onChanged }) => {
 
   const isCustomCard = (p: ModelProvider) => p.is_custom && !!p.custom_name
   // Unified grid: configured built-ins + all custom provider cards (web parity).
-  const shown = data.providers.filter((p) => p.configured || isCustomCard(p))
+  const shown = data.providers.filter((p) => p.configured || isCustomCard(p) || p.credential_status === 'repair-required' || p.credential_status === 'unavailable')
 
   return (
     <Card icon={<Database size={16} />} title={t('models_vendors')} subtitle={t('models_vendors_sub')}>
@@ -465,7 +465,7 @@ const VendorModal: React.FC<{
         label="API Key"
         labelAction={effective?.id === 'linkai' ? <ManageLinkAIKeyLink /> : undefined}
       >
-        <ModelCredentialLink name={modelSecretName(effective?.api_key_field)} configured={!!effective?.api_key_masked} />
+        <ModelCredentialLink name={modelSecretName(effective?.api_key_field)} configured={effective?.credential_status === 'unavailable' ? null : !!effective?.api_key_masked} needsRepair={effective?.credential_status === 'repair-required'} />
       </Field>
       {hasBase && (
         <Field label="API Base">
@@ -612,7 +612,7 @@ const CustomProviderModal: React.FC<{
         <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={setProtocolId} />
       </Field>
       <Field label="API Key">
-        {editing ? <ModelCredentialLink name={`CUSTOM:${editing.custom_id}`} configured={!!editing.api_key_masked} /> :
+        {editing ? <ModelCredentialLink name={`CUSTOM:${editing.custom_id}`} configured={editing.credential_status === 'unavailable' ? null : !!editing.api_key_masked} needsRepair={editing.credential_status === 'repair-required'} /> :
           <p className="text-xs text-content-secondary">{localizedLabel({ zh: '保存厂商后，可在此配置凭据。', en: 'Save this provider, then configure its credential here.' })}</p>}
       </Field>
       <Field label={t('models_custom_models')} hint={t('models_custom_models_hint')}>

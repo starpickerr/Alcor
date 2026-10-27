@@ -507,6 +507,7 @@ export interface ModelProvider {
   id: string
   label: LocalizedLabel
   configured: boolean
+  credential_status?: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
   is_custom: boolean
   custom_id?: string
   custom_name?: string

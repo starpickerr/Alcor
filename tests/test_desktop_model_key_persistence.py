@@ -108,7 +108,11 @@ def test_models_save_updates_runtime_and_persisted_key(tmp_path, monkeypatch):
 
     assert result["status"] == "success"
     assert config_module.conf()["linkai_api_key"] == "new-linkai-key"
-    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["linkai_api_key"] == "new-linkai-key"
+    from core.security.config_credentials import resolve
+    persisted = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert resolve(tmp_path / 'config.json', persisted)[0]['linkai_api_key'] == 'new-linkai-key'
+    if config_module.sys.platform == 'darwin':
+        assert 'new-linkai-key' not in (tmp_path / 'config.json').read_text()
     assert config_module.os.environ["LINKAI_API_KEY"] == "new-linkai-key"
 
     # A new backend process can inherit the old key from its parent.

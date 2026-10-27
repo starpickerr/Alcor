@@ -101,7 +101,7 @@ def test_credential_tool_is_not_discovered_and_full_access_cannot_authorize_it()
 
 def test_owner_credential_save_does_not_follow_predictable_temporary_symlinks(tmp_path, monkeypatch):
     from core.security.env_store import EnvironmentFile
-    from agent.permission.center import _write_config
+    from core.security.config_credentials import write_document as _write_config
     monkeypatch.setenv('HOME', str(tmp_path))
     store = EnvironmentFile()
     store._ensure_env_file()
@@ -114,7 +114,7 @@ def test_owner_credential_save_does_not_follow_predictable_temporary_symlinks(tm
     assert not Path(store.env_path).is_symlink()
     config = tmp_path / 'config.json'
     config.with_suffix('.security-tmp').symlink_to(unrelated)
-    _write_config(config, {'api_key': 'SYNTHETIC_SECRET'})
+    _write_config(config, {'open_ai_api_key': 'SYNTHETIC_SECRET'})
     assert unrelated.read_text() == 'KEEP_OWNER_DATA'
     assert not config.is_symlink()
 

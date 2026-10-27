@@ -54,6 +54,10 @@ class MacOSKeychain:
             fn = getattr(self.security, name)
             fn.argtypes, fn.restype = [c.c_void_p, c.POINTER(c.c_void_p)], c.c_int32
         self.security.SecItemDelete.argtypes, self.security.SecItemDelete.restype = [c.c_void_p], c.c_int32
+        self.security.SecKeychainItemCopyKeychain.argtypes = [c.c_void_p, c.POINTER(c.c_void_p)]
+        self.security.SecKeychainItemCopyKeychain.restype = c.c_int32
+        self.security.SecKeychainGetStatus.argtypes = [c.c_void_p, c.POINTER(c.c_uint32)]
+        self.security.SecKeychainGetStatus.restype = c.c_int32
         signatures = {
             'CFStringCreateWithCString': ([c.c_void_p, c.c_char_p, c.c_uint32], c.c_void_p),
             'CFDataCreate': ([c.c_void_p, c.c_void_p, c.c_long], c.c_void_p),
@@ -142,14 +146,24 @@ class MacOSKeychain:
 
     def contains(self, account):
         result = c.c_void_p()
+        keychain = c.c_void_p()
         try:
-            with self._dictionary({**self._fields(account), 'kSecReturnAttributes': True}) as query:
+            # An item reference reveals no secret; attributes alone are readable
+            # even when its file keychain is locked, so also inspect lock state.
+            with self._dictionary({**self._fields(account), 'kSecReturnRef': True}) as query:
                 status = self.security.SecItemCopyMatching(query, c.byref(result))
-            if status == -25300:
-                return False
-            self._check(status)
-            return True
+                if status == -25300:
+                    return False
+                self._check(status)
+                self._check(self.security.SecKeychainItemCopyKeychain(result, c.byref(keychain)))
+                state = c.c_uint32()
+                self._check(self.security.SecKeychainGetStatus(keychain, c.byref(state)))
+                if not state.value & 1:  # kSecUnlockStateStatus
+                    raise KeychainUnavailable('Saved credential is locked; unlock its keychain through macOS settings')
+                return True
         finally:
+            if keychain.value:
+                self.cf.CFRelease(keychain)
             if result.value:
                 self.cf.CFRelease(result)
 

@@ -4,6 +4,7 @@ import os
 import sys
 import types
 import unittest
+import tempfile
 from unittest.mock import mock_open, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -136,7 +137,9 @@ class TestModelsHandler(unittest.TestCase):
 
         with patch("channel.desktop.desktop_channel.conf", return_value=local_config):
             with patch.object(ModelsHandler, "_read_file_config", return_value=file_config):
-                with patch.object(ModelsHandler, "_write_file_config") as write_file:
+                with tempfile.TemporaryDirectory(prefix='stella-asr-') as directory, \
+                     patch.object(ModelsHandler, '_config_path', return_value=os.path.join(directory, 'config.json')), \
+                     patch.object(ModelsHandler, "_write_file_config", wraps=ModelsHandler._write_file_config) as write_file:
                     with patch.object(ModelsHandler, "_refresh_voice_routing") as refresh_voice:
                         result = json.loads(handler._handle_set_capability({
                             "capability": "asr",
@@ -163,7 +166,8 @@ class TestModelsHandler(unittest.TestCase):
 
         with patch("channel.desktop.desktop_channel.conf", return_value=local_config):
             with patch.object(ModelsHandler, "_read_file_config", return_value=file_config):
-                with patch.object(ModelsHandler, "_write_file_config"):
+                with tempfile.TemporaryDirectory(prefix='stella-asr-') as directory, \
+                     patch.object(ModelsHandler, '_config_path', return_value=os.path.join(directory, 'config.json')):
                     with patch.object(ModelsHandler, "_refresh_voice_routing"):
                         result = json.loads(handler._handle_set_capability({
                             "capability": "asr",

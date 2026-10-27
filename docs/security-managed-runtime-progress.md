@@ -45,7 +45,7 @@
 
 ## 验证证据
 
-日志与截图在 `.superpowers/sdd/2026-10-25-security-managed-runtime/`；工作区计划在 `.agents/tasks/active/2026-10-25-security-managed-runtime.md`。
+日志与截图在 `.superpowers/sdd/2026-10-25-security-managed-runtime/`；工作区计划在 `.agents/tasks/archived/2026-10-25-security-managed-runtime.md`。
 
 - 权限阶段独立审查的四个问题已 RED→GREEN 修复；当时针对回归 226 PASS，全量 2482 PASS /33 FAIL /22 SKIP。这是旧阶段证据，不能代表当前分支全量结果。
 - 本轮针对连接撤销、TLS 握手、HTTP 操作绑定、公共/本地边界、命名空间跳转、离线 wheel、Worker 锁、语音/委派出口和 OAuth 临时文件分别保留失败复现与通过日志。
@@ -291,3 +291,20 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 本轮任务阶段提交：d97c15b9（前阶段顺序验证证据）、7cb4c2c3（既有环境凭据 Keychain）、aca83a82（owner 修复与真实三态 UI）、f61e626d（Shell 系统凭据服务边界）。保留原有 7 项无关工作区改动，无合并/推送/发布。目标回合为 progress，不是完成整个目标。
 
 接续工作：模型配置保存位于 channel/desktop/desktop_channel.py 的 ModelsHandler 与 ConfigHandler（_read_config_file_for_write / _config_path 等），安全页 set_secret 模型分支仍写 config.json；config.load_config JSON 自愈分支仅应处理结构损坏，后续 Keychain 不可用不能被误判为 JSON 损坏而隔离/覆盖用户配置。应复用本次已验证的精确引用/回读/发布/owner 修复模式覆盖已声明的模型字段与自定义提供者，继续原入口和同一配置；普通值/模型绑定不额外复制。该事项尚未实施。另有业务账号/OAuth 可信连接器、已有 MCP 数据归属迁移、完整来源环境生命周期、外发范围/网站信任/公共浏览器、原生 guardian/目录切换与最终独立审查未完成。ES 资格不足、Core/Electron 未保护、Linux 按用户要求 NOT RUN 的事实不变。
+
+
+## 2026-10-27 macOS 交付范围与模型凭据迁移
+
+新规格已替代旧计划剩余范围：只交付应用内安全控制和受管执行隔离；Core/Electron 是可信宿主，不再要求 Endpoint Security、系统 guardian、全局文件别名/旧句柄撤销或通用自动浏览器。Linux 保留但未实测，Windows 不允许无隔离的不可信执行。当前执行计划为 `.agents/tasks/active/2026-10-27-macos-security-delivery.md`；旧计划已归档，四份已集成任务移到 completed，未完成事项继续在 27 日计划跟踪。
+
+模型页、旧 Config API、安全页与启动加载现共用 config.json 中的声明字段和共享 Keychain 事务。固定模型字段按字段名、自定义提供者按稳定 ID 绑定；保存新版本并回读后发布，未改动引用不解密、不改写。保存失败不提前改变运行配置；丢失或锁定清空对应运行值及旧环境导出，合法 JSON 不进入损坏自愈。Owner 可在原模型入口修复/删除，缺失/不可用卡片保留入口；短密钥不再原样返回。凭据目录仍只返回声明条目的状态，不读取原文。首次从旧明文成功保存时迁移；本轮没有替用户运行真实账号迁移。
+
+用户报告测试中重复出现 python3.12/test Keychain 认证弹窗；此前仅使用 SecItem 的 UI 禁用参数，对文件型钥匙串无效，旧阶段“无弹窗”结论不能覆盖这个实际失败。已终止被阻塞的测试进程，不要求用户输入密码。新增序列化作用域内的 SecKeychainSetUserInteractionAllowed(false)，退出恢复原值；生产操作与临时测试钥匙串创建/清理都禁用交互。只返回访问失败，不解锁用户钥匙串。依据：Chromium `crypto/apple/scoped_keychain_user_interaction_allowed.cc` 对 FB16959400 的说明；本机 Apple SDK SecKeychain.h。修复提交 `7129fdc8`。
+
+验证：原生交互标志检查 RED 1 FAIL → GREEN 1 PASS；两项真实锁定测试在 15 秒进程组截止限制内 **2 PASS /0.35 秒**，环境 Keychain **20 PASS /0.65 秒**。随后发现属性查询在锁定时仍可成功，改为精确条目引用及其所属钥匙串锁状态查询，仍不请求密钥内容；模型锁定状态 RED → GREEN。Task 1 最终关联回归 **148 PASS /0 FAIL，2.23 秒**（两项既有 pydub 警告），日志 `.superpowers/sdd/2026-10-27-macos-security-delivery/task-1-tests.log`；包含原模型/自定义提供者/图像路由、重启、锁定/丢失/修复/顺序交换、失败不改运行值、重复旧环境清理失败、环境存储和 Owner 边界。
+
+UI `model-ui-green-reload.log`：六种模型能力、厂商编辑及原凭据入口、需要修复/不可用状态和删除按钮、620px 窄窗通过；检查了真实截图。前端类型/相关 ESLint、Python Ruff/差异检查通过。早期 UI 测试 IPv4 连接失败和没有刷新 hash 页面导致的旧数据失败仅是验证脚本问题，未冒充产品 RED；补充的旧 UI RED 在刷新后确认缺少修复提示。`model-regression-third.log` 因弹窗主动终止，不是 PASS；`model-regression-no-ui.log` 为 140 PASS/1 FAIL（测试仍导入已移除的私有写入函数），已改用实际统一保存入口，保留符号链接拒绝断言。
+
+以上仅为模型凭据阶段；其余业务账号/OAuth/插件 secret、应用内保护路径、旧数据归属和完整生命周期、可信连接与来源外发、最终独立审查及整体验收仍未完成。尚未合并 develop、推送或发布。
+
+补充搜索凭据回退 RED 3 FAIL → GREEN：启动加载和原搜索凭据删除入口同时处理 BOCHA_API_KEY、ZHIPUAI_API_KEY 等兼容别名，避免 Keychain 丢失/删除后回退旧环境值。最终 148 项结果包含这些边界；全量后端和跨模块独立审查留待整体收尾，不将此阶段结果扩称全部完成。
