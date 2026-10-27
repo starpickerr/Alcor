@@ -28,6 +28,32 @@ def test_owner_save_replaces_plaintext_with_a_readable_keychain_reference(tmp_pa
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_file_keychain_operations_disable_native_interaction_and_restore_it(tmp_path, isolated_keychain, monkeypatch):
+    import ctypes as c
+    backend = isolated_keychain(tmp_path / 'credentials')
+    security = backend.security
+    security.SecKeychainGetUserInteractionAllowed.argtypes = [c.POINTER(c.c_bool)]
+    def interaction_allowed():
+        state = c.c_bool()
+        assert security.SecKeychainGetUserInteractionAllowed(c.byref(state)) == 0
+        return state.value
+    before = interaction_allowed()
+    calls = []
+    for name in ('SecItemAdd', 'SecItemCopyMatching', 'SecItemDelete'):
+        original = getattr(security, name)
+        def checked(*args, original=original, name=name):
+            assert interaction_allowed() is False, 'File-based Keychain must never open an authentication dialog'
+            calls.append(name)
+            return original(*args)
+        monkeypatch.setattr(security, name, checked)
+    backend.put('test-only-item', 'SYNTHETIC_NONINTERACTIVE')
+    assert backend.get('test-only-item') == 'SYNTHETIC_NONINTERACTIVE'
+    assert backend.contains('test-only-item')
+    backend.delete('test-only-item')
+    assert calls == ['SecItemAdd', 'SecItemCopyMatching', 'SecItemCopyMatching', 'SecItemDelete']
+    assert interaction_allowed() is before
+
+
 def test_unavailable_keychain_keeps_old_file_and_environment(tmp_path, monkeypatch):
     store = owner_file(tmp_path, monkeypatch)
     path = Path(store.env_path)

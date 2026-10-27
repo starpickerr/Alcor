@@ -8,6 +8,31 @@ import ctypes as c
 from hashlib import sha256
 from pathlib import Path
 import sys
+from threading import RLock
+
+
+_interaction_lock = RLock()
+
+
+@contextmanager
+def noninteractive(security):
+    """SecItem's UI flag alone is ignored by macOS file-based keychains.
+
+    Scope the legacy interaction flag to our serialized calls and restore it.
+    A locked or inaccessible item returns an error; never ask for a password.
+    """
+    with _interaction_lock:
+        security.SecKeychainGetUserInteractionAllowed.argtypes = [c.POINTER(c.c_bool)]
+        security.SecKeychainGetUserInteractionAllowed.restype = c.c_int32
+        security.SecKeychainSetUserInteractionAllowed.argtypes = [c.c_bool]
+        security.SecKeychainSetUserInteractionAllowed.restype = c.c_int32
+        previous = c.c_bool()
+        MacOSKeychain._check(security.SecKeychainGetUserInteractionAllowed(c.byref(previous)))
+        MacOSKeychain._check(security.SecKeychainSetUserInteractionAllowed(False))
+        try:
+            yield
+        finally:
+            MacOSKeychain._check(security.SecKeychainSetUserInteractionAllowed(previous.value))
 
 
 class KeychainUnavailable(PermissionError):
@@ -74,7 +99,8 @@ class MacOSKeychain:
             if not dictionary:
                 raise KeychainUnavailable('Credential storage allocation failed')
             owned.append(dictionary)
-            yield dictionary
+            with noninteractive(self.security):
+                yield dictionary
         finally:
             for pointer in reversed(owned):
                 self.cf.CFRelease(pointer)

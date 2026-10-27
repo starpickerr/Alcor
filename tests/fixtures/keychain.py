@@ -16,7 +16,7 @@ def isolated_keychain(tmp_path, monkeypatch):
 
     def factory(path):
         nonlocal security, foundation
-        from core.security.keychain import MacOSKeychain
+        from core.security.keychain import MacOSKeychain, noninteractive
         if not keychain.value:
             security = c.CDLL('/System/Library/Frameworks/Security.framework/Security')
             foundation = c.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
@@ -27,15 +27,16 @@ def isolated_keychain(tmp_path, monkeypatch):
             security.SecKeychainDelete.argtypes = [c.c_void_p]
             security.SecKeychainUnlock.argtypes = [c.c_void_p, c.c_uint32, c.c_void_p, c.c_bool]
             foundation.CFRelease.argtypes = [c.c_void_p]
-            previous = c.c_void_p()
-            assert security.SecKeychainCopySearchList(c.byref(previous)) == 0
-            try:
-                password = b'isolated-synthetic-keychain'
-                assert security.SecKeychainCreate(str(tmp_path / 'test.keychain-db').encode(), len(password),
-                    password, False, None, c.byref(keychain)) == 0
-            finally:
-                assert security.SecKeychainSetSearchList(previous) == 0
-                foundation.CFRelease(previous)
+            with noninteractive(security):
+                previous = c.c_void_p()
+                assert security.SecKeychainCopySearchList(c.byref(previous)) == 0
+                try:
+                    password = b'isolated-synthetic-keychain'
+                    assert security.SecKeychainCreate(str(tmp_path / 'test.keychain-db').encode(), len(password),
+                        password, False, None, c.byref(keychain)) == 0
+                finally:
+                    assert security.SecKeychainSetSearchList(previous) == 0
+                    foundation.CFRelease(previous)
         return MacOSKeychain(str(path), _keychain=keychain)
 
     monkeypatch.setattr('core.security.env_store.keychain_for', factory, raising=False)
@@ -43,7 +44,9 @@ def isolated_keychain(tmp_path, monkeypatch):
         yield factory
     finally:
         if keychain.value:
-            password = b'isolated-synthetic-keychain'
-            assert security.SecKeychainUnlock(keychain, len(password), password, True) == 0
-            assert security.SecKeychainDelete(keychain) == 0
-            foundation.CFRelease(keychain)
+            from core.security.keychain import noninteractive
+            with noninteractive(security):
+                password = b'isolated-synthetic-keychain'
+                assert security.SecKeychainUnlock(keychain, len(password), password, True) == 0
+                assert security.SecKeychainDelete(keychain) == 0
+                foundation.CFRelease(keychain)
