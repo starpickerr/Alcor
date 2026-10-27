@@ -20,9 +20,10 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def isolated_run_policy_store(tmp_path, monkeypatch):
+def isolated_run_policy_store(tmp_path_factory, monkeypatch):
     """Persistent subject snapshots must not leak into another test case."""
-    monkeypatch.setattr('core.security.policy_store.policy_path', lambda: tmp_path / 'authorization.sqlite')
+    policy = tmp_path_factory.mktemp('authorization') / 'authorization.sqlite'
+    monkeypatch.setattr('core.security.policy_store.policy_path', lambda: policy)
 
 @pytest.fixture(autouse=True)
 def _managed_mcp_opt_in_for_tests(monkeypatch):

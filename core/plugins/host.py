@@ -345,15 +345,18 @@ class PluginSession:
                 read_roots=[Path(cmd[0]).resolve().parent,
                             *([Path(self.environment['path'])] if self.environment else []), *legacy_reads], write_roots=[domain])
             self.sandbox_state = plan.state
-            self._proc = subprocess.Popen(
-                plan.argv,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=plan.cwd,
-                env=plan.env,
-                start_new_session=True,
-            )
+            from core.security.protected_paths import launch_guard
+            with launch_guard(plan.protection_revision) as launch:
+                self._proc = subprocess.Popen(
+                    plan.argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=plan.cwd,
+                    env=plan.env,
+                    start_new_session=True,
+                )
+                launch.bind(self._proc)
             process = self._proc
             self._stderr_bytes = 0
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(process,), daemon=True)

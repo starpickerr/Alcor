@@ -138,8 +138,11 @@ class EnvironmentStore:
         plan = prepare_extension(argv, package, build, env, writable=write,
                                  read_roots=[candidate, *read_roots], write_roots=[candidate] if write else [],
                                  executable_reads=executable_reads)
-        process = subprocess.Popen(plan.argv, cwd=str(cwd) if cwd else plan.cwd, env=plan.env, start_new_session=True,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        from core.security.protected_paths import launch_guard
+        with launch_guard(plan.protection_revision) as launch:
+            process = subprocess.Popen(plan.argv, cwd=str(cwd) if cwd else plan.cwd, env=plan.env, start_new_session=True,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            launch.bind(process)
         try:
             stdout, stderr = process.communicate(timeout=120)
             return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)

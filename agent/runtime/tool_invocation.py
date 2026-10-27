@@ -120,9 +120,11 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     kwargs = dict(cwd=cwd, scope=Scope(write_roots=tuple(roots), accounts=accounts),
                   session_id=session_id, allowlist=allowlist, policy=policy,
                   agent_id=agent_id, project_dir=project_dir, reserve_for_waiter=wait_for_approval)
+    from core.security.protected_paths import current_revision
+    protection_revision = current_revision()
     binding = (identity.user_id, identity.run_id, agent_id, session_id, project_dir,
                cwd, tuple(roots), accounts, tuple(allowlist or ()),
-               grant_version(), json.dumps(policy, sort_keys=True, ensure_ascii=False))
+               grant_version(), protection_revision, json.dumps(policy, sort_keys=True, ensure_ascii=False))
     return policy.get('filesystem_mode', mode), kwargs, binding
 
 

@@ -49,6 +49,9 @@ def is_elearning_credential_path(absolute_path: str) -> bool:
 
 
 def credential_denial_message(absolute_path: str) -> str:
+    from core.security.protected_paths import denial_reason
+    if reason := denial_reason(absolute_path):
+        return 'Error: ' + reason
     from common.state_dir import data_service_db
     root=os.path.realpath(data_service_db(ensure=False).parent)
     real=os.path.realpath(absolute_path)
@@ -58,11 +61,13 @@ def credential_denial_message(absolute_path: str) -> str:
 
 
 def protected_credential_paths() -> set[str]:
+    from core.security.policy_store import RunPolicyStore
     from config import get_data_root, get_weixin_credentials_path
     from common.state_dir import mcp_config_file, shared_root, state_root, briefing_db, scheduler_file
     email_db = briefing_db(ensure=False).parent.parent / "email/email.db"
     elearning_config = briefing_db(ensure=False).with_name('elearning.json')
     return {os.path.realpath(path) for path in (
+        str(RunPolicyStore().path),
         expand_path("~/.stella/.env"),
         expand_path("~/.stella/mcp_oauth.json"),
         expand_path("~/.stella/mcp_oauth.json.tmp"),
@@ -118,6 +123,9 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
       2. Symlinks resolving to ~/.stella/.env; an exact abspath match keeps the
          link target and can be bypassed.
     """
+    from core.security.protected_paths import denial_reason
+    if denial_reason(absolute_path):
+        return True
     # Compare on both the normalized path and the symlink-resolved path,
     # in POSIX form so the /proc regex matches regardless of os.sep.
     candidates = set()

@@ -13,6 +13,7 @@ class ExtensionPlan:
     cwd: str
     env: dict
     state: dict
+    protection_revision: int = 0
 
 
 def validate_source_root(package):
@@ -21,6 +22,10 @@ def validate_source_root(package):
         is_credential_path, protected_credential_folders, protected_credential_paths,
     )
     package = Path(package).resolve()
+    from core.security.protected_paths import sandbox_paths
+    _, folders = sandbox_paths()
+    if any(package.is_relative_to(Path(folder)) or Path(folder).is_relative_to(package) for folder in folders):
+        raise PermissionError('Extension source overlaps an Owner-protected folder; select a separate source directory')
     if is_credential_path(str(package)) or any(
             Path(path).is_relative_to(package)
             for path in {*protected_credential_paths(), *protected_credential_folders()}):
@@ -31,6 +36,8 @@ def validate_source_root(package):
 def prepare_extension(command, package, storage, env, *, trusted=False, writable=True,
                       read_roots=(), write_roots=(), executable_reads=(), directory_reads=(), network=False,
                       read_package=True):
+    from core.security.protected_paths import sandbox_paths
+    protection_revision, protected_folders = sandbox_paths()
     package, storage = Path(package).resolve(), Path(storage).resolve()
     # Builders may execute a snapshot inside their already-bound candidate.
     # Raw source roots are validated before copying into that namespace.
@@ -83,6 +90,9 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
         # Permit only those directory objects, never their descendants.
         profile += ' '.join(f'(allow file-read* (literal {literal(Path(path).resolve())}))' for path in directory_reads)
         profile += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))'
+        for folder in protected_folders:
+            profile += f' (deny file-read* file-write* (subpath {literal(folder)}))'
+            profile += ' '.join(f' (deny file-write* (literal {literal(str(parent))}))' for parent in Path(folder).parents)
         argv = [sandbox_executable(), '-p', profile, *command]
     else:
         argv = [sandbox_executable(), '--die-with-parent', '--unshare-all', '--new-session']
@@ -97,6 +107,8 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
         if not writable:
             for path in (private_home, temporary):
                 argv += ['--bind', str(path), str(path)]
+        for folder in protected_folders:
+            argv += ['--tmpfs', folder]
         argv += ['--proc', '/proc', '--dev', '/dev',
                  '--chdir', str(storage), '--', *command]
-    return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'reason': 'OS file and network isolation enabled.'})
+    return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'reason': 'OS file and network isolation enabled.'}, protection_revision)

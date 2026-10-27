@@ -442,16 +442,19 @@ SAFETY:
         return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
     def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True, plan=None):
-        process = subprocess.Popen(
-            command,
-            shell=shell,
-            cwd=self.cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            start_new_session=not self._IS_WIN,
-        )
+        from core.security.protected_paths import launch_guard, current_revision
+        with launch_guard(plan.protection_revision if plan is not None else current_revision()) as launch:
+            process = subprocess.Popen(
+                command,
+                shell=shell,
+                cwd=self.cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                start_new_session=not self._IS_WIN,
+            )
+            launch.bind(process)
         from agent.permission.process_sandbox import register_share_process, unregister_share_process
         try:
             if plan is not None:

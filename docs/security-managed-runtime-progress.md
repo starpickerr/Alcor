@@ -321,3 +321,20 @@ UI `model-ui-green-reload.log`：六种模型能力、厂商编辑及原凭据�
 证据：新增 native renderer harness 的业务 IPC、真实 localhost Core 请求成功；同 preload 的外部窗口/改变主文档/子 iframe 请求拒绝，外端口接收计数为 0，脚本/app 文件只能 reveal。开发 HTTP 和含空格/中文的 packaged file URL 各验证一次。关联真实 Electron、静态 nonce HTTP、账单/任务/日程 Bridge 回归 `electron-final-regression.log`：**18 PASS，5.20 秒**（两项既有 pydub 警告）。原 native plugin 自源 fetch/前缀导航 RED（1 FAIL/5 PASS）后修复通过，原 UI opaque cookie 访问 RED 后 `plugin-iframe-ui-green.log` 完整 PASS：正常业务、opaque origin、直接 API fetch CSP 拒绝、同 nonce 外部 source 伪造拒绝及 620px。TypeScript main/renderer、相关 ESLint/Ruff/差异检查通过。
 
 该阶段未完成受保护目录及旧系统保护依赖清理，Task 2 继续；其余最终独立审查和整体验收未完成，不合并、不推送、不发布。
+
+
+## 2026-10-27 应用内保护规则与受管启动基础
+
+新增 Owner-only ProtectedPathControl，规则与既有授权事实同库存放，按 canonical path/目录 device+inode 识别；同前缀邻居不被误伤，符号链接不能绕过，必要运行时/凭据/策略/业务目录及已知 MCP 入口冲突拒绝。changing→ready 两阶段发布，失败保持可重试状态；目录被替换时需要 Owner 修复，删除规则保留文件。规则只针对 Agent/受管执行，不限制可信 Core，也不声称跟踪其他应用任意移动或撤回历史数据。
+
+真实 Popen 的 Bash、PluginHost、MCP、依赖构建、外部 Agent 五处入口复用同一启动锁/版本核对/进程登记；防止旧计划在规则发布后启动，切换取消已有 run 并回收已登记进程。沙箱 profile 最后追加保护范围与祖先目录写入限制，避免通过重命名父目录绕过；全访问不豁免。保护策略版本进入原审批 binding，保留其末项为模式策略 JSON 的原约定，因此修改会话模式后继续同一等待操作的既有行为保持。
+
+边界测试暴露 prepare() 给只读 Shell 授予工作目录写入，现按 workspace_write 拒绝工作区写入，只允许其临时目录；共享/旧 private root 也不能重新提升。Linux 保留对应 mount 路径，未实测。测试授权数据库移到单独临时目录，避免自动 fixture 把安全数据库注入待执行源码树；未放宽生产源码与凭据范围交叠检查。
+
+`protected-boundary-second-regression.log`：**93 PASS /4.70 秒**（两项既有 pydub 警告）。包括真实三模式 Shell/Extension 允许普通文件读写、拒绝保护内容/符号链接/硬链接读与写、拒绝移动祖先目录、旧进程回收/旧计划拒绝、可恢复失败、Owner 管理边界、审批恢复。初轮 86 PASS/7 FAIL 分别为只读写入、新 policy fixture 与源码重叠、binding 末项位置，均有明确修正，未弱化边界。
+
+`protected-runtime-regression.log`：**121 PASS /57.17 秒**（两项既有 pydub 警告），使用隔离状态、离线锁定依赖和真实 macOS 进程，覆盖 Python/Node 环境、外部 CLI、PluginHost/域隔离、MCP 私有目录与重建、模型凭据。该运行在补充 shared/private 只读限制时开始；最终新增限制由后续相关权限回归补核，不能作为最终全量快照。Ruff/差异检查通过。
+
+本节是基础机制阶段。原安全页面还未开放规则编辑；文件访问期间可识别替换、已有会话/索引/缓存/外发来源的处理，以及旧 ES/guardian 占位清理仍待接续。已登记普通子进程回收证据不扩称所有脱离会话子进程已可靠回收；这一边界仍待真实验证与必要实现。独立审查/整体交付尚未完成，不合并、不推送、不发布。
+
+最终 shared/private 只读补核：`protected-final-local.log` **35 PASS /1.65 秒**（保护/实际 Shell/审批恢复）；`protected-share-regression.log` **21 PASS /0.34 秒**（共享权限、真实撤销及 Work 上下文，两项既有 pydub 警告）。代码与测试未再改变，作为本基础阶段提交证据。

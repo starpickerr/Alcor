@@ -529,17 +529,20 @@ class McpClient:
             if self._closed:
                 return False
             _check_cancelled(self._initialization_cancel)
-            process = self._proc = subprocess.Popen(
-                plan.argv,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                env=plan.env,
-                cwd=plan.cwd,
-                start_new_session=True,
-            )
+            from core.security.protected_paths import launch_guard
+            with launch_guard(plan.protection_revision) as launch:
+                process = self._proc = subprocess.Popen(
+                    plan.argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    env=plan.env,
+                    cwd=plan.cwd,
+                    start_new_session=True,
+                )
+                launch.bind(process)
         logger.debug(f"[MCP:{self.name}] stdio process started (pid={process.pid})")
 
         threading.Thread(

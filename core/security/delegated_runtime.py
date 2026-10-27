@@ -36,7 +36,7 @@ def prepare_delegated(workspace, binaries):
             'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'SYSTEMROOT', 'WINDIR'}}
         env.update(HOME=str(home), USERPROFILE=str(home))
         plan = prepare('exec "$@"', str(workspace), [str(workspace)], policy, env)
-        return {'prefix': [*plan.argv, 'stella-delegation'], 'env': env, 'mode': 'isolated'}
+        return {'prefix': [*plan.argv, 'stella-delegation'], 'env': env, 'mode': 'isolated', 'protection_revision': plan.protection_revision}
     reads = [context['cwd'], *context['scope'].write_roots, *(policy.get('extra_roots') or [])]
     executable_reads = [shutil.which(value) or value for value in binaries if value]
     env = {key: value for key, value in os.environ.items() if key in {
@@ -44,7 +44,7 @@ def prepare_delegated(workspace, binaries):
     plan = prepare_extension(['/usr/bin/true'], Path(workspace), Path(workspace), env,
         writable=mode == 'workspace-write' and rule(policy, 'workspace_write') == 'allow',
         read_roots=reads, executable_reads=executable_reads)
-    return {'prefix': plan.argv[:-1], 'env': plan.env, 'mode': 'isolated'}
+    return {'prefix': plan.argv[:-1], 'env': plan.env, 'mode': 'isolated', 'protection_revision': plan.protection_revision}
 
 
 @contextmanager
@@ -99,9 +99,12 @@ class DelegatedProcesses:
         with self.lock:
             if self.closed or worker is None or worker.poll() is not None:
                 raise PermissionError('Core worker generation is no longer active')
-            process = subprocess.Popen([*scope['plan']['prefix'], str(binary), *argv[1:]],
-                cwd=scope['workspace'], env=scope['plan']['env'], stdin=subprocess.DEVNULL,
-                stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+            from core.security.protected_paths import launch_guard
+            with launch_guard(scope['plan']['protection_revision']) as launch:
+                process = subprocess.Popen([*scope['plan']['prefix'], str(binary), *argv[1:]],
+                    cwd=scope['workspace'], env=scope['plan']['env'], stdin=subprocess.DEVNULL,
+                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                launch.bind(process)
             reference = 'runtime-' + uuid.uuid4().hex
             self.supervisor.register(reference, process)
             record = dict(process=process, status='running', outputPath=getattr(output, 'name', None),
