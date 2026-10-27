@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from core.security.file_access import checked_open, identity
 from agent.tools.utils.credentials import is_credential_path
 from agent.tools.utils.diff import looks_like_line_numbered_block
 from agent.tools.utils.file_state import note_write, staleness_warning
@@ -65,18 +66,15 @@ class Write(BaseTool):
             # Resolve path (may raise PermissionError for protected locations)
             absolute_path = self._resolve_path(path)
 
-            # Create parent directory (if needed)
-            parent_dir = os.path.dirname(absolute_path)
-            if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
-            
             # Check before writing - our own write would reset the mtime.
             warning = staleness_warning(absolute_path)
 
             previous = None
+            original_identity = None
             if os.path.isfile(absolute_path):
                 try:
-                    with open(absolute_path, 'r', encoding='utf-8') as f:
+                    with checked_open(absolute_path, 'r', encoding='utf-8') as f:
+                        original_identity = identity(f)
                         previous = f.read()
                 except (OSError, UnicodeDecodeError):
                     previous = None
@@ -85,7 +83,7 @@ class Write(BaseTool):
                 return ToolResult.fail(f"Error: {blocking}")
 
             # Write file
-            with open(absolute_path, 'w', encoding='utf-8') as f:
+            with checked_open(absolute_path, 'w', encoding='utf-8', expected=original_identity, create_parents=True) as f:
                 f.write(content)
             note_write(absolute_path)
             

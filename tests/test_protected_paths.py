@@ -5,6 +5,7 @@ import subprocess
 import shutil
 import shlex
 import sys
+import threading
 
 import pytest
 
@@ -19,6 +20,41 @@ def control():
 def protect(paths):
     owner = control()
     return owner.replace([str(path) for path in paths], expected_revision=owner.inventory()['revision'])
+
+
+@pytest.mark.parametrize('extension', ['docx', 'xlsx', 'pptx', 'pdf'])
+def test_allowed_documents_still_parse_through_checked_file_access(tmp_path, extension):
+    from agent.tools.read.read import Read
+    target = tmp_path / f'ordinary.{extension}'
+    marker = 'ALLOWED_DOCUMENT_TEXT'
+    if extension == 'docx':
+        from docx import Document
+        document = Document()
+        document.add_paragraph(marker)
+        document.save(target)
+    elif extension == 'xlsx':
+        from openpyxl import Workbook
+        document = Workbook()
+        document.active.append([marker])
+        document.save(target)
+        document.close()
+    elif extension == 'pptx':
+        from pptx import Presentation
+        document = Presentation()
+        slide = document.slides.add_slide(document.slide_layouts[1])
+        slide.shapes.title.text = marker
+        document.save(target)
+    else:
+        from pypdf import PdfWriter
+        document = PdfWriter()
+        document.add_blank_page(width=100, height=100)
+        document.write(target)
+    result = Read({'cwd': str(tmp_path)}).execute({'path': str(target)})
+    assert result.status == 'success', result
+    if extension != 'pdf':
+        assert marker in str(result.result)
+    else:
+        assert result.result['total_pages'] == 1
 
 
 def test_owner_rules_block_files_and_aliases_but_allow_adjacent_paths(tmp_path):
@@ -185,6 +221,97 @@ def test_plan_from_an_older_policy_cannot_launch_after_protection_changes(tmp_pa
     with pytest.raises(PermissionError, match='changed'):
         with launch_guard(revision):
             pytest.fail('Stale launch admission must fail before any process starts')
+
+
+def test_retargeted_read_path_is_rechecked_at_the_actual_file_open(tmp_path, monkeypatch):
+    from agent.tools.read.read import Read
+    public = tmp_path / 'ordinary.txt'
+    secret = tmp_path / 'private'
+    secret.mkdir()
+    target = secret / 'secret.txt'
+    target.write_text('SYNTHETIC_PROTECTED_CONTENT')
+    public.write_text('ordinary data')
+    protect([secret])
+    reader = Read({'cwd': str(tmp_path)})
+    original = reader._read_text
+    def replace_then_read(*args, **kwargs):
+        public.unlink()
+        public.symlink_to(target)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(reader, '_read_text', replace_then_read)
+    result = reader.execute({'path': str(public)})
+    assert result.status == 'error'
+    assert 'SYNTHETIC_PROTECTED_CONTENT' not in str(result.result)
+
+
+@pytest.mark.parametrize('tool_name', ['write', 'edit'])
+def test_retargeting_after_review_cannot_overwrite_a_protected_file(tmp_path, monkeypatch, tool_name):
+    import importlib
+    module = importlib.import_module(f'agent.tools.{tool_name}.{tool_name}')
+    tool = getattr(module, tool_name.title())({'cwd': str(tmp_path)})
+    public = tmp_path / 'ordinary.txt'
+    public.write_text('ordinary data')
+    secret = tmp_path / 'private'
+    secret.mkdir()
+    target = secret / 'secret.txt'
+    target.write_text('KEEP_PROTECTED_CONTENT')
+    protect([secret])
+    review = module.syntax_review
+    def replace_after_review(*args, **kwargs):
+        result = review(*args, **kwargs)
+        public.unlink()
+        public.symlink_to(target)
+        return result
+    monkeypatch.setattr(module, 'syntax_review', replace_after_review)
+    arguments = {'path': str(public), 'content': 'WRITE_ATTEMPT', 'oldText': 'ordinary', 'newText': 'EDIT_ATTEMPT'}
+    result = tool.execute(arguments)
+    assert result.status == 'error'
+    assert target.read_text() == 'KEEP_PROTECTED_CONTENT'
+
+
+def test_policy_change_rejects_an_already_open_read_without_waiting_for_its_parser(tmp_path):
+    from core.security.file_access import checked_open
+    secret = tmp_path / 'private'
+    secret.mkdir()
+    path = secret / 'text.txt'
+    path.write_text('SYNTHETIC_PROTECTED_CONTENT')
+    done = threading.Event()
+    failures = []
+    def enable_protection():
+        try:
+            protect([secret])
+        except Exception as error:
+            failures.append(error)
+        finally:
+            done.set()
+    worker = threading.Thread(target=enable_protection)
+    try:
+        with pytest.raises(PermissionError):
+            with checked_open(path, 'rb') as file:
+                worker.start()
+                assert done.wait(1), 'An idle open parser must not prevent protection updates'
+                assert not failures, failures
+                file.read()
+    finally:
+        worker.join(3)
+    assert not worker.is_alive()
+
+
+def test_recursive_agent_search_cannot_return_protected_content_through_external_backend(tmp_path):
+    from agent.tools.search_files.search_files import SearchFiles
+    root = tmp_path / 'search'
+    secret = root / 'private'
+    secret.mkdir(parents=True)
+    (root / 'normal.txt').write_text('SEARCH_MARKER_PUBLIC')
+    (secret / 'secret.txt').write_text('SEARCH_MARKER_PRIVATE')
+    protect([secret])
+    search = SearchFiles({'cwd': str(root)})
+    search._pick_backend = lambda: search._backend_grep
+    with identity_scope(session_id='source-probe'):
+        result = search.execute({'target': 'content', 'pattern': 'SEARCH_MARKER', 'path': str(root)})
+    assert result.status == 'success'
+    assert 'SEARCH_MARKER_PUBLIC' in str(result.result)
+    assert 'SEARCH_MARKER_PRIVATE' not in str(result.result)
 
 
 @pytest.mark.skipif(sys.platform != 'darwin', reason='Real managed process reclamation')

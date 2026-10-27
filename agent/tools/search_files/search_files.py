@@ -327,7 +327,12 @@ class SearchFiles(BaseTool):
             except ValueError:
                 return False
         protected_inside = any(contains(path) for path in self._credential_paths)
-        backend = self._backend_python if protected_inside else self._pick_backend()
+        from common.runtime_identity import current_identity
+        from core.security.protected_paths import sandbox_paths
+        identity = current_identity()
+        _, protected_folders = sandbox_paths()
+        agent_request = bool(identity.session_id or identity.task_id or identity.run_id or identity.execution_session_id)
+        backend = self._backend_python if protected_inside or protected_folders or agent_request else self._pick_backend()
         used = _BACKEND_LABELS.get(backend.__name__, backend.__name__)
         try:
             outcome = backend(opts)
@@ -341,6 +346,7 @@ class SearchFiles(BaseTool):
             else:
                 return ToolResult.fail(f"Error searching files: {e}")
 
+        outcome.rows[:] = [row for row in outcome.rows if not self._is_credential_path(os.path.join(root, row['file']))]
         logger.debug(f"[SearchFiles] backend={used} mode={opts.output_mode} matches={len(outcome.rows)}")
         return self._format(outcome, opts)
 
@@ -617,7 +623,8 @@ class SearchFiles(BaseTool):
         except OSError:
             return [], False, False
         try:
-            with open(fp, "r", encoding="utf-8-sig") as f:
+            from core.security.file_access import checked_open
+            with checked_open(fp, "r", encoding="utf-8-sig") as f:
                 content = f.read()
         except (UnicodeDecodeError, OSError):
             return [], False, False

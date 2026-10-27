@@ -147,11 +147,18 @@ class _Launch:
 
 
 @contextmanager
+def policy_guard(revision=None):
+    with _LOCK:
+        current = current_revision()
+        if revision is not None and current != revision:
+            raise PermissionError('Protection policy changed; prepare the affected operation again')
+        yield current
+
+
+@contextmanager
 def launch_guard(revision):
     """Keep policy admission, actual spawn and process registration together."""
-    with _LOCK:
-        if current_revision() != revision:
-            raise PermissionError('Protection policy changed before process launch; prepare it again')
+    with policy_guard(revision):
         yield _Launch(revision)
 
 
