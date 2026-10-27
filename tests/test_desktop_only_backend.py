@@ -28,6 +28,15 @@ def test_desktop_api_requires_the_owning_shell_token():
     assert _call(api, "/mcp/oauth/callback") == ("200 OK", b"private")
 
 
+def test_plugin_static_content_can_use_its_nonce_without_a_host_token():
+    api = desktop_only_wsgi(lambda env, start: (start('200 OK', []), [b'nonce-checked-page'])[1], 'secret')
+    path = '/api/plugins/pages/content/stella.bills/bills.main'
+    assert _call(api, path, {'REQUEST_METHOD': 'GET'}) == ('200 OK', b'nonce-checked-page')
+    assert _call(api, path, {'REQUEST_METHOD': 'POST'})[0] == '403 Forbidden'
+    for target in ('/api/security/secrets', '/api/plugins/bridge/invoke', path + '/extra'):
+        assert _call(api, target, {'REQUEST_METHOD': 'GET'})[0] == '403 Forbidden'
+
+
 def test_electron_file_origin_preflight_and_response_headers():
     captured = []
 

@@ -37,13 +37,6 @@ export interface ElectronAPI {
   // Optional app config: first-run default theme + display name. Null when
   // the build ships no app config (standard build).
   getAppConfig?: () => Promise<{ defaultTheme?: string; appName?: string } | null>
-  // Generic HTTPS relay via the main process (bypasses renderer CORS).
-  httpRelay?: (req: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) => Promise<{ ok: boolean; status: number; headers: Record<string, string>; body: string }>
   // Update checks against GitHub Releases. downloadUpdate opens the given URL
   // (or the releases page) in the system browser.
   checkForUpdate?: () => Promise<void>

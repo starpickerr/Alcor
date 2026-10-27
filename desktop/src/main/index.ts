@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, shell, ipcMain, dialog, nativeImage, Notification, systemPreferences } from 'electron'
+import { app, BrowserWindow, shell, dialog, nativeImage, Notification } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import http from 'http'
@@ -7,7 +7,8 @@ import { buildAppMenu } from './menu'
 import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, openDownload } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
-import { setupHttpRelayIPC } from './http-relay'
+import { createTrustedIpc, hardenRenderer, localPathAction } from './renderer-security'
+import { pathToFileURL } from 'node:url'
 import { getRuntimeLog } from './runtime-log'
 import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
 
@@ -36,6 +37,9 @@ let replacingInstance = false
 const isDev = !app.isPackaged
 const VITE_DEV_PORT = 5173
 const useHotRenderer = isDev && process.argv.includes('--hot-renderer')
+const rendererUrl = useHotRenderer ? `http://localhost:${VITE_DEV_PORT}/` :
+  pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
+const trustedIpc = createTrustedIpc(() => mainWindow, () => rendererUrl)
 
 // Windows passes --hidden; macOS reports a login launch via wasOpenedAtLogin.
 // Start minimized to the tray so autostart is unobtrusive.
@@ -117,6 +121,11 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
     },
   })
 
@@ -127,6 +136,9 @@ function createWindow() {
   mainWindow.on('unmaximize', emitMaximizeState)
 
   const rendererHtml = path.join(__dirname, '../renderer/index.html')
+  hardenRenderer(mainWindow, rendererUrl,
+    () => pythonBackend ? `http://127.0.0.1:${pythonBackend.getPort()}` : '',
+    url => { void shell.openExternal(url) }, () => pythonBackend?.getInternalToken() || '')
 
   if (useHotRenderer) {
     probePort(VITE_DEV_PORT).then((ready) => {
@@ -174,21 +186,6 @@ function createWindow() {
     // tray/Dock until the user opens it, matching the "unobtrusive" intent.
     if (launchedHidden()) return
     mainWindow?.show()
-  })
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
-    return { action: 'deny' }
-  })
-
-  // Last-resort backstop for a stray file drop: Chromium would navigate the
-  // renderer to the dropped file and the UI would be gone until restart.
-  // Renderer reloads keep the same URL, so they are unaffected.
-  mainWindow.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file:') && url !== mainWindow?.webContents.getURL()) {
-      console.warn(`[Electron] Blocked navigation to dropped file: ${url}`)
-      e.preventDefault()
-    }
   })
 
   // Close-to-tray: hide the window instead of destroying it, so the tray's
@@ -242,21 +239,6 @@ async function startBackend() {
   // manager needs to know: an installed app must never fall back to looking
   // for a Python interpreter, and its writable data always lives in ~/.stella.
   pythonBackend = new PythonBackend(backendPath, !isDev)
-
-  // Keep the private backend token in Electron's main process. This hook
-  // covers fetch, EventSource and media loads from our window alike.
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    const port = pythonBackend?.getPort()
-    const ownedUrl = port && details.url.startsWith(`http://127.0.0.1:${port}/`)
-    if (ownedUrl && details.webContentsId === mainWindow?.webContents.id) {
-      callback({ requestHeaders: {
-        ...details.requestHeaders,
-        'X-Stella-Desktop-Token': pythonBackend!.getInternalToken(),
-      } })
-      return
-    }
-    callback({ requestHeaders: details.requestHeaders })
-  })
 
   pythonBackend.on('ready', (port: number) => {
     console.log(`[backend] ready on port ${port}`)
@@ -375,40 +357,40 @@ function setupIPC() {
   // Await the port decision rather than reading the current guess: the renderer
   // usually asks before startBackend() has probed anything, and a wrong answer
   // here means it polls a port nothing will ever listen on.
-  ipcMain.handle('get-backend-port', async () => {
+  trustedIpc.handle('get-backend-port', async () => {
     return pythonBackend ? pythonBackend.whenPortReady() : null
   })
 
-  ipcMain.handle('get-backend-status', () => {
+  trustedIpc.handle('get-backend-status', () => {
     return pythonBackend?.getStatus() ?? 'stopped'
   })
 
   // Pull-based access to the last failure, so the renderer can always ask why
   // startup failed instead of depending on having been subscribed at the exact
   // moment the event fired.
-  ipcMain.handle('get-backend-error', () => {
+  trustedIpc.handle('get-backend-error', () => {
     return pythonBackend?.getLastError() ?? null
   })
 
   // Where config.json and run.log live, so the error screen can open the folder
   // for a user whose UI never came up.
-  ipcMain.handle('get-data-dir', () => {
+  trustedIpc.handle('get-data-dir', () => {
     return pythonBackend?.getDataDir() ?? ''
   })
 
-  ipcMain.handle('restart-backend', async () => {
+  trustedIpc.handle('restart-backend', async () => {
     await pythonBackend?.restart()
     return true
   })
 
-  ipcMain.handle('select-directory', async () => {
+  trustedIpc.handle('select-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
     })
     return result.canceled ? null : result.filePaths[0]
   })
 
-  ipcMain.handle('select-file', async (_event, filters?: Electron.FileFilter[]) => {
+  trustedIpc.handle('select-file', async (_event, filters?: Electron.FileFilter[]) => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: filters || [{ name: 'All Files', extensions: ['*'] }],
@@ -418,26 +400,30 @@ function setupIPC() {
 
   // Open a local file with the OS default app; falls back to revealing it in
   // the file manager when no handler exists. Returns '' on success.
-  ipcMain.handle('open-path', async (_event, targetPath: string) => {
-    if (!targetPath) return 'empty path'
-    const err = await shell.openPath(targetPath)
-    if (err) shell.showItemInFolder(targetPath)
-    return err
+  trustedIpc.handle('open-path', async (_event, targetPath: string) => {
+    if (typeof targetPath !== 'string' || !path.isAbsolute(targetPath)) return 'invalid path'
+    try {
+      const target = fs.realpathSync(targetPath)
+      if (localPathAction(target) === 'reveal') { shell.showItemInFolder(target); return '' }
+      const err = await shell.openPath(target)
+      if (err) shell.showItemInFolder(target)
+      return err
+    } catch { return 'path unavailable' }
   })
 
   // Custom window controls (used by Windows frameless titlebar)
-  ipcMain.handle('window-minimize', () => mainWindow?.minimize())
-  ipcMain.handle('window-maximize', () => {
+  trustedIpc.handle('window-minimize', () => mainWindow?.minimize())
+  trustedIpc.handle('window-maximize', () => {
     if (!mainWindow) return false
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     else mainWindow.maximize()
     return mainWindow.isMaximized()
   })
-  ipcMain.handle('window-close', () => mainWindow?.close())
-  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+  trustedIpc.handle('window-close', () => mainWindow?.close())
+  trustedIpc.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
 
   // Current app version, shown in the NavRail footer.
-  ipcMain.handle('get-app-version', () => app.getVersion())
+  trustedIpc.handle('get-app-version', () => app.getVersion())
 
   // Launch-at-login: backed by the OS login-item registry on macOS and the
   // Run registry key on Windows (both handled natively by Electron). Linux has
@@ -457,12 +443,12 @@ function setupIPC() {
     if (isMac) return app.getLoginItemSettings().openAtLogin
     return false
   }
-  ipcMain.handle('get-login-item', () => isLaunchAtLoginEnabled())
+  trustedIpc.handle('get-login-item', () => isLaunchAtLoginEnabled())
   // Returns the real outcome so the UI never lies: { ok, enabled, error }.
   // - ok=false + error: writing the login item threw (surface it, don't swallow).
   // - ok=true but enabled!=requested: the OS/policy silently refused the change.
   // The renderer shows the reason instead of just snapping the toggle back.
-  ipcMain.handle('set-login-item', (_event, enabled: boolean) => {
+  trustedIpc.handle('set-login-item', (_event, enabled: boolean) => {
     if (!isMac && !isWin) {
       return { ok: false, enabled: false, error: 'unsupported-platform' }
     }
@@ -485,25 +471,25 @@ function setupIPC() {
   // Update checks: renderer-driven "check for update" plus the silent poll
   // below. Finding a newer GitHub Release only opens the panel; the download
   // button hands the URL to the system browser (no in-app installer).
-  ipcMain.handle('update-check', () => {
+  trustedIpc.handle('update-check', () => {
     // This channel is only hit by an explicit "check for update" click, so the
     // panel should re-open even if the version was previously dismissed.
     checkForUpdates(true)
   })
-  ipcMain.handle('update-download', (_event, url?: string) => {
+  trustedIpc.handle('update-download', (_event, url?: string) => {
     openDownload(url)
   })
 
   // Synchronous OS locale lookup (e.g. "zh-CN", "en-US"). Used by the renderer
   // to pick a sensible default UI language on first run before any paint.
-  ipcMain.on('get-system-locale', (event) => {
+  trustedIpc.on('get-system-locale', (event) => {
     event.returnValue = app.getLocale() || app.getSystemLocale?.() || ''
   })
 
   // Show a native OS notification (e.g. a scheduler reminder or a finished
   // task). Clicking it brings the window forward and asks the renderer to open
   // the given session.
-  ipcMain.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean; showWhenFocused?: boolean }) => {
+  trustedIpc.handle('notify', (_event, payload: { title?: string; body?: string; sessionId?: string; silent?: boolean; showWhenFocused?: boolean }) => {
     if (!Notification.isSupported() || !payload?.body) return false
     // Skip when the window is focused: the user is already watching, so a
     // notification (and sound) would just be noise, especially for short tasks.
@@ -580,27 +566,9 @@ if (gotTheLock) app.whenReady().then(async () => {
     }
   }
 
-  // The chat input's voice recording uses getUserMedia. Approval of media
-  // permission requests isn't guaranteed without an explicit handler across
-  // Electron versions/platforms, so allow them; other permission types keep
-  // the same default allow behavior the app had without a handler.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(true))
-
-  // On macOS the Chromium-layer handler above isn't enough: getUserMedia also
-  // needs system-level (TCC) microphone authorization, which only the native
-  // askForMediaAccess prompt can grant. Request it up front so the first mic
-  // click surfaces the system dialog instead of failing with a denied error.
-  if (process.platform === 'darwin') {
-    const micStatus = systemPreferences.getMediaAccessStatus('microphone')
-    if (micStatus === 'not-determined') {
-      systemPreferences.askForMediaAccess('microphone').catch(() => {})
-    }
-  }
-
   setupIPC()
-  setupThemeIPC()
-  setupHttpRelayIPC()
-  setupAppIconIPC({ getWindow: () => mainWindow, getTray })
+  setupThemeIPC(trustedIpc)
+  setupAppIconIPC({ getWindow: () => mainWindow, getTray }, trustedIpc)
   createWindow()
   buildAppMenu(() => mainWindow)
   // No menu-bar tray on macOS — the Dock + window controls are enough there.

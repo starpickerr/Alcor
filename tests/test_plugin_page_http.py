@@ -38,10 +38,15 @@ def test_open_content_and_bridge_invoke_roundtrip(api, monkeypatch):
     assert opened["status"] == "ok"
     result = opened["result"]
     assert result["channelNonce"] and "contentUrl" in result
+    from urllib.parse import parse_qs, urlsplit
+    query = parse_qs(urlsplit(result['contentUrl']).query)
+    assert query['pluginId'] == ['stella.bills']
+    assert query['channelNonce'] == [result['channelNonce']]
 
     monkeypatch.setattr(api.web, "input", lambda **kwargs: type("P", (), {"nonce": result["channelNonce"], "file": ""})())
     html = api.PluginPageContentHandler().GET("stella.bills", "bills.main")
     assert "stella.bills" in html and "记一笔" in html
+
 
     monkeypatch.setattr(api.web, "data", lambda: json.dumps({
         "channelNonce": result["channelNonce"],
@@ -59,3 +64,16 @@ def test_open_content_and_bridge_invoke_roundtrip(api, monkeypatch):
     }).encode())
     created = json.loads(api.PluginBridgeInvokeHandler().POST())
     assert created["status"] == "ok" and created["value"]["amount_minor"] == 1800
+
+
+def test_plugin_content_uses_nonce_and_restricts_its_document_policy(api, monkeypatch):
+    headers = {}
+    monkeypatch.setattr(api.web, 'header', lambda name, value, **kwargs: headers.update({name: value}))
+    monkeypatch.setattr(api.web, 'data', lambda: json.dumps({'pluginId': 'stella.bills', 'pageId': 'bills.main'}).encode())
+    result = json.loads(api.PluginPageOpenHandler().POST())['result']
+    monkeypatch.setattr(api, '_require_auth', lambda: (_ for _ in ()).throw(AssertionError('Static plugin content must not receive owner credentials')))
+    monkeypatch.setattr(api.web, 'input', lambda **kwargs: type('P', (), {'nonce': result['channelNonce'], 'file': ''})())
+    html = api.PluginPageContentHandler().GET('stella.bills', 'bills.main')
+    assert 'history.replaceState' not in html
+    assert "connect-src 'none'" in headers['Content-Security-Policy']
+    assert "form-action 'none'" in headers['Content-Security-Policy']

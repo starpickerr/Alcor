@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron'
+import type { TrustedIpc } from './renderer-security'
+import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -182,8 +183,8 @@ export function loadThemes(): Record<string, unknown>[] {
   return [...byId.values()]
 }
 
-export function setupThemeIPC() {
-  ipcMain.handle('themes-list', () => {
+export function setupThemeIPC(ipc: TrustedIpc) {
+  ipc.handle('themes-list', () => {
     try {
       return loadThemes()
     } catch (e) {
@@ -191,6 +192,6 @@ export function setupThemeIPC() {
       return []
     }
   })
-  ipcMain.handle('themes-dir', () => themesDir())
-  ipcMain.handle('app-config-get', () => loadAppConfig())
+  ipc.handle('themes-dir', () => themesDir())
+  ipc.handle('app-config-get', () => loadAppConfig())
 }

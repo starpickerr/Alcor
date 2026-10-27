@@ -1,5 +1,7 @@
 import { BrowserWindow, session } from 'electron'
 import * as path from 'path'
+import { fileURLToPath } from 'node:url'
+import { isTrustedRendererUrl } from './renderer-security'
 
 export type PluginFrameOptions = {
   pluginId: string
@@ -16,7 +18,7 @@ export const PLUGIN_FRAME_CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'none'",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'none'",
@@ -30,6 +32,8 @@ export const PLUGIN_FRAME_CSP = [
 export function openPluginFrame(options: PluginFrameOptions): BrowserWindow {
   const partition = `persist:plugin:${options.pluginId}`
   const ses = session.fromPartition(partition, { cache: true })
+  ses.setPermissionCheckHandler(() => false)
+  ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...(details.responseHeaders || {}) }
     headers['Content-Security-Policy'] = [PLUGIN_FRAME_CSP]
@@ -68,17 +72,33 @@ export function openPluginFrame(options: PluginFrameOptions): BrowserWindow {
 
   child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   child.webContents.on('will-navigate', (event, url) => {
-    const allowed =
-      url.startsWith(options.resourceUrl) ||
-      (url.startsWith('file:') && url.includes(`/plugin-packages/${options.pluginId}/`))
-    if (!allowed) {
+    if (!isTrustedRendererUrl(url, options.resourceUrl)) {
       event.preventDefault()
     }
   })
   child.webContents.on('will-redirect', (event, url) => {
-    if (!url.startsWith(options.resourceUrl) && !url.startsWith('file:')) {
+    if (!isTrustedRendererUrl(url, options.resourceUrl)) {
       event.preventDefault()
     }
+  })
+  child.webContents.on('will-attach-webview', event => event.preventDefault())
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    try {
+      const target = new URL(details.url)
+      const entry = new URL(options.resourceUrl)
+      let allowed = target.protocol === 'data:'
+      if (details.method === 'GET' && !target.username && !target.password) {
+        if (entry.protocol === 'file:' && target.protocol === 'file:') {
+          const relative = path.relative(path.dirname(fileURLToPath(entry)), fileURLToPath(target))
+          allowed = relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)
+        } else if (target.origin === entry.origin && ['http:', 'https:'].includes(entry.protocol)) {
+          const directory = entry.pathname.slice(0, entry.pathname.lastIndexOf('/') + 1)
+          allowed = target.pathname === entry.pathname || (target.pathname.startsWith(directory) &&
+            /\.(js|css|png|jpe?g|webp|svg|woff2?|ico)$/.test(target.pathname))
+        }
+      }
+      callback({ cancel: details.webContentsId !== child.webContents.id || !allowed })
+    } catch { callback({ cancel: true }) }
   })
 
   void child.loadURL(options.resourceUrl)

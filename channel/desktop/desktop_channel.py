@@ -140,6 +140,12 @@ def desktop_only_wsgi(application, token: str):
         path = environ.get("PATH_INFO", "")
         if path in ("/api/health", "/mcp/oauth/callback"):
             return application(environ, respond)
+        # The resource handler validates its exact, opened page nonce. Plugin
+        # subframes receive static assets only, never the desktop owner token.
+        if environ.get('REQUEST_METHOD') == 'GET' and re.fullmatch(
+            r'/api/plugins/pages/content/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+', path
+        ):
+            return application(environ, respond)
         supplied = environ.get("HTTP_X_STELLA_DESKTOP_TOKEN", "")
         authorization = environ.get("HTTP_AUTHORIZATION", "")
         if (hmac.compare_digest(supplied, token) or
@@ -2408,9 +2414,12 @@ class PluginPageOpenHandler:
                 instance_id=body.get('instanceId') or 'desktop', generation=generation)
             token = opened['channelNonce']
             _PAGE_CONTENT[token] = opened
+            from urllib.parse import urlencode
+            query = urlencode(dict(nonce=token, pluginId=plugin_id, pageId=page_id,
+                                   channelNonce=token, generation=opened['generation']))
             opened = {
                 **opened,
-                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={token}",
+                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?{query}",
             }
             return json.dumps({'status': 'ok', 'result': opened}, ensure_ascii=False)
         except Exception as exc:
@@ -2424,7 +2433,6 @@ class PluginPageContentHandler:
     def GET(self, plugin_id, page_id):
         from pathlib import Path
 
-        _require_auth()
         params = web.input(nonce='', file='')
         opened = _PAGE_CONTENT.get(params.nonce)
         if not opened or opened['pluginId'] != plugin_id or opened['pageId'] != page_id:
@@ -2440,6 +2448,11 @@ class PluginPageContentHandler:
             web.header('Content-Type', 'application/javascript; charset=utf-8')
             return target.read_text(encoding='utf-8')
         web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Content-Security-Policy',
+                   "default-src 'none'; script-src 'self' 'nonce-" + params.nonce +
+                   "'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; "
+                   "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
+        web.header('Referrer-Policy', 'no-referrer')
         html = target.read_text(encoding='utf-8')
         # Point the page script at the authenticated content endpoint.
         html = html.replace(
@@ -2447,8 +2460,7 @@ class PluginPageContentHandler:
             f'src="/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={params.nonce}&file=app.js"')
         # Embed host-bound identity for the Bridge postMessage handshake.
         inject = (
-            f'<script>window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=False)};'
-            f'history.replaceState(null,"","?pluginId={plugin_id}&pageId={page_id}&channelNonce={params.nonce}&generation={opened["generation"]}");</script>'
+            f'<script nonce="{params.nonce}">window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=True)};</script>'
         )
         return html.replace('</head>', inject + '</head>', 1)
 

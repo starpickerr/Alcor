@@ -308,3 +308,16 @@ UI `model-ui-green-reload.log`：六种模型能力、厂商编辑及原凭据�
 以上仅为模型凭据阶段；其余业务账号/OAuth/插件 secret、应用内保护路径、旧数据归属和完整生命周期、可信连接与来源外发、最终独立审查及整体验收仍未完成。尚未合并 develop、推送或发布。
 
 补充搜索凭据回退 RED 3 FAIL → GREEN：启动加载和原搜索凭据删除入口同时处理 BOCHA_API_KEY、ZHIPUAI_API_KEY 等兼容别名，避免 Keychain 丢失/删除后回退旧环境值。最终 148 项结果包含这些边界；全量后端和跨模块独立审查留待整体收尾，不将此阶段结果扩称全部完成。
+
+
+## 2026-10-27 Electron 宿主边界阶段
+
+- 所有 main/theme/icon IPC 经绑定主窗口、顶层 frame 与规范文档 URL 校验；导航/重定向严格比对文档，不再按 file 前缀放行。显式开启 renderer sandbox、contextIsolation、webSecurity，关闭 Node/subframe Node/webview/insecure content。
+- 主 renderer 的网络仅到固定 UI 源和当前 Core backend 地址；其他端口、未知 renderer 和后台无 frame 请求拒绝。后端 token 仅给绑定文档 top frame 的请求，并在重定向前重新核对目的端；插件 iframe/独立窗口不能取得它。插件静态 HTML/JS 用已打开页的随机 nonce 访问，仍不授予业务 API 权限。
+- 原通用 HTTPS relay 已移除（仓库无业务调用方）；图标接口只解码受限大小 PNG/ICO data URL，不替 renderer 任意下载。普通文件原打开入口保持；可执行/未知文件及 app bundle 只在 Finder 显示。权限默认拒绝，只保留明确主页面音频及固定本地连接所需类型；取消启动即弹麦克风授权，改为实际音频请求时调用原 macOS 授权。实际个人麦克风/TCC 点击流程未执行，不视为通过。
+- Web 插件 iframe 改为 opaque sandbox，只允许 scripts；严格校验当前 iframe 的 event.source、opaque origin、nonce 和现有绑定；卸载/换页后的异步结果不回发旧页面。内容 CSP 禁止直接联网、嵌套 frame 和 form 外发。原第一方脚本通过初始 URL 获得原 channel 身份，不再依赖 history.replaceState/同源权限；没有修改插件业务代码或另建账号/状态。
+- Native plugin 窗口禁止全部设备权限、任意同源 API 和文档前缀/其他 file 路径导航；仍可加载自身声明静态资源，保留正常初始化脚本及 Bridge 身份。
+
+证据：新增 native renderer harness 的业务 IPC、真实 localhost Core 请求成功；同 preload 的外部窗口/改变主文档/子 iframe 请求拒绝，外端口接收计数为 0，脚本/app 文件只能 reveal。开发 HTTP 和含空格/中文的 packaged file URL 各验证一次。关联真实 Electron、静态 nonce HTTP、账单/任务/日程 Bridge 回归 `electron-final-regression.log`：**18 PASS，5.20 秒**（两项既有 pydub 警告）。原 native plugin 自源 fetch/前缀导航 RED（1 FAIL/5 PASS）后修复通过，原 UI opaque cookie 访问 RED 后 `plugin-iframe-ui-green.log` 完整 PASS：正常业务、opaque origin、直接 API fetch CSP 拒绝、同 nonce 外部 source 伪造拒绝及 620px。TypeScript main/renderer、相关 ESLint/Ruff/差异检查通过。
+
+该阶段未完成受保护目录及旧系统保护依赖清理，Task 2 继续；其余最终独立审查和整体验收未完成，不合并、不推送、不发布。
