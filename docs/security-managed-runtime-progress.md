@@ -394,3 +394,15 @@ OAuth 原 MCP 配置页中的状态/修复/删除入口仍须接续；因此此�
 原配置页 `oauth-owner-ui-final.log` PASS：1280px/390px 的修复、不可用、删除、重新授权、取消、处理进度自动轮询到已配置；无密码回填或横向溢出。截图 `/tmp/stella-oauth-owner-desktop.png` 与 `/tmp/stella-oauth-owner-narrow.png` 已检查，标题颜色按现有 text-content 约定修正。曾出现 StrictMode 清理后的 busy 标志未复位，浏览器复现后修复；新测试首次被缺失模型 fixture 的 onboarding 遮挡，补合成模型配置后再验证，不绕过产品引导。TypeScript(main/renderer)、相关 ESLint、Ruff/diff PASS。
 
 这完成已适配 Streamable HTTP OAuth 的本阶段实现。丢失的 confidential client 凭据采用原入口显式删除后重新授权；锁定的 Keychain 可解锁后刷新，应用不请求钥匙串密码。第三方 SDK/不受控协议仍不支持。Task 3 的普通 MCP 配置凭据、业务账号与插件声明 secret，以及 Task 2c/4/5/6 仍需继续；未合并 develop，未推送发布。
+
+## 2026-10-28 插件声明 secret 与原配置恢复
+
+插件 secret 复用 ManagementStore 的 settings SQLite 记录和 credential_values 验证/发布事务；稳定身份是插件、用户、settings、category、field，不按字段顺序。Keychain 新值回读成功、SQLite 实际 commit 后才清理旧引用；验证/提交失败保持原配置和旧凭据。声明过且仍有值的敏感字段保存在同一数据库，包更新删除字段或 secret 标记也不能把原值作为普通设置交给 Worker。当前第一方描述文件没有 secret:true 字段；本阶段实现声明字段的存储/管理，不给普通扩展原文或通用网络回调。
+
+Owner 原插件配置页提供空密码草稿、状态、替换/修复、保存后删除、失败保留草稿和状态刷新；已移除字段/插件的保留凭据继续通过原能力配置入口清理，版本冲突可刷新后重试。凭据目录只投影已声明/保留字段，不解密。运行时普通设置读取不访问 Keychain；真实受管 Worker 能读取普通设置，同时被真实沙箱拒绝直接读取管理凭据库。旧明文经 Owner 读取迁移，secure_delete 清理活动 SQLite 删除页；不承诺磁盘取证层或外部副本的撤回。合法 JSON 中损坏字段保留并可单独修复，不妨碍修复其他字段。
+
+证据：初始 7 FAIL→GREEN，原生管理/目录入口 RED2、孤立能力入口 RED1、损坏字段 RED→GREEN；专用原生15项通过。Worker 测试先修正空 grantRef 和旧 handle 形状这两个夹具错误，再验证真实受管调用，未把夹具错误当产品缺陷。最终 plugin-secret-final.log **150 PASS /22.53秒**（两项既有 pydub 警告），含模型/OAuth/插件/目录/上下文关联回归。plugin-secret-ui-final.log PASS：原配置路径1280px/390px的替换、失败草稿、保存后空输入、删除、卸载后清理及版本冲突刷新；截图已目视检查。TypeScript(main/renderer)、相关ESLint、Ruff/diff PASS。
+
+本轮完整项目快照 plugin-secret-project-suite.log 为 **2857 PASS /2 FAIL /22 SKIP，471.34秒**。两项失败是 test_agent_trim_new_messages 的 __new__ 夹具缺少当前保护版本，按真实初始化补齐后包含在上述150项通过中；未声称修正后完整项目已重跑通过。首次不指定 tests 的命令误收集 references 外部项目并产生17项收集错误，按用户要求将默认 testpaths 设为 tests；reference-exclusion-collection.log 验证2881项均来自Stella tests。现有 PyInstaller/Electron资源清单未包含 references，无需扩大打包修改。默认发现范围及夹具修正提交5a450579。
+
+10-27活动清单已对照最新目标、历史设计和当前代码校正：完成子项及时勾选；复用已有环境/授权/来源事实，在真实边界校验，避免重复检查和每请求审批。Task 3e/3f、路径/来源/进程闭环、生命周期及整体验收继续；未合并、推送、发布。

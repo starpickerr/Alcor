@@ -17,20 +17,24 @@ def _configuration(kind, identifier):
 
 
 def plugin_credentials():
+    require_owner()
+    from common.runtime_identity import current_identity
     from core.plugins.management import default_store
     from core.plugins.settings import PluginSettingsService
     service = PluginSettingsService(default_store())
-    for pointer in service.packages.packages.glob('*/current.json'):
-        identifier = pointer.parent.name
+    user = current_identity().user_id or 'local-default'
+    identifiers = {pointer.parent.name for pointer in service.packages.packages.glob('*/current.json')}
+    identifiers.update(service.management.credential_plugins(user))
+    for identifier in sorted(identifiers):
         try:
-            for descriptor in service.descriptors(identifier):
-                for field in descriptor.get('fields') or []:
-                    if not field.get('secret'):
-                        continue
-                    yield dict(reference=f'plugin:{identifier}:{descriptor["id"]}:{field["key"]}',
-                        owner='plugin:' + identifier, account='', kind=str(field.get('title') or field['key']),
-                        configured=None, configure_url=_configuration('plugins', identifier),
-                        reason='The provider declares this credential but has not published its status.')
+            for item in service.credentials(identifier, user):
+                yield dict(reference=f'plugin:{identifier}:{user}:{item["settingsId"]}:{item["category"]}:{item["field"]}',
+                    owner='plugin:' + identifier, account=user, kind=item['title'],
+                    configured={'configured': True, 'not_configured': False, 'repair_required': False}.get(item['state']),
+                    configure_url=_configuration('plugins', identifier),
+                    reason=('Declaration removed; the saved credential can be removed in the original configuration.' if item['retired'] else
+                            'Saved credential needs repair.' if item['state'] == 'repair_required' else
+                            'Credential storage is unavailable.' if item['state'] == 'unavailable' else ''))
         except (OSError, ValueError, KeyError):
             yield dict(reference=f'plugin:{identifier}:status', owner='plugin:' + identifier,
                 account='', kind='credential', configured=None,

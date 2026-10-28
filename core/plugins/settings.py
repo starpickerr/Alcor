@@ -8,6 +8,8 @@ from pathlib import Path
 from core.plugins.management import ManagementStore
 from core.plugins.manifest import load_manifest
 from core.plugins.package_ops import PackageStore
+from core.security.control import require_owner
+from core.security import credential_values, env_store
 
 
 class PluginSettingsService:
@@ -41,28 +43,103 @@ class PluginSettingsService:
             raise KeyError(settings_id)
         return descriptor
 
-    def read(self, plugin_id: str, user_id: str, settings_id: str, category: str) -> dict:
+    def read(self, plugin_id: str, user_id: str, settings_id: str, category: str, *, credential_status=False) -> dict:
+        if credential_status:
+            require_owner()
         descriptor = self.descriptor(plugin_id, settings_id)
         if category not in {item['id'] for item in descriptor['categories']}:
             raise ValueError('unknown settings category')
         fields = [field for field in descriptor['fields'] if field['category'] == category]
         saved = self.management.settings(plugin_id, user_id, settings_id, category)
+        secrets = sorted(set(saved['secretFields']) | {field['key'] for field in fields if field.get('secret')})
+        if credential_status:
+            legacy = {key: saved['values'][key] for key in secrets if isinstance(saved['values'].get(key), str)
+                      and saved['values'][key] and not saved['values'][key].startswith(credential_values.REFERENCE)}
+            if legacy:
+                try:
+                    saved = self.management.save_settings(plugin_id, user_id, settings_id, category, legacy,
+                        expected_revision=saved['revision'], secret_fields=secrets)
+                except (OSError, PermissionError):
+                    pass  # Retain the old document and offer repair/removal without exposing its value.
+            saved['secretStates'] = self._states((plugin_id, user_id, settings_id, category), saved, secrets)
         defaults = {field['key']: field['default'] for field in fields if 'default' in field and not field.get('secret')}
         saved['values'] = {**defaults, **saved['values']}
-        saved['secretFields'] = [field['key'] for field in fields if field.get('secret')]
+        saved['secretFields'] = secrets
         for secret in saved['secretFields']:
             saved['values'].pop(secret, None)
         return saved
 
+    def _states(self, key, saved, fields):
+        values = saved['values']
+        names = {field: json.dumps([*key, field], separators=(',', ':')) for field in fields}
+        references = {names[field]: values[field] for field in fields
+                      if isinstance(values.get(field), str) and values[field].startswith(credential_values.REFERENCE)}
+        states = credential_values.statuses(self.management.path, references, env_store.keychain_for)
+        result = {}
+        for field in fields:
+            value = values.get(field)
+            if field not in values or value == '':
+                result[field] = 'not_configured'
+            elif names[field] not in references:
+                result[field] = 'repair_required'
+            else:
+                try:
+                    credential_values.account(names[field], value)
+                except OSError:
+                    result[field] = 'repair_required'
+                    continue
+                state = states[names[field]]
+                result[field] = 'unavailable' if state is None else 'configured' if state else 'repair_required'
+        return result
+
+    def credentials(self, plugin_id, user_id):
+        """Owner metadata for current declarations and retained credentials, including removed packages."""
+        require_owner()
+        declared = {}
+        try:
+            for descriptor in self.descriptors(plugin_id):
+                for field in descriptor['fields']:
+                    if field.get('secret'):
+                        declared[(descriptor['id'], field['category'], field['key'])] = field['title']
+        except (OSError, ValueError, KeyError):
+            pass
+        categories = set(self.management.secret_categories(plugin_id, user_id)) | {key[:2] for key in declared}
+        result = []
+        for settings_id, category in sorted(categories):
+            saved = self.management.settings(plugin_id, user_id, settings_id, category)
+            fields = sorted(set(saved['secretFields']) | {key[2] for key in declared if key[:2] == (settings_id, category)})
+            states = self._states((plugin_id, user_id, settings_id, category), saved, fields)
+            for field in fields:
+                key = (settings_id, category, field)
+                result.append(dict(settingsId=settings_id, category=category, field=field, revision=saved['revision'],
+                    title=declared.get(key, field), state=states[field], retired=key not in declared))
+        return result
+
+    def remove_secret(self, plugin_id, user_id, settings_id, category, field, *, expected_revision):
+        require_owner()
+        saved = self.management.settings(plugin_id, user_id, settings_id, category)
+        known = saved['secretFields']
+        if field not in known:
+            raise ValueError('unknown retained credential')
+        self.management.save_settings(plugin_id, user_id, settings_id, category, {field: ''},
+            expected_revision=expected_revision, secret_fields=known)
+        return self.credentials(plugin_id, user_id)
+
     def save(self, plugin_id, user_id, settings_id, category, changes, *, expected_revision):
+        require_owner()
         descriptor = self.descriptor(plugin_id, settings_id)
         fields = {field['key']: field for field in descriptor['fields'] if field['category'] == category}
+        secrets = set(self.management.settings(plugin_id, user_id, settings_id, category)['secretFields'])
+        secrets.update(key for key, field in fields.items() if field.get('secret'))
         if not isinstance(changes, dict) or not changes or set(changes) - set(fields):
             raise ValueError('unknown or empty settings changes')
         for key, value in changes.items():
             field = fields[key]
-            if field.get('secret'):
-                raise ValueError('secret fields require the protected connection service')
+            if key in secrets:
+                if not isinstance(value, str):
+                    raise ValueError('secret settings must be strings')
+                if not value:
+                    continue  # An explicit empty draft removes just this credential.
             kind = field['type']
             valid = {'string': isinstance(value, str), 'integer': type(value) is int,
                      'number': type(value) in {int, float} and math.isfinite(value),
@@ -86,5 +163,6 @@ class PluginSettingsService:
                         raise ValueError('settings validation exceeded its time budget') from None
             if type(value) in {int, float} and not rules.get('min', -math.inf) <= value <= rules.get('max', math.inf):
                 raise ValueError(f'value out of range for {key}')
-        self.management.save_settings(plugin_id, user_id, settings_id, category, changes, expected_revision=expected_revision)
-        return self.read(plugin_id, user_id, settings_id, category)
+        self.management.save_settings(plugin_id, user_id, settings_id, category, changes,
+            expected_revision=expected_revision, secret_fields=secrets)
+        return self.read(plugin_id, user_id, settings_id, category, credential_status=True)

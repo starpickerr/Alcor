@@ -2353,8 +2353,10 @@ class PluginSettingsHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         from core.plugins.management import RevisionConflict
         try:
+            from core.security.control import require_owner
+            require_owner()
             body = json.loads(web.data() or b'{}')
-            allowed = {'action', 'pluginId', 'settingsId', 'category', 'expectedRevision', 'changes'}
+            allowed = {'action', 'pluginId', 'settingsId', 'category', 'expectedRevision', 'changes', 'field'}
             if not isinstance(body, dict) or set(body) - allowed:
                 raise ValueError('unsupported settings fields')
             service, user = _plugin_settings_service(), _plugin_user()
@@ -2362,7 +2364,12 @@ class PluginSettingsHandler:
             if action == 'describe':
                 result = service.descriptors(body['pluginId'])
             elif action == 'read':
-                result = service.read(body['pluginId'], user, body['settingsId'], body['category'])
+                result = service.read(body['pluginId'], user, body['settingsId'], body['category'], credential_status=True)
+            elif action == 'credentials':
+                result = service.credentials(body['pluginId'], user)
+            elif action == 'remove-secret':
+                result = service.remove_secret(body['pluginId'], user, body['settingsId'], body['category'], body['field'],
+                                               expected_revision=body['expectedRevision'])
             elif action == 'save':
                 result = service.save(body['pluginId'], user, body['settingsId'], body['category'], body['changes'],
                                       expected_revision=body['expectedRevision'])
