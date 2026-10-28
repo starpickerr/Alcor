@@ -510,7 +510,7 @@ def test_oauth_callback_reloads_only_originating_live_generation(
                 error="", error_description="", code="test-code", state=state
             ),
         )
-        assert "授权成功" in web.McpOAuthCallbackHandler().GET()
+        assert ("会话已过期" if stale else "授权成功") in web.McpOAuthCallbackHandler().GET()
         assert b._mcp_generations["Documents"] == before_b
         if stale:
             assert a._mcp_generations["Documents"] == before_a

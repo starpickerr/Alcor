@@ -95,6 +95,8 @@ class ToolManager:
             self._mcp_lock = threading.RLock()
         if not hasattr(self, '_mcp_pending_clients'):
             self._mcp_pending_clients = {}
+        if not hasattr(self, '_mcp_authorizations'):
+            self._mcp_authorizations = {}
         if not hasattr(self, '_mcp_generations'):
             self._mcp_generations = {}
         if not hasattr(self, '_mcp_loaded'):
@@ -405,6 +407,76 @@ class ToolManager:
             threading.Thread(target=self._run_mcp_loader, args=(pending, generations),
                              daemon=True, name='mcp-loader').start()
 
+    def _check_mcp_authorization(self, name, generation):
+        with self._mcp_lock:
+            configured = next((row for row in self._load_mcp_configs() if row.get('name') == name), None)
+            if not self._mcp_admitted(name, generation) or configured != self._mcp_active_configs.get(name):
+                raise PermissionError('MCP authorization expired because its provider or configuration changed')
+
+    def _publish_mcp_authorization(self, name, generation, operation):
+        with self._mcp_lock:
+            self._check_mcp_authorization(name, generation)
+            return operation()
+
+    def manage_mcp_authorization(self, name, action):
+        from core.security.control import require_owner
+        from agent.tools.mcp import mcp_oauth as oauth
+        require_owner()
+        if not isinstance(name, str) or not name or len(name) > 512 or '\0' in name or action not in {'status', 'authorize', 'cancel', 'remove'}:
+            raise ValueError('Invalid MCP authorization action')
+        with self._mcp_lock:
+            config = next((row for row in self._load_mcp_configs() if row.get('name') == name), None)
+            remote = config is not None and config.get('type') == 'streamable-http'
+            status = oauth.authorization_status(name, config.get('url') if remote else None)
+            enabled = bool(remote and self._mcp_enabled(config))
+            can_authorize = enabled and not status['requires_reset'] and status['state'] != 'unavailable'
+            if action == 'status':
+                pending = self._mcp_authorizations.get(name)
+                authorization = None
+                if pending and enabled:
+                    generation, handler = pending
+                    try:
+                        self._check_mcp_authorization(name, generation)
+                        authorization = oauth.pending_authorization(handler)
+                    except PermissionError:
+                        pass
+                return dict(status, can_authorize=can_authorize, enabled=enabled,
+                            authorizing=bool(authorization and authorization['authorizing']),
+                            authorization_url=authorization['authorization_url'] if authorization else None,
+                            expires_at=authorization['expires_at'] if authorization else None)
+            if action == 'remove':
+                oauth.clear_server_record(name)
+                self._teardown_mcp_server(name)
+                return self.manage_mcp_authorization(name, 'status')
+            pending = self._mcp_authorizations.pop(name, None)
+            if pending:
+                oauth.cancel_pending(handler=pending[1])
+            if action == 'cancel':
+                return self.manage_mcp_authorization(name, 'status')
+            if not can_authorize:
+                raise PermissionError(status['reason'] or 'Enable the configured HTTP MCP before authorizing it')
+            if self._mcp_active_configs.get(name) != config:
+                self._teardown_mcp_server(name)
+                self._mcp_active_configs[name] = config
+            generation = self._mcp_generations.setdefault(name, 1)
+            def check():
+                self._check_mcp_authorization(name, generation)
+            from agent.tools.mcp.mcp_client import _oauth_redirect_uri
+            handler = oauth.OAuthHandler(name, config['url'], _oauth_redirect_uri(), scope=config.get('scope', ''),
+                check_active=check, check_authorization=check,
+                publish=lambda operation: self._publish_mcp_authorization(name, generation, operation),
+                on_authorized=lambda: self.reload_mcp_server(name, generation=generation))
+        try:
+            if not handler.ensure_registered() or not handler.build_authorization_url():
+                raise PermissionError('OAuth registration is unavailable; check the connection or remove the old authorization')
+            with self._mcp_lock:
+                check()
+                self._mcp_authorizations[name] = generation, handler
+                return self.manage_mcp_authorization(name, 'status')
+        except BaseException:
+            oauth.cancel_pending(handler=handler)
+            raise
+
     def _run_mcp_loader(self, configs, generations):
         from common.runtime_identity import use_identity
         with use_identity(self.identity):
@@ -601,6 +673,10 @@ class ToolManager:
 
     def _teardown_mcp_server(self, server_name):
         with self._mcp_lock:
+            pending_authorization = self._mcp_authorizations.pop(server_name, None)
+            if pending_authorization:
+                from agent.tools.mcp.mcp_oauth import cancel_pending
+                cancel_pending(handler=pending_authorization[1])
             self._mcp_generations[server_name] = self._mcp_generations.get(server_name, 0) + 1
             self._mcp_active_configs.pop(server_name, None)
             getattr(self,'_mcp_schemas',{}).pop(server_name,None)
@@ -647,6 +723,8 @@ class ToolManager:
                 if not self._mcp_admitted(name, generation):
                     continue
                 client = McpClient(cfg)
+                client.authorization_guard = lambda n=name, g=generation: self._check_mcp_authorization(n, g)
+                client.authorization_publish = lambda operation, n=name, g=generation: self._publish_mcp_authorization(n, g, operation)
                 client.on_authorized = lambda n=name, g=generation: self.reload_mcp_server(n, generation=g)
                 with self._mcp_lock:
                     if not self._mcp_admitted(name, generation):
@@ -656,6 +734,8 @@ class ToolManager:
                     with self._mcp_lock:
                         if self._mcp_admitted(name, generation):
                             self._mcp_status[name] = 'needs_auth' if getattr(client, 'needs_auth', False) else 'failed'
+                            if getattr(client, 'needs_auth', False) and getattr(client, '_oauth', None) is not None:
+                                self._mcp_authorizations[name] = generation, client._oauth
                     continue
                 published = self._publish_mcp_tools(cfg, client, generation, client.list_tools())
             except Exception:

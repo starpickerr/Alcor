@@ -57,7 +57,7 @@ def credential_metadata():
     for status in credential_statuses():
         name = status['server']
         yield dict(reference=f'mcp:{name}:oauth', owner='mcp:' + name, account='', kind='oauth',
-            configured=status['configured'], configure_url=_configuration('mcp', name) if name in known else None,
+            configured=status['configured'], configure_url=_configuration('mcp', name),
             reason=status.get('reason') or ('' if name in known else 'Connection is no longer configured; saved credentials are preserved.'))
     for config in configs:
         name = config['name']

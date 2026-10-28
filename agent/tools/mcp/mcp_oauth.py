@@ -108,9 +108,27 @@ def _save_store(store: dict) -> dict:
         for name, value in saved.items():
             row, field = locations[name]
             row[field] = value
-        private_atomic_write(path, json.dumps(candidate, ensure_ascii=False, indent=2))
+        if candidate != previous:
+            private_atomic_write(path, json.dumps(candidate, ensure_ascii=False, indent=2))
     credential_values.publish(path, _values(locations), before, env_store.keychain_for, commit)
     return candidate
+
+
+def _credential_status(name, record):
+    from core.security import credential_values, env_store
+    locations = _credential_locations({name: record})
+    fields = _values(locations)
+    states = credential_values.statuses(_store_path(), fields, env_store.keychain_for)
+    unavailable = any(state is None for state in states.values())
+    repair = any(not states[key] and value.startswith(credential_values.REFERENCE) for key, value in fields.items())
+    configured = any(states[key] for key, (_, field) in locations.items() if field in {'access_token', 'refresh_token'})
+    reset = any(field == 'client_secret' and row[field] and states[key] is not True
+                for key, (row, field) in locations.items())
+    return dict(server=name, configured=None if unavailable else bool(configured and not repair),
+                state='unavailable' if unavailable else 'repair-required' if repair else 'configured' if configured else 'not-configured',
+                requires_reset=reset, reason='Credential storage unavailable; unlock it and refresh, or remove this authorization.' if unavailable else
+                'Client credential is missing; remove this authorization before authorizing again.' if reset else
+                'Saved OAuth credential is missing; authorize again or remove it.' if repair else '')
 
 
 def credential_statuses():
@@ -118,26 +136,27 @@ def credential_statuses():
     from core.security.control import require_owner
     require_owner()
     with _STORE_LOCK:
-        from core.security import credential_values, env_store
-        result = []
-        for name, record in _load_store().items():
-            fields = _values(_credential_locations({name: record}))
-            states = credential_values.statuses(_store_path(), fields, env_store.keychain_for)
-            configured = None if any(state is None for state in states.values()) else any(
-                states[key] for key, (_, field) in _credential_locations({name: record}).items()
-                if field in {'access_token', 'refresh_token'})
-            repair = any(not states[key] and value.startswith(credential_values.REFERENCE) for key, value in fields.items())
-            result.append(dict(server=name, configured=configured,
-                reason='Credential storage unavailable; repair or remove through MCP settings.' if configured is None else
-                       'Saved OAuth credential is missing or invalid; authorize again or remove it.' if repair else ''))
-        return result
+        return [_credential_status(name, record) for name, record in _load_store().items() if not record.get('_deleted')]
+
+
+def authorization_status(server_name, resource_url=None):
+    from core.security.control import require_owner
+    require_owner()
+    with _STORE_LOCK:
+        record = _load_store().get(server_name, {})
+        saved = bool(record) and not record.get('_deleted')
+        result = _credential_status(server_name, record if saved else {})
+        if saved and resource_url is not None and record.get('resource_url') != resource_url:
+            result.update(state='repair-required', requires_reset=True,
+                          reason='The service address changed; remove the old authorization before authorizing again.')
+        return dict(result, saved=bool(saved))
 
 
 def load_server_record(server_name: str, *, resource_url=None) -> dict:
     with _STORE_LOCK:
         from core.security import credential_values, env_store
         original = _load_store().get(server_name, {})
-        if resource_url is not None and original.get('resource_url') != resource_url:
+        if original.get('_deleted') or resource_url is not None and original.get('resource_url') != resource_url:
             return _CredentialRecord({}, original)
         result = deepcopy(original)
         fields = _credential_locations({server_name: result})
@@ -159,12 +178,16 @@ def save_server_record(server_name: str, record: dict, *, expected=None) -> dict
 
 
 def clear_server_record(server_name: str) -> None:
+    from core.security.control import require_owner
+    require_owner()
     from core.plugins.locks import package_lock
     with _STORE_LOCK, package_lock(Path(_store_path()).parent, 'oauth-credentials', exclusive=True):
         store = _load_store()
-        if server_name in store:
-            store.pop(server_name, None)
-            _save_store(store)
+        # A tombstone prevents a previously empty pending registration from
+        # recreating credentials after an Owner removal (the ABA case).
+        store[server_name] = {'_deleted': True, '_revision': secrets.token_hex(16)}
+        _save_store(store)
+    cancel_pending(server_name=server_name)
 
 
 # ------------------------------------------------------------------
@@ -195,6 +218,8 @@ def pop_pending(state: str) -> Optional["OAuthHandler"]:
     with _PENDING_LOCK:
         _prune_pending_locked()
         entry = _PENDING.pop(state, None)
+        if entry:
+            entry['handler']._authorization_in_progress = True
     return entry["handler"] if entry else None
 
 
@@ -202,6 +227,32 @@ def has_pending() -> bool:
     with _PENDING_LOCK:
         _prune_pending_locked()
         return bool(_PENDING)
+
+
+def cancel_pending(*, server_name=None, handler=None):
+    with _PENDING_LOCK:
+        for state, entry in list(_PENDING.items()):
+            target = entry['handler']
+            if target is handler or server_name is not None and target.server_name == server_name:
+                target._authorization_cancelled = True
+                target._authorization_in_progress = False
+                _PENDING.pop(state, None)
+        if handler is not None:
+            handler._authorization_cancelled = True
+            handler._authorization_in_progress = False
+
+
+def pending_authorization(handler):
+    from core.security.control import require_owner
+    require_owner()
+    with _PENDING_LOCK:
+        _prune_pending_locked()
+        present = any(entry['handler'] is handler for entry in _PENDING.values())
+    if not present and not handler._authorization_in_progress:
+        return None
+    handler._check_authorization_state()
+    return dict(authorization_url=handler._authorization_url if present else None,
+                expires_at=handler._authorization_expires, authorizing=handler._authorization_in_progress)
 
 
 # ------------------------------------------------------------------
@@ -400,7 +451,8 @@ class OAuthHandler:
     """Drives the OAuth flow and token lifecycle for a single MCP server."""
 
     def __init__(self, server_name: str, resource_url: str, redirect_uri: str,
-                 scope: str = "", client_name: str = "Stella", on_authorized=None, check_active=None):
+                 scope: str = "", client_name: str = "Stella", on_authorized=None, check_active=None,
+                 check_authorization=None, publish=None):
         self.server_name = server_name
         self.resource_url = resource_url
         self.redirect_uri = redirect_uri
@@ -408,6 +460,12 @@ class OAuthHandler:
         self.client_name = client_name
         self.on_authorized = on_authorized
         self._check_active = check_active
+        self._check_authorization = check_authorization or check_active
+        self._publish = publish
+        self._authorization_cancelled = False
+        self._authorization_in_progress = False
+        self._authorization_expires = None
+        self._authorization_url = None
 
         self._reload()
         self._verifier: Optional[str] = None
@@ -448,10 +506,19 @@ class OAuthHandler:
             if (self._record.original.get('resource_url') == self.resource_url and
                     candidate[field] == self._record.get(field)):
                 saved[field] = self._record.original.get(field)
-        original = save_server_record(self.server_name, saved, expected=self._record.original)
-        for field in candidate:
-            setattr(self, field, candidate[field])
-        self._record = _CredentialRecord(candidate, original)
+        def publish():
+            self._check_authorization_state()
+            original = save_server_record(self.server_name, saved, expected=self._record.original)
+            for field in candidate:
+                setattr(self, field, candidate[field])
+            self._record = _CredentialRecord(candidate, original)
+        (self._publish or (lambda operation: operation()))(publish)
+
+    def _check_authorization_state(self):
+        if self._authorization_cancelled or (self._authorization_expires is not None and time.time() >= self._authorization_expires):
+            raise PermissionError('OAuth authorization was cancelled or expired')
+        if self._check_authorization:
+            self._check_authorization()
 
     # --- token access ------------------------------------------------
 
@@ -489,6 +556,9 @@ class OAuthHandler:
 
     def ensure_registered(self, www_authenticate: str = "") -> bool:
         """Discover metadata + register a client if not already done."""
+        if (self._record.original and not self._record.original.get('_deleted') and
+                self._record.original.get('resource_url') != self.resource_url):
+            return False
         if not self.metadata.get("authorization_endpoint"):
             meta = discover_metadata(self.resource_url, www_authenticate, check_active=self._check_active)
             if not meta:
@@ -499,6 +569,8 @@ class OAuthHandler:
             self.scope = self.metadata["_discovered_scope"]
             logger.info(f"[MCP-OAuth:{self.server_name}] Using discovered scope: {self.scope}")
         if not self.client_id:
+            if any(self._record.original.get(field) for field in _SECRET_FIELDS):
+                return False  # Existing unidentified credentials require Owner removal, not reassignment.
             return self._register_client()
         self._persist()
         return True
@@ -547,6 +619,8 @@ class OAuthHandler:
         """Create an authorization URL and register this handler as pending."""
         if not self.metadata.get("authorization_endpoint") or not self.client_id:
             return None
+        from core.security.connections import service_id
+        service_id(self.metadata['authorization_endpoint'])
         self._verifier, challenge = _make_pkce()
         state = secrets.token_urlsafe(24)
         params = {
@@ -562,7 +636,9 @@ class OAuthHandler:
         # Advertise the resource we intend to access (RFC 8707).
         params["resource"] = self.resource_url
         _register_pending(state, self)
-        return f"{self.metadata['authorization_endpoint']}?{urllib.parse.urlencode(params)}"
+        self._authorization_expires = time.time() + _PENDING_TTL
+        self._authorization_url = f"{self.metadata['authorization_endpoint']}?{urllib.parse.urlencode(params)}"
+        return self._authorization_url
 
     def finish_authorization(self, code: str) -> bool:
         """Exchange an authorization code for tokens."""
@@ -580,12 +656,15 @@ class OAuthHandler:
             fields["client_secret"] = self.client_secret
         try:
             resp = _http_post_form(self.metadata["token_endpoint"], fields, resource_url=self.resource_url,
-                                   check_active=self._authentication_guard('token_endpoint', ('client_secret',)))
+                                   check_active=self._authentication_guard('token_endpoint', ('client_secret',), authorization=True))
         except Exception:
             logger.warning(f"[MCP-OAuth:{self.server_name}] token exchange failed")
             return False
         ok = self._absorb_token_response(resp)
         self._verifier = None
+        if ok:
+            self._authorization_expires = None
+            self._authorization_url = None
         return ok
 
     def _absorb_token_response(self, resp: dict) -> bool:
@@ -606,11 +685,14 @@ class OAuthHandler:
         logger.info(f"[MCP-OAuth:{self.server_name}] Access token stored")
         return True
 
-    def _authentication_guard(self, role, fields=()):
+    def _authentication_guard(self, role, fields=(), *, authorization=False):
         original, endpoint = deepcopy(self._record.original), self.metadata[role]
         def check():
-            if self._check_active:
-                self._check_active()
+            active = self._check_authorization if authorization else self._check_active
+            if authorization:
+                self._check_authorization_state()
+            if active:
+                active()
             with _STORE_LOCK:
                 if _load_store().get(self.server_name, {}) != original or self.metadata.get(role) != endpoint:
                     raise PermissionError('OAuth account or authentication endpoint changed')

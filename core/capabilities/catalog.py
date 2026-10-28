@@ -41,7 +41,13 @@ class CapabilityCatalog:
     @staticmethod
     def _mcp():
         from agent.tools.tool_manager import ToolManager
-        return ToolManager().mcp_catalog()
+        from agent.tools.mcp.mcp_oauth import credential_statuses
+        rows = ToolManager().mcp_catalog()
+        known = {row['name'] for row in rows}
+        return [*rows, *[dict(name=item['server'], transport='retained', enabled=False, state='removed', tools=[], retained=True,
+            description={'zh': '连接已移除，已保存的 OAuth 授权可在原配置页删除。',
+                         'en': 'Connection removed. Saved OAuth authorization can be removed from its configuration.'})
+            for item in credential_statuses() if item['server'] not in known]]
 
     def _skills(self):
         if self.skill_manager is None:

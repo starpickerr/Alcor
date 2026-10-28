@@ -381,3 +381,16 @@ HTTP 通道新增相关服务 lease，OAuth 认证服务器请求同时受原 MC
 证据：`oauth-http-red.log` 4 FAIL；端点转移、可选空 secret、更换资源不解密及预算均有语义 RED 后修正。最终 `oauth-http-final.log` **118 PASS /11.58 秒**（两项既有 pydub 警告），包含真实本地认证成功、代理忽略、重定向拒绝、关闭前后/在途请求、异接收方相关 lease、普通内容外发限制、远程 MCP echo 与执行预算。Ruff/diff PASS。未使用个人账号；Linux 未实测。
 
 OAuth 原 MCP 配置页中的状态/修复/删除入口仍须接续；因此此处不将 OAuth 或 Task 3 标为全部完成。其余插件 secret、业务账号、来源/索引联动、脱离会话子进程、旧 ES 清理、生命周期总验收与独立审查仍按27日计划执行；未合并 develop。
+
+
+## 2026-10-28 OAuth 原配置入口与授权生命周期
+
+原 MCP 配置页新增 OAuth 四态、刷新、重新授权、取消流程和删除授权；只返回 Owner 元数据与限时授权链接，无已保存密钥输入回填。后台 401 改为在配置页等待用户操作，不自动打开浏览器。已移除连接的已保存 OAuth 授权保留在原 MCP 详情入口，可清理；安全目录链接复用该入口。删除不改变 MCP 配置、业务数据或工具开关。
+
+真实正向授权暴露上一阶段的生命周期问题：初始化收到401后关闭客户端，使同一 check_active 拒绝用户完成 token exchange。现在回调校验原配置和管理代次，凭据发布在该代次锁内完成；服务停用、来源变化、取消/删除或过期时旧回调不能发布。删除写入同一记录中的无凭据 tombstone，防止旧空记录的异步注册在删除后重建凭据。取消重新授权保留原引用；正常成功后清除一次性链接期限，后续 refresh 不受该链接过期影响。交换 token 期间持续展示进度并保留取消入口，不提前停止页面状态轮询。错误回调 HTML 转义并使 state 失效，回调页面禁止脚本、嵌入及 referrer/cache 传播。
+
+证据：`oauth-owner-flow-red.log` 1 FAIL/1 PASS；Owner 管理入口 RED7；孤立记录恢复入口/错误回调 RED2；交换进度/成功后的后续刷新 RED2。最终 `oauth-owner-final.log` **135 PASS /20.72 秒**（两项既有 pydub 警告），使用真实隔离 Keychain 和本地 HTTP AS/MCP，覆盖完整授权→发现→有认证 echo 调用成功、停用/删除/取消的在途交换拒绝、旧回调不能恢复、空记录 ABA、状态不解密、旧记录保留、Agent/未认证管理拒绝及原 MCP/传输回归。原 stale callback fixture 改为期待“会话已过期”，不再把已撤销流程展示成成功。
+
+原配置页 `oauth-owner-ui-final.log` PASS：1280px/390px 的修复、不可用、删除、重新授权、取消、处理进度自动轮询到已配置；无密码回填或横向溢出。截图 `/tmp/stella-oauth-owner-desktop.png` 与 `/tmp/stella-oauth-owner-narrow.png` 已检查，标题颜色按现有 text-content 约定修正。曾出现 StrictMode 清理后的 busy 标志未复位，浏览器复现后修复；新测试首次被缺失模型 fixture 的 onboarding 遮挡，补合成模型配置后再验证，不绕过产品引导。TypeScript(main/renderer)、相关 ESLint、Ruff/diff PASS。
+
+这完成已适配 Streamable HTTP OAuth 的本阶段实现。丢失的 confidential client 凭据采用原入口显式删除后重新授权；锁定的 Keychain 可解锁后刷新，应用不请求钥匙串密码。第三方 SDK/不受控协议仍不支持。Task 3 的普通 MCP 配置凭据、业务账号与插件声明 secret，以及 Task 2c/4/5/6 仍需继续；未合并 develop，未推送发布。

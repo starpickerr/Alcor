@@ -106,6 +106,12 @@ export interface SensitiveResourceState extends ApiResult {
   credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
   folder_protection: { status: string; protected: boolean; reason: string; code: string }
 }
+export interface McpAuthorizationState {
+  state: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
+  configured: boolean | null; saved: boolean; can_authorize: boolean; enabled: boolean
+  authorization_url: string | null; expires_at: number | null; reason: string
+  authorizing?: boolean
+}
 export interface ExternalConnection {
   id: string; name: string; endpoint: string; owners: string[]; configure_url?: string
   enabled: boolean; revision: number; active_requests: number
@@ -869,6 +875,14 @@ class ApiClient {
 
   async discoverMcpTools(name: string): Promise<ApiResult> {
     return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, action: 'discover' }) })
+  }
+
+  async manageMcpAuthorization(name: string, action: 'status' | 'authorize' | 'cancel' | 'remove', signal?: AbortSignal): Promise<McpAuthorizationState> {
+    const result = await this.request<ApiResult & { oauth: McpAuthorizationState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: `oauth-${action}` }), signal,
+    })
+    if (result.status !== 'success') throw new Error(result.message || 'OAuth authorization is unavailable')
+    return result.oauth
   }
 
   async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {

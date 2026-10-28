@@ -2497,9 +2497,14 @@ class McpOAuthCallbackHandler:
 
     def GET(self):
         web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        web.header('Referrer-Policy', 'no-referrer')
+        web.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
         params = web.input(code="", state="", error="", error_description="")
 
         def _page(title: str, message: str) -> str:
+            from html import escape
+            title, message = escape(title), escape(message)
             return (
                 "<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -2511,6 +2516,11 @@ class McpOAuthCallbackHandler:
 
         if params.error:
             logger.warning("[MCP-OAuth] callback returned an error")
+            if params.state:
+                from agent.tools.mcp.mcp_oauth import pop_pending, cancel_pending
+                handler = pop_pending(params.state)
+                if handler is not None:
+                    cancel_pending(handler=handler)
             return _page("授权失败", f"{params.error}: {params.error_description or ''}")
 
         if not params.code or not params.state:
@@ -2531,6 +2541,8 @@ class McpOAuthCallbackHandler:
         except Exception as e:
             logger.warning(f"[MCP-OAuth] token exchange crashed: {e}")
             ok = False
+        finally:
+            handler._authorization_in_progress = False
 
         if not ok:
             return _page("授权失败", "换取令牌失败，请重试。")
@@ -5882,11 +5894,15 @@ class McpCatalogHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
         try:
             from agent.tools.tool_manager import ToolManager
             body = json.loads(web.data() or b'{}')
             if not isinstance(body, dict) or not isinstance(body.get('name'), str):
                 raise ValueError('MCP name is required')
+            if set(body) == {'name', 'action'} and body['action'] in {'oauth-status', 'oauth-authorize', 'oauth-cancel', 'oauth-remove'}:
+                result = ToolManager().manage_mcp_authorization(body['name'], body['action'].removeprefix('oauth-'))
+                return json.dumps({'status': 'success', 'oauth': result}, ensure_ascii=False)
             if set(body) == {'name', 'action'} and body['action'] == 'discover':
                 ToolManager().discover_mcp_tools(body['name'])
             elif set(body) == {'name', 'enabled'} and type(body['enabled']) is bool:

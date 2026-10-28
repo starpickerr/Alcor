@@ -237,6 +237,8 @@ class McpClient:
         # OAuth state (streamable-http only). Lazily created when the server
         # responds with 401 and the user has not supplied a static token.
         self._oauth = None  # OAuthHandler instance
+        self.authorization_guard = self._ensure_open
+        self.authorization_publish = None
         # Set to True once a 401 could not be satisfied and the user must
         # complete the browser authorization. Callers can surface this state.
         self.server_version: str | None = None
@@ -830,6 +832,8 @@ class McpClient:
                 scope=self.config.get("scope", ""),
                 on_authorized=self.on_authorized,
                 check_active=self._ensure_open,
+                check_authorization=self.authorization_guard,
+                publish=self.authorization_publish,
             )
 
     def _current_bearer(self) -> Optional[str]:
@@ -857,6 +861,8 @@ class McpClient:
                 scope=self.config.get("scope", ""),
                 on_authorized=self.on_authorized,
                 check_active=self._ensure_open,
+                check_authorization=self.authorization_guard,
+                publish=self.authorization_publish,
             )
 
         if not self._oauth.ensure_registered(www_authenticate):
@@ -875,18 +881,7 @@ class McpClient:
 
         self._ensure_open()
         self.needs_auth = True
-        logger.warning(
-            f"[MCP:{self.name}] ⚠️  Authorization required. Open this URL in a "
-            f"browser to authorize, then this server will come online automatically:\n"
-            f"    {auth_url}"
-        )
-        # On a machine with a local browser (desktop/dev), open it directly.
-        if os.environ.get("STELLA_DESKTOP") == "1" or not os.environ.get("STELLA_HEADLESS"):
-            try:
-                import webbrowser
-                webbrowser.open(auth_url)
-            except Exception:
-                pass
+        logger.warning(f"[MCP:{self.name}] OAuth authorization is waiting in its configuration page.")
 
     def _streamable_http_send(self, message: dict, cancel_event=None) -> dict:
         """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
