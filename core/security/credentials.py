@@ -98,22 +98,36 @@ def credential_metadata():
         yield from mcp_configuration_credentials(config)
         if not isinstance(config, ManagedMcpConfig) or name not in {'email', 'elearning'}:
             continue
+        if name == 'email':
+            from core.security.email_credentials import EmailCredentialStore
+            import sqlite3
+            from common.runtime_identity import current_identity
+            try:
+                if config.data_root is None:
+                    raise ValueError('Mailbox has no bound account store')
+                path = config.data_root / 'email.db'
+                rows = (EmailCredentialStore(path, user_id=current_identity().user_id or 'local-default').inventory()
+                        if path.is_file() else [])
+                for account in rows:
+                    state = account['state']
+                    yield dict(reference=f'mcp:email:{account["id"]}:password', owner=owner,
+                               account=account['account'], kind='password', configure_url=url,
+                               configured=None if state == 'unavailable' else state == 'configured',
+                               reason='Saved credential needs repair in its original settings.' if state == 'repair_required'
+                               else 'Saved credential is unavailable.' if state == 'unavailable' else '')
+            except (OSError, ValueError, sqlite3.Error):
+                yield dict(reference='mcp:email:owner', owner=owner, account='', kind='credential', configured=None,
+                           configure_url=url, reason='Mailbox credential status is unavailable; saved data is preserved.')
+            continue
         if not config.get('enabled', True):
             yield dict(reference=f'mcp:{name}:owner', owner=owner, account='', kind='password', configured=None,
                 configure_url=url, reason='Provider is disabled; open its configuration to inspect saved accounts.')
             continue
         try:
-            if name == 'email':
-                rows = Application.port('email').list_accounts().get('mailboxes', [])
-                for account in rows:
-                    yield dict(reference=f'mcp:email:{account["id"]}:password', owner=owner,
-                        account=account.get('user') or account['id'], kind='password',
-                        configured=account.get('password_set'), configure_url=url, reason='')
-            else:
-                account = Application.port('elearning').public_settings()
-                yield dict(reference=f'mcp:elearning:{account.get("account_id") or "owner"}:password', owner=owner,
-                    account=account.get('username') or '', kind='password', configured=account.get('password_set'),
-                    configure_url=url, reason='')
+            account = Application.port('elearning').public_settings()
+            yield dict(reference=f'mcp:elearning:{account.get("account_id") or "owner"}:password', owner=owner,
+                account=account.get('username') or '', kind='password', configured=account.get('password_set'),
+                configure_url=url, reason='')
         except (ValueError, RuntimeError, OSError, PermissionError):
             yield dict(reference=f'mcp:{name}:owner', owner=owner, account='', kind='credential', configured=None,
                 configure_url=url, reason='The owner credential status is unavailable; saved data has not been changed.')

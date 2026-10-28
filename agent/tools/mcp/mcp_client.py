@@ -682,6 +682,24 @@ class McpClient:
     def _stdio_send(self, message: dict, cancel_event=None) -> dict:
         """Send a JSON-RPC message over stdio and read the response."""
         _check_cancelled(cancel_event)
+        connector = None
+        from core.mcp.managed import ManagedMcpConfig
+        if (isinstance(self.config, ManagedMcpConfig) and self.config.hosted_connector == 'email'
+                and message.get('method') == 'tools/call'):
+            from copy import deepcopy
+            from core.services.email_connector import EmailConnector
+            params = deepcopy(message['params'])
+            def active():
+                self._ensure_open()
+                _check_cancelled(cancel_event)
+                from core.security.mcp_runtime import check_mcp
+                check_mcp(self)
+                if self._proc.poll() is not None:
+                    raise PermissionError('Managed mailbox process stopped')
+            def connector():
+                return EmailConnector(self.config, check=active, cancel_event=cancel_event).invoke(
+                    params['name'], params['arguments'], meta=params.get('_meta'))
+            message = {**message, 'params': {**message['params'], 'arguments': {}}}
         raw = json.dumps(message) + "\n"
         self._proc.stdin.write(raw)
         self._proc.stdin.flush()
@@ -709,6 +727,22 @@ class McpClient:
                 continue
             if "id" not in data:
                 logger.debug(f"[MCP:{self.name}] notification skipped: {data.get('method', '?')}")
+                continue
+            if 'method' in data:
+                # An extension cannot select a host operation, path, recipient
+                # or arguments. It can only complete this pending Core call once.
+                if (connector is not None and data.get('method') == 'stella/email/invoke' and
+                        data.get('params') == {'requestId': expected_id}):
+                    pending, connector = connector, None
+                    try:
+                        reply = {'result': {'value': pending()}}
+                    except Exception:
+                        reply = {'error': {'code': -32001,
+                                           'message': '邮箱操作未完成，请检查原账号设置与当前授权。'}}
+                else:
+                    reply = {'error': {'code': -32601, 'message': 'Host operation is not available'}}
+                self._proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': data['id'], **reply}) + '\n')
+                self._proc.stdin.flush()
                 continue
             # Verify response id matches request id to avoid consuming a stale
             # response left over from a previously failed/timed-out request.

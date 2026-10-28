@@ -436,3 +436,19 @@ Core的EmailCredentialStore.connect将原账号当前引用绑定到IMAPS端点�
 imap-transport-red.log初始5 FAIL/1 PASS；账号连接入口imap-account-red.log 2 FAIL后接入；目录imap-catalog-red.log 1 FAIL后补原账号端点。最终imap-final.log **86 PASS /19.99秒**（两项既有pydub警告），含9项真实TLS/原生Keychain的IMAP专用用例，及原HTTP/OAuth/MCP认证和连接回归。原EmailService通过trusted opener完成实际测试连接、文件夹查询、邮件解析和只提议游标；轮换和锁定停止旧连接，认证证书、私网域名和literal reference拒绝。Ruff/diff通过；未使用个人账号或弹密码框。
 
 尚未接入生产MCP回调、原设置页和旧环境/文件导入；本阶段不证明邮箱可交付、受管MCP整链路可用或Task3f完成。原沙箱与普通MCP禁网保持，后续必须将账号配置及认证留在明确可信的Core连接器，继续复用原业务协议和资源授权，不通过原始密码注入恢复功能。
+
+## 2026-10-28 邮箱原入口与真实受管MCP认证闭环
+
+邮箱MCP 1.0.4增加Stella专用hosted模式。受管Worker仍在独立进程与沙箱内，既不能访问原账号/legacy目录，也不接收密码参数或IMAP_PASSWORD。stdio回调仅带父请求ID，Core只允许完成当前已准入操作一次；额外URL、方法或参数不授予其他宿主能力。普通本地MCP原始凭据检查移除旧邮箱豁免。Core复用原邮箱service/imap等四个明确可信模块，验证固定来源摘要并执行同次读取的字节及SQL快照；没有导入Server入口或建立通用代码加载接口。
+
+账号保存复用原SQLite事务，通过可信credential publisher先验证Keychain新值再提交引用，原设置的行版本冲突明确失败。空密码保持现有引用，账号删除后才清理对应Keychain项，失败保留账号。认证绑定当前账号端点；实际IMAP读取持续检查原资源授权，撤销会中断在途fetch。旧环境账号只属于local-default，Owner采用时保存原environment ID，重开不复活删除记录；原.env对应引用丢失不会恢复旧进程明文，单独重输密码可修复。一个旧账号迁移失败只标记该批未迁移账号，已有可用引用状态保持。
+
+原邮箱页显示已配置/未配置/不可用/需修复，密码输入始终为空草稿，失败保留草稿，成功清空；原删除、测试连接、返回位置及旧链接保留。凭据目录直接读取原账号声明及Keychain属性，提供者停用时仍可汇总，不启动Worker或解密。跨仓库更新了MCP版本和Core来源摘要。
+
+证据：email-connector-red.log初始1FAIL/4ERROR；真实MCP初始化及回调联调后完成保存→发现→读取，SDK基类Request会丢弃自定义params，使用固定HostedRequest字段后通过。环境3项RED、原表单CAS RED、目录停用RED及局部状态RED均有针对修正；首次资源重检回归105PASS/1FAIL的Agent夹具缺少真实read grant，补Owner授权后未放宽生产规则。
+
+email-production-final.log **212 PASS /97.70秒**（两项既有pydub警告），包含受管MCP、环境重建/存储、OAuth/HTTP、目录和账号边界。随后补充局部迁移失败状态修正，以及实际重启、失败重试和“hash后磁盘变化仍只执行已验证快照”的用例，email-owner-final.log **27 PASS /8.99秒**通过；没有用这27项冒称新的全项目快照。真实Worker探针确认账号文件及直连网络被拒绝，Root参数不进入stdio，带URL的回调被拒绝；真实TLS邮件读取及资源撤销在途停止均通过。
+
+邮箱仓库email-provider-final.log **48 PASS /1.02秒**；email-ui-final.log通过原路径1280px及390px（使用既有收起侧栏按钮），四态、空输入、失败草稿、保存清空、刷新、测试连接和删除均验证，截图已目视检查。TypeScript main/renderer、受影响ESLint、Python Ruff及diff通过；Core pin与当前MCP源逐字节摘要匹配。测试仅用隔离数据、临时Keychain和本地TLS服务，没有个人账号或认证弹窗。
+
+此项完成当前macOS邮箱原业务接入的阶段验收；eLearning、模型客户端缓存、来源/受保护数据联动、托管环境矩阵及最终全量/独立审查仍未完成，不合并develop、不推送发布。Linux未实测；冻结分发及完整支持矩阵继续由Task4/6核对。

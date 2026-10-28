@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "providers": {
     "email": {
-      "sourceSha256": "d5da13427a0bfe07a23ef86aa4bcdfda4042faf051b1a303a906d520e21a3d13"
+      "sourceSha256": "0fab80473b91b5f454253b980704d256620cfa2949ccde0f2570b7e7363ed281"
     },
     "elearning": {
       "sourceSha256": "f872e3abe5cc5d6addef34879d8bcc2ec392f45d8ca54dff0367ab2e44c62c28"

@@ -39,6 +39,9 @@ def imap_server(tmp_path, monkeypatch):
                         if raw.split()[2] == b'SEARCH':
                             self.wfile.write(b'* SEARCH 1\r\n')
                         elif raw.split()[2] == b'FETCH':
+                            if b'HOLD_FETCH' in commands:
+                                entered.set()
+                                release.wait(4)
                             message = (b'From: sender@example.test\r\nSubject: Synthetic email\r\n'
                                        b'Message-ID: <test@example.test>\r\n\r\nordinary mail body\r\n')
                             self.wfile.write(b'* 1 FETCH (UID 1 BODY[] {' + str(len(message)).encode() +

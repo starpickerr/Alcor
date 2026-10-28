@@ -31,7 +31,8 @@ class ManagedMcpConfig(dict):
     """Core factory provenance; a user JSON field cannot create this type."""
 
     def __init__(self, *args, data_root=None, legacy_roots=(), package_digest=None,
-                 filesystem_outputs=None, output_scope=None, output_temporary=None, credential_env=(), **kwargs):
+                 filesystem_outputs=None, output_scope=None, output_temporary=None, credential_env=(),
+                 hosted_connector=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_root = Path(data_root).absolute() if data_root is not None else None
         self.legacy_roots = tuple(Path(path).absolute() for path in legacy_roots)
@@ -40,6 +41,7 @@ class ManagedMcpConfig(dict):
         self.output_scope = output_scope
         self.output_temporary = output_temporary
         self.credential_env = frozenset(credential_env)
+        self.hosted_connector = hosted_connector
 
 
 def _installed_digest(domain):
@@ -138,7 +140,7 @@ def configurations(manager):
                     **({'description': description} if description else {}),
                     "type": "stdio",
                     "command": command,
-                    "args": launch
+                    "args": launch + (['--hosted-connector'] if domain == 'email' else [])
                     + [
                         "--data-dir",
                         str(data),
@@ -154,7 +156,6 @@ def configurations(manager):
                         for key in [
                             "IMAP_HOST",
                             "IMAP_USER",
-                            "IMAP_PASSWORD",
                             "IMAP_PORT",
                             "IMAP_FOLDER",
                         ]
@@ -167,7 +168,7 @@ def configurations(manager):
                     "filesystemTools": ['sync_files'] if domain == 'elearning' else [],
                 }, data_root=data, legacy_roots=legacy_reads, package_digest=_installed_digest(domain),
                     filesystem_outputs={'sync_files': ('get_settings', 'file_sync_root')} if domain == 'elearning' else {},
-                    credential_env={'IMAP_PASSWORD'} if domain == 'email' and user == 'local-default' else ())
+                    hosted_connector='email' if domain == 'email' else None)
             )
         return configs
 

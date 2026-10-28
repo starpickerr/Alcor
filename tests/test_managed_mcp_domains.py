@@ -472,11 +472,14 @@ def test_mail_mcp_fetch_proposes_cursor_and_commit_survives_restart(tmp_path):
         client.shutdown()
 
 
-def test_verified_email_connector_preserves_legacy_environment_and_deleted_state(tmp_path):
+def test_verified_email_connector_preserves_legacy_environment_and_deleted_state(tmp_path, monkeypatch):
     config = server_config('email', tmp_path / 'email')
-    config.credential_env = frozenset({'IMAP_PASSWORD'})
-    config['env'] = {'IMAP_HOST': 'imap.example.test', 'IMAP_USER': 'owner@example.test',
-                     'IMAP_PASSWORD': 'SYNTHETIC_LEGACY_SECRET'}
+    config.hosted_connector = 'email'
+    config['args'][config['args'].index('--user-id') + 1] = 'local-default'
+    config['args'].append('--hosted-connector')
+    for name, value in {'IMAP_HOST': 'imap.example.test', 'IMAP_USER': 'owner@example.test',
+                        'IMAP_PASSWORD': 'SYNTHETIC_LEGACY_SECRET'}.items():
+        monkeypatch.setenv(name, value)
     client = McpClient(config)
     try:
         assert client.initialize()

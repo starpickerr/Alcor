@@ -17,7 +17,7 @@ def is_runtime_path(path):
     return any(target == root or target.startswith(root + os.sep) for root in runtime_readonly_roots())
 
 
-def source_digest(root):
+def source_digest(root, *, snapshot=None):
     """Hash source inputs, pruning local dependencies and generated products."""
     from hashlib import sha256
     root = Path(root).resolve()
@@ -37,7 +37,10 @@ def source_digest(root):
                 raise PermissionError('Runtime source inputs cannot use symlinks')
             digest.update(path.relative_to(root).as_posix().encode())
             digest.update(b'\0')
-            digest.update(path.read_bytes())
+            content = path.read_bytes()
+            digest.update(content)
+            if snapshot is not None:
+                snapshot[path.relative_to(root).as_posix()] = content
             digest.update(b'\0')
     return digest.hexdigest()
 

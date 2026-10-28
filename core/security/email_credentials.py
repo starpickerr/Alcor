@@ -12,9 +12,10 @@ from core.security.keychain import KeychainUnavailable
 
 
 class EmailCredentialStore:
-    def __init__(self, path, *, user_id):
+    def __init__(self, path, *, user_id, expected_revision=None):
         self.path = Path(path).resolve()
         self.user_id = user_id
+        self.expected_revision = expected_revision
 
     @contextmanager
     def _connect(self, *, write=False):
@@ -97,6 +98,23 @@ class EmailCredentialStore:
             saved = credential_values.publish(self.path, {name: value}, before, env_store.keychain_for, commit)
             row['password'] = saved[name]
         return self._view(row)
+
+    def publish_account(self, db, existing, saved, commit):
+        """Original account service's transaction; no plaintext interim row."""
+        require_owner()
+        current = db.execute('SELECT * FROM email_accounts WHERE id=?', (saved['id'],)).fetchone()
+        if self.expected_revision is not None and (current is None or
+                self._revision(dict(current)) != self.expected_revision):
+            raise ValueError('Mailbox changed; reload before saving')
+        before = {self._name(dict(current)): current['password']} if current is not None else {}
+        name = self._name(saved)
+        credential_values.publish(self.path, {name: saved['password']}, before, env_store.keychain_for,
+                                  lambda values: commit(values[name]))
+
+    def remove_account(self, existing, commit):
+        require_owner()
+        before = {self._name(existing): existing['password']}
+        credential_values.publish(self.path, {}, before, env_store.keychain_for, lambda values: commit())
 
     def resolve(self, account_id):
         """Trusted connector use only; reread the exact account on every login."""

@@ -292,14 +292,10 @@ def prepare_mcp(config, env):
     if name in {'npx', 'uvx', 'bunx', 'npm', 'pip', 'pip3', 'uv'}:
         raise ValueError('Select a fixed installed entry; implicit package installers cannot be launched')
     from agent.tools.mcp.mcp_client import _STDIO_ENV_SENSITIVE
-    from core.mcp.managed import _installed_digest
-    owner_credentials = (config.credential_env if isinstance(config, ManagedMcpConfig)
-                         and config.data_root is not None and config.package_digest == _installed_digest(config['name'])
-                         else frozenset())
     for variable, value in env.items():
         sensitive = (variable.upper().endswith(_STDIO_ENV_SENSITIVE) or variable.upper() in {
             'PASSWORD', 'PASSWD', 'TOKEN', 'SECRET', 'CREDENTIAL', 'APIKEY', 'GITHUB_TOKEN', 'GH_TOKEN'})
-        if value and sensitive and variable not in owner_credentials:
+        if value and sensitive:
             raise PermissionError('Raw credentials cannot be passed to a local MCP; use a trusted connector')
     if not _fixed_executable_entry(config):
         raise PermissionError('Select a fixed local implementation and explicit script entry')
@@ -338,8 +334,9 @@ def prepare_mcp(config, env):
             if any(path.is_symlink() for path in (root, *root.parents) if str(path) not in {'/var', '/tmp'}):
                 raise PermissionError('MCP bound storage cannot use symlinks')
         # These roots are supplied by Core owner adapters, never JSON/tool input.
-        writes = [config.data_root.resolve()]
-        reads.extend(root.resolve() for root in config.legacy_roots if root.exists())
+        if config.hosted_connector is None:
+            writes = [config.data_root.resolve()]
+            reads.extend(root.resolve() for root in config.legacy_roots if root.exists())
         if config.output_scope is not None:
             writes.append(config.output_scope.root)
     directory_reads = (tuple(config.output_scope.root.parents)

@@ -1098,6 +1098,8 @@ export interface BriefingRule {
 export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<BriefingRule, 'enabled' | 'source'>>
 
 export interface BriefingMailbox {
+  credential_status?: 'configured' | 'not_configured' | 'unavailable' | 'repair_required'
+  credential_revision?: string | null
   id: string
   enabled: boolean
   host: string
@@ -1117,6 +1119,7 @@ export interface BriefingSettings {
 }
 
 export interface BriefingMailboxInput {
+  credential_revision?: string
   id?: string
   enabled?: boolean
   action?: 'add' | 'save'
