@@ -215,6 +215,8 @@ def open_request(
     permit=None,
     configured_origin=None,
     cancel_event=None,
+    related_services=(),
+    allow_configured_local=True,
 ):
     if method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
         raise PermissionError("This HTTP operation is not supported")
@@ -252,6 +254,8 @@ def open_request(
     try:
         if category:
             leases.append(control.begin(category))
+        for service in set(related_services) - {identifier, category}:
+            leases.append(control.begin(service))
         if permit is not None:
             for lease in leases:
                 lease.guards.append(permit.check)
@@ -264,7 +268,8 @@ def open_request(
             for lease in leases:
                 lease.guards.append(active)
         io = _IO(leases)
-        target = destination(url, configured_origin=configured_origin, allow_configured_local=category is None)
+        target = destination(url, configured_origin=configured_origin,
+                             allow_configured_local=category is None and allow_configured_local)
         io.check()
         # Exactly one DNS resolution above. connect() receives the numeric
         # sockaddr directly, while TLS verifies the original hostname.

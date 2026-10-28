@@ -116,7 +116,7 @@ def test_existing_plaintext_record_migrates_without_losing_other_fields(store):
 def test_registration_failure_does_not_publish_a_new_client_secret(store, monkeypatch):
     client = handler()
     client.metadata = {'registration_endpoint': 'https://auth.example.invalid/register'}
-    monkeypatch.setattr(oauth, '_http_post_json', lambda *args: {'client_id': 'public-new-client', 'client_secret': 'SYNTHETIC_REGISTER_SECRET'})
+    monkeypatch.setattr(oauth, '_http_post_json', lambda *args, **kwargs: {'client_id': 'public-new-client', 'client_secret': 'SYNTHETIC_REGISTER_SECRET'})
     def unavailable(path):
         raise PermissionError('Synthetic Keychain failure')
     monkeypatch.setattr('core.security.env_store.keychain_for', unavailable)
@@ -174,3 +174,22 @@ def test_invalid_reference_never_becomes_a_token_or_resets_valid_json(store):
     assert handler().get_valid_access_token() is None
     assert store.read_bytes() == before
     assert 'SYNTHETIC_' not in str(oauth.credential_statuses())
+
+
+def test_metadata_edit_cannot_transfer_existing_auth_secrets_to_another_endpoint(store):
+    oauth.save_server_record('example', record())
+    client = handler()
+    before = store.read_bytes()
+    client.metadata = {'token_endpoint': 'https://other.example.invalid/token'}
+    with pytest.raises((PermissionError, ValueError), match='endpoint|receiver|authorization'):
+        client._persist()
+    assert store.read_bytes() == before
+
+
+def test_a_different_resource_does_not_decrypt_the_original_services_secrets(store, monkeypatch):
+    oauth.save_server_record('example', record())
+    def forbidden(path):
+        raise AssertionError('A different resource must not decrypt the old service credentials')
+    monkeypatch.setattr('core.security.env_store.keychain_for', forbidden)
+    changed = oauth.OAuthHandler('example', 'https://other.example.invalid/api', 'http://127.0.0.1/callback')
+    assert changed.get_valid_access_token() is None

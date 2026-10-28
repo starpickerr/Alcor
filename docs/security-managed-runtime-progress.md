@@ -370,3 +370,14 @@ MCP OAuth 的 access_token、refresh_token、client_secret 复用已有 verified
 真实隔离 Keychain `oauth-storage-red.log` 7 FAIL /1 PASS；补注册原子发布与禁止 reference 作为 token 的 RED 2 FAIL /1 PASS；最终 `oauth-storage-final.log` **132 PASS /2.58 秒**（两项既有 pydub 警告），涵盖原模型/环境/凭据目录/MCP 开关与授权回调。Ruff/diff PASS。旧临时路径测试改用可信读取入口验证恢复值，保留其符号链接目标未修改断言，不再要求持久化明文。
 
 这是 OAuth 存储/缓存阶段，尚未完成 OAuth 受控 HTTP 传输及原配置页修复/删除交互；插件 secret、业务账号和其余 Task 3 要求继续。普通 Agent 不能枚举 OAuth Owner 元数据。未进行真实个人账号登录或外部服务授权。
+
+
+## 2026-10-28 OAuth 受控认证传输阶段
+
+移除 OAuth 独立 urllib 网络出口，发现/动态注册/token exchange/refresh 统一经 Core HTTP transport。复用 DNS/IP 核验、实际地址固定、TLS、拒绝重定向/升级/代理、有限响应体和实时 socket 撤销。认证材料作为可信连接器的固定 OAuth 协议字段提交到绑定认证端点；普通内容的未知/凭据来源外发仍被原授权入口拒绝。请求 receipt 绑定接收方、内容摘要、方法/headers、保护与执行策略版本、期限；已有账号或端点变化、Keychain 不可用、运行实例关闭时拒绝旧请求。HTTP 认证仅支持原声明的数字本地服务，不允许元数据自动引入其他本地接收方。
+
+HTTP 通道新增相关服务 lease，OAuth 认证服务器请求同时受原 MCP 服务连接开关约束；关闭会中断实际在途读取，重开不复活旧请求，新的认证请求仍可正常完成。调用预算同时限制 socket timeout 和 receipt/lease；真实 150ms 调用预算的慢认证会在1秒内停止，保留旧 token。改变原 token_endpoint 且仍携带旧 client_secret/refresh_token 的保存拒绝，要求移除旧授权后重新注册，防止通过元数据把凭据交给另一端点。资源 URL 变更在解密前排除原记录。
+
+证据：`oauth-http-red.log` 4 FAIL；端点转移、可选空 secret、更换资源不解密及预算均有语义 RED 后修正。最终 `oauth-http-final.log` **118 PASS /11.58 秒**（两项既有 pydub 警告），包含真实本地认证成功、代理忽略、重定向拒绝、关闭前后/在途请求、异接收方相关 lease、普通内容外发限制、远程 MCP echo 与执行预算。Ruff/diff PASS。未使用个人账号；Linux 未实测。
+
+OAuth 原 MCP 配置页中的状态/修复/删除入口仍须接续；因此此处不将 OAuth 或 Task 3 标为全部完成。其余插件 secret、业务账号、来源/索引联动、脱离会话子进程、旧 ES 清理、生命周期总验收与独立审查仍按27日计划执行；未合并 develop。

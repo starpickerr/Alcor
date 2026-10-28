@@ -163,6 +163,34 @@ def test_disabling_connection_interrupts_real_stream_and_old_response_stays_revo
         assert fresh.read() == b"DATA"
 
 
+def test_related_resource_connection_interrupts_a_different_receivers_real_stream(local_service):
+    from core.security.http_transport import open_request
+    from core.security.connections import ConnectionControl, service_id
+    url, _, started, finish = local_service
+    parent, _ = service_id('https://synthetic-parent.example.invalid')
+    response = open_request('GET', url + '/slow', related_services=(parent,))
+    outcomes = []
+    def read():
+        try:
+            outcomes.append(response.read())
+        except (PermissionError, OSError):
+            outcomes.append('revoked')
+    reader = threading.Thread(target=read)
+    reader.start()
+    try:
+        assert started.wait(2)
+        control = ConnectionControl(catalog=lambda: [{'id': parent}])
+        control.save(parent, enabled=False, expected_revision=0)
+        reader.join(2)
+        assert not reader.is_alive() and outcomes == ['revoked']
+        with pytest.raises(PermissionError):
+            response.read()
+    finally:
+        finish.set()
+        response.close()
+        reader.join(2)
+
+
 def test_openai_model_uses_controlled_transport_and_connection_revocation(
     local_service,
 ):

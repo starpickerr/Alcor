@@ -819,7 +819,7 @@ class McpClient:
             from agent.tools.mcp.mcp_oauth import OAuthHandler, load_server_record
         except Exception:
             return
-        rec = load_server_record(self.name)
+        rec = load_server_record(self.name, resource_url=self._http_url)
         # Only create a handler when we have something to reuse; otherwise it
         # is created lazily on the first 401.
         if rec.get("access_token") or rec.get("client_id"):
@@ -829,6 +829,7 @@ class McpClient:
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
                 on_authorized=self.on_authorized,
+                check_active=self._ensure_open,
             )
 
     def _current_bearer(self) -> Optional[str]:
@@ -855,6 +856,7 @@ class McpClient:
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
                 on_authorized=self.on_authorized,
+                check_active=self._ensure_open,
             )
 
         if not self._oauth.ensure_registered(www_authenticate):
