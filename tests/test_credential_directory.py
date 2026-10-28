@@ -153,7 +153,7 @@ def test_oauth_persistence_does_not_follow_old_predictable_temporary_path(tmp_pa
     Path(str(path) + '.tmp').symlink_to(unrelated)
     mcp_oauth._save_store({'example': {'access_token': 'SYNTHETIC_TOKEN'}})
     assert unrelated.read_text() == 'KEEP'
-    assert json.loads(path.read_text())['example']['access_token'] == 'SYNTHETIC_TOKEN'
+    assert mcp_oauth.load_server_record('example')['access_token'] == 'SYNTHETIC_TOKEN'
 
 
 def test_agent_cannot_enumerate_oauth_owner_status():

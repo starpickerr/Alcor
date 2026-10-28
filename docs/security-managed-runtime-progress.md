@@ -361,3 +361,12 @@ Read/Edit/Write 使用目录描述符逐层固定目标，在实际打开及每�
 Vision 的本地图片入口改用与文件工具相同的 checked_open；大图在内存中以现有 Pillow 依赖压缩受检字节快照，不再启动继承宿主环境的 sips/convert，也不再以路径重新打开来源。JPEG 输出使用实际 image/jpeg MIME。读取后到调用厂商前若保护版本改变，原上下文授权 scope 拒绝外发。
 
 `vision-protection-red.log` 2 FAIL（直接保护文件/别名未拒绝、实际尝试启动宿主转换程序）→最终 `vision-protection-final.log` **60 PASS /2.04 秒**，普通小图字节保持、真实大图压缩、保护文件/别名拒绝、快照后规则变更时厂商调用次数为0、模型与文件工具关联回归。Ruff/diff PASS。具体图片来源的持久证据及会话数据范围授权仍属于后续来源联动；此阶段不宣称完整外发控制已完成。
+
+
+## 2026-10-28 OAuth 凭据存储阶段
+
+MCP OAuth 的 access_token、refresh_token、client_secret 复用已有 verified-reference transaction，命名绑定固定存储位置、服务名、resource_url 与字段；保存并回读验证后才发布引用和运行时 token/client。非 secret 元数据继续保留在原 mcp_oauth.json。已有 plaintext 可经原持久化入口迁移，未变引用不解密、不重写，单 token 轮换不解密其他字段/账号。多实例 CAS 拒绝旧 refresh 响应覆盖新授权。Keychain 锁定、丢失、损坏引用时不使用旧缓存或 literal reference；客户端每次取 token 重新读取原记录。变更服务地址不会继承旧服务的凭据。无效结构保持原文件并明确失败，不空存储覆盖。
+
+真实隔离 Keychain `oauth-storage-red.log` 7 FAIL /1 PASS；补注册原子发布与禁止 reference 作为 token 的 RED 2 FAIL /1 PASS；最终 `oauth-storage-final.log` **132 PASS /2.58 秒**（两项既有 pydub 警告），涵盖原模型/环境/凭据目录/MCP 开关与授权回调。Ruff/diff PASS。旧临时路径测试改用可信读取入口验证恢复值，保留其符号链接目标未修改断言，不再要求持久化明文。
+
+这是 OAuth 存储/缓存阶段，尚未完成 OAuth 受控 HTTP 传输及原配置页修复/删除交互；插件 secret、业务账号和其余 Task 3 要求继续。普通 Agent 不能枚举 OAuth Owner 元数据。未进行真实个人账号登录或外部服务授权。

@@ -25,6 +25,8 @@ import time
 import urllib.parse
 import urllib.request
 import urllib.error
+from copy import deepcopy
+from pathlib import Path
 from typing import Optional
 
 from common.log import logger
@@ -35,6 +37,37 @@ from common.log import logger
 # ------------------------------------------------------------------
 
 _STORE_LOCK = threading.Lock()
+_SECRET_FIELDS = ('client_secret', 'access_token', 'refresh_token')
+
+
+class _CredentialRecord(dict):
+    def __init__(self, values, original):
+        super().__init__(values)
+        self.original = deepcopy(original)
+
+
+def _credential_locations(store):
+    if not isinstance(store, dict):
+        raise ValueError('OAuth store must be an object; existing data retained')
+    result = {}
+    for server, record in store.items():
+        if not isinstance(server, str) or not server or not isinstance(record, dict):
+            raise ValueError('Invalid OAuth account record; existing data retained')
+        resource = record.get('resource_url', '')
+        if not isinstance(resource, str):
+            raise ValueError('Invalid OAuth resource identity')
+        for field in _SECRET_FIELDS:
+            value = record.get(field)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise ValueError('Invalid OAuth credential field; existing data retained')
+                name = json.dumps((server, resource, field), separators=(',', ':'))
+                result[name] = record, field
+    return result
+
+
+def _values(locations):
+    return {name: row[field] for name, (row, field) in locations.items()}
 
 
 def _store_path() -> str:
@@ -50,18 +83,27 @@ def _load_store() -> dict:
     path = _store_path()
     if not os.path.exists(path):
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception as e:
-        logger.warning(f"[MCP-OAuth] Failed to read token store: {e}")
-        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    _credential_locations(data)
+    return data
 
 
-def _save_store(store: dict) -> None:
+def _save_store(store: dict) -> dict:
+    # Callers hold the store lock across their read, change and publication.
+    from core.security import credential_values, env_store
     from core.security.storage import private_atomic_write
-    private_atomic_write(_store_path(), json.dumps(store, ensure_ascii=False, indent=2))
+    path = _store_path()
+    candidate = deepcopy(store)
+    locations = _credential_locations(candidate)
+    before = _values(_credential_locations(_load_store()))
+    def commit(saved):
+        for name, value in saved.items():
+            row, field = locations[name]
+            row[field] = value
+        private_atomic_write(path, json.dumps(candidate, ensure_ascii=False, indent=2))
+    credential_values.publish(path, _values(locations), before, env_store.keychain_for, commit)
+    return candidate
 
 
 def credential_statuses():
@@ -69,24 +111,47 @@ def credential_statuses():
     from core.security.control import require_owner
     require_owner()
     with _STORE_LOCK:
-        return [dict(server=name, configured=bool(record.get('access_token') or record.get('refresh_token')))
-                for name, record in _load_store().items() if isinstance(name, str) and isinstance(record, dict)]
+        from core.security import credential_values, env_store
+        result = []
+        for name, record in _load_store().items():
+            fields = _values(_credential_locations({name: record}))
+            states = credential_values.statuses(_store_path(), fields, env_store.keychain_for)
+            configured = None if any(state is None for state in states.values()) else any(
+                states[key] for key, (_, field) in _credential_locations({name: record}).items()
+                if field in {'access_token', 'refresh_token'})
+            repair = any(not states[key] and value.startswith(credential_values.REFERENCE) for key, value in fields.items())
+            result.append(dict(server=name, configured=configured,
+                reason='Credential storage unavailable; repair or remove through MCP settings.' if configured is None else
+                       'Saved OAuth credential is missing or invalid; authorize again or remove it.' if repair else ''))
+        return result
 
 
 def load_server_record(server_name: str) -> dict:
     with _STORE_LOCK:
-        return dict(_load_store().get(server_name, {}))
+        from core.security import credential_values, env_store
+        original = _load_store().get(server_name, {})
+        result = deepcopy(original)
+        fields = _credential_locations({server_name: result})
+        values, _ = credential_values.resolve(_store_path(), _values(fields), env_store.keychain_for, strict=False)
+        for name, value in values.items():
+            row, field = fields[name]
+            row[field] = value
+        return _CredentialRecord(result, original)
 
 
-def save_server_record(server_name: str, record: dict) -> None:
-    with _STORE_LOCK:
+def save_server_record(server_name: str, record: dict, *, expected=None) -> dict:
+    from core.plugins.locks import package_lock
+    with _STORE_LOCK, package_lock(Path(_store_path()).parent, 'oauth-credentials', exclusive=True):
         store = _load_store()
+        if expected is not None and store.get(server_name, {}) != expected:
+            raise ValueError('OAuth account changed; reload before saving')
         store[server_name] = record
-        _save_store(store)
+        return _save_store(store)[server_name]
 
 
 def clear_server_record(server_name: str) -> None:
-    with _STORE_LOCK:
+    from core.plugins.locks import package_lock
+    with _STORE_LOCK, package_lock(Path(_store_path()).parent, 'oauth-credentials', exclusive=True):
         store = _load_store()
         if server_name in store:
             store.pop(server_name, None)
@@ -305,14 +370,20 @@ class OAuthHandler:
         self.client_name = client_name
         self.on_authorized = on_authorized
 
-        rec = load_server_record(server_name)
+        self._reload()
+        self._verifier: Optional[str] = None
+
+    def _reload(self):
+        rec = load_server_record(self.server_name)
+        if rec and rec.get('resource_url') != self.resource_url:
+            rec = _CredentialRecord({}, rec.original)
+        self._record = rec
         self.metadata: dict = rec.get("metadata", {})
         self.client_id: Optional[str] = rec.get("client_id")
         self.client_secret: Optional[str] = rec.get("client_secret")
         self.access_token: Optional[str] = rec.get("access_token")
         self.refresh_token: Optional[str] = rec.get("refresh_token")
         self.expires_at: float = float(rec.get("expires_at", 0) or 0)
-        self._verifier: Optional[str] = None
 
     # --- persistence -------------------------------------------------
 
@@ -324,8 +395,8 @@ class OAuthHandler:
             except Exception:
                 logger.warning('[MCP-OAuth] Failed to reload authorized server')
 
-    def _persist(self) -> None:
-        save_server_record(self.server_name, {
+    def _persist(self, **changes) -> None:
+        candidate = {
             "resource_url": self.resource_url,
             "metadata": self.metadata,
             "client_id": self.client_id,
@@ -333,12 +404,23 @@ class OAuthHandler:
             "access_token": self.access_token,
             "refresh_token": self.refresh_token,
             "expires_at": self.expires_at,
-        })
+        }
+        candidate.update(changes)
+        saved = deepcopy(candidate)
+        for field in _SECRET_FIELDS:
+            if (self._record.original.get('resource_url') == self.resource_url and
+                    candidate[field] == self._record.get(field)):
+                saved[field] = self._record.original.get(field)
+        original = save_server_record(self.server_name, saved, expected=self._record.original)
+        for field in candidate:
+            setattr(self, field, candidate[field])
+        self._record = _CredentialRecord(candidate, original)
 
     # --- token access ------------------------------------------------
 
     def get_valid_access_token(self, leeway: int = 60) -> Optional[str]:
         """Return a usable access token, refreshing proactively when near expiry."""
+        self._reload()
         if not self.access_token:
             return None
         if self.expires_at and time.time() >= self.expires_at - leeway:
@@ -348,6 +430,7 @@ class OAuthHandler:
 
     def refresh(self) -> bool:
         """Refresh the access token using the stored refresh token."""
+        self._reload()
         if not self.refresh_token or not self.metadata.get("token_endpoint"):
             return False
         fields = {
@@ -378,8 +461,7 @@ class OAuthHandler:
             self.scope = self.metadata["_discovered_scope"]
             logger.info(f"[MCP-OAuth:{self.server_name}] Using discovered scope: {self.scope}")
         if not self.client_id:
-            if not self._register_client():
-                return False
+            return self._register_client()
         self._persist()
         return True
 
@@ -409,8 +491,16 @@ class OAuthHandler:
         if not client_id:
             logger.warning(f"[MCP-OAuth:{self.server_name}] DCR returned no client_id")
             return False
-        self.client_id = client_id
-        self.client_secret = resp.get("client_secret")
+        from core.security.credential_values import REFERENCE
+        secret = resp.get('client_secret')
+        if not isinstance(client_id, str) or (secret is not None and
+                (not isinstance(secret, str) or secret.startswith(REFERENCE))):
+            return False
+        try:
+            self._persist(client_id=client_id, client_secret=secret)
+        except (OSError, PermissionError, ValueError):
+            logger.warning(f"[MCP-OAuth:{self.server_name}] Client storage failed; previous credentials retained")
+            return False
         logger.info(f"[MCP-OAuth:{self.server_name}] Registered client_id={client_id}")
         return True
 
@@ -459,15 +549,19 @@ class OAuthHandler:
         return ok
 
     def _absorb_token_response(self, resp: dict) -> bool:
+        from core.security.credential_values import REFERENCE
         access = resp.get("access_token")
-        if not access:
+        refresh = resp.get('refresh_token')
+        if (not isinstance(access, str) or not access or access.startswith(REFERENCE) or
+                refresh is not None and (not isinstance(refresh, str) or refresh.startswith(REFERENCE))):
             logger.warning(f"[MCP-OAuth:{self.server_name}] token response missing access_token")
             return False
-        self.access_token = access
-        if resp.get("refresh_token"):
-            self.refresh_token = resp["refresh_token"]
         expires_in = resp.get("expires_in")
-        self.expires_at = time.time() + int(expires_in) if expires_in else 0
-        self._persist()
+        try:
+            self._persist(access_token=access, refresh_token=resp.get('refresh_token') or self.refresh_token,
+                          expires_at=time.time() + int(expires_in) if expires_in else 0)
+        except (OSError, PermissionError, ValueError):
+            logger.warning(f"[MCP-OAuth:{self.server_name}] Token storage failed; previous credentials retained")
+            return False
         logger.info(f"[MCP-OAuth:{self.server_name}] Access token stored")
         return True
