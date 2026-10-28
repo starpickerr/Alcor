@@ -133,3 +133,24 @@ def test_catalog_includes_implicit_model_endpoints_and_shared_service_owners(mon
     for endpoint in ('https://api.openai.com:443', 'https://api.minimaxi.com:443', 'https://api.link-ai.tech:443', 'https://dashscope.aliyuncs.com:443'):
         assert endpoint in rows
     assert rows['https://shared.invalid:443']['owners'] == ['model:doubao', 'model:moonshot']
+
+
+def test_catalog_aggregates_actual_mailbox_endpoint_without_loading_password(tmp_path, monkeypatch):
+    from core.security.connections import connection_catalog, service_id
+    from core.services import email_facade
+    from core.security.keychain import MacOSKeychain
+    from tests.email_domain import EmailService
+    service = EmailService(tmp_path / 'email.db')
+    for user in ('alice', 'bob'):
+        service.save_account({'action': 'add', 'host': 'imap.example.test', 'user': user,
+                              'password': 'SYNTHETIC_PASSWORD'})
+    monkeypatch.setattr(email_facade, '_paths', lambda: (service.db_path, tmp_path / 'legacy.json'))
+    def forbidden(*args):
+        raise AssertionError('Connection catalog must not decrypt mailbox credentials')
+    monkeypatch.setattr(MacOSKeychain, 'get', forbidden)
+    identifier, endpoint = service_id('imaps://imap.example.test')
+    matches = [row for row in connection_catalog() if row['id'] == identifier]
+    assert len(matches) == 1
+    assert matches[0]['endpoint'] == endpoint
+    assert matches[0]['configure_url'] == '/email'
+    assert len(matches[0]['owners']) == 2

@@ -36,9 +36,12 @@ def current_user():
 
 def service_id(url):
     parsed = urlsplit(url)
-    if parsed.scheme not in {'https', 'http'} or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError('Connection must name an HTTP(S) service without embedded credentials')
-    origin = f'{parsed.scheme}://{parsed.hostname.lower()}:{parsed.port or (443 if parsed.scheme == "https" else 80)}'
+    if parsed.scheme not in {'https', 'http', 'imaps'} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError('Connection must name a supported service without embedded credentials')
+    host = parsed.hostname.lower()
+    host = '[' + host + ']' if ':' in host else host
+    port = parsed.port or {'https': 443, 'http': 80, 'imaps': 993}[parsed.scheme]
+    origin = f'{parsed.scheme}://{host}:{port}'
     return 'service:' + sha256(origin.encode()).hexdigest(), origin
 
 
@@ -78,6 +81,22 @@ def connection_catalog():
     for server in ToolManager()._load_mcp_configs():
         if server.get('type', 'stdio') != 'stdio' and server.get('url'):
             add(server['url'], 'mcp:' + server['name'], server['name'], '/skills/mcp/' + quote(server['name'], safe='') + '?section=configuration')
+    # The original business account store declares these endpoints; listing
+    # connections must not start a Worker or read/decrypt password columns.
+    import sqlite3
+    from core.services.email_facade import _paths
+    path = _paths()[0]
+    if path.is_file():
+        try:
+            from contextlib import closing
+            with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+                for account, host, port in db.execute('SELECT id,host,port FROM email_accounts'):
+                    if isinstance(host, str) and host:
+                        address = '[' + host + ']' if ':' in host else host
+                        add(f'imaps://{address}:{port}', 'email:' + account, 'IMAP ' + host, '/email')
+        except (OSError, sqlite3.Error):
+            # A broken mailbox must not hide unrelated service controls.
+            pass
     import os
     if cfg.get('github_token') or os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN'):
         add('https://api.github.com', 'github', 'GitHub', '/security?tab=resources&credential=GITHUB_TOKEN')

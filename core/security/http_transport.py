@@ -29,6 +29,8 @@ def destination(url, *, configured_origin=None, allow_configured_local=True):
     if not isinstance(url, str) or any(ord(char) < 33 for char in url) or "\\" in url:
         raise ValueError("Invalid HTTP destination")
     parsed = urlsplit(url)
+    if parsed.scheme not in {'http', 'https'}:
+        raise ValueError('HTTP transport requires an HTTP(S) destination')
     identifier, origin = service_id(url)
     if parsed.fragment or not parsed.port and parsed.netloc.endswith(":"):
         raise ValueError("Invalid HTTP destination")

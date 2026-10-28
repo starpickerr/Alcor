@@ -426,3 +426,13 @@ mcp-config-ui-final.log PASS：原配置页1280px/390px的空密码、状态、�
 初始email-storage-red.log记录8项缺失适配器错误；实现后发现两处测试夹具不符合现有接口（原生锁应调用SecKeychainLock、Agent主体需session），修正后8项通过，补充实际事务提交失败和条目丢失用例。最终email-storage-regression.log **85 PASS /7.85秒**，含10项邮箱专用用例及模型/环境/插件/MCP凭据关联回归，两项既有pydub警告；Ruff/diff通过。测试使用真实临时Keychain和原MCP邮箱SQLite schema，未访问个人账号。
 
 这是尚未接入原业务入口的存储基础，不能宣称邮箱业务或Task3f完成。可信IMAP认证、原设置状态/修复、旧环境/文件导入及真实受管MCP正常业务仍需继续；不合并develop、不推送发布。
+
+## 2026-10-28 受控IMAP与原账号连接基础
+
+Core的EmailCredentialStore.connect将原账号当前引用绑定到IMAPS端点，使用原连接lease及地址规则，一次DNS解析固定实际socket地址，TLS验证原主机。明确配置的数字本地端点可用于本地服务，域名解析到私网不获得此例外。认证失败不返回服务器回显，引用不能作为密码发送。普通扩展没有此入口或通用网络回调。
+
+连接开关按实际IMAPS主机和端口聚合，目录直接读取原数据库的非敏感端点列，不启动Worker或解密；多个账号共用服务开关。账号变更、密码轮换、条目丢失/锁定、连接关闭或任务取消使已登记socket失效；重新开启不能复活旧请求。IMAPS服务标识不会让HTTP transport接受IMAPS URL，HTTP协议仍单独检查。
+
+imap-transport-red.log初始5 FAIL/1 PASS；账号连接入口imap-account-red.log 2 FAIL后接入；目录imap-catalog-red.log 1 FAIL后补原账号端点。最终imap-final.log **86 PASS /19.99秒**（两项既有pydub警告），含9项真实TLS/原生Keychain的IMAP专用用例，及原HTTP/OAuth/MCP认证和连接回归。原EmailService通过trusted opener完成实际测试连接、文件夹查询、邮件解析和只提议游标；轮换和锁定停止旧连接，认证证书、私网域名和literal reference拒绝。Ruff/diff通过；未使用个人账号或弹密码框。
+
+尚未接入生产MCP回调、原设置页和旧环境/文件导入；本阶段不证明邮箱可交付、受管MCP整链路可用或Task3f完成。原沙箱与普通MCP禁网保持，后续必须将账号配置及认证留在明确可信的Core连接器，继续复用原业务协议和资源授权，不通过原始密码注入恢复功能。

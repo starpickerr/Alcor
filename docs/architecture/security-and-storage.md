@@ -14,6 +14,8 @@
 
 Email 连接、凭据与 IMAP 抓取由独立 `email` MCP Server 拥有；Core 的 `email_gateway/email_facade` 仅经唯一托管连接适配，旧邮箱路由兼容跳转到能力详情中的同一所有者配置表单，不保留收信回退。凭据数据库及 SQLite 临时文件以私有权限创建并在重开时收紧；文件工具与 shell 隔离共用凭据路径清单，保护 Email 数据目录以及 Core 生命周期状态和迁移备份。
 
+邮箱认证迁移中的可信入口明确限定为Core的 `core/security/email_credentials.py::EmailCredentialStore.connect` 与 `core/security/imap_transport.py`：从原账号行解析密码，仅向绑定的IMAPS主机/端口认证；复用连接lease、地址校验、TLS和在途取消，不向扩展暴露socket或通用网络回调。原账号变更、条目丢失或Keychain锁定会使对应连接失效。当前这些入口及原邮箱协议的正向测试已实现，原MCP设置/调用链路尚待切换；不能将现有MCP密码或环境兼容路径视为已完成安全迁移，交付状态见[阶段记录](../security-managed-runtime-progress.md)。
+
 Core 服务协调入口新增 `core/workspace/service.py`、`core/execution/context.py` 与 `core/security/service.py`。运行上下文不可变；独立 RunPolicy 保存在既有授权库中，调用和返回仍复查当前 revision、有效策略及 Grant。通用插件私有数据使用用户级 `plugins/<plugin-id>`，第一方数据句柄保持旧路径；文件/shell 的保护清单覆盖通用私有目录及原账单、事务、日程、Agent Hub、简报与自动化数据库及 SQLite 附属文件。详细协作、兼容及平台边界见[工作区与执行服务](execution-services.md)。
 
 模型凭据的唯一编辑入口为安全中心 `/security?tab=secrets`。`agent/permission/center.py::set_secret` 更新原配置字段、`custom_providers[].api_key` 或原搜索命名空间，不创建第二份凭据库；配置文件原子替换并使用 `0600`。自定义厂商凭据的稳定键为 `CUSTOM:<id>`，展示名称可改，清除凭据保留厂商、地址、模型与用途绑定。保存后重建模型客户端并刷新现有进程环境，撤销同时清除兼容环境值。状态接口不返回密钥正文，修改记录 L3 审计。旧受认证模型配置 API 继续兼容；Desktop、精简版模型设置及首次设置不再复制密钥编辑器。
