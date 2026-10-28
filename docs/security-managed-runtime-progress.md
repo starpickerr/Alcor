@@ -345,3 +345,12 @@ UI `model-ui-green-reload.log`：六种模型能力、厂商编辑及原凭据�
 Read/Edit/Write 使用目录描述符逐层固定目标，在实际打开及每次 I/O 时核对路径、文件 identity 和保护策略版本；写入在校验后才截断。规则改变无需等待文档解析结束，未完成读取或旧版本工具结果停止返回。Agent 内容搜索采用逐文件受控读取，防止外部 grep 递归带出保护内容。
 
 路径替换用例先复现 3 FAIL；持锁跨解析问题 1 FAIL 后改成每次 I/O 的短锁；递归搜索真实 RED 1 FAIL 后修正。最终 `file-io-regression-final.log` **156 PASS /4.43 秒**，包含真实 docx/xlsx/pptx/PDF 解析、普通读写及保护边界。Ruff/diff PASS。此阶段不包含 Vision 转换、实际上传/发送、持久上下文和索引来源处理；这些仍待接续，整体未完成。
+
+
+## 2026-10-28 保护变更后的旧上下文停止复用
+
+会话和排队消息在现有 ConversationStore 中记录保护版本；未验证历史数据保持 -1，迁移不自动认证旧内容。规则变更后，旧内存 Agent、持久会话和变更前排队的输入停止使用，清空上下文不能复活旧排队消息。原“清空上下文”保留消息并重设边界，新会话可正常执行；显式 clear_history 的既有行为继续可用。恢复加载的保护拒绝不再被通用异常处理吞掉，原聊天入口显示处理方法。Agent 运行和外发 permit 捕获同一上下文检查，规则变更后的旧调用不能继续发送。
+
+`context-protection-red.log` 4 FAIL；补充队列/显式清理场景 `context-queued-red.log` 2 FAIL 后修复。最终 `context-protection-final.log` **109 PASS /2.79 秒**（两项既有 pydub 警告），覆盖实际 SQLite 迁移/保留、旧内存上下文、新上下文恢复、排队输入、外发 permit、原 SSE/多 Agent/共享数据库恢复以及保护路径回归。Ruff/diff PASS。
+
+这是保守的版本失效处理：任何保护规则变更都会停止旧会话复用，尚未按具体来源选择性放行。普通 SessionManager 路径、记忆/知识索引、附件和来源授权还需继续接通；不代表 Task 2c/5 完成。

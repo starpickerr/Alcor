@@ -194,6 +194,8 @@ class AgentInitializer:
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
+        except PermissionError:
+            raise
         except Exception as e:
             logger.warning(
                 f"[AgentInitializer] Failed to restore conversation history for "

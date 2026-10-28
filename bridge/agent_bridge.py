@@ -743,13 +743,14 @@ class AgentBridge:
                         # Prime it before adding this turn to messages, or the
                         # current user input is loaded and then appended again
                         # by run_stream.
-                        self.get_agent(session_id=session_id, agent_id=agent_id)
+                        if not clear_history:
+                            self.get_agent(session_id=session_id, agent_id=agent_id)
                         admission_store.start_run_admission(run_id)
                     except Exception as exc:
                         store.transition(run_id, "failed", str(exc))
                         admission_store.transition_run_admission(run_id, "failed")
                         logger.error(f"[AgentBridge] Failed to start admitted run {run_id}: {exc}")
-                        return Reply(ReplyType.ERROR, "Could not save the message; the agent did not run")
+                        return Reply(ReplyType.ERROR, str(exc) if isinstance(exc, PermissionError) else "Could not save the message; the agent did not run")
                 store.transition(run_id, "running")
                 try:
                     def record_event(event):

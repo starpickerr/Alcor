@@ -67,6 +67,11 @@ def current_revision():
     return _ready()['revision']
 
 
+def check_context_revision(revision):
+    if revision != current_revision():
+        raise PermissionError('保护规则已变化或历史上下文来源未验证。请清空上下文或新建会话；历史记录保留。')
+
+
 def sandbox_paths():
     state = _ready()
     return state['revision'], [row['path'] for row in state['rules']]

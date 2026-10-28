@@ -168,6 +168,8 @@ def authorize(url, body, *, sources, wait=True, cancel_event=None, method="POST"
 
     def verify():
         def current():
+            from core.security.service import check_model_authorization
+            check_model_authorization()
             check_connections()
             remaining_invocation_seconds()
             check_cancelled()

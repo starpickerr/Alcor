@@ -11,6 +11,7 @@ class SecurityService:
         # Sources are supplied by Core adapters, never accepted from tool/MCP
         # parameters. The same gateway owns the one-use approval and audit.
         from core.security.egress import authorize
+        check_model_authorization()
         return authorize(url, body, sources=sources, wait=wait, cancel_event=cancel_event, method=method, headers=headers, category=category)
 
     @staticmethod
