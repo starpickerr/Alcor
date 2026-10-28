@@ -462,3 +462,13 @@ ElearningCredentialStore在原elearning.json内保存password/token引用，在�
 初始elearning-storage-red.log为8项缺少适配器错误，首次实现8项通过。随后session轮换/迟到响应2项RED、损坏引用wrapper状态1项RED后补实现。elearning-storage-final.log **57 PASS /1.66秒**，包含12项eLearning专用原生用例和邮箱/环境/OAuth凭据关联回归；真实隔离Keychain覆盖锁定、验证失败、发布失败、复制/改账号引用拒绝与Owner管理边界。Ruff/diff通过，未访问个人账号或弹认证窗口。
 
 此阶段仅为尚未接入生产链路的存储基础。eLearning受控API/特定SSO登录、真实受管MCP、下载/资源撤销与原设置的逐字段状态/修复仍待接续；没有把仅token可用当作密码登录交付，没有将当前第一方业务改标不支持。全目标保持实施中。
+
+## 2026-10-29 eLearning 受控读取出口
+
+ElearningTransport复用现有Core HTTP实现、EgressPermit和连接lease，只提供账号绑定的HTTPS读取。每次实际请求解析当前选用的token或session，状态检查不解密其他字段；token客户端不会因无关密码轮换而失效。实际API接收方固定为配置服务，拒绝重定向，异接收方下载不携带账号认证且不获得本地地址例外。TLS、地址固定、代理隔离及实际socket撤销继续由原HTTP出口执行。
+
+保护/执行策略、当前认证引用、Keychain可用性与原资源授权在实际请求和在途读取时复核；账号/凭据变更、锁定、连接关闭或资源撤销拒绝旧请求。认证错误关闭响应后只返回状态码，不把回显认证信息的正文/reason送入工具错误。请求审计只记服务身份和协议操作。
+
+elearning-transport-red.log初始7 FAIL（缺少模块）→7 PASS；补充真实资源授权撤销和无关密码轮换后，elearning-transport-final.log **72 PASS /22.42秒**，包含9项真实本地TLS、原生Keychain和socket用例，以及eLearning存储/HTTP/OAuth/IMAP/连接关联回归。Ruff/diff通过。此出口尚未接入原Canvas/MCP；密码SSO、认证session续期、具体下载跳转及原设置仍未完成，不将token/Cookie读取当作整个业务交付。
+
+SSO浏览器仅做了可行性实验：Seatbelt全禁network会同时阻止Chromium私有Unix IPC；允许Unix IPC后，真实Chromium DOM操作成功且直接IP网络被实际拒绝。已安装Chrome尝试叠加自身sandbox出现sandbox initialization failed，尚未采用为实现或宣称浏览器隔离验收。后续应验证一个清晰的实际OS边界、必要私有IPC、私有文件限制及限定接收方的受控请求，不能用浏览器route回调本身冒充禁网。公开学校登录页本轮获取超时，未把该失败视为账号/实现事实。
