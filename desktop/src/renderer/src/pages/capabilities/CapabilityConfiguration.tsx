@@ -8,6 +8,7 @@ import ElearningFileSettings from '../settings/ElearningFileSettings'
 import AppleIntegrations from '../settings/AppleIntegrations'
 import { c } from './presentation'
 import McpOAuthSettings from './McpOAuthSettings'
+import McpCredentialSettings from './McpCredentialSettings'
 
 export default function CapabilityConfiguration({ item, baseUrl }: { item: CapabilityDetail; baseUrl: string }) {
   const [params] = useSearchParams()
@@ -25,10 +26,11 @@ export default function CapabilityConfiguration({ item, baseUrl }: { item: Capab
         <AppleIntegrations section={params.get('integration') === 'apple-reminders' || item.id === 'stella.tasks' ? 'apple-reminders' : 'apple-calendar'} kind={item.id === 'stella.calendar' ? 'calendar' : 'todos'} />
       </section>}
     </>}
-    {oauth && <McpOAuthSettings key={item.id} name={item.id} />}
+    {oauth && <McpOAuthSettings key={`oauth:${item.id}`} name={item.id} />}
+    {item.kind === 'mcp' && !settingsUrl && !item.retained && <McpCredentialSettings key={`credentials:${item.id}`} name={item.id} />}
     {item.kind === 'mcp' && (settingsUrl && mcpSettings[settingsUrl] ? mcpSettings[settingsUrl] :
       settingsUrl?.startsWith('/') && !settingsUrl.startsWith('//') && !settingsUrl.startsWith('/skills') ?
         <Link to={settingsUrl} className="text-sm text-accent">{c('打开提供者配置', 'Open provider settings')}</Link> :
-        !oauth && <p className="text-sm text-content-secondary">{c('此提供者未发布可编辑的配置项。', 'This provider has not published editable settings.')}</p>)}
+        !oauth && item.retained && <p className="text-sm text-content-secondary">{c('此提供者未发布可编辑的配置项。', 'This provider has not published editable settings.')}</p>)}
   </div>
 }

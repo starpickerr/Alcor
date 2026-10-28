@@ -464,6 +464,9 @@ class McpClient:
         origin = service_id(configured)[1]
         if service_id(url)[1] != origin:
             raise PermissionError('MCP transport cannot change the configured receiving service')
+        from core.security.mcp_credentials import has_authentication, runtime_headers
+        for key, value in runtime_headers(self.config, url).items():
+            request.add_header(key, value)
         body = request.data
         permit = None
         if body is not None:
@@ -488,6 +491,12 @@ class McpClient:
             timeout=timeout, permit=permit, configured_origin=origin,
             cancel_event=control.cancelled if control else None)
         if response.status >= 400:
+            if has_authentication(self.config, dict(request.header_items())):
+                # Authentication endpoints may echo submitted material in an
+                # error body or reason. Neither is an ordinary tool result.
+                status, headers = response.status, response.headers
+                response.close()
+                raise urllib.error.HTTPError(url, status, 'Authenticated MCP request failed', headers, None)
             raise urllib.error.HTTPError(url, response.status, response.reason, response.headers, response)
         return response
 
@@ -597,6 +606,9 @@ class McpClient:
         Legacy full inheritance cannot expose arbitrary Core environment data.
         """
         extra_env = extra_env or {}
+        from core.security.credential_values import REFERENCE
+        if any(isinstance(value, str) and value.startswith(REFERENCE) for value in extra_env.values()):
+            raise PermissionError('Protected credentials cannot be injected into an ordinary local MCP; use its trusted connector')
         env = {k: os.environ[k] for k in _STDIO_ENV_PASSTHROUGH if k in os.environ}
         env.update({str(k): str(v) for k, v in extra_env.items()})
         return env
@@ -811,7 +823,7 @@ class McpClient:
 
     def _has_static_auth(self) -> bool:
         """True when the user supplied their own Authorization header."""
-        return any(k.lower() == "authorization" for k in self._http_headers)
+        return any(k.lower() == "authorization" and value for k, value in self._http_headers.items())
 
     def _maybe_load_oauth(self) -> None:
         """Attach an OAuthHandler when stored credentials exist for this server."""
@@ -987,7 +999,7 @@ class McpClient:
                 pass
             raise IOError(
                 f"[MCP:{self.name}] streamable-http HTTP {e.code}: {detail[:200]}"
-            )
+            ) from None
 
     def _read_sse_response(self, resp, expected_id, cancel_event=None) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""

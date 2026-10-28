@@ -9,6 +9,10 @@ from common.log import logger
 from config import conf
 
 
+def _same_mcp_config(left, right):
+    return left == right and getattr(left, 'credential_source', None) == getattr(right, 'credential_source', None)
+
+
 def _normalize_mcp_configs(raw) -> list:
     """
     Convert MCP server config to internal list format.
@@ -315,23 +319,30 @@ class ToolManager:
 
     def _read_mcp_json_signature(self):
         """
-        Return (mtime, sha256_of_bytes) for ~/stella/mcp.json without parsing.
-        Returns (None, None) if the file doesn't exist or is unreadable.
+        Fingerprint the selected MCP file or config.json fallback without parsing.
+        Include its origin so copying identical references does not retain an old client.
         Cheap enough (one stat + one small read) to call on every agent init.
         """
         import os
         import hashlib
+        from config import get_data_root
         path = self._mcp_json_path()
+        if not os.path.exists(path):
+            fallback = Path(get_data_root()) / 'config.json'
+            if fallback.exists():
+                path = str(fallback)
+        source = str(Path(path).resolve())
+        revision = self.capability_settings.revision('mcp')
         try:
             mtime = os.path.getmtime(path)
         except OSError:
-            return (None, None, self.capability_settings.revision('mcp'))
+            return (source, None, None, revision)
         try:
             with open(path, "rb") as f:
                 digest = hashlib.sha256(f.read()).hexdigest()
         except OSError:
-            return (mtime, None)
-        return (mtime, digest, self.capability_settings.revision('mcp'))
+            return (source, mtime, None, revision)
+        return (source, mtime, digest, revision)
 
     def _load_mcp_configs(self) -> list:
         from core.mcp.managed import configurations
@@ -351,23 +362,46 @@ class ToolManager:
           1. ~/stella/mcp.json  (supports both mcpServers and mcp_servers keys)
           2. config.json mcp_servers field (fallback)
         """
-        import os
-        import json as _json
-
-        mcp_json_path = self._mcp_json_path()
-
-        if os.path.exists(mcp_json_path):
-            try:
-                with open(mcp_json_path, "r", encoding="utf-8") as f:
-                    data = _json.load(f)
-                raw = data.get("mcpServers") or data.get("mcp_servers") or data
-                logger.info(f"[ToolManager] Loading MCP config from {mcp_json_path}")
-                return _normalize_mcp_configs(raw)
-            except Exception as e:
-                logger.warning(f"[ToolManager] Failed to read {mcp_json_path}: {e}, falling back to config.json")
-
+        store = self._mcp_credential_store()
+        if store is not None:
+            return store.configs()
         raw = conf().get("mcp_servers", [])
         return _normalize_mcp_configs(raw)
+
+    def _mcp_credential_store(self):
+        from core.security.mcp_credentials import McpCredentialStore
+        from config import get_data_root
+        import json
+        path = Path(self._mcp_json_path())
+        if path.exists():
+            return McpCredentialStore(path)
+        path = Path(get_data_root()) / 'config.json'
+        if path.exists():
+            data = json.loads(path.read_bytes())
+            if not isinstance(data, dict):
+                raise ValueError('Configuration must be an object; original file retained')
+            if 'mcp_servers' in data:
+                return McpCredentialStore(path, root_key='mcp_servers')
+        return None
+
+    def manage_mcp_credentials(self, name, action, *, area=None, key=None, value=None, expected_revision=None):
+        from core.security.control import require_owner
+        require_owner()
+        if not isinstance(name, str) or not name or action not in {'status', 'save'}:
+            raise ValueError('Invalid MCP credential action')
+        with self._mcp_lock:
+            store = self._mcp_credential_store()
+            if store is None:
+                raise ValueError('No persisted MCP configuration exists; configure this server first')
+            result = (store.inventory(name, migrate=True) if action == 'status' else
+                      store.save(name, area, key, value, expected_revision=expected_revision))
+            current = next(config for config in store.configs() if config['name'] == name)
+            active = self._mcp_active_configs.get(name)
+            if active is not None and not _same_mcp_config(active, current):
+                self._teardown_mcp_server(name)
+                if self._mcp_enabled(current):
+                    self._queue_mcp_servers([current])
+            return dict(result, transport=current.get('type', 'stdio'))
 
     def _mcp_enabled(self, config):
         default = config.get('enabled', not config.get('disabled', False)) is not False
@@ -392,7 +426,7 @@ class ToolManager:
             name = config.get('name', '<unnamed>')
             if not self._mcp_enabled(config):
                 continue
-            if (self._mcp_active_configs.get(name) == config and
+            if (_same_mcp_config(self._mcp_active_configs.get(name), config) and
                     self._mcp_status.get(name) in {'pending', 'ready', 'needs_auth'}):
                 continue
             if name in self._mcp_active_configs:
@@ -410,7 +444,7 @@ class ToolManager:
     def _check_mcp_authorization(self, name, generation):
         with self._mcp_lock:
             configured = next((row for row in self._load_mcp_configs() if row.get('name') == name), None)
-            if not self._mcp_admitted(name, generation) or configured != self._mcp_active_configs.get(name):
+            if not self._mcp_admitted(name, generation) or not _same_mcp_config(configured, self._mcp_active_configs.get(name)):
                 raise PermissionError('MCP authorization expired because its provider or configuration changed')
 
     def _publish_mcp_authorization(self, name, generation, operation):
@@ -455,7 +489,7 @@ class ToolManager:
                 return self.manage_mcp_authorization(name, 'status')
             if not can_authorize:
                 raise PermissionError(status['reason'] or 'Enable the configured HTTP MCP before authorizing it')
-            if self._mcp_active_configs.get(name) != config:
+            if not _same_mcp_config(self._mcp_active_configs.get(name), config):
                 self._teardown_mcp_server(name)
                 self._mcp_active_configs[name] = config
             generation = self._mcp_generations.setdefault(name, 1)
@@ -500,9 +534,9 @@ class ToolManager:
             desired = {cfg.get('name', '<unnamed>'): cfg for cfg in configs if self._mcp_enabled(cfg)}
             old = dict(self._mcp_active_configs)
             for name, cfg in old.items():
-                if name not in desired or desired[name] != cfg:
+                if name not in desired or not _same_mcp_config(desired[name], cfg):
                     self._teardown_mcp_server(name)
-            self._queue_mcp_servers([cfg for name, cfg in desired.items() if name not in old or old[name] != cfg])
+            self._queue_mcp_servers([cfg for name, cfg in desired.items() if name not in old or not _same_mcp_config(old[name], cfg)])
             self._mcp_signature = signature
 
     def set_mcp_enabled(self, name, enabled):
@@ -814,7 +848,7 @@ class ToolManager:
             if self._mcp_status.get(server_name) == 'pending':
                 return
             client = self._mcp_registry.get(server_name) if self._mcp_registry else None
-            if (client is None or self._mcp_active_configs.get(server_name) != config
+            if (client is None or not _same_mcp_config(self._mcp_active_configs.get(server_name), config)
                     or self._mcp_status.get(server_name) != 'ready'):
                 if server_name in self._mcp_active_configs:
                     self._teardown_mcp_server(server_name)

@@ -44,7 +44,7 @@ export default function McpOAuthSettings({ name }: { name: string }) {
   const pending = Boolean(data?.authorization_url && !expired)
   const label = data ? ({ configured: c('已配置', 'Configured'), 'not-configured': c('未配置', 'Not configured'),
     unavailable: c('暂不可用', 'Unavailable'), 'repair-required': c('需要修复', 'Needs repair') })[data.state] : ''
-  return <section className="min-w-0 space-y-4 rounded-card border border-default p-4 sm:p-5">
+  return <section aria-label={c('OAuth 授权', 'OAuth authorization')} className="min-w-0 space-y-4 rounded-card border border-default p-4 sm:p-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold text-content">{c('OAuth 授权', 'OAuth authorization')}</h2>
       <button type="button" className={button} disabled={busy} onClick={() => void perform('status')}>{c('刷新授权状态', 'Refresh authorization')}</button></div>
     {error && <p role="alert" className="break-words text-sm text-danger">{error}</p>}

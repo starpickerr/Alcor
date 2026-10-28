@@ -38,6 +38,11 @@ def backend(route):
         assert body['name'] == 'Documents' and set(body) == {'name', 'action'}
         action = body['action']
         actions.append(action)
+        if action == 'credential-status':
+            data['credentials'] = dict(revision='synthetic', transport='streamable-http', fields=[])
+            route.fulfill(status=200, content_type='application/json', body=json.dumps(data),
+                          headers={'Access-Control-Allow-Origin': url, 'Access-Control-Allow-Credentials': 'true'})
+            return
         if action == 'oauth-authorize':
             state.update(authorization_url='https://auth.example.invalid/authorize?state=synthetic-state', expires_at=time.time() + 600)
         elif action == 'oauth-cancel':
@@ -59,35 +64,36 @@ with sync_playwright() as playwright:
         page.add_init_script("localStorage.setItem('stella_lang','zh'); window.electronAPI={platform:'darwin',getBackendPort:async()=>9876,onBackendStatus:()=>()=>{},getBackendError:async()=>null,getAppVersion:async()=>'1.0.0'}")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(url + '/#/skills/mcp/Documents?section=configuration', wait_until='networkidle')
+        authorization_panel = page.get_by_role('region', name='OAuth 授权', exact=True)
         expect(page.get_by_role('heading', name='OAuth 授权', exact=True)).to_be_visible()
-        expect(page.get_by_text('需要修复', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('需要修复', exact=True)).to_be_visible()
         page.get_by_role('button', name='重新授权', exact=True).click()
         link = page.get_by_role('link', name='前往授权页面', exact=True)
         expect(link).to_have_attribute('href', 'https://auth.example.invalid/authorize?state=synthetic-state')
         expect(link).to_have_attribute('rel', 'noopener noreferrer')
         page.get_by_role('button', name='取消授权流程', exact=True).click()
         expect(link).to_have_count(0)
-        expect(page.get_by_text('需要修复', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('需要修复', exact=True)).to_be_visible()
         page.screenshot(path='/tmp/stella-oauth-owner-desktop.png', full_page=True)
         page.set_viewport_size({'width': 390, 'height': 844})
         page.get_by_role('button', name='收起侧栏', exact=True).click()
         state.update(state='unavailable', configured=None, can_authorize=False, reason='Unlock the credential store and refresh.')
         page.get_by_role('button', name='刷新授权状态', exact=True).click()
-        expect(page.get_by_text('暂不可用', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('暂不可用', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='重新授权', exact=True)).to_be_disabled()
         page.get_by_role('button', name='删除已保存授权', exact=True).click()
-        expect(page.get_by_text('未配置', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('未配置', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='开始授权', exact=True)).to_be_enabled()
         page.get_by_role('button', name='开始授权', exact=True).click()
         expect(link).to_be_visible()
         state.update(authorization_url=None, authorizing=True)
-        expect(page.get_by_text('正在完成授权', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('正在完成授权', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='开始授权', exact=True)).to_be_disabled()
         state.update(state='configured', configured=True, saved=True, authorizing=False, expires_at=None, reason='')
-        expect(page.get_by_text('已配置', exact=True)).to_be_visible()
+        expect(authorization_panel.get_by_text('已配置', exact=True)).to_be_visible()
         expect(link).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-        expect(page.locator('input[type=password]')).to_have_count(0)
+        expect(authorization_panel.locator('input[type=password]')).to_have_count(0)
         page.screenshot(path='/tmp/stella-oauth-owner-narrow.png', full_page=True)
         assert actions.count('oauth-authorize') == 2 and actions.count('oauth-remove') == 1
         assert not errors, errors

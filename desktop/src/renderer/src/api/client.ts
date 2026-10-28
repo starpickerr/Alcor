@@ -112,6 +112,10 @@ export interface McpAuthorizationState {
   authorization_url: string | null; expires_at: number | null; reason: string
   authorizing?: boolean
 }
+export interface McpCredentialState {
+  revision: string; transport: string
+  fields: { area: 'headers' | 'env'; key: string; state: 'configured' | 'not_configured' | 'unavailable' | 'repair_required' }[]
+}
 export interface ExternalConnection {
   id: string; name: string; endpoint: string; owners: string[]; configure_url?: string
   enabled: boolean; revision: number; active_requests: number
@@ -883,6 +887,16 @@ class ApiClient {
     })
     if (result.status !== 'success') throw new Error(result.message || 'OAuth authorization is unavailable')
     return result.oauth
+  }
+
+  async manageMcpCredentials(name: string, change?: { area: 'headers' | 'env'; key: string; value: string; expectedRevision: string }, signal?: AbortSignal): Promise<McpCredentialState> {
+    const result = await this.request<ApiResult & { credentials: McpCredentialState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: change ? 'credential-save' : 'credential-status', ...change }), signal,
+    })
+    if (result.status !== 'success' || !result.credentials || !Array.isArray(result.credentials.fields)) {
+      throw new Error(result.message || 'MCP credential settings are unavailable')
+    }
+    return result.credentials
   }
 
   async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {

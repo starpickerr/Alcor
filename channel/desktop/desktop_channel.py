@@ -5910,6 +5910,14 @@ class McpCatalogHandler:
             if set(body) == {'name', 'action'} and body['action'] in {'oauth-status', 'oauth-authorize', 'oauth-cancel', 'oauth-remove'}:
                 result = ToolManager().manage_mcp_authorization(body['name'], body['action'].removeprefix('oauth-'))
                 return json.dumps({'status': 'success', 'oauth': result}, ensure_ascii=False)
+            if set(body) == {'name', 'action'} and body['action'] == 'credential-status':
+                result = ToolManager().manage_mcp_credentials(body['name'], 'status')
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
+            if (set(body) == {'name', 'action', 'area', 'key', 'value', 'expectedRevision'}
+                    and body['action'] == 'credential-save'):
+                result = ToolManager().manage_mcp_credentials(body['name'], 'save', area=body['area'], key=body['key'],
+                    value=body['value'], expected_revision=body['expectedRevision'])
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
             if set(body) == {'name', 'action'} and body['action'] == 'discover':
                 ToolManager().discover_mcp_tools(body['name'])
             elif set(body) == {'name', 'enabled'} and type(body['enabled']) is bool:

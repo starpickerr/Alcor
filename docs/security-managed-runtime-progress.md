@@ -406,3 +406,15 @@ Owner 原插件配置页提供空密码草稿、状态、替换/修复、保存�
 本轮完整项目快照 plugin-secret-project-suite.log 为 **2857 PASS /2 FAIL /22 SKIP，471.34秒**。两项失败是 test_agent_trim_new_messages 的 __new__ 夹具缺少当前保护版本，按真实初始化补齐后包含在上述150项通过中；未声称修正后完整项目已重跑通过。首次不指定 tests 的命令误收集 references 外部项目并产生17项收集错误，按用户要求将默认 testpaths 设为 tests；reference-exclusion-collection.log 验证2881项均来自Stella tests。现有 PyInstaller/Electron资源清单未包含 references，无需扩大打包修改。默认发现范围及夹具修正提交5a450579。
 
 10-27活动清单已对照最新目标、历史设计和当前代码校正：完成子项及时勾选；复用已有环境/授权/来源事实，在真实边界校验，避免重复检查和每请求审批。Task 3e/3f、路径/来源/进程闭环、生命周期及整体验收继续；未合并、推送、发布。
+
+## 2026-10-28 普通 MCP 配置凭据与原入口
+
+静态认证字段复用原 mcp.json（mapping/list 两格式）或 config.json 的 mcp_servers，不创建第二份账号配置。常用认证 header/env、Cookie 和显式 secretHeaders/secretEnv 声明使用同一 Keychain 引用事务；身份绑定配置位置、服务、实际接收方及字段，header 大小写归一，字段顺序不决定身份。Owner 在原 MCP 配置页查看四态、单字段修复/删除和冲突刷新，已存值不回填，保存失败保留草稿，其他字段输入和引用保持。目录只查声明字段状态、不解密；错误 MCP 配置不遮蔽无关模型凭据状态。合法但无效的 MCP 结构保持原文件并报错，不回退另一套旧凭据。
+
+ToolManager 从实际原文件建立可信引用绑定，配置源切换也改变客户端身份；复制相同 JSON/引用到另一配置位置不会保留旧客户端或获得旧凭据。HTTP/SSE 在实际请求处读取对应字段，配置变化、条目丢失或锁定时不使用缓存/原样引用。认证只发往配置服务，普通本地 MCP 不注入宿主凭据或引用；本地认证业务仍需已适配连接器。认证错误响应可能回显材料，现不把认证响应正文/reason作为普通工具错误展示，并关闭该响应；保留 HTTP 状态。此项不宣称完成所有工具返回内容的来源追踪或统一外发授权。
+
+证据：存储10项 RED；原始传输/修复/格式4项 RED；Manager3项和原API/目录2项 RED；来源切换、header大小写、Cookie及认证错误回显分别真实复现后修正。最终 mcp-config-final.log **184 PASS /46.72秒**（两项既有 pydub 警告），包括真实 HTTP/SSE 认证 echo、轮换、锁定、旧配置/接收方/配置源拒绝、Owner/API/目录、OAuth、普通本地 MCP及环境重建回归。Ruff/diff PASS。
+
+mcp-config-ui-final.log PASS：原配置页1280px/390px的空密码、状态、单字段保存/删除、错误草稿、CAS刷新保留其他草稿；截图已检查。截图发现相邻组件 key 冲突导致重复 OAuth 面板，补 RED 后使用不同 key 修复；输入复用现有组件。mcp-config-oauth-ui-regression.log PASS，原授权/取消/删除/轮询继续可用；旧脚本的全页“未配置”选择器改为各自命名区域，fixture补齐新增状态接口，未降低授权断言。TypeScript(main/renderer)及相关ESLint通过。
+
+本阶段覆盖已声明静态 header/env 的存储/修复及已适配 HTTP/SSE 认证。邮箱/eLearning等业务账号和对应客户端缓存闭环归Task 3f，来源/保护联动、生命周期支持矩阵、统一外发及整体验收仍开放。未运行新的全量项目快照，不以184项代替整体证明；未合并、推送或发布。

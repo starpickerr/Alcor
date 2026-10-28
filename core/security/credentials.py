@@ -4,6 +4,7 @@ No arbitrary extension files are inspected. Values returned by owner adapters
 are projected here; neither secret values nor internal references leave Core.
 """
 from hashlib import sha256
+import json
 from urllib.parse import quote, urlsplit
 import re
 
@@ -41,6 +42,26 @@ def plugin_credentials():
                 configure_url=_configuration('plugins', identifier), reason='Credential declarations are unavailable.')
 
 
+def mcp_configuration_credentials(config):
+    require_owner()
+    from core.security.mcp_credentials import StoredMcpConfig
+    name = config['name']
+    if isinstance(config, StoredMcpConfig):
+        for item in config.credential_store.inventory(name)['fields']:
+            state = item['state']
+            yield dict(reference='mcp-config:' + json.dumps([name, item['area'], item['key']]), owner='mcp:' + name,
+                account=name, kind=item['key'], configured={'configured': True, 'not_configured': False, 'repair_required': False}.get(state),
+                configure_url=_configuration('mcp', name), reason='Saved credential needs repair.' if state == 'repair_required' else
+                'Credential storage is unavailable.' if state == 'unavailable' else '')
+    else:
+        for field, value in (config.get('env') or {}).items():
+            if _SECRET_NAME.search(field):
+                yield dict(reference=f'mcp:{name}:env:{field}', owner='mcp:' + name, account='', kind=field,
+                    configured=bool(value) if config.get('enabled', True) else None,
+                    configure_url=_configuration('mcp', name),
+                    reason='' if config.get('enabled', True) else 'Provider is disabled; its saved configuration is preserved.')
+
+
 def credential_metadata():
     from agent.permission.center import secrets
     from config import MODEL_CONFIG_TO_ENV
@@ -55,22 +76,26 @@ def credential_metadata():
     from agent.tools.tool_manager import ToolManager
     from core.mcp.managed import ManagedMcpConfig
     from application.api import Application
-    configs = ToolManager()._load_mcp_configs()
+    configuration_unavailable = False
+    try:
+        configs = ToolManager()._load_mcp_configs()
+    except (OSError, ValueError, KeyError):
+        configuration_unavailable = True
+        configs = []
+        yield dict(reference='mcp-config:unavailable', owner='mcp', account='', kind='credential', configured=None,
+            configure_url='/skills?tab=mcp', reason='MCP configuration is unavailable; saved credentials are preserved.')
     from agent.tools.mcp.mcp_oauth import credential_statuses
     known = {config['name'] for config in configs}
     for status in credential_statuses():
         name = status['server']
         yield dict(reference=f'mcp:{name}:oauth', owner='mcp:' + name, account='', kind='oauth',
             configured=status['configured'], configure_url=_configuration('mcp', name),
-            reason=status.get('reason') or ('' if name in known else 'Connection is no longer configured; saved credentials are preserved.'))
+            reason=status.get('reason') or ('Connection configuration is unavailable; saved credentials are preserved.' if configuration_unavailable
+                else '' if name in known else 'Connection is no longer configured; saved credentials are preserved.'))
     for config in configs:
         name = config['name']
         owner, url = 'mcp:' + name, _configuration('mcp', name)
-        for field, value in (config.get('env') or {}).items():
-            if _SECRET_NAME.search(field):
-                yield dict(reference=f'mcp:{name}:env:{field}', owner=owner, account='', kind=field,
-                    configured=bool(value) if config.get('enabled', True) else None,
-                    configure_url=url, reason='' if config.get('enabled', True) else 'Provider is disabled; its saved configuration is preserved.')
+        yield from mcp_configuration_credentials(config)
         if not isinstance(config, ManagedMcpConfig) or name not in {'email', 'elearning'}:
             continue
         if not config.get('enabled', True):
