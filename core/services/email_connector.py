@@ -1,61 +1,17 @@
 """Explicit trusted mailbox connector; the managed Server has no credentials."""
-import sys
-import threading
 from contextlib import nullcontext
 from pathlib import Path
-from types import ModuleType
 
 from common.runtime_identity import current_identity
-from core.mcp.managed import ManagedMcpConfig, OPERATIONS, _installed_digest
-from core.runtime.paths import source_digest
+from core.mcp.managed import OPERATIONS
 from core.security.control import require_owner
 from core.security.credential_values import REFERENCE
 from core.security.email_credentials import EmailCredentialStore
 from core.security.imap_transport import connect_imap
-from core.security.mcp_runtime import _launch_inputs
-
-_MODULES = {}
-_LOCK = threading.Lock()
-# Only these stdlib-only business modules are trusted. server.py and arbitrary
-# extension code are never imported into Core. SQL is from the same snapshot.
-_TRUSTED_MODULES = ('hosts', 'imap', 'schema', 'service')
-
 
 def _business(config):
-    if (not isinstance(config, ManagedMcpConfig) or config.get('name') != 'email' or
-            config.data_root is None or not config.package_digest or
-            config.package_digest != _installed_digest('email')):
-        raise PermissionError('Mailbox connector requires the Core-pinned provider')
-    _, root = _launch_inputs(config)
-    snapshot = {}
-    digest = source_digest(root, snapshot=snapshot)
-    if digest != config.package_digest:
-        raise PermissionError('Mailbox connector source does not match the Core distribution')
-    with _LOCK:
-        if digest not in _MODULES:
-            package_name = '_stella_trusted_email_' + digest
-            package = ModuleType(package_name)
-            package.__path__ = []
-            sys.modules[package_name] = package
-            loaded = {}
-            try:
-                for name in _TRUSTED_MODULES:
-                    path = 'email_mcp/' + name + '.py'
-                    module = ModuleType(package_name + '.' + name)
-                    module.__package__ = package_name
-                    module.__file__ = str(root / path)
-                    sys.modules[module.__name__] = module
-                    loaded[name] = module
-                    exec(compile(snapshot[path], module.__file__, 'exec'), module.__dict__)
-                    if name == 'schema':
-                        sql = snapshot['email_mcp/schema.sql'].decode('utf-8')
-                        module.load_schema_sql = lambda: sql
-                _MODULES[digest] = loaded['service'].EmailService
-            except BaseException:
-                for name in [package_name, *[package_name + '.' + name for name in loaded]]:
-                    sys.modules.pop(name, None)
-                raise
-        return _MODULES[digest]
+    from core.services.trusted_account_modules import load_business
+    return load_business(config)['service'].EmailService
 
 
 class EmailConnector:

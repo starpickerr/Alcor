@@ -26,6 +26,19 @@ def api(tmp_path, monkeypatch):
             pass
         def do_GET(self):
             received.append((self.path, dict(self.headers)))
+            if self.path == '/login':
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html')
+                self.end_headers()
+                self.wfile.write(b'<script>location.href="https://id.fudan.edu.cn/synthetic-login"</script>')
+                return
+            if self.path == '/landing':
+                self.send_response(200)
+                self.send_header('Set-Cookie', 'session=SYNTHETIC_COOKIE; Path=/; Secure; HttpOnly')
+                self.send_header('Content-Type', 'text/html')
+                self.end_headers()
+                self.wfile.write(b'<p>Synthetic signed-in account</p>')
+                return
             if self.path == '/redirect':
                 self.send_response(302)
                 self.send_header('Location', '/unapproved')
@@ -36,8 +49,13 @@ def api(tmp_path, monkeypatch):
                 body = ('reflected ' + self.headers.get('Authorization', '')).encode()
             else:
                 self.send_response(200)
-                body = b'{"id":42,"login_id":"alice"}'
-            self.send_header('Content-Type', 'application/json')
+                body = (json.dumps([{'id': 7, 'filename': 'Synthetic.pdf', 'size': 13,
+                                    'url': 'https://' + self.headers['Host'] + '/download'}]).encode()
+                        if self.path.startswith('/api/v1/courses/42/files') else
+                        b'SYNTHETIC_PDF' if self.path == '/download' else
+                        b'[{"id":42,"name":"Synthetic course"}]' if self.path.startswith('/api/v1/courses')
+                        else b'{"id":42,"login_id":"alice"}')
+            self.send_header('Content-Type', 'application/pdf' if self.path == '/download' else 'application/json')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             if self.path == '/slow':

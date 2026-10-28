@@ -129,6 +129,7 @@ def test_progressing_http_response_cannot_extend_deadline_or_leak_worker(phase):
     value = McpClient({'name': 'budget', 'type': 'streamable-http'})
     value._initialized = True
     value._http_url = f'http://127.0.0.1:{server.server_port}/mcp'
+    value.config['url'] = value._http_url
     from tests.fixtures.egress import approve_synthetic_egress
     approval = approve_synthetic_egress(value._http_url)
     approval.__enter__()

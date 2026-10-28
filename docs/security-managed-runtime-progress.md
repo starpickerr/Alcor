@@ -1,6 +1,8 @@
 # 安全与托管运行环境重构：阶段记录
 
-状态：**实施中，完整计划未完成，也未达到可合并验收条件**。更新于 2026-10-26。
+状态：**实施中，完整计划未完成，也未达到可合并验收条件**。更新于 2026-10-29。
+
+当前剩余工作以[10-27 收尾清单](../../.agents/tasks/active/2026-10-27-macos-security-delivery.md)的四项待办为准；下文早期记录供追溯，不自动增加实施范围。
 
 四个涉及仓库均在 `refactor/security-managed-runtime` 专用分支；Core 基线 `ee9b5d6f`。Stella-Plugins 包含 agent-hub 1.0.5 受控启动适配，两个 MCP 仓库新增 requirements.lock。用户于 2026-10-26 明确要求「及时提交」，现按已验证阶段提交；完整目标完成后的合并条件不变。保留最初无关改动，不推送或发布。
 
@@ -472,3 +474,18 @@ ElearningTransport复用现有Core HTTP实现、EgressPermit和连接lease，只
 elearning-transport-red.log初始7 FAIL（缺少模块）→7 PASS；补充真实资源授权撤销和无关密码轮换后，elearning-transport-final.log **72 PASS /22.42秒**，包含9项真实本地TLS、原生Keychain和socket用例，以及eLearning存储/HTTP/OAuth/IMAP/连接关联回归。Ruff/diff通过。此出口尚未接入原Canvas/MCP；密码SSO、认证session续期、具体下载跳转及原设置仍未完成，不将token/Cookie读取当作整个业务交付。
 
 SSO浏览器仅做了可行性实验：Seatbelt全禁network会同时阻止Chromium私有Unix IPC；允许Unix IPC后，真实Chromium DOM操作成功且直接IP网络被实际拒绝。已安装Chrome尝试叠加自身sandbox出现sandbox initialization failed，尚未采用为实现或宣称浏览器隔离验收。后续应验证一个清晰的实际OS边界、必要私有IPC、私有文件限制及限定接收方的受控请求，不能用浏览器route回调本身冒充禁网。公开学校登录页本轮获取超时，未把该失败视为账号/实现事实。
+
+
+## 2026-10-29 eLearning 后端业务接通
+
+Core 复用原 eLearning 登录、课程、同步和存储实现，通过固定摘要验证的模块接入可信连接器；复用邮箱的单次调用桥接，普通 MCP 不接收认证参数、Keychain 引用或账号存储权限。MCP 配套版本为 1.0.5，提交 `cfcd286`；Core 来源摘要已同步。
+
+- 原 JSON 发布密码/Token 引用，Cookie 保存在原账号 session 文件对应的 Keychain 条目中。单字段修改不读取其他凭据；保存失败保留原记录。业务使用拒绝未迁移的明文，Owner 测试新账号可使用明确输入的草稿；新账号测试的 Cookie 只存于本次调用内存，不覆盖现有账号。
+- 复用原 SSO 选择器及浏览器原生隔离，使用真实 Chromium 和合成登录页验证。API/下载继续通过 Core 实际 DNS、TLS 和接收方校验；连接关闭在登录前生效，登记的登录操作撤销后不能因重开而恢复。
+- 原受管输出子进程保留调用桥接属性；Core 同步检查选定目录、文件权限和保护路径。重复同步保留本地编辑，删除账号保留课件。已知旧业务目录由 Owner 读取时复制并迁移，保留原文件，拒绝符号链接来源。
+
+验证：`elearning-final-followup.log` **85 PASS**（含完整简报 HTTP、peer 授权、调用预算及新业务集成）；较早扩大回归 `elearning-stage-final.log` 为 **194 PASS /1 FAIL**，其中环境测试依赖全局 .env 的问题已用独立声明文件修正并包含在上述 85 项中。MCP 仓库 **123 PASS、12 subtests PASS**。Core 相关 Ruff 和 diff 检查通过；MCP 静态检查保留原 `store.py` 的 E402，忽略该既有项后通过。
+
+Core 全量 `core-elearning-stage-full.log` 为 **2952 PASS /6 FAIL /22 SKIP**（533.49 秒，修正前快照）。五项旧预期/测试配置已调整并定向通过；非默认用户简报“服务忙”的失败在单独及整文件回归通过，尚未取得修正后的全量结果。不得据此标完整回归通过。测试仅用临时数据、隔离原生 Keychain 和合成服务；浏览器测试只对临时自签名服务放宽证书校验，Core TLS 验证保持实际生效，未使用个人账号。
+
+剩余：原 eLearning 设置页的准确凭据状态及单项修复/删除、凭据目录汇总、模型运行时缓存，以及清单其余收尾和最终独立审查。尚未合并 develop，也未推送或发布。

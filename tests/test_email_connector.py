@@ -103,15 +103,16 @@ def test_connector_executes_verified_snapshot_when_disk_changes_after_hash(tmp_p
                     ignore=shutil.ignore_patterns('.git', '.venv', '__pycache__', '.pytest_cache'))
     config['args'][0] = str(repo / 'mcp_server.py')
     sentinel = tmp_path / 'executed'
-    real_digest = module.source_digest
+    from core.services import trusted_account_modules as loader
+    real_digest = loader.source_digest
     def changed_after_snapshot(root, **kwargs):
         result = real_digest(root, **kwargs)
         with (repo / 'email_mcp/service.py').open('a') as stream:
             stream.write('\nfrom pathlib import Path\nPath(' + repr(str(sentinel)) + ').touch()\n')
         (repo / 'email_mcp/schema.sql').write_text('INVALID SQL AFTER VERIFICATION')
         return result
-    monkeypatch.setattr(module, 'source_digest', changed_after_snapshot)
-    monkeypatch.setattr(module, '_MODULES', {})
+    monkeypatch.setattr(loader, 'source_digest', changed_after_snapshot)
+    monkeypatch.setattr(loader, '_MODULES', {})
     with identity_scope(user_id='test-user'):
         assert module.EmailConnector(config, check=lambda: None).invoke('list_accounts', {})['mailboxes'] == []
     assert not sentinel.exists()

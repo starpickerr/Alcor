@@ -140,7 +140,7 @@ def configurations(manager):
                     **({'description': description} if description else {}),
                     "type": "stdio",
                     "command": command,
-                    "args": launch + (['--hosted-connector'] if domain == 'email' else [])
+                    "args": launch + ['--hosted-connector']
                     + [
                         "--data-dir",
                         str(data),
@@ -168,7 +168,7 @@ def configurations(manager):
                     "filesystemTools": ['sync_files'] if domain == 'elearning' else [],
                 }, data_root=data, legacy_roots=legacy_reads, package_digest=_installed_digest(domain),
                     filesystem_outputs={'sync_files': ('get_settings', 'file_sync_root')} if domain == 'elearning' else {},
-                    hosted_connector='email' if domain == 'email' else None)
+                    hosted_connector=domain)
             )
         return configs
 

@@ -64,7 +64,8 @@ def test_factory_never_injects_legacy_password_and_marks_hosted_connector(monkey
     assert not config.credential_env
 
 
-def test_hosted_sandbox_denies_account_files_network_and_parameterized_callback(tmp_path, monkeypatch):
+@pytest.mark.parametrize('domain', ['email', 'elearning'])
+def test_hosted_sandbox_denies_account_files_network_and_parameterized_callback(tmp_path, monkeypatch, domain):
     from core.mcp.managed import ManagedMcpConfig
     from core.runtime.paths import source_digest
     import core.mcp.managed as managed
@@ -72,7 +73,7 @@ def test_hosted_sandbox_denies_account_files_network_and_parameterized_callback(
     root.mkdir()
     data = tmp_path / 'private'
     data.mkdir()
-    database = data / 'email.db'
+    database = data / ('email.db' if domain == 'email' else 'elearning.json')
     database.write_text('PRIVATE_OWNER_VALUE')
     listener = socket.socket()
     listener.bind(('127.0.0.1', 0))
@@ -104,12 +105,13 @@ for line in sys.stdin:
  print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
 ''')
     (root / 'requirements.lock').write_text('# stdlib-only sandbox probe\n')
+    script.write_text(script.read_text().replace('stella/email/invoke', f'stella/{domain}/invoke'))
     digest = source_digest(root)
     original = managed._installed_digest
-    monkeypatch.setattr(managed, '_installed_digest', lambda domain: digest if domain == 'email' else original(domain))
-    config = ManagedMcpConfig({'name': 'email', 'type': 'stdio', 'command': sys.executable,
+    monkeypatch.setattr(managed, '_installed_digest', lambda name: digest if name == domain else original(name))
+    config = ManagedMcpConfig({'name': domain, 'type': 'stdio', 'command': sys.executable,
                                'args': [str(script)], 'timeout': 5}, data_root=data,
-                              package_digest=digest, hosted_connector='email')
+                              package_digest=digest, hosted_connector=domain)
     client = McpClient(config)
     try:
         assert client.initialize()

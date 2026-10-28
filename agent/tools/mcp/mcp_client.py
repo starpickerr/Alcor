@@ -369,7 +369,7 @@ class McpClient:
         with output_temporary(scope) as temporary:
             config = ManagedMcpConfig(self.config, data_root=self.config.data_root,
                 legacy_roots=self.config.legacy_roots, package_digest=self.config.package_digest, output_scope=scope, output_temporary=temporary,
-                credential_env=self.config.credential_env)
+                credential_env=self.config.credential_env, hosted_connector=self.config.hosted_connector)
             child = McpClient(config)
             with self._lifecycle_lock:
                 if self._closed:
@@ -684,10 +684,12 @@ class McpClient:
         _check_cancelled(cancel_event)
         connector = None
         from core.mcp.managed import ManagedMcpConfig
-        if (isinstance(self.config, ManagedMcpConfig) and self.config.hosted_connector == 'email'
+        if (isinstance(self.config, ManagedMcpConfig) and self.config.hosted_connector in {'email', 'elearning'}
                 and message.get('method') == 'tools/call'):
             from copy import deepcopy
             from core.services.email_connector import EmailConnector
+            from core.services.elearning_connector import ElearningConnector
+            connector_type = {'email': EmailConnector, 'elearning': ElearningConnector}[self.config.hosted_connector]
             params = deepcopy(message['params'])
             def active():
                 self._ensure_open()
@@ -695,9 +697,9 @@ class McpClient:
                 from core.security.mcp_runtime import check_mcp
                 check_mcp(self)
                 if self._proc.poll() is not None:
-                    raise PermissionError('Managed mailbox process stopped')
+                    raise PermissionError('Managed account process stopped')
             def connector():
-                return EmailConnector(self.config, check=active, cancel_event=cancel_event).invoke(
+                return connector_type(self.config, check=active, cancel_event=cancel_event).invoke(
                     params['name'], params['arguments'], meta=params.get('_meta'))
             message = {**message, 'params': {**message['params'], 'arguments': {}}}
         raw = json.dumps(message) + "\n"
@@ -731,14 +733,14 @@ class McpClient:
             if 'method' in data:
                 # An extension cannot select a host operation, path, recipient
                 # or arguments. It can only complete this pending Core call once.
-                if (connector is not None and data.get('method') == 'stella/email/invoke' and
+                if (connector is not None and data.get('method') == f'stella/{self.config.hosted_connector}/invoke' and
                         data.get('params') == {'requestId': expected_id}):
                     pending, connector = connector, None
                     try:
                         reply = {'result': {'value': pending()}}
                     except Exception:
                         reply = {'error': {'code': -32001,
-                                           'message': '邮箱操作未完成，请检查原账号设置与当前授权。'}}
+                                           'message': '账号操作未完成，请检查原账号设置与当前授权。'}}
                 else:
                     reply = {'error': {'code': -32601, 'message': 'Host operation is not available'}}
                 self._proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': data['id'], **reply}) + '\n')

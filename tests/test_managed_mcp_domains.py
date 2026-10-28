@@ -597,7 +597,7 @@ def test_frozen_mcp_command_uses_independent_packaged_server(tmp_path, monkeypat
         c for c in managed.configurations(ToolManager()) if c["name"] == "elearning"
     )
     assert cfg["command"] == str(standalone)
-    assert cfg["args"][0] == "--data-dir"
+    assert cfg["args"][:2] == ["--hosted-connector", "--data-dir"]
 
 
 def test_server_enforces_request_resource_scope(tmp_path):

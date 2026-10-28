@@ -681,7 +681,8 @@ print(json.dumps(values))
     plan, _ = prepare_mcp(config, {})
     process = subprocess.run(plan.argv, env=plan.env, cwd=plan.cwd, capture_output=True, text=True, timeout=5)
     assert process.returncode == 0, process.stderr
-    assert json.loads(process.stdout) == ['own legacy settings', 'denied']
+    assert config.hosted_connector == domain
+    assert json.loads(process.stdout) == ['denied', 'denied']
 
 
 def test_mcp_storage_binding_is_core_only_and_real_sandbox_stops_sibling_access(tmp_path):

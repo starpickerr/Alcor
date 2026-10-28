@@ -240,7 +240,12 @@ def test_auth_failure_precedes_all_operations(api):
         service.assert_not_called()
 
 
-def test_settings_do_not_expose_credentials(api, monkeypatch):
+def test_settings_do_not_expose_credentials(api, monkeypatch, tmp_path):
+    from common import utils
+    original_expand = utils.expand_path
+    path = tmp_path / 'declared.env'
+    path.write_text('IMAP_HOST=private.example.com\nIMAP_USER=private-user\nIMAP_PASSWORD=secret-password\n')
+    monkeypatch.setattr(utils, 'expand_path', lambda value: str(path) if value == '~/.stella/.env' else original_expand(value))
     monkeypatch.setenv("IMAP_HOST", "private.example.com")
     monkeypatch.setenv("IMAP_USER", "private-user")
     monkeypatch.setenv("IMAP_PASSWORD", "secret-password")
@@ -252,8 +257,10 @@ def test_settings_do_not_expose_credentials(api, monkeypatch):
     assert result["settings"]["mailboxes"][0]["password_masked"] == "********"
     monkeypatch.delenv("IMAP_PASSWORD")
     from agent.tools.tool_manager import ToolManager
-    ToolManager()._teardown_mcp_server('email')  # Environment changes take effect in a fresh isolated server.
-    assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]["missing"] == ["IMAP_PASSWORD"]
+    ToolManager()._teardown_mcp_server('email')
+    # Successful migration retains the Keychain-backed account independently of env.
+    account = call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]
+    assert account['missing'] == [] and account['credential_status'] == 'configured'
 
 
 def test_settings_save_preserves_password_on_blank_update(api):

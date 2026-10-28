@@ -130,6 +130,25 @@ class ElearningCredentialStore:
             credential_values.publish(self.path, {name: value}, before, env_store.keychain_for,
                                       lambda saved: self._write(self.path, {**config, field: saved[name]}))
 
+    def publish_settings(self, config, *, expected_revision):
+        """Original business store publishes a complete validated settings edit."""
+        require_owner()
+        with self._lock():
+            if self._revision() != expected_revision:
+                raise ValueError('eLearning settings changed; reload before saving')
+            previous = self._read(self.path)
+            before = {self._name(previous, field): previous[field] for field in _FIELDS
+                      if isinstance(previous.get(field), str)}
+            values = {self._name(config, field): config[field] for field in _FIELDS
+                      if isinstance(config.get(field), str)}
+            def commit(saved):
+                result = dict(config)
+                for field in _FIELDS:
+                    if self._name(config, field) in saved:
+                        result[field] = saved[self._name(config, field)]
+                self._write(self.path, result)
+            credential_values.publish(self.path, values, before, env_store.keychain_for, commit)
+
     def migrate_session(self):
         require_owner()
         with self._lock():
