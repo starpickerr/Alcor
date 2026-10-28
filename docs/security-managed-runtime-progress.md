@@ -452,3 +452,13 @@ email-production-final.log **212 PASS /97.70秒**（两项既有pydub警告）�
 邮箱仓库email-provider-final.log **48 PASS /1.02秒**；email-ui-final.log通过原路径1280px及390px（使用既有收起侧栏按钮），四态、空输入、失败草稿、保存清空、刷新、测试连接和删除均验证，截图已目视检查。TypeScript main/renderer、受影响ESLint、Python Ruff及diff通过；Core pin与当前MCP源逐字节摘要匹配。测试仅用隔离数据、临时Keychain和本地TLS服务，没有个人账号或认证弹窗。
 
 此项完成当前macOS邮箱原业务接入的阶段验收；eLearning、模型客户端缓存、来源/受保护数据联动、托管环境矩阵及最终全量/独立审查仍未完成，不合并develop、不推送发布。Linux未实测；冻结分发及完整支持矩阵继续由Task4/6核对。
+
+## 2026-10-29 eLearning 原凭据与登录状态存储基础
+
+ElearningCredentialStore在原elearning.json内保存password/token引用，在原elearning-sessions/<account>.json内保存该登录状态的引用；课程、游标、下载清单及未知配置字段保持。账号ID继续使用原base_url与username的算法，Keychain字段绑定用户、账号端点、用户名和字段；不按列表位置归属。两个原文件各自验证并原子发布，未创建第二份账号配置，也不宣称跨文件事务。
+
+单字段修复/删除无需解密其他凭据；实际读取只解析所需字段，没有缓存明文或原样引用回退。合法JSON中的坏字段和坏session保留，可单独修复/删除。登录状态轮换使用账号配置及原session共同版本，迟到的旧登录不能覆盖新状态；只有发布新引用成功后才清理旧Keychain项，文件发布失败保留原登录。Owner状态仅查Keychain属性，不解密；普通Agent没有管理入口。
+
+初始elearning-storage-red.log为8项缺少适配器错误，首次实现8项通过。随后session轮换/迟到响应2项RED、损坏引用wrapper状态1项RED后补实现。elearning-storage-final.log **57 PASS /1.66秒**，包含12项eLearning专用原生用例和邮箱/环境/OAuth凭据关联回归；真实隔离Keychain覆盖锁定、验证失败、发布失败、复制/改账号引用拒绝与Owner管理边界。Ruff/diff通过，未访问个人账号或弹认证窗口。
+
+此阶段仅为尚未接入生产链路的存储基础。eLearning受控API/特定SSO登录、真实受管MCP、下载/资源撤销与原设置的逐字段状态/修复仍待接续；没有把仅token可用当作密码登录交付，没有将当前第一方业务改标不支持。全目标保持实施中。
