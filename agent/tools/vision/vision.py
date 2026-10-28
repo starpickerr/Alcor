@@ -18,8 +18,7 @@ Provider resolution:
 
 import base64
 import os
-import subprocess
-import tempfile
+from io import BytesIO
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +26,7 @@ from models import transport_requests as requests
 from core.security.requests_transport import web_requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from core.security.file_access import checked_open
 from agent.tools.utils.url_safety import validate_url_safe
 from common import const
 from common.log import logger
@@ -167,6 +167,9 @@ class Vision(BaseTool):
         if not question:
             return ToolResult.fail("Error: 'question' parameter is required")
 
+        from core.security.protected_paths import current_revision, check_context_revision
+        from core.security.service import model_authorization_scope
+        revision = current_revision()
         providers = self._resolve_providers()
         if not providers:
             return ToolResult.fail(
@@ -186,7 +189,8 @@ class Vision(BaseTool):
         # Default model is only used as a last-resort placeholder for providers
         # whose VisionProvider.model_override is None (e.g. raw OpenAI provider
         # when the user did not configure tools.vision.model).
-        return self._call_with_fallback(providers, DEFAULT_MODEL, question, image_content)
+        with model_authorization_scope(lambda: check_context_revision(revision)):
+            return self._call_with_fallback(providers, DEFAULT_MODEL, question, image_content)
 
     def _call_with_fallback(self, providers: List[VisionProvider], model: str,
                             question: str, image_content: dict) -> ToolResult:
@@ -742,14 +746,10 @@ class Vision(BaseTool):
                 f"Supported: {', '.join(SUPPORTED_EXTENSIONS.keys())}"
             )
 
-        file_path = self._maybe_compress(image)
-        try:
-            with open(file_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("ascii")
-        finally:
-            if file_path != image and os.path.exists(file_path):
-                os.remove(file_path)
-
+        with checked_open(image, 'rb') as file:
+            content = file.read()
+        content, mime_type = self._maybe_compress(content, mime_type)
+        b64 = base64.b64encode(content).decode("ascii")
         data_url = f"data:{mime_type};base64,{b64}"
         return {"type": "image_url", "image_url": {"url": data_url}}
 
@@ -767,59 +767,24 @@ class Vision(BaseTool):
         return {"type": "image_url", "image_url": {"url": data_url}}
 
     @staticmethod
-    def _maybe_compress(path: str) -> str:
-        """Compress image to under COMPRESS_THRESHOLD with max long-edge 1536px."""
-        file_size = os.path.getsize(path)
-        if file_size <= COMPRESS_THRESHOLD:
-            return path
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        tmp.close()
-
-        def _try_sips(max_dim: str, quality: str) -> bool:
+    def _maybe_compress(content: bytes, mime_type: str) -> tuple[bytes, str]:
+        """Compress the guarded snapshot without reopening its source path."""
+        if len(content) <= COMPRESS_THRESHOLD:
+            return content, mime_type
+        from PIL import Image
+        with Image.open(BytesIO(content)) as image:
+            image.thumbnail((1536, 1536))
+            converted = image.convert('RGB')
             try:
-                subprocess.run(
-                    ["sips", "-Z", max_dim, "-s", "formatOptions", quality,
-                     path, "--out", tmp.name],
-                    capture_output=True, check=True,
-                )
-                return True
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                return False
-
-        def _try_convert(max_dim: str, quality: str) -> bool:
-            try:
-                subprocess.run(
-                    ["convert", path, "-resize", f"{max_dim}x{max_dim}>",
-                     "-quality", quality, tmp.name],
-                    capture_output=True, check=True,
-                )
-                return True
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                return False
-
-        attempts = [
-            ("1536", "85"),
-            ("1536", "70"),
-            ("1536", "50"),
-        ]
-
-        for max_dim, quality in attempts:
-            ok = _try_sips(max_dim, quality) or _try_convert(max_dim, quality)
-            if not ok:
-                continue
-            new_size = os.path.getsize(tmp.name)
-            logger.debug(f"[Vision] Compressed image "
-                         f"({file_size // 1024}KB -> {new_size // 1024}KB, "
-                         f"max_dim={max_dim}, q={quality})")
-            if new_size <= COMPRESS_THRESHOLD:
-                return tmp.name
-
-        if os.path.exists(tmp.name) and os.path.getsize(tmp.name) > 0:
-            return tmp.name
-
-        os.remove(tmp.name)
-        return path
+                for quality in (85, 70, 50):
+                    output = BytesIO()
+                    converted.save(output, format='JPEG', quality=quality)
+                    compressed = output.getvalue()
+                    if len(compressed) <= COMPRESS_THRESHOLD:
+                        break
+            finally:
+                converted.close()
+        return compressed, 'image/jpeg'
 
     def _call_api(self, provider: VisionProvider, model: str,
                   question: str, image_content: dict) -> ToolResult:

@@ -354,3 +354,10 @@ Read/Edit/Write 使用目录描述符逐层固定目标，在实际打开及每�
 `context-protection-red.log` 4 FAIL；补充队列/显式清理场景 `context-queued-red.log` 2 FAIL 后修复。最终 `context-protection-final.log` **109 PASS /2.79 秒**（两项既有 pydub 警告），覆盖实际 SQLite 迁移/保留、旧内存上下文、新上下文恢复、排队输入、外发 permit、原 SSE/多 Agent/共享数据库恢复以及保护路径回归。Ruff/diff PASS。
 
 这是保守的版本失效处理：任何保护规则变更都会停止旧会话复用，尚未按具体来源选择性放行。普通 SessionManager 路径、记忆/知识索引、附件和来源授权还需继续接通；不代表 Task 2c/5 完成。
+
+
+## 2026-10-28 Vision 文件快照边界
+
+Vision 的本地图片入口改用与文件工具相同的 checked_open；大图在内存中以现有 Pillow 依赖压缩受检字节快照，不再启动继承宿主环境的 sips/convert，也不再以路径重新打开来源。JPEG 输出使用实际 image/jpeg MIME。读取后到调用厂商前若保护版本改变，原上下文授权 scope 拒绝外发。
+
+`vision-protection-red.log` 2 FAIL（直接保护文件/别名未拒绝、实际尝试启动宿主转换程序）→最终 `vision-protection-final.log` **60 PASS /2.04 秒**，普通小图字节保持、真实大图压缩、保护文件/别名拒绝、快照后规则变更时厂商调用次数为0、模型与文件工具关联回归。Ruff/diff PASS。具体图片来源的持久证据及会话数据范围授权仍属于后续来源联动；此阶段不宣称完整外发控制已完成。
