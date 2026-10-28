@@ -418,3 +418,11 @@ ToolManager 从实际原文件建立可信引用绑定，配置源切换也改�
 mcp-config-ui-final.log PASS：原配置页1280px/390px的空密码、状态、单字段保存/删除、错误草稿、CAS刷新保留其他草稿；截图已检查。截图发现相邻组件 key 冲突导致重复 OAuth 面板，补 RED 后使用不同 key 修复；输入复用现有组件。mcp-config-oauth-ui-regression.log PASS，原授权/取消/删除/轮询继续可用；旧脚本的全页“未配置”选择器改为各自命名区域，fixture补齐新增状态接口，未降低授权断言。TypeScript(main/renderer)及相关ESLint通过。
 
 本阶段覆盖已声明静态 header/env 的存储/修复及已适配 HTTP/SSE 认证。邮箱/eLearning等业务账号和对应客户端缓存闭环归Task 3f，来源/保护联动、生命周期支持矩阵、统一外发及整体验收仍开放。未运行新的全量项目快照，不以184项代替整体证明；未合并、推送或发布。
+
+## 2026-10-28 邮箱原账号密码存储基础
+
+新增EmailCredentialStore，复用credential_values与原email.db的password字段，不创建第二份账号配置。引用绑定用户、稳定账号ID、认证主机/端口、用户名及字段；文件夹改变不改变认证身份。迁移批次先验证所有新值，SQLite真实commit后才清理旧Keychain项；失败回滚原行。单账号修复/删除使用原行revision，不读取其他账号密码；状态只查属性，运行时解析每次读取当前引用，锁定、丢失、端点改变或引用损坏明确拒绝。
+
+初始email-storage-red.log记录8项缺失适配器错误；实现后发现两处测试夹具不符合现有接口（原生锁应调用SecKeychainLock、Agent主体需session），修正后8项通过，补充实际事务提交失败和条目丢失用例。最终email-storage-regression.log **85 PASS /7.85秒**，含10项邮箱专用用例及模型/环境/插件/MCP凭据关联回归，两项既有pydub警告；Ruff/diff通过。测试使用真实临时Keychain和原MCP邮箱SQLite schema，未访问个人账号。
+
+这是尚未接入原业务入口的存储基础，不能宣称邮箱业务或Task3f完成。可信IMAP认证、原设置状态/修复、旧环境/文件导入及真实受管MCP正常业务仍需继续；不合并develop、不推送发布。
