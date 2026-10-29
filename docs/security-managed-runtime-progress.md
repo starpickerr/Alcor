@@ -500,3 +500,10 @@ Core 全量 `core-elearning-stage-full.log` 为 **2952 PASS /6 FAIL /22 SKIP**�
 证据：新增问题先由 `elearning-owner-red.log` 7 项失败复现，后端初步 47 PASS；`elearning-owner-regression.log` **147 PASS /59.11 秒**，并通过新增原 HTTP 修复/删除/重启场景（`elearning-owner-http-final.log` 1 PASS）。前端原掩码预填 RED 后，`elearning-owner-ui-green.log` PASS，包含单字段失败/成功、其他草稿与选课保留、Token 删除、session revision、状态刷新及账号变更；1280px/390px 截图已查看。原设置页目录/同步/旧入口浏览器回归 PASS。TypeScript 主进程及 renderer、相关 ESLint/Ruff、diff 检查通过。测试未使用个人账号，原生 Keychain 继续隔离且禁止认证弹窗。
 
 本阶段不改变 MCP 版本或固定来源摘要；配套 eLearning MCP 仍为 `cfcd286` /1.0.5。凭据主任务剩余模型实际调用的旧值缓存；其余精简清单和最终全量/独立审查仍未完成，尚未合并 develop。
+
+
+## 2026-10-29 模型现有调用凭据收尾
+
+已有聊天协议、旧聊天/文本补全、图片及嵌入在实际发请求时读取原配置中选中字段的当前 Keychain 引用；延迟启动的流式请求在启动时解析。保持原配置文件、原设置入口和已有客户端刷新方式，单次调用不解密其他提供者。选中的自定义提供者按稳定 ID 查找，删除或缺失后提示重新选择，不回退到另一账号；旧单提供者 custom 配置仍可用。ModelScope 的既有字段纳入同一声明和安全页修复路径。
+
+证据：model-runtime-final.log **135 PASS /58.29 秒**，含真实本地 TLS 请求及 macOS 临时 Keychain 的更换、清空、锁定、条目删除、自定义重排/删除、流式启动、原入口保存失败及重启加载；RED 日志保留。相关 Ruff/空白检查通过。Core 全量和最终审查仍在进行，尚未合并。

@@ -11,6 +11,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, load_config
 from .doubao_session import DoubaoSession
 
@@ -29,7 +30,7 @@ class DoubaoBot(Bot):
 
     @property
     def api_key(self):
-        return conf().get("ark_api_key")
+        return model_key("ark_api_key")
 
     @property
     def base_url(self):

@@ -7,7 +7,7 @@ model binding or run record.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -60,6 +60,7 @@ class ProviderConfig:
     auth_method: str
     protocol_id: str
     bot_type: str
+    runtime: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ def _provider_id(bot_type: str) -> str:
 
 def resolve_provider(provider_id: str, config=None) -> ProviderConfig:
     cfg = config if config is not None else conf()
+    runtime = cfg is conf()
     provider_id = _provider_id(provider_id or cfg.get("bot_type") or const.CHATGPT)
     if provider_id.startswith("custom:"):
         custom_id = provider_id.partition(":")[2]
@@ -91,7 +93,7 @@ def resolve_provider(provider_id: str, config=None) -> ProviderConfig:
                               item.get("api_key") or "", f"custom_providers:{custom_id}",
                               "x-api-key" if protocol == "anthropic_messages" else
                               "x-goog-api-key" if protocol == "gemini_native" else "bearer",
-                              protocol, provider_id)
+                              protocol, provider_id, runtime)
     keys = _CREDENTIALS.get(provider_id)
     if keys is None:
         # Other established Bot classes continue to own their transport until
@@ -106,7 +108,24 @@ def resolve_provider(provider_id: str, config=None) -> ProviderConfig:
                           cfg.get(key_field) or "", key_field,
                           "x-api-key" if protocol == "anthropic_messages" else
                           "x-goog-api-key" if protocol == "gemini_native" else "bearer",
-                          protocol, const.CHATGPT if provider_id == "openai" else provider_id)
+                          protocol, const.CHATGPT if provider_id == "openai" else provider_id, runtime)
+
+
+def refresh_provider(provider):
+    if not provider.runtime:
+        return provider
+    from core.security.config_credentials import runtime_document, runtime_value
+    from core.security.keychain import KeychainUnavailable
+    name = ('CUSTOM:' + provider.provider_id.partition(':')[2]
+            if provider.provider_id.startswith('custom:') else provider.credential_ref)
+    document = runtime_document(name)
+    current = resolve_provider(provider.provider_id, config=document if document is not None else conf())
+    if current.protocol_id != provider.protocol_id:
+        raise ValueError('Provider protocol changed; start a new model run')
+    key = runtime_value(name, current.api_key, document=document)
+    if not key and provider.api_key:
+        raise KeychainUnavailable('Model credential was cleared; configure it in its original settings')
+    return replace(current, api_key=key, runtime=True)
 
 
 def resolve_binding(provider_id=None, model_id=None, protocol_id=None, config=None):

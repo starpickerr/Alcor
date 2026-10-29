@@ -192,6 +192,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         query_instruction: str = "",
         max_batch_size: int = 256,
         source_tagged: Optional[bool] = None,
+        credential_provider=None,
     ):
         """
         Args:
@@ -212,6 +213,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
         self.api_base = api_base or "https://api.openai.com/v1"
         self.extra_headers = extra_headers or {}
+        self.credential_provider = credential_provider
         if source_tagged is None:
             _host = (urlparse(self.api_base).hostname or "").lower()
             source_tagged = _host == "link-ai.tech" or _host.endswith(".link-ai.tech")
@@ -245,10 +247,13 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """Call OpenAI-compatible /embeddings endpoint"""
         from models import transport_requests as requests
 
-        url = f"{self.api_base}/embeddings"
+        api_key, api_base = self.credential_provider() if self.credential_provider else (self.api_key, self.api_base)
+        if not api_key:
+            raise ValueError('Embedding credential is unavailable')
+        url = f"{api_base}/embeddings"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             **self._request_headers(),
         }
         data = {
@@ -345,11 +350,13 @@ class DoubaoEmbeddingProvider(EmbeddingProvider):
         api_base: Optional[str] = None,
         extra_headers: Optional[dict] = None,
         dimensions: Optional[int] = None,
+        credential_provider=None,
     ):
         self.model = model
         self.api_key = api_key
         self.api_base = api_base or "https://ark.cn-beijing.volces.com/api/v3"
         self.extra_headers = extra_headers or {}
+        self.credential_provider = credential_provider
         if not self.api_key or self.api_key in ["", "YOUR API KEY", "YOUR_API_KEY"]:
             raise ValueError("Doubao embedding API key (ark_api_key) is not configured")
 
@@ -368,10 +375,13 @@ class DoubaoEmbeddingProvider(EmbeddingProvider):
         text part."""
         from models import transport_requests as requests
 
-        url = f"{self.api_base}/embeddings/multimodal"
+        api_key, api_base = self.credential_provider() if self.credential_provider else (self.api_key, self.api_base)
+        if not api_key:
+            raise ValueError('Embedding credential is unavailable')
+        url = f"{api_base}/embeddings/multimodal"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             **self.extra_headers,
         }
         payload = {
@@ -455,6 +465,7 @@ def create_embedding_provider(
     extra_headers: Optional[dict] = None,
     dimensions: Optional[int] = None,
     source_tagged: Optional[bool] = None,
+    credential_provider=None,
 ) -> EmbeddingProvider:
     """
     Factory function to create an embedding provider.
@@ -492,6 +503,7 @@ def create_embedding_provider(
             api_base=api_base or meta["default_base_url"],
             extra_headers=extra_headers,
             dimensions=final_dim,
+            credential_provider=credential_provider,
         )
 
     # Legacy two-arg call for openai/linkai keeps 1536-dim default behavior
@@ -507,6 +519,7 @@ def create_embedding_provider(
             api_base=api_base,
             extra_headers=extra_headers,
             source_tagged=source_tagged,
+            credential_provider=credential_provider,
         )
 
     final_dim = dimensions if (dimensions and dimensions > 0) else meta["default_dimensions"]
@@ -531,4 +544,5 @@ def create_embedding_provider(
         query_instruction=meta["query_instruction"],
         max_batch_size=meta.get("max_batch_size", 256),
         source_tagged=source_tagged,
+        credential_provider=credential_provider,
     )

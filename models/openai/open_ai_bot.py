@@ -18,6 +18,7 @@ from models.session_manager import SessionManager
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 
 user_session = dict()
@@ -27,7 +28,7 @@ user_session = dict()
 class OpenAIBot(Bot, OpenAIImage, OpenAICompatibleBot):
     def __init__(self):
         super().__init__()
-        self._api_key = conf().get("open_ai_api_key")
+        self._api_key = model_key("open_ai_api_key")
         self._api_base = conf().get("open_ai_api_base") or None
         self._proxy = conf().get("proxy") or None
         self._http_client = OpenAIHTTPClient(
@@ -52,7 +53,7 @@ class OpenAIBot(Bot, OpenAIImage, OpenAICompatibleBot):
     def get_api_config(self):
         """Get API configuration for OpenAI-compatible base class"""
         return {
-            'api_key': conf().get("open_ai_api_key"),
+            'api_key': model_key("open_ai_api_key"),
             'api_base': conf().get("open_ai_api_base"),
             'model': conf().get("model", "text-davinci-003"),
             'default_temperature': conf().get("temperature", 0.9),
@@ -110,6 +111,8 @@ class OpenAIBot(Bot, OpenAIImage, OpenAICompatibleBot):
             call_args = dict(self.args)
             timeout = call_args.pop("request_timeout", None) or call_args.pop("timeout", None)
             response = self._http_client.completions(
+                api_key=model_key("open_ai_api_key"),
+                api_base=conf().get("open_ai_api_base") or "https://api.openai.com/v1",
                 timeout=timeout,
                 prompt=str(session),
                 **call_args,

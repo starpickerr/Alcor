@@ -64,7 +64,8 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
 
     @property
     def api_key(self):
-        return conf().get("deepseek_api_key") or conf().get("open_ai_api_key")
+        from core.security.config_credentials import model_key
+        return model_key("deepseek_api_key") or model_key("open_ai_api_key")
 
     @property
     def api_base(self):

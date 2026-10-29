@@ -38,6 +38,8 @@ MODEL_CONFIG_TO_ENV = {
     "ark_base_url": "ARK_API_BASE",
     "dashscope_api_key": "DASHSCOPE_API_KEY",
     "dashscope_api_base": "DASHSCOPE_API_BASE",
+    "modelscope_api_key": "MODELSCOPE_API_KEY",
+    "modelscope_base_url": "MODELSCOPE_BASE_URL",
 }
 MODEL_CONFIG_FIELDS = set(MODEL_CONFIG_TO_ENV) | {
     "custom_api_key", "custom_api_base", "custom_providers",
@@ -554,10 +556,12 @@ def load_config():
 
     # Credential access is separate from JSON validation: a locked/missing
     # Keychain item is repairable state, never a corrupted configuration.
-    from core.security.config_credentials import resolve as resolve_credentials, reference_fields
+    from core.security.config_credentials import resolve as resolve_credentials, reference_fields, bind_runtime
     referenced_model_fields = reference_fields(config)
+    credential_document = dict(config)
     config_values, _credential_states = resolve_credentials(user_config_path, dict(config))
     config = Config(config_values)
+    bind_runtime(user_config_path, credential_document, config)
 
     # Migrate legacy singular keys (`tool`, `skill`) into the canonical
     # plural buckets so the rest of the codebase only reads one schema.

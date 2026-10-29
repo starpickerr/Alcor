@@ -36,7 +36,7 @@ unchanged: we return ``custom_api_key`` / ``custom_api_base`` values.
 
 import uuid
 from config import conf
-from common.log import logger
+from core.security.config_credentials import model_key, runtime_document, runtime_value
 
 
 def generate_provider_id() -> str:
@@ -109,29 +109,28 @@ def resolve_custom_credentials():
     if not is_custom:
         # Not custom at all — should not happen but be defensive.
         return (
-            conf().get("open_ai_api_key", ""),
+            model_key("open_ai_api_key"),
             conf().get("open_ai_api_base") or None,
             None,
         )
 
     if provider_id:
         # Multi-provider mode: look up by id.
-        providers = get_custom_providers()
+        name = 'CUSTOM:' + provider_id
+        document = runtime_document(name)
+        providers = document.get('custom_providers', []) if document is not None else get_custom_providers()
         provider = _find_provider_by_id(providers, provider_id)
         if provider is not None:
             return (
-                provider.get("api_key", ""),
+                runtime_value(name, provider.get("api_key", ""), document=document),
                 provider.get("api_base") or None,
                 provider.get("model") or None,
             )
-        logger.warning(
-            "[CUSTOM] provider id '%s' not found in custom_providers, "
-            "falling back to legacy fields", provider_id
-        )
+        raise ValueError('Selected custom provider no longer exists; choose it in the original model settings')
 
     # Legacy single-provider fallback — unchanged behavior.
     return (
-        conf().get("custom_api_key", ""),
+        model_key("custom_api_key"),
         conf().get("custom_api_base") or None,
         None,
     )

@@ -99,7 +99,7 @@ class TestResolveCustomCredentials(unittest.TestCase):
             ("key-b", "https://api.example.org/v1", "model-b"),
         )
 
-    def test_id_not_found_falls_back_to_legacy(self):
+    def test_id_not_found_does_not_use_other_credentials(self):
         set_conf({
             "bot_type": "custom:ghost",
             "custom_api_key": "legacy-key",
@@ -109,10 +109,8 @@ class TestResolveCustomCredentials(unittest.TestCase):
                  "api_base": "https://api.example.com/v1"},
             ],
         })
-        self.assertEqual(
-            self.resolve(),
-            ("legacy-key", "https://legacy.example.com/v1", None),
-        )
+        with self.assertRaises(ValueError):
+            self.resolve()
 
     def test_provider_without_model_returns_none_model(self):
         set_conf({
@@ -128,7 +126,7 @@ class TestResolveCustomCredentials(unittest.TestCase):
 
     # --- Robustness against malformed config ---
 
-    def test_malformed_entries_filtered_and_fallback(self):
+    def test_malformed_entries_do_not_select_legacy_credentials(self):
         set_conf({
             "bot_type": "custom:nope",
             "custom_api_key": "legacy-key",
@@ -138,11 +136,8 @@ class TestResolveCustomCredentials(unittest.TestCase):
                 "not-a-dict",                                  # invalid: wrong type
             ],
         })
-        # All entries invalid -> treated as empty -> legacy fallback
-        self.assertEqual(
-            self.resolve(),
-            ("legacy-key", "https://legacy.example.com/v1", None),
-        )
+        with self.assertRaises(ValueError):
+            self.resolve()
 
     def test_get_custom_providers_filters_invalid(self):
         set_conf({

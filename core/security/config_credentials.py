@@ -70,6 +70,45 @@ def resolve(path, data):
     return result, states
 
 
+def bind_runtime(path, data, runtime):
+    """Retain only declared field names and their original configuration path."""
+    if hasattr(runtime, '__dict__'):
+        runtime._credential_path = Path(path).resolve()
+        runtime._credential_fields = set(getattr(runtime, '_credential_fields', ())) | reference_fields(data)
+
+
+def runtime_document(name):
+    from config import conf
+    runtime = conf()
+    if name not in getattr(runtime, '_credential_fields', ()):
+        return None
+    return read_document(runtime._credential_path)
+
+
+def runtime_value(name, fallback='', *, document=...):
+    """Resolve one declared runtime credential; never revive a cached value."""
+    document = runtime_document(name) if document is ... else document
+    if document is None:
+        return fallback
+    if name.startswith('CUSTOM:'):
+        matches = [item for item in document.get('custom_providers', [])
+                   if isinstance(item, dict) and item.get('id') == name[len('CUSTOM:'):]]
+        value = matches[0].get('api_key') if len(matches) == 1 else None
+    elif name == 'BOCHA_API_KEY':
+        value = ((document.get('tools') or {}).get('web_search') or {}).get('bocha_api_key')
+    else:
+        value = document.get(name)
+    if not isinstance(value, str) or not value.startswith(credential_values.REFERENCE):
+        from core.security.keychain import KeychainUnavailable
+        raise KeychainUnavailable('Model credential was cleared or needs repair in its original settings')
+    return credential_values.resolve(document.path, {name: value}, env_store.keychain_for)[0][name]
+
+
+def model_key(name, default=''):
+    from config import conf
+    return runtime_value(name, conf().get(name, default) or '')
+
+
 def statuses(path, data=None):
     data = read_document(path) if data is None else data
     return credential_values.statuses(path, _values(_locations(data)), env_store.keychain_for)
@@ -108,6 +147,7 @@ def write_document(path, data, *, runtime=None):
             private_atomic_write(path, json.dumps(result, ensure_ascii=False, indent=4))
             if runtime is not None:
                 runtime.update(candidate)
+                bind_runtime(path, result, runtime)
         credential_values.publish(path, _values(fields), _values(_locations(before)), env_store.keychain_for, commit)
     return result
 

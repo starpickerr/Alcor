@@ -14,6 +14,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 
 # Optional OpenAI image support
@@ -65,7 +66,7 @@ class ClaudeAPIBot(Bot, OpenAIImage):
 
     @property
     def api_key(self):
-        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("claude_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else model_key("claude_api_key")
 
     @property
     def api_base(self):

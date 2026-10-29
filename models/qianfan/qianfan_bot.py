@@ -7,6 +7,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, load_config
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
@@ -54,7 +55,7 @@ class QianfanBot(Bot, OpenAICompatibleBot):
 
     @property
     def api_key(self):
-        return conf().get("qianfan_api_key")
+        return model_key("qianfan_api_key")
 
     @property
     def api_base(self):
