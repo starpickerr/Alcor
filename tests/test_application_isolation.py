@@ -2,10 +2,10 @@
 import pytest
 
 
-def test_no_guard_means_core_and_desktop_are_not_protected(monkeypatch):
+def test_core_and_desktop_report_the_trusted_host_boundary(monkeypatch):
     from core.security.isolation import application_isolation
     report = application_isolation()
-    assert report['status'] == 'unavailable'
+    assert report['status'] == 'trusted-host'
     assert report['protected'] is False
     assert report['scope'] == 'application'
     assert {'core', 'desktop-main', 'desktop-helpers'} <= set(report['unprotected'])

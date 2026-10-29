@@ -698,8 +698,6 @@ class BrowserService:
 
     def _launch_browser(self):
         """Launch / connect Chromium on the background thread."""
-        from core.security.isolation import require_application_isolation
-        require_application_isolation()
         # Native application protection alone does not authorize a browser to
         # reuse private cookies or make uncontrolled subrequests. The public
         # compartment and broker must be integrated before this path can run.

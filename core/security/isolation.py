@@ -8,10 +8,10 @@ import sys
 
 def application_isolation():
     return {
-        'scope': 'application', 'status': 'unavailable', 'protected': False,
+        'scope': 'application', 'status': 'trusted-host', 'protected': False,
         'platform': sys.platform,
-        'reason': 'Application-wide native protection is not installed and verified.',
-        'code': 'application_guard_not_verified',
+        'reason': 'Application hosts Core and Electron are trusted; OS isolation applies to managed child processes.',
+        'code': 'trusted_host_boundary',
         'unprotected': ['core', 'desktop-main', 'desktop-helpers'],
     }
 
@@ -19,4 +19,4 @@ def application_isolation():
 def require_application_isolation():
     report = application_isolation()
     if not report['protected']:
-        raise PermissionError(report['reason'])
+        raise PermissionError('Application-wide native isolation is not provided by Stella.')

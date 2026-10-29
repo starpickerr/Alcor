@@ -63,7 +63,7 @@ def backend(route):
             subject = parse_qs(urlparse(route.request.url).query)['subject'][0]
         data.update(policy=policies.setdefault(subject, dict(policies['default'])), capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True, 'enabled': True}], migration_status='complete', compatibility_restrictions={})
     elif path == '/api/security/sensitive-resources':
-        data.update(credentials=[{'id': f'model-test-{index}', 'owners': ['model:test'], 'account': f'Test {index}', 'kind': 'api-key', 'configured': True, 'configure_url': '/models?credential=OPENAI_API_KEY', 'reason': ''} for index in range(30)], folder_protection={'protected': False, 'status': 'unavailable', 'code': 'application_guard_not_verified', 'reason': 'Not deployed'})
+        data.update(credentials=[{'id': f'model-test-{index}', 'owners': ['model:test'], 'account': f'Test {index}', 'kind': 'api-key', 'configured': True, 'configure_url': '/models?credential=OPENAI_API_KEY', 'reason': ''} for index in range(30)], folder_protection={'protected': False, 'status': 'trusted-host', 'code': 'trusted_host_boundary', 'reason': 'Trusted application host'})
     elif path == '/api/security/connections':
         if route.request.method == 'POST':
             body = route.request.post_data_json
@@ -84,7 +84,7 @@ def backend(route):
                     pending_rebuild.append(route)
                     return
                 next(row for row in runtime_rows if row['id'] == body['id'])['environment']['id'] = 'rebuilt'
-        data.update(runtimes=runtime_rows, isolation={'status': 'enabled', 'reason': 'OS isolation'}, application_isolation={'protected': False, 'status': 'unavailable', 'reason': 'Not deployed', 'unprotected': ['core', 'desktop-main', 'desktop-helpers']})
+        data.update(runtimes=runtime_rows, isolation={'status': 'enabled', 'reason': 'OS isolation'}, application_isolation={'protected': False, 'status': 'trusted-host', 'reason': 'Trusted application host', 'unprotected': ['core', 'desktop-main', 'desktop-helpers']})
     elif path == '/api/security/migration':
         data.update(verification={'status': 'applied', 'valid': True}, preview={'pending': 0, 'needs_confirmation': 0, 'fingerprint': 'test'})
     if path == '/api/health':
@@ -220,7 +220,7 @@ with sync_playwright() as playwright:
             return sum(channel * weight for channel, weight in zip(linear, [0.2126, 0.7152, 0.0722]))
         light, dark = sorted([luminance(colors['foreground']), luminance(colors['background'])], reverse=True)
         assert (light + 0.05) / (dark + 0.05) >= 4.5, colors
-        expect(page.get_by_text('应用级保护未就绪。Core 和 Electron 不在下述子进程沙箱的保护范围内。', exact=True)).to_be_visible()
+        expect(page.get_by_text('Core 和 Electron 是可信宿主。下方显示各受管子进程的实际隔离状态。', exact=True)).to_be_visible()
         expect(page.get_by_role('checkbox')).to_have_count(0)
         rebuild = page.get_by_role('button', name='重建 stella.example-rebuild 的依赖环境', exact=True)
         expect(rebuild).to_be_visible()
