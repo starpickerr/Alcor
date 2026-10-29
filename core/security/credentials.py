@@ -75,7 +75,6 @@ def credential_metadata():
     yield from plugin_credentials()
     from agent.tools.tool_manager import ToolManager
     from core.mcp.managed import ManagedMcpConfig
-    from application.api import Application
     configuration_unavailable = False
     try:
         configs = ToolManager()._load_mcp_configs()
@@ -119,15 +118,18 @@ def credential_metadata():
                 yield dict(reference='mcp:email:owner', owner=owner, account='', kind='credential', configured=None,
                            configure_url=url, reason='Mailbox credential status is unavailable; saved data is preserved.')
             continue
-        if not config.get('enabled', True):
-            yield dict(reference=f'mcp:{name}:owner', owner=owner, account='', kind='password', configured=None,
-                configure_url=url, reason='Provider is disabled; open its configuration to inspect saved accounts.')
-            continue
         try:
-            account = Application.port('elearning').public_settings()
-            yield dict(reference=f'mcp:elearning:{account.get("account_id") or "owner"}:password', owner=owner,
-                account=account.get('username') or '', kind='password', configured=account.get('password_set'),
-                configure_url=url, reason='')
+            from common.runtime_identity import current_identity
+            from core.security.elearning_credentials import ElearningCredentialStore
+            if config.data_root is None:
+                raise ValueError('eLearning has no bound account store')
+            account = ElearningCredentialStore(config.data_root, user_id=current_identity().user_id or 'local-default').inventory()
+            for field in account['fields']:
+                state = field['state']
+                yield dict(reference=f'mcp:elearning:{account["account_id"]}:{field["key"]}', owner=owner,
+                    account=account['account'], kind=field['key'], configured=None if state == 'unavailable' else state == 'configured',
+                    configure_url=url, reason='Saved credential needs repair in its original settings.' if state == 'repair_required'
+                    else 'Saved credential is unavailable.' if state == 'unavailable' else '')
         except (ValueError, RuntimeError, OSError, PermissionError):
             yield dict(reference=f'mcp:{name}:owner', owner=owner, account='', kind='credential', configured=None,
                 configure_url=url, reason='The owner credential status is unavailable; saved data has not been changed.')

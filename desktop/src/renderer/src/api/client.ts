@@ -35,7 +35,7 @@ import type {
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
   BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
-  BriefingSource, ElearningSettings, ElearningSettingsInput,
+  BriefingSource, ElearningSettings, ElearningSettingsInput, ElearningCredentialInput,
   CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection,
   Todo, TodoInput, UncertainReminder,
 } from '../types'
@@ -1382,7 +1382,7 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning')).settings
   }
 
-  async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
+  async saveElearningSettings(payload: ElearningSettingsInput | ElearningCredentialInput): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
   }
 

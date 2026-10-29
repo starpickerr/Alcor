@@ -54,6 +54,33 @@ def test_disabled_owner_uses_declaration_without_starting_mcp(monkeypatch):
     assert any(row['owner'] == 'mcp:elearning' and row['configured'] is None for row in result)
 
 
+@pytest.mark.parametrize('enabled', [True, False])
+def test_elearning_directory_reads_declared_native_status_without_worker_or_decryption(tmp_path, monkeypatch, enabled):
+    from types import SimpleNamespace
+    from core.security.credentials import credential_metadata
+    from core.security.elearning_credentials import ElearningCredentialStore
+    from core.security.keychain import MacOSKeychain
+    from tests.test_managed_mcp_domains import server_config
+    config = server_config('elearning', tmp_path / 'elearning')
+    config['enabled'] = enabled
+    config.data_root.mkdir()
+    (config.data_root / 'elearning.json').write_text(json.dumps({'username': 'alice', 'password': 'SYNTHETIC_PASSWORD',
+                                                             'token': 'SYNTHETIC_TOKEN'}))
+    with identity_scope(user_id='test-user'):
+        ElearningCredentialStore(config.data_root, user_id='test-user').migrate_settings()
+        monkeypatch.setattr('agent.permission.center.secrets', lambda: [])
+        monkeypatch.setattr('core.security.credentials.plugin_credentials', lambda: [])
+        monkeypatch.setattr('agent.tools.tool_manager.ToolManager', lambda: SimpleNamespace(_load_mcp_configs=lambda: [config]))
+        def forbidden(*args, **kwargs):
+            raise AssertionError('Inventory must not start a Worker or decrypt credentials')
+        monkeypatch.setattr('application.api.Application.port', forbidden)
+        monkeypatch.setattr(MacOSKeychain, 'get', forbidden)
+        rows = [row for row in credential_metadata() if row['owner'] == 'mcp:elearning']
+    assert {row['kind']: row['configured'] for row in rows} == {'password': True, 'token': True, 'session': False}
+    assert all(row['account'] == 'alice' for row in rows)
+    assert 'SYNTHETIC_' not in json.dumps(rows) and 'stella-keychain:' not in json.dumps(rows)
+
+
 def test_agent_cannot_use_legacy_secret_management_or_enumeration():
     from agent.permission.center import set_secret, secrets
     with identity_scope(session_id='agent'):

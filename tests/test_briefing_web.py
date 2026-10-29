@@ -165,6 +165,17 @@ def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test
         tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
         assert tested["connected"] and tested["courses"][0]["id"] == "42"
         check.assert_called_once_with({"username": "student"})
+    repaired = call(web_channel.BriefingElearningHandler, body={'credential_field': 'password',
+        'credential_value': 'SYNTHETIC_REPAIRED', 'credential_revision': updated['settings']['credential_revision']})
+    assert repaired['settings']['credential_states']['password'] == 'configured'
+    assert 'SYNTHETIC_REPAIRED' not in json.dumps(repaired)
+    cleared = call(web_channel.BriefingElearningHandler, body={'credential_field': 'password', 'credential_value': '',
+        'credential_revision': repaired['settings']['credential_revision']})
+    assert cleared['settings']['credential_states']['password'] == 'not_configured'
+    assert cleared['settings']['courses'] == ['42'] and not cleared['settings']['enabled']
+    from agent.tools.tool_manager import ToolManager
+    ToolManager()._teardown_mcp_server('elearning')
+    assert call(web_channel.BriefingElearningHandler, 'GET')['settings']['credential_states']['password'] == 'not_configured'
     removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
     assert not removed["settings"]["configured"]
     assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"

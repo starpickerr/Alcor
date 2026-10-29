@@ -75,6 +75,17 @@ class ElearningConnector:
         class Store(base_store):
             def save_settings(self, body):
                 with modules['locking'].state_lock(self.root):
+                    if 'credential_field' in body:
+                        if set(body) != {'credential_field', 'credential_value', 'credential_revision'}:
+                            raise ValueError('Credential edits cannot also change account settings')
+                        field, value = body['credential_field'], body['credential_value']
+                        if field == 'session':
+                            if value != '':
+                                raise ValueError('Saved login state can only be cleared here')
+                            credentials.clear_session(expected_revision=body['credential_revision'])
+                        else:
+                            credentials.save_field(field, value, expected_revision=body['credential_revision'])
+                        return self.public_settings()
                     revision = credentials._revision()
                     cfg = self.resolve_settings(body)
                     credentials.publish_settings(cfg, expected_revision=body.get('credential_revision') or revision)
@@ -276,7 +287,7 @@ class ElearningConnector:
 
         service.client_factory = client_factory
         active()
-        if owner:
+        if owner and not (method == 'save_settings' and 'credential_field' in payload):
             for migrate in (credentials.migrate_settings, credentials.migrate_session):
                 try:
                     migrate()
@@ -290,7 +301,7 @@ class ElearningConnector:
             if owner:
                 view = credentials.inventory()
                 result.update(credential_states={field['key']: field['state'] for field in view['fields']},
-                              credential_revision=view['revision'])
+                              credential_revision=view['revision'], session_revision=view['session_revision'])
             else:
                 result.pop('password_set', None)
                 result.pop('password_masked', None)

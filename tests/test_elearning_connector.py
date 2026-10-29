@@ -30,6 +30,63 @@ def test_original_save_publishes_references_and_retains_courses_and_destination(
     assert after['password'] == raw['password'] and saved['courses'] == ['43']
 
 
+@pytest.mark.parametrize('field', ['password', 'token', 'session'])
+def test_original_settings_clear_one_credential_without_resetting_courses(connector, field):
+    from core.security.elearning_credentials import ElearningCredentialStore
+    connector.invoke('save_settings', {'payload': {'username': 'alice', 'password': 'SYNTHETIC_PASSWORD',
+        'token': 'SYNTHETIC_TOKEN', 'courses': ['42'], 'enabled': True}})
+    store = ElearningCredentialStore(connector.config.data_root, user_id='test-user')
+    store.save_session({'cookies': [{'domain': 'elearning.fudan.edu.cn', 'name': 'session', 'value': 'SYNTHETIC_COOKIE'}]},
+                       expected_revision=store.inventory()['session_revision'])
+    view = connector.invoke('get_settings', {})
+    revision = view['session_revision'] if field == 'session' else view['credential_revision']
+    result = connector.invoke('save_settings', {'payload': {'credential_field': field, 'credential_value': '',
+                                                          'credential_revision': revision}})
+    assert result['credential_states'][field] == 'not_configured'
+    assert result['courses'] == ['42'] and result['enabled']
+    assert all(state == 'configured' for name, state in result['credential_states'].items() if name != field)
+    with pytest.raises(ValueError):
+        connector.invoke('save_settings', {'payload': {'credential_field': field, 'credential_value': '',
+                                                      'credential_revision': revision}})
+
+
+def test_single_field_repair_does_not_read_or_change_other_credentials(connector, monkeypatch):
+    from core.security import credential_values, env_store
+    from core.security.elearning_credentials import ElearningCredentialStore
+    from core.security.keychain import MacOSKeychain
+    connector.invoke('save_settings', {'payload': {'username': 'alice', 'password': 'SYNTHETIC_PASSWORD',
+        'token': 'SYNTHETIC_TOKEN', 'courses': ['42']}})
+    store = ElearningCredentialStore(connector.config.data_root, user_id='test-user')
+    before = json.loads(store.path.read_text())
+    env_store.keychain_for(store.path).delete(credential_values.account(store._name(before, 'password'), before['password']))
+    view = connector.invoke('get_settings', {})
+    assert view['credential_states']['password'] == 'repair_required'
+    original = MacOSKeychain.get
+    def selected(self, key):
+        result = original(self, key)
+        if result == 'SYNTHETIC_TOKEN':
+            raise AssertionError('Repair must not decrypt unrelated token')
+        return result
+    monkeypatch.setattr(MacOSKeychain, 'get', selected)
+    result = connector.invoke('save_settings', {'payload': {'credential_field': 'password',
+        'credential_value': 'SYNTHETIC_REPAIRED', 'credential_revision': view['credential_revision']}})
+    assert result['credential_states']['password'] == 'configured'
+    assert json.loads(store.path.read_text())['token'] == before['token']
+    assert store.resolve('password') == 'SYNTHETIC_REPAIRED'
+
+
+def test_unmigrated_legacy_credentials_do_not_claim_usable_status(connector, monkeypatch):
+    from core.security.keychain import MacOSKeychain
+    path = connector.config.data_root / 'elearning.json'
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({'username': 'alice', 'password': 'SYNTHETIC_LEGACY', 'courses': ['42']}))
+    before = path.read_bytes()
+    monkeypatch.setattr(MacOSKeychain, 'get', lambda *args: None)
+    view = connector.invoke('get_settings', {})
+    assert view['credential_states']['password'] == 'repair_required'
+    assert path.read_bytes() == before
+
+
 def test_actual_course_discovery_uses_bound_native_token(api):  # noqa: F811
     from core.services.elearning_connector import ElearningConnector
     store, _, received, *_ = api

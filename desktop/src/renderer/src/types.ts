@@ -1155,9 +1155,14 @@ export interface ElearningSettings {
   account_id: string
   password_set: boolean
   password_masked: string
+  credential_states?: Record<ElearningCredentialField, 'configured' | 'not_configured' | 'unavailable' | 'repair_required'>
+  credential_revision?: string
+  session_revision?: string
 }
 
-export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
+export type ElearningCredentialField = 'password' | 'token' | 'session'
+export type ElearningCredentialInput = { credential_field: ElearningCredentialField; credential_value: string; credential_revision: string }
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string; token?: string; credential_revision?: string }
 
 export interface McpServerInfo {
   settings_url?: string | null

@@ -489,3 +489,14 @@ Core 复用原 eLearning 登录、课程、同步和存储实现，通过固定�
 Core 全量 `core-elearning-stage-full.log` 为 **2952 PASS /6 FAIL /22 SKIP**（533.49 秒，修正前快照）。五项旧预期/测试配置已调整并定向通过；非默认用户简报“服务忙”的失败在单独及整文件回归通过，尚未取得修正后的全量结果。不得据此标完整回归通过。测试仅用临时数据、隔离原生 Keychain 和合成服务；浏览器测试只对临时自签名服务放宽证书校验，Core TLS 验证保持实际生效，未使用个人账号。
 
 剩余：原 eLearning 设置页的准确凭据状态及单项修复/删除、凭据目录汇总、模型运行时缓存，以及清单其余收尾和最终独立审查。尚未合并 develop，也未推送或发布。
+
+
+## 2026-10-29 eLearning 原设置页与凭据目录收尾
+
+原 eLearning 设置页改为空白密码/Token 草稿，显示已配置、未配置、不可用、需要修复四种状态；在原入口更新或删除单个密码/Token，并清除失效登录状态。单项操作使用现有凭据存储和对应 revision，不重置账号、课程或同步目录，不读取其他字段；失败保留输入，成功只清空对应草稿，保留其他输入和未保存的选课。账号信息尚未保存时禁用旧账号的凭据修改按钮。
+
+凭据目录直接读取原 eLearning 声明与 Native 状态，覆盖启用和停用提供者，不启动 Worker、不解密或返回原文。尚未迁移的明文和 Cookie 不再显示为可用凭据，迁移失败仍保留原文件并提示修复。原旧链接、返回、测试连接及文件目录流程保持可用。
+
+证据：新增问题先由 `elearning-owner-red.log` 7 项失败复现，后端初步 47 PASS；`elearning-owner-regression.log` **147 PASS /59.11 秒**，并通过新增原 HTTP 修复/删除/重启场景（`elearning-owner-http-final.log` 1 PASS）。前端原掩码预填 RED 后，`elearning-owner-ui-green.log` PASS，包含单字段失败/成功、其他草稿与选课保留、Token 删除、session revision、状态刷新及账号变更；1280px/390px 截图已查看。原设置页目录/同步/旧入口浏览器回归 PASS。TypeScript 主进程及 renderer、相关 ESLint/Ruff、diff 检查通过。测试未使用个人账号，原生 Keychain 继续隔离且禁止认证弹窗。
+
+本阶段不改变 MCP 版本或固定来源摘要；配套 eLearning MCP 仍为 `cfcd286` /1.0.5。凭据主任务剩余模型实际调用的旧值缓存；其余精简清单和最终全量/独立审查仍未完成，尚未合并 develop。

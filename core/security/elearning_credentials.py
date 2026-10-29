@@ -65,7 +65,7 @@ class ElearningCredentialStore:
         if not value:
             return 'not_configured'
         if not value.startswith(credential_values.REFERENCE):
-            return 'configured'
+            return 'repair_required'
         try:
             credential_values.account(name, value)
         except OSError:
@@ -97,7 +97,7 @@ class ElearningCredentialStore:
                                  if isinstance(reference, str) and reference.startswith(credential_values.REFERENCE)
                                  else 'repair_required')
                     else:
-                        state = 'configured' if self._session_valid(data) else 'repair_required'
+                        state = 'repair_required'
                 except (ValueError, UnicodeError):
                     state = 'repair_required'
             return {'account_id': self.account_id(config), 'account': config.get('username', ''),
