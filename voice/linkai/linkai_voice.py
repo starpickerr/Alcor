@@ -10,6 +10,7 @@ from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
 from common.utils import apply_client_source, apply_cloud_user
+from core.security.config_credentials import model_key
 from config import conf
 from voice import audio_convert
 from voice.voice import Voice
@@ -23,7 +24,7 @@ class LinkAIVoice(Voice):
         logger.debug("[LinkVoice] voice file name={}".format(voice_file))
         try:
             url = conf().get("linkai_api_base", "https://api.link-ai.tech") + "/v1/audio/transcriptions"
-            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
+            headers = {"Authorization": "Bearer " + model_key("linkai_api_key")}
             apply_client_source(headers)
             apply_cloud_user(headers)
             # Pin whisper-1: gateway ignores any other ASR model id.
@@ -61,7 +62,7 @@ class LinkAIVoice(Voice):
     def textToVoice(self, text):
         try:
             url = conf().get("linkai_api_base", "https://api.link-ai.tech") + "/v1/audio/speech"
-            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
+            headers = {"Authorization": "Bearer " + model_key("linkai_api_key")}
             apply_client_source(headers)
             apply_cloud_user(headers)
             # Gateway routes by `model` (tts-1 / doubao / baidu) + `voice` from

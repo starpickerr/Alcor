@@ -8,6 +8,7 @@ from core.security.requests_transport import voice_requests as requests
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 from voice import audio_convert
 from voice.voice import Voice
@@ -39,7 +40,7 @@ class ZhipuAIVoice(Voice):
             except OSError:
                 pass
 
-            api_key = conf().get("zhipu_ai_api_key", "")
+            api_key = model_key("zhipu_ai_api_key")
             if not api_key:
                 logger.error("[ZhipuAIVoice] zhipu_ai_api_key is not configured")
                 return Reply(ReplyType.ERROR, "未配置 ZhipuAI API key")
@@ -77,7 +78,7 @@ class ZhipuAIVoice(Voice):
 
     def textToVoice(self, text: str):
         try:
-            api_key = conf().get("zhipu_ai_api_key", "")
+            api_key = model_key("zhipu_ai_api_key")
             if not api_key:
                 logger.error("[ZhipuAIVoice] zhipu_ai_api_key is not configured")
                 return Reply(ReplyType.ERROR, "未配置 ZhipuAI API key")

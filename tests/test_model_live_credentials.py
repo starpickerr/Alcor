@@ -1,11 +1,14 @@
 """Actual model requests refresh the selected native credential on existing clients."""
 import ctypes
+import base64
+import io
 import http.server
 import json
 import ssl
 import subprocess
 import threading
 import sys
+import wave
 from types import GeneratorType
 
 import pytest
@@ -15,11 +18,18 @@ from core.security.config_credentials import read_document, save_runtime
 from tests.fixtures.egress import approve_synthetic_egress
 
 pytestmark = pytest.mark.skipif(sys.platform != 'darwin', reason='Real macOS Keychain integration')
+_audio = io.BytesIO()
+with wave.open(_audio, 'wb') as _wave:
+    _wave.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+    _wave.writeframes(b'\0\0' * 80)
+AUDIO = _audio.getvalue()
 
 CONSUMERS = ['chat', 'responses', 'anthropic', 'gemini', 'embedding', 'doubao',
              'legacy-chat', 'legacy-deepseek', 'legacy-modelscope', 'legacy-mimo',
              'legacy-qianfan', 'legacy-moonshot', 'legacy-minimax', 'legacy-doubao',
-             'legacy-claudeAPI', 'legacy-gemini', 'image', 'completions', 'text']
+             'legacy-claudeAPI', 'legacy-gemini', 'image', 'completions', 'text', 'legacy-linkai',
+             'voice-openai', 'voice-linkai', 'voice-minimax', 'voice-mimo', 'voice-zhipu',
+             'voice-openai-asr', 'voice-linkai-asr', 'voice-zhipu-asr', 'voice-custom', 'voice-custom-asr']
 
 
 @pytest.fixture
@@ -33,9 +43,10 @@ def model_runtime(tmp_path, monkeypatch, consumer):
         def log_message(self, *args):
             pass
         def do_POST(self):
-            payload = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+            raw = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+            payload = json.loads(raw) if 'application/json' in self.headers.get('Content-Type', '') else {}
             received.append(dict(self.headers))
-            body = json.dumps({'id': 'synthetic', 'choices': [{'message': {'role': 'assistant', 'content': 'Synthetic reply'},
+            body = json.dumps({'id': 'synthetic', 'text': 'Synthetic transcript', 'choices': [{'message': {'role': 'assistant', 'content': 'Synthetic reply', 'audio': {'data': base64.b64encode(AUDIO).decode()}},
                 'text': 'Synthetic reply', 'finish_reason': 'stop'}], 'usage': {'total_tokens': 1, 'prompt_tokens': 1, 'completion_tokens': 1},
                 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': 'Synthetic reply'}]}],
                 'content': [{'type': 'text', 'text': 'Synthetic reply'}],
@@ -45,9 +56,14 @@ def model_runtime(tmp_path, monkeypatch, consumer):
             if payload.get('stream'):
                 event = {'type': 'response.output_text.delta', 'delta': 'Synthetic reply',
                          'choices': [{'delta': {'content': 'Synthetic reply'}}]}
+                if self.path.endswith('/t2a_v2'):
+                    event = {'data': {'audio': AUDIO.hex()}, 'base_resp': {'status_code': 0}}
                 body = ('data: ' + json.dumps(event) + '\n\ndata: [DONE]\n\n').encode()
             self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream' if payload.get('stream') else 'application/json')
+            content_type = 'text/event-stream' if payload.get('stream') else 'application/json'
+            if self.path.endswith('/audio/speech'):
+                body, content_type = AUDIO, 'audio/wav'
+            self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -84,12 +100,28 @@ def model_runtime(tmp_path, monkeypatch, consumer):
         'image': ('openai', 'open_ai_api_key', 'open_ai_api_base'),
         'completions': ('openai', 'open_ai_api_key', 'open_ai_api_base'),
         'text': ('openai', 'open_ai_api_key', 'open_ai_api_base'),
+        'legacy-linkai': ('linkai', 'linkai_api_key', 'linkai_api_base'),
+        'voice-openai': ('openai', 'open_ai_api_key', 'open_ai_api_base'),
+        'voice-openai-asr': ('openai', 'open_ai_api_key', 'open_ai_api_base'),
+        'voice-linkai': ('linkai', 'linkai_api_key', 'linkai_api_base'),
+        'voice-linkai-asr': ('linkai', 'linkai_api_key', 'linkai_api_base'),
+        'voice-minimax': ('minimax', 'minimax_api_key', 'minimax_api_base'),
+        'voice-mimo': ('mimo', 'mimo_api_key', 'mimo_api_base'),
+        'voice-zhipu': ('zhipu', 'zhipu_ai_api_key', 'zhipu_ai_api_base'),
+        'voice-zhipu-asr': ('zhipu', 'zhipu_ai_api_key', 'zhipu_ai_api_base'),
+        'voice-custom': ('custom', 'custom_api_key', 'custom_api_base'),
+        'voice-custom-asr': ('custom', 'custom_api_key', 'custom_api_base'),
     }[consumer]
     values = {field: 'SYNTHETIC_OLD', base_field: url, 'model': 'synthetic', 'bot_type': provider,
         'custom_providers': [{'id': 'other', 'name': 'Other', 'api_key': 'SYNTHETIC_UNRELATED', 'api_base': url}],
-        'linkai_api_key': 'SYNTHETIC_UNRELATED', 'agent': False,
+        'agent': False, 'text_to_voice_model': 'synthetic', 'voice_to_text_model': 'synthetic',
         'agent_workspace': str(tmp_path / 'workspace'), 'embedding_provider': provider,
         'embedding_model': 'synthetic', 'embedding_dimensions': 1024 if consumer == 'doubao' else 2}
+    if field != 'linkai_api_key':
+        values['linkai_api_key'] = 'SYNTHETIC_UNRELATED'
+    if consumer.startswith('voice-'):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / 'tmp').mkdir()
     if consumer == 'responses':
         values['provider_protocols'] = {'openai': 'openai_responses'}
     path = tmp_path / 'config.json'
@@ -108,6 +140,9 @@ def model_runtime(tmp_path, monkeypatch, consumer):
 
 
 def client_for(consumer):
+    if consumer.startswith('voice-'):
+        from voice.factory import create_voice
+        return create_voice(consumer.removeprefix('voice-').removesuffix('-asr'))
     if consumer == 'text':
         from models.chatgpt.chat_gpt_bot import ChatGPTBot
         return ChatGPTBot()
@@ -130,6 +165,22 @@ def client_for(consumer):
 
 
 def invoke(client, consumer):
+    if consumer.startswith('voice-'):
+        from bridge.reply import ReplyType
+        from pathlib import Path
+        if consumer.endswith('-asr'):
+            audio = Path('tmp/synthetic.wav')
+            audio.write_bytes(AUDIO)
+            result = client.voiceToText(str(audio))
+            expected = ReplyType.TEXT
+        else:
+            result = client.textToVoice('Synthetic public text')
+            expected = ReplyType.VOICE
+        if result is None or result.type != expected:
+            raise RuntimeError('Voice operation rejected')
+        if expected == ReplyType.VOICE:
+            assert Path(result.content).read_bytes()
+        return result
     if consumer == 'text':
         from models.chatgpt.chat_gpt_session import ChatGPTSession
         session = ChatGPTSession('synthetic')
@@ -184,10 +235,10 @@ def test_existing_client_uses_rotated_key_without_decrypting_other_credentials(m
 
 
 @pytest.mark.parametrize('consumer', ['chat'])
-@pytest.mark.parametrize('kind', ['protocol', 'embedding', 'legacy'])
+@pytest.mark.parametrize('kind', ['protocol', 'embedding', 'legacy', 'voice'])
 @pytest.mark.parametrize('unavailable', ['missing', 'deleted'])
 def test_custom_provider_keeps_identity_after_reorder_and_stops_when_unavailable(
-        model_runtime, consumer, kind, unavailable, isolated_keychain):
+        model_runtime, consumer, kind, unavailable, isolated_keychain, monkeypatch):
     from core.security.credential_values import account
     path, runtime, _, received = model_runtime
     data = read_document(path)
@@ -197,6 +248,11 @@ def test_custom_provider_keeps_identity_after_reorder_and_stops_when_unavailable
     save_runtime(path, data, runtime)
     selected_consumer = 'embedding' if kind == 'embedding' else 'legacy-chat' if kind == 'legacy' else 'chat'
     client = client_for(selected_consumer)
+    if kind == 'voice':
+        from voice.factory import create_voice
+        monkeypatch.chdir(path.parent)
+        (path.parent / 'tmp').mkdir(exist_ok=True)
+        selected_consumer, client = 'voice-custom', create_voice('custom:chosen')
     invoke(client, selected_consumer)
     assert authorization(received[-1]) == 'Bearer SYNTHETIC_CHOSEN'
     data = read_document(path)

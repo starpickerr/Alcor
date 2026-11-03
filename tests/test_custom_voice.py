@@ -33,12 +33,11 @@ class TestCustomVoice(unittest.TestCase):
     def conf(**overrides):
         """Custom-vendor config for this suite, with per-test overrides.
 
-        Patched into both conf references the module chain reads: the voice
-        module's own import (legacy flat keys) and models.custom_provider's
-        (custom_providers lookup).
+        Include the runtime configuration used by the shared credential reader.
         """
         merged = {**TestCustomVoice.CUSTOM_PROVIDERS, **overrides}
         stack = ExitStack()
+        stack.enter_context(patch("config.config", merged))
         stack.enter_context(patch("voice.custom.custom_voice.conf", return_value=merged))
         stack.enter_context(patch("models.custom_provider.conf", return_value=merged))
         return stack

@@ -144,7 +144,7 @@ class TestQianfanBot(unittest.TestCase):
         from models.bot_factory import create_bot
 
         fake_conf = self._fake_conf()
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 bot = create_bot(const.QIANFAN)
 
@@ -153,7 +153,7 @@ class TestQianfanBot(unittest.TestCase):
 
     def test_default_model_uses_ernie_when_model_is_provider_alias(self):
         fake_conf = self._fake_conf({"model": "qianfan"})
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -172,7 +172,7 @@ class TestQianfanBot(unittest.TestCase):
         session = MagicMock()
         session.messages = [{"role": "user", "content": "你好"}]
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -200,7 +200,7 @@ class TestQianfanBot(unittest.TestCase):
         session = MagicMock()
         session.messages = [{"role": "user", "content": "你好"}]
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -220,7 +220,7 @@ class TestQianfanBot(unittest.TestCase):
         session = MagicMock()
         session.messages = [{"role": "user", "content": "你好"}]
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -235,7 +235,7 @@ class TestQianfanBot(unittest.TestCase):
     def test_qianfan_bot_supports_vision_for_multimodal_models(self):
         for model in ("ernie-5.1", "ernie-5.0", "ernie-x1.1", "ernie-4.5-turbo-vl", "ernie-4.5-turbo-vl-32k"):
             fake_conf = self._fake_conf({"model": model})
-            with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+            with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
                 with patch("models.qianfan.qianfan_bot.SessionManager"):
                     from models.qianfan.qianfan_bot import QianfanBot
 
@@ -248,7 +248,7 @@ class TestQianfanBot(unittest.TestCase):
     def test_qianfan_bot_does_not_advertise_vision_for_text_only_models(self):
         for model in ("ernie-4.5-turbo-128k", "ernie-4.5-turbo-32k"):
             fake_conf = self._fake_conf({"model": model})
-            with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+            with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
                 with patch("models.qianfan.qianfan_bot.SessionManager"):
                     from models.qianfan.qianfan_bot import QianfanBot
 
@@ -273,7 +273,7 @@ class TestQianfanBot(unittest.TestCase):
             },
         }
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -317,7 +317,7 @@ class TestQianfanBot(unittest.TestCase):
             "usage": {},
         }
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 
@@ -341,7 +341,7 @@ class TestQianfanBot(unittest.TestCase):
         fake_response.json.return_value = {"error": {"message": "bad image"}}
         fake_response.text = '{"error":{"message":"bad image"}}'
 
-        with patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
+        with patch("config.config", fake_conf), patch("models.qianfan.qianfan_bot.conf", return_value=fake_conf):
             with patch("models.qianfan.qianfan_bot.SessionManager"):
                 from models.qianfan.qianfan_bot import QianfanBot
 

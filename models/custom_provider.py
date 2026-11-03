@@ -91,7 +91,7 @@ def parse_custom_bot_type(bot_type):
     return False, ""
 
 
-def resolve_custom_credentials():
+def resolve_custom_credentials(bot_type=None):
     """Resolve the effective (api_key, api_base, model) for custom mode.
 
     Resolution order:
@@ -103,7 +103,7 @@ def resolve_custom_credentials():
     :return: tuple ``(api_key, api_base, model)``. ``api_base`` and ``model``
              may be ``None`` / empty when not configured.
     """
-    bot_type = conf().get("bot_type", "")
+    bot_type = conf().get("bot_type", "") if bot_type is None else bot_type
     is_custom, provider_id = parse_custom_bot_type(bot_type)
 
     if not is_custom:

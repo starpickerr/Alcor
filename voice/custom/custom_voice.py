@@ -22,7 +22,7 @@ from core.security.requests_transport import voice_requests as requests
 from bridge.reply import Reply, ReplyType
 from common.log import logger
 from config import conf
-from models.custom_provider import _find_provider_by_id, get_custom_providers, parse_custom_bot_type
+from models.custom_provider import resolve_custom_credentials
 from voice.voice import Voice
 
 
@@ -36,15 +36,8 @@ class CustomVoice(Voice):
         ``custom:<id>`` looks the id up in ``custom_providers``; the legacy
         flat ``custom`` type reads ``custom_api_key`` / ``custom_api_base``.
         """
-        _, custom_id = parse_custom_bot_type(self.voice_type)
-        if custom_id:
-            entry = _find_provider_by_id(get_custom_providers(), custom_id)
-            if entry is None:
-                raise ValueError(
-                    f"custom provider '{self.voice_type}' not found in custom_providers"
-                )
-            return entry.get("api_key", ""), entry.get("api_base") or ""
-        return conf().get("custom_api_key", ""), conf().get("custom_api_base") or ""
+        key, base, _ = resolve_custom_credentials(self.voice_type)
+        return key, base or ""
 
     def voiceToText(self, voice_file):
         try:

@@ -18,6 +18,7 @@ from core.security.requests_transport import voice_requests as requests
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 from voice.voice import Voice
 
@@ -38,7 +39,7 @@ class MimoVoice(Voice):
 
     def textToVoice(self, text: str):
         try:
-            api_key = conf().get("mimo_api_key", "")
+            api_key = model_key("mimo_api_key")
             if not api_key:
                 logger.error("[MimoVoice] mimo_api_key is not configured")
                 return Reply(ReplyType.ERROR, "未配置 MiMo API key")
