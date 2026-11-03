@@ -41,9 +41,6 @@ from config import (
     sync_model_config_to_env,
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
-from agent.permission import (
-    global_mode as permission_global_mode,
-)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -2052,20 +2049,8 @@ class DesktopChannel(ChatChannel):
             '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
             '/api/scheduler/test-delivery', 'SchedulerTestDeliveryHandler',
             '/api/runs/pending', 'PendingRunsHandler',
-            '/api/security/activity', 'SecurityActivityHandler',
-            '/api/security/center', 'SecurityCenterHandler',
-            '/api/security/sensitive-resources', 'SecuritySensitiveResourcesHandler',
-            '/api/security/policy', 'SecurityPolicyHandler',
-            '/api/security/run-policy', 'SecurityRunPolicyHandler',
-            '/api/security/migration', 'SecurityMigrationHandler',
-            '/api/security/runtime-trust', 'SecurityRuntimeTrustHandler',
-            '/api/security/runtime', 'SecurityRuntimeTrustHandler',
-            '/api/security/connections', 'SecurityConnectionsHandler',
-            '/api/security/secrets', 'SecuritySecretsHandler',
-            '/api/security/confirmations', 'SecurityConfirmationsHandler',
-            '/api/security/privacy', 'SecurityPrivacyHandler',
-            '/api/sessions/access', 'SessionAccessSettingsHandler',
-            '/api/capabilities/access', 'CapabilityAccessSettingsHandler',
+            '/api/run-policy', 'RunPolicyHandler',
+            '/api/confirmations', 'OperationConfirmationsHandler',
             '/api/data', 'DataManagementHandler',
             '/api/data/records', 'DataRecordsHandler',
             '/api/data/resources', 'DataResourcesHandler',
@@ -4273,6 +4258,16 @@ class ModelsHandler:
         try:
             data = json.loads(web.data() or b"{}")
             action = data.get("action") or ""
+            if action == "credential":
+                from config import MODEL_CONFIG_TO_ENV
+                name = data.get('name')
+                allowed = {env for field, env in MODEL_CONFIG_TO_ENV.items() if field.endswith('_api_key')} | {'BOCHA_API_KEY'}
+                if not isinstance(name, str) or (name not in allowed and not name.startswith('CUSTOM:')):
+                    raise ValueError('Unknown model credential')
+                from agent.permission.center import set_secret
+                set_secret(name, data.get('value'))
+                self._reset_bridge()
+                return json.dumps({'status': 'success'})
             if action == "set_provider":
                 return self._handle_set_provider(data)
             if action == "delete_provider":
@@ -6045,79 +6040,6 @@ def _scheduler_store():
     return TaskStore(store_path)
 
 
-class SecurityActivityHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.audit import activity_counts, recent
-        params = web.input(limit="100", agent="", project="", tool="", risk="", decision="", conversation="", since="")
-        filters = {key: getattr(params, key, "") for key in ("agent", "project", "tool", "risk", "decision", "conversation")}
-        records = recent(limit=params.limit, filters=filters)
-        if params.since:
-            try:
-                records = [row for row in records if row["at"] >= float(params.since)]
-            except ValueError:
-                return json.dumps({"status": "error", "message": "invalid since timestamp"})
-        return json.dumps({
-            "status": "success",
-            "records": records,
-            "counts": activity_counts(days=7),
-        }, ensure_ascii=False)
-
-
-class SecurityConnectionsHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from core.security.connections import ConnectionControl
-        try:
-            return json.dumps({'status': 'success', **ConnectionControl().inventory()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Connections', error)
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from core.security.connections import ConnectionControl
-        try:
-            body = json.loads(web.data() or b'{}')
-            if not isinstance(body, dict) or set(body) != {'id', 'enabled', 'revision'}:
-                raise ValueError('Invalid connection control fields')
-            result = ConnectionControl().save(body['id'], enabled=body['enabled'], expected_revision=body['revision'])
-            return json.dumps({'status': 'success', 'connection': result}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Connections', error)
-
-
-class SecuritySensitiveResourcesHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from core.security.credentials import CredentialDirectory
-        from core.security.isolation import application_isolation
-        try:
-            return json.dumps({'status': 'success', **CredentialDirectory().inventory(),
-                'folder_protection': application_isolation()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Sensitive resources', error)
-
-
-class SecurityCenterHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.center import overview
-        params = web.input(session='', agent='')
-        try:
-            return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
-        except (ValueError, OSError) as error:
-            return _api_reject("Security", error)
-
-
 def _permission_control():
     from core.security.control import PermissionControl
     def tasks(agent):
@@ -6128,15 +6050,13 @@ def _permission_control():
     return PermissionControl(task_service=tasks)
 
 
-class SecurityRunPolicyHandler:
+class RunPolicyHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        params = web.input(kind='template', subject='default', agent='', view='')
+        params = web.input(kind='session', subject='', agent='')
         try:
-            if getattr(params, 'view', '') == 'inventory':
-                return json.dumps({'status': 'success', **_permission_control().inventory()}, ensure_ascii=False)
             return json.dumps({'status': 'success', **_permission_control().read(
                 params.kind, params.subject, params.agent or None)}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
@@ -6147,7 +6067,7 @@ class SecurityRunPolicyHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             body = json.loads(web.data() or b'{}')
-            if set(body) - {'kind', 'subject', 'agent', 'policy'}:
+            if not isinstance(body, dict) or set(body) - {'kind', 'subject', 'agent', 'policy'}:
                 raise ValueError('Invalid permission control fields')
             return json.dumps({'status': 'success', **_permission_control().save(body.get('kind'),
                 body.get('subject'), body.get('policy'), body.get('agent'))}, ensure_ascii=False)
@@ -6155,231 +6075,7 @@ class SecurityRunPolicyHandler:
             return _api_reject('Permissions', error)
 
 
-class SecurityMigrationHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from core.security.control import require_owner
-        from core.security.migration import PermissionMigration
-        try:
-            require_owner()
-            migration = PermissionMigration()
-            return json.dumps({'status': 'success', 'preview': migration.preview(), 'verification': migration.verify()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Permission migration', error)
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from core.security.control import require_owner
-        from core.security.migration import PermissionMigration
-        try:
-            require_owner()
-            body = json.loads(web.data() or b'{}')
-            migration = PermissionMigration()
-            if body.get('action') == 'apply':
-                result = migration.apply(body.get('fingerprint'))
-            elif body.get('action') == 'recover':
-                result = migration.recover()
-            elif body.get('action') == 'verify':
-                result = migration.verify()
-            else:
-                raise ValueError('Invalid permission migration action')
-            return json.dumps({'status': 'success', 'migration': result}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Permission migration', error)
-
-
-class FeatureAccessSettingsHandler:
-    module = None
-
-    def _control(self, values):
-        from core.security.access_settings import FeatureAccessControl
-        return FeatureAccessControl(self.module, values.get('id'), kind=values.get('kind'),
-            agent=values.get('agent'))
-
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        try:
-            values = dict(web.input(id='', kind='', agent=''))
-            return json.dumps({'status': 'success', **self._control(values).inventory()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Feature access settings', error)
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        try:
-            body = json.loads(web.data() or b'{}')
-            if not isinstance(body, dict):
-                raise ValueError('Invalid feature access settings')
-            context = {key: body.pop(key, None) for key in ('id', 'kind', 'agent')}
-            # Legacy grant id is separate from the server-bound feature identifier.
-            if 'legacy_id' in body:
-                body['id'] = body.pop('legacy_id')
-            return json.dumps({'status': 'success', **self._control(context).save(body)}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Feature access settings', error)
-
-
-class SessionAccessSettingsHandler(FeatureAccessSettingsHandler):
-    module = 'sessions'
-
-
-class CapabilityAccessSettingsHandler(FeatureAccessSettingsHandler):
-    module = 'capabilities'
-
-
-class SecurityRuntimeTrustHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from core.security.control import RuntimeControl, require_owner
-        try:
-            require_owner()
-            body = json.loads(web.data() or b'{}')
-            if not isinstance(body, dict):
-                raise ValueError('Environment action must be an object')
-            action = body.get('action')
-            fields = {'action', 'kind', 'id'} | ({'digest', 'network', 'credentials', 'revision'} if action == 'capabilities' else {'operationId'} if action == 'resume' else
-                                                {'token', 'sourceId'} if action == 'adopt-storage' else set())
-            if (set(body) != fields or action not in ('rebuild', 'resume', 'adopt-storage', 'capabilities', 'prepare-package') or body['kind'] not in ('plugin', 'mcp')
-                    or not isinstance(body['id'], str) or not body['id']):
-                raise ValueError('Select a supported installed plugin or local MCP environment to rebuild')
-            if action == 'adopt-storage' and body['kind'] != 'mcp':
-                raise ValueError('Retained private data confirmation requires a local MCP')
-            if action == 'resume' and (not isinstance(body['operationId'], str) or not body['operationId']):
-                raise ValueError('Rebuild operation is required')
-            if body['kind'] == 'mcp':
-                from agent.tools.tool_manager import ToolManager
-                from core.mcp.lifecycle import McpLifecycle
-                lifecycle = McpLifecycle(ToolManager())
-                if action == 'capabilities':
-                    from core.security.mcp_runtime import launch_identity
-                    from core.security.runtime_trust import RuntimeTrustStore
-                    config = lifecycle._config(body['id'])
-                    if config.get('type', 'stdio') != 'stdio' or launch_identity(config)[0] != body['digest']:
-                        raise PermissionError('MCP launch content changed; refresh before allowing capabilities')
-                    RuntimeTrustStore().set_capabilities(user_id=lifecycle.user, identifier=body['id'], digest=body['digest'],
-                        network=body['network'], credentials=body['credentials'], expected_revision=body['revision'])
-                elif action == 'prepare-package':
-                    from core.mcp.packages import prepare_package
-                    prepare_package(lifecycle._config(body['id']))
-                elif action == 'rebuild':
-                    lifecycle.rebuild(body['id'])
-                elif action == 'adopt-storage':
-                    lifecycle.adopt_storage(body['id'], body['token'], body['sourceId'])
-                else:
-                    lifecycle.resume(body['id'], body['operationId'])
-            else:
-                if action in {'capabilities', 'prepare-package'}:
-                    raise ValueError('Select a local MCP for this action')
-                manager, user = _plugin_manager(), _plugin_user()
-                if action == 'rebuild':
-                    manager.rebuild(body['id'], user_id=user)
-                else:
-                    operation = manager.management.operation(body['operationId'])
-                    if operation['userId'] != user or operation['pluginId'] != body['id'] or operation['kind'] != 'rebuild':
-                        raise PermissionError('Rebuild operation does not belong to this user and plugin')
-                    manager.resume(operation['operationId'])
-            return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
-        except (KeyError, ValueError, PermissionError, OSError, RuntimeError) as error:
-            return _api_reject('Environment rebuild', error)
-
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from core.security.control import RuntimeControl
-        try:
-            return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Execution environment', error)
-
-
-
-class SecurityPolicyHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import overview
-        try:
-            body = json.loads(web.data() or b"{}")
-            target = body.get("target")
-            policy = body.get("policy")
-            if target == "global":
-                raise ValueError('New conversations and tasks default to read-only; edit their independent permissions')
-            elif target == "project":
-                raise ValueError("Projects share workspace files; edit each conversation's independent permissions")
-            elif target == "conversation":
-                session = str(body.get("session") or "")
-                if not session:
-                    raise ValueError("conversation required")
-                from agent.permission.center import save_conversation_policy
-                saved = save_conversation_policy(session, policy, body.get("agent"))
-            else:
-                raise ValueError("invalid policy target")
-            return json.dumps({"status": "success", "policy": saved,
-                               "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError, OSError) as error:
-            return _api_reject("Security", error)
-
-
-class SecuritySecretsHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import set_secret, secrets
-        try:
-            body = json.loads(web.data() or b"{}")
-            if "value" not in body or not isinstance(body["value"], str) or not body["value"]:
-                raise ValueError("credential value required")
-            set_secret(str(body.get("name") or ""), body["value"])
-            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except (ValueError, PermissionError) as error:
-            return _api_reject("Security", error)
-
-    def DELETE(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import set_secret, secrets
-        try:
-            body = json.loads(web.data() or b"{}")
-            set_secret(str(body.get("name") or ""), None)
-            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except (ValueError, PermissionError) as error:
-            return _api_reject("Security", error)
-
-
-class SecurityPrivacyHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.privacy import inventory
-        try:
-            return json.dumps({"status": "success", **inventory()}, ensure_ascii=False)
-        except (ValueError, OSError) as error:
-            return _api_reject("Security", error, available=False)
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.privacy import cleanup, inventory
-        try:
-            body = json.loads(web.data() or b"{}")
-            result = cleanup(str(body.get("action") or ""))
-            return json.dumps({**result, **inventory()}, ensure_ascii=False)
-        except (ValueError, PermissionError) as error:
-            return _api_reject("Security", error)
-
-
-class SecurityConfirmationsHandler:
+class OperationConfirmationsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -6514,7 +6210,8 @@ class SchedulerHandler:
             if "run_permission_mode" in body:
                 task["run_permission_mode"] = body.get("run_permission_mode")
             if 'run_policy' in body:
-                task['run_policy'] = body['run_policy']
+                from core.security.control import mode_patch
+                task['run_policy'] = mode_patch(body['run_policy'])
             store = _scheduler_store()
             next_run = SchedulerService(store, lambda _t: None)._calculate_next_run(task, now)
             if not next_run:
@@ -6604,6 +6301,9 @@ class SchedulerUpdateHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             body = json.loads(web.data())
+            if 'run_policy' in body:
+                from core.security.control import mode_patch
+                body['run_policy'] = mode_patch(body['run_policy'])
             task_id = body.get("task_id")
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
@@ -7817,20 +7517,11 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
         global_provider = "linkai"
     global_model = local_config.get("model") or ""
-    global_permission = permission_global_mode()
-    from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve
-    from agent.workspace import project_store
-    project_dir = project_store.get_project_dir(session_id, agent_id)
-    effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
-    global_policy = resolve(global_permission)
-    source = "independent"
-    modes = MODE_DEFINITIONS
-    from agent.permission.process_sandbox import capability
-    isolation = capability()
-    if effective_mode(effective_policy) == "full-access":
-        isolation = {**isolation, "status": "full-access" if isolation["status"] == "enabled" else "unavailable",
-                     "reason": "Full access permits general filesystem writes; protected controls remain blocked."
-                     if isolation["status"] == "enabled" else isolation["reason"]}
+    from agent.permission.security_policy import MODE_DEFINITIONS
+    from core.security.run_policy import resolve_run_policy
+    from core.security.control import public_policy
+    effective_policy = resolve_run_policy(session_id, agent_id)
+    mode = effective_policy['filesystem_mode']
 
     return {
         "model": {
@@ -7841,19 +7532,12 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "providers": _session_model_catalog(),
         },
         "permission": {
-            "source": source,
-            "preset": effective_policy["preset"],
-            "global_preset": global_policy["preset"],
-            "mode": effective_policy.get("permission_mode", effective_policy.get("filesystem_mode", effective_mode(effective_policy))),
-            "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
-            "rules": effective_rules(effective_policy),
-            "policy": effective_policy,
-            "mode_definitions": modes,
-            "authorized_roots": [_get_workspace_root(session_id, agent_id), *(effective_policy.get("extra_roots") or [])],
-            "project": project_dir,
-            "error": effective_policy.get("error"),
-            "process_isolation": isolation,
-            "presets": [row["id"] for row in modes],
+            "source": "independent",
+            "mode": mode,
+            "policy": public_policy(effective_policy),
+            "mode_definitions": MODE_DEFINITIONS,
+            "error": 'Permissions require confirmation' if effective_policy.get('migration_status') == 'needs_confirmation' else None,
+            "presets": [row["id"] for row in MODE_DEFINITIONS],
         },
     }
 
@@ -7898,8 +7582,7 @@ class SessionSettingsHandler:
 
             updates = {}
             if "security_policy" in body:
-                from agent.permission.security_policy import validate_patch
-                updates["security_policy"] = validate_patch(body["security_policy"]) if body["security_policy"] else None
+                raise ValueError('Use the three-mode permission selector')
             if "model" in body or "provider" in body:
                 model = (body.get("model") or "").strip() or None
                 provider = (body.get("provider") or "").strip() or None
@@ -7911,15 +7594,10 @@ class SessionSettingsHandler:
             if not updates:
                 return json.dumps({
                     "status": "error",
-                    "message": "security_policy, model or provider required",
+                    "message": "model or provider required",
                 })
 
-            if "security_policy" in updates:
-                from agent.permission.center import save_conversation_policy
-                save_conversation_policy(session_id, updates["security_policy"], agent_id)
-            other_updates = {key: value for key, value in updates.items() if key != "security_policy"}
-            if other_updates:
-                session_prefs.set_prefs(session_id, agent_id, **other_updates)
+            session_prefs.set_prefs(session_id, agent_id, **updates)
 
             # Retarget the live agent so the change lands on the next message
             # without waiting for a fresh get_agent.

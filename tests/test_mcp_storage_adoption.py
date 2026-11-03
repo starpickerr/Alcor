@@ -108,22 +108,6 @@ def test_failed_publication_retains_data_and_can_retry(owner, monkeypatch):
     assert info(start(values))['value'] == 'RETAINED_OWNER_DATA'
 
 
-def test_original_runtime_api_shows_source_and_accepts_only_owner_confirmation(owner, monkeypatch):
-    import channel.desktop.desktop_channel as desktop
-    from core.security.control import RuntimeControl
-    lifecycle, values, start = owner
-    legacy_data()
-    row = next(row for row in RuntimeControl().inventory()['runtimes'] if row['id'] == values['name'])
-    preview = row['storage_migration']
-    body = {'action': 'adopt-storage', 'kind': 'mcp', 'id': values['name'],
-            'token': preview['token'], 'sourceId': preview['sources'][0]['id']}
-    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(body).encode())
-    with identity_scope(user_id='alice', session_id='agent-session'):
-        assert json.loads(desktop.SecurityRuntimeTrustHandler().POST())['status'] == 'error'
-    assert json.loads(desktop.SecurityRuntimeTrustHandler().POST())['status'] == 'success'
-    assert info(start(values))['value'] == 'RETAINED_OWNER_DATA'
 
 
 @pytest.mark.parametrize('kind', ['symlink', 'hardlink', 'fifo'])

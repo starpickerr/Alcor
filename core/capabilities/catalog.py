@@ -118,9 +118,7 @@ class CapabilityCatalog:
             except Exception:
                 # Error strings from configuration/registries may contain secrets.
                 errors[kind] = 'Capability inventory is unavailable. Retry this category.'
-        from core.security.access_settings import owner_connection_settings
-        connection_settings = [row['id'] for row in owner_connection_settings() if not row['id'].startswith('mcp:')]
-        return dict(status='success', items=items, errors=errors, connectionSettings=connection_settings)
+        return dict(status='success', items=items, errors=errors)
 
     def detail(self, kind, identifier):
         if not isinstance(identifier, str) or not identifier or len(identifier) > 512 or '\0' in identifier:

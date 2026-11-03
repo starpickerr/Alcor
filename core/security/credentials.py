@@ -68,7 +68,7 @@ def credential_metadata():
     for row in secrets():
         name = row['name']
         model = 'model' in row['source'] or name in MODEL_CONFIG_TO_ENV.values() or name.startswith('CUSTOM:') or name == 'BOCHA_API_KEY'
-        url = '/models?credential=' + quote(name, safe='') if model else '/security?tab=resources&credential=' + quote(name, safe='')
+        url = '/models?credential=' + quote(name, safe='') if model else '/settings'
         yield dict(reference='store:' + name, owner='model' if model else 'connection',
             account=row.get('display_name') or name, kind='api-key', configured=row['configured'],
             configure_url=url, reason='')

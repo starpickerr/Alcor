@@ -37,20 +37,20 @@ with sync_playwright() as playwright:
         page.goto(url + '/#/models', wait_until='networkidle')
         expect(page.get_by_role('heading', name='主模型', exact=True)).to_be_visible()
         expect(page.get_by_text('已配置凭据', exact=True)).to_be_visible()
-        link = page.get_by_role('link', name='在安全中管理凭据', exact=True)
-        expect(link).to_have_attribute('href', '#/security?tab=secrets&secret=LINKAI_API_KEY')
+        editor = page.get_by_role('button', name='配置凭据', exact=True)
+        expect(editor).to_be_visible()
         expect(page.locator('input[type="password"]')).to_have_count(0)
         page.get_by_role('button', name='保存', exact=True).click()
         expect(page.get_by_text('已保存', exact=True)).to_be_visible()
         assert saved == [{'model': 'managed-model', 'use_linkai': True, 'bot_type': ''}], saved
         page.set_viewport_size({'width': 620, 'height': 900})
-        expect(link).to_be_visible()
+        expect(editor).to_be_visible()
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-        link.focus()
-        expect(link).to_be_focused()
+        editor.focus()
+        expect(editor).to_be_focused()
         assert not errors, errors
         if os.environ.get('STELLA_UI_SCREENSHOTS'):
             page.screenshot(path=os.environ['STELLA_UI_SCREENSHOTS'] + '/managed-models-narrow.png', full_page=True)
-        print('PASS: managed model choice, sole Security credential owner, payload, keyboard and narrow layout')
+        print('PASS: managed model choice, model credential editor, payload, keyboard and narrow layout')
     finally:
         browser.close()

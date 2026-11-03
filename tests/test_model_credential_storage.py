@@ -243,3 +243,35 @@ def test_search_credential_deletion_clears_the_previous_environment_alias(model_
     handler._handle_set_search_credential({'api_key': ''})
     assert _get_api_key('bocha') == ''
     assert 'BOCHA_API_KEY' not in os.environ
+
+
+@pytest.mark.parametrize('name', ['GITHUB_TOKEN', 'OPENAI_API_BASE', '', None])
+def test_model_credential_action_rejects_non_model_keys(model_owner, monkeypatch, name):
+    handler, path, _ = model_owner
+    import channel.desktop.desktop_channel as channel
+    monkeypatch.setattr(channel, '_require_auth', lambda: None)
+    monkeypatch.setattr(channel.web, 'header', lambda *a, **k: None)
+    monkeypatch.setattr(channel.web, 'data', lambda: json.dumps({'action': 'credential', 'name': name, 'value': 'SYNTHETIC'}).encode())
+    before = path.read_bytes()
+    result = json.loads(handler.POST())
+    assert result['status'] == 'error'
+    assert path.read_bytes() == before
+
+
+def test_model_credential_action_uses_original_secure_store(model_owner, monkeypatch):
+    handler, path, _ = model_owner
+    import channel.desktop.desktop_channel as channel
+    monkeypatch.setattr(channel, '_require_auth', lambda: None)
+    monkeypatch.setattr(channel.web, 'header', lambda *a, **k: None)
+    for value in ('SYNTHETIC_EDITOR_KEY', None):
+        monkeypatch.setattr(channel.web, 'data', lambda: json.dumps({'action': 'credential', 'name': 'OPENAI_API_KEY', 'value': value}).encode())
+        assert json.loads(handler.POST())['status'] == 'success'
+        assert 'SYNTHETIC_EDITOR_KEY' not in path.read_text()
+        from core.security.config_credentials import model_key
+        if value:
+            assert model_key('open_ai_api_key') == value
+        else:
+            from core.security.keychain import KeychainUnavailable
+            with pytest.raises(KeychainUnavailable):
+                model_key('open_ai_api_key')
+            assert json.loads(path.read_text())['open_ai_api_key'] == ''

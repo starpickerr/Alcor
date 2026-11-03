@@ -9,8 +9,9 @@ DEFAULT_REGISTRY = PluginRegistry()
 
 
 def list_published_plugins() -> list[dict]:
+    from core.plugins.caller import plugin_user_id
     rows = []
-    for snap in DEFAULT_REGISTRY.list_snapshots():
+    for snap in DEFAULT_REGISTRY.list_snapshots(user_id=plugin_user_id()):
         rows.append(
             {
                 "pluginId": snap.plugin_id,

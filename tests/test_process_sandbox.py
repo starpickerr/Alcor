@@ -260,7 +260,7 @@ def test_delegated_agents_cannot_use_raw_network_even_when_network_operations_ar
     from core.security.delegated_runtime import prepare_delegated
     with identity_scope(session_id='delegated-network'):
         resolve_run_policy('delegated-network')
-        save_run_policy('session', 'delegated-network', {'permission_mode': 'custom', 'filesystem_mode': mode, 'rules': {'network': 'allow'}})
+        save_run_policy('session', 'delegated-network', {'filesystem_mode': mode}, legacy_rules={'network': 'allow'})
         plan = prepare_delegated(tmp_path, [sys.executable])
         result = subprocess.run([*plan['prefix'], sys.executable, '-c',
             "import socket\ntry:\n s=socket.socket();s.bind(('127.0.0.1',0));print('raw-network')\nexcept OSError:\n print('denied')"],

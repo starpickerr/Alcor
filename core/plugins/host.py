@@ -270,7 +270,7 @@ class PluginSession:
                         return False
                 except (ValueError, OSError, KeyError):
                     return False
-            snapshot = self.registry.get(self.plugin_id)
+            snapshot = self.registry.get(self.plugin_id, user_id=self.user_id)
             return (self._proc is not None and self._proc.poll() is None and
                     snapshot is not None and snapshot.generation == self.generation)
 
@@ -362,7 +362,7 @@ class PluginSession:
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(process,), daemon=True)
             self._stderr_thread.start()
             threading.Thread(target=reap_runner_session, args=(process,), daemon=True).start()
-            self.generation = self.registry.next_generation(self.plugin_id)
+            self.generation = self.registry.next_generation(self.plugin_id, user_id=self.user_id)
             init = self._rpc(
                 "runtime.initialize",
                 {
@@ -445,7 +445,7 @@ class PluginSession:
         Uses the same caller mode, lifecycle and contract checks as production.
         Legacy grant references are retained only as diagnostic metadata.
         """
-        services = self.registry.get(self.plugin_id)
+        services = self.registry.get(self.plugin_id, user_id=self.user_id)
         contract = (services.services[0] if services and services.services else f"{self.plugin_id}@1")
         payload = dict(params or {})
         data_handle = payload.pop("_dataHandle", None)
@@ -524,7 +524,7 @@ class PluginSession:
         remaining_invocation_seconds()
         agent_id = identity.agent_id or agent_id
         session_id = identity.session_id or session_id
-        self.registry.require_generation(self.plugin_id, self.generation)
+        self.registry.require_generation(self.plugin_id, self.generation, user_id=self.user_id)
         from core.security.service import SecurityService
         binding_args = dict(origin=origin, agent_id=agent_id, session_id=session_id)
         policy_binding = SecurityService.policy_binding(**binding_args)
@@ -629,7 +629,7 @@ class PluginSession:
             self._check_runtime()
             result = validate_operation_result(result)
             try:
-                self.registry.require_generation(self.plugin_id, self.generation)
+                self.registry.require_generation(self.plugin_id, self.generation, user_id=self.user_id)
                 if managed:
                     current = default_store().instance(self.plugin_id, self.user_id)
                     if (current['intent'] != 'enabled' or
@@ -666,7 +666,7 @@ class PluginSession:
         # An invocation owns the transport lock, so waiting on it without a
         # bound would make disable/dispose wait for a long network deadline.
         if not self._lock.acquire(timeout=2):
-            self.registry.revoke(self.plugin_id, self.generation)
+            self.registry.revoke(self.plugin_id, self.generation, user_id=self.user_id)
             process = self._proc
             if process is not None:
                 stop_process_tree(process, owned_session=True)
@@ -704,7 +704,7 @@ class PluginSession:
                     except (PluginHostError, FrameError, BrokenPipeError):
                         pass
             finally:
-                self.registry.revoke(self.plugin_id, self.generation)
+                self.registry.revoke(self.plugin_id, self.generation, user_id=self.user_id)
                 if self._proc is not None:
                     stop_process_tree(self._proc, owned_session=True)
                     for stream in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
@@ -735,7 +735,7 @@ class PluginSession:
             return
 
     def _abort_transport(self, process, thread) -> None:
-        self.registry.revoke(self.plugin_id, self.generation)
+        self.registry.revoke(self.plugin_id, self.generation, user_id=self.user_id)
         stop_process_tree(process, owned_session=True)
         if thread is not None:
             thread.join(timeout=1)
@@ -765,7 +765,7 @@ class PluginSession:
             if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
                 raise PluginHostError("worker not running")
             if self._proc.poll() is not None and not allow_dead:
-                self.registry.revoke(self.plugin_id, self.generation)
+                self.registry.revoke(self.plugin_id, self.generation, user_id=self.user_id)
                 raise PluginHostError(f"worker exited with code {self._proc.returncode}")
             request_id = str(uuid.uuid4())
             if request_id in self._inflight:

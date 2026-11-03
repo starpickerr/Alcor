@@ -50,13 +50,8 @@ MODE_DEFINITIONS = [
     {"id": "full-access", "name": {"zh": "完全访问", "en": "Full Access"},
      "description": {"zh": "放宽一般文件与命令限制；其他会话私有目录、托管数据和系统授权仍不可越过。",
                      "en": "Relax ordinary file and shell limits; other chats' private files, managed data and OS grants stay blocked."}},
-    {"id": "custom", "name": {"zh": "自定义", "en": "Custom"},
-     "description": {"zh": "从当前规则复制并按需调整，保存后生效。",
-                     "en": "Copy the current rules, adjust them, and apply on save."}},
-]
-for _mode in MODE_DEFINITIONS:
-    _mode["rules"] = dict(PRESETS[_mode["id"]])
 
+]
 LEGACY_PRESETS = {
     "approval": dict(_APPROVAL),
     "strict": {**_APPROVAL, "workspace_write": "deny", "workspace_outside": "deny",

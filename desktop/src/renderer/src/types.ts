@@ -383,18 +383,11 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    source: 'session' | 'project' | 'global' | 'mixed'
-    preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    global_preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    base_preset: 'read-only' | 'workspace-write' | 'full-access'
-    rules: Record<string, 'allow' | 'confirm' | 'deny'>
-    policy: import('./api/client').SecurityPolicy
+    source: 'independent'
+    mode: import('./api/client').FileMode
+    policy: import('./api/client').RunPolicy
     mode_definitions: import('./api/client').SecurityModeDefinition[]
-    authorized_roots: string[]
-    project: string | null
     error?: string | null
-    process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
     presets: string[]
   }
 }
@@ -768,7 +761,7 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   notification_route?: NotificationRoute | null
-  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
   run_policy?: import('./api/client').RunPolicy
   owner_agent_id?: string
   permission_needs_confirmation?: boolean

@@ -60,10 +60,12 @@ def connection_catalog():
         networks = (cfg.get('local_service_networks') or {}).get(endpoint)
         if networks:
             row['localNetworks'] = networks
-    if cfg.get('proxy'):
+    from urllib.request import getproxies
+    proxies = [cfg['proxy']] if cfg.get('proxy') else [value for key, value in getproxies().items() if key in {'http', 'https', 'all'}]
+    for proxy in proxies:
         from core.security.http_transport import proxy_endpoint
         try:
-            add(proxy_endpoint(cfg['proxy'])[0], 'proxy', 'Network proxy', '/settings?tab=network')
+            add(proxy_endpoint(proxy)[0], 'proxy', 'Network proxy', '/settings')
         except (ValueError, PermissionError):
             pass
     from models.catalog import PROVIDER_MODELS
@@ -108,7 +110,7 @@ def connection_catalog():
             pass
     import os
     if cfg.get('github_token') or os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN'):
-        add('https://api.github.com', 'github', 'GitHub', '/security?tab=resources&credential=GITHUB_TOKEN')
+        add('https://api.github.com', 'github', 'GitHub', '/settings')
     return [*indexed.values(),
         dict(id='public-browser', name='Public web', endpoint='', owners=['browser']),
         dict(id='public-packages', name='Package registries', endpoint='', owners=['runtime'])]

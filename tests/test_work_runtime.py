@@ -120,12 +120,13 @@ def test_source_task_rejects_deleted_project_even_without_frozen_path(roots, tmp
                                           "source_session_id": "source"})
 
 
-def test_workspace_picker_and_permission_status_show_private_session_root(roots, monkeypatch):
+def test_workspace_picker_keeps_private_root_without_exposing_security_settings(roots, monkeypatch):
     monkeypatch.setattr("agent.permission.process_sandbox.capability", lambda: {
         "status": "unavailable", "reason": "test"})
     expected = str(roots / "sessions" / "alpha" / "first")
     assert _project_state("first", "alpha")["default_workspace"] == expected
-    assert _session_settings_state("first", "alpha")["permission"]["authorized_roots"][0] == expected
+    permission = _session_settings_state("first", "alpha")["permission"]
+    assert "authorized_roots" not in permission
     from agent.permission.center import overview
     assert overview("first", "alpha")["authorized_roots"][0] == expected
 

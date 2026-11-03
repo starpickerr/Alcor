@@ -1,4 +1,4 @@
-import { MessageSquare, BookOpen, Brain, Zap, Radio, Clock, Settings, Sun, ScrollText, ListChecks, CalendarDays, Receipt, Shield, Database, Bot, Cpu } from 'lucide-react'
+import { MessageSquare, BookOpen, Brain, Zap, Radio, Clock, Settings, Sun, ScrollText, ListChecks, CalendarDays, Receipt, Database, Bot, Cpu } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
@@ -54,7 +54,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { path: '/models', labelKey: 'settings_tab_models', icon: Cpu },
       { path: '/agent-settings', labelKey: 'config_agent', icon: Bot },
       { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
-      { path: '/security', labelKey: 'menu_security', icon: Shield },
       { path: '/general', labelKey: 'settings_tab_general', icon: Settings },
       { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
     ],

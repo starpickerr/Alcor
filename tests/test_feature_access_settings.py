@@ -57,27 +57,6 @@ def test_agent_cannot_manage_feature_permissions(access):
             control('data', 'source-a').inventory()
 
 
-def test_feature_endpoints_bind_context_and_authenticate_before_access(access, monkeypatch):
-    from channel.desktop import desktop_channel as desktop
-    import json
-    control, store = access
-    calls = []
-    monkeypatch.setattr(desktop, '_require_auth', lambda: calls.append('auth'))
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: dict(id='chat', kind='', agent='default'))
-    reply = json.loads(desktop.SessionAccessSettingsHandler().GET())
-    assert calls == ['auth'] and reply['available'][0]['id'] == 'account-a'
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(dict(id='chat', agent='default', action='issue',
-        subject='session:default:chat', resource={'kind': 'folder', 'id': 'unknown-account'}, operations=['read'])).encode())
-    assert json.loads(desktop.SessionAccessSettingsHandler().POST())['status'] == 'error'
-    assert store.list_owned('owner') == []
-    def deny():
-        raise PermissionError('unauthenticated')
-    monkeypatch.setattr(desktop, '_require_auth', deny)
-    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler):
-        with pytest.raises(PermissionError):
-            handler().POST()
-
 
 def test_old_authorization_remains_enforced_by_security_service(access):
     from core.security.service import SecurityService

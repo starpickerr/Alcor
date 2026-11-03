@@ -11,7 +11,6 @@ test_url = os.environ.get('STELLA_TEST_URL', 'http://127.0.0.1:5173')
 PAGES = [
     ('/#/tasks', '定时任务', True),
     ('/#/todos', '事务', False),
-    ('/#/security', '安全中心', False),
     ('/#/settings', '设置', False),
     ('/#/models', '设置', False),
     ('/#/logs', '日志', False),
@@ -49,7 +48,7 @@ def backend(route):
         data.update(tasks=[])
     elif path.startswith('/api/security/activity'):
         data.update(records=[])
-    elif path.startswith('/api/security/confirmations'):
+    elif path.startswith('/api/confirmations'):
         data.update(pending=[])
     elif path.startswith('/api/security'):
         data = {'status': 'error', 'message': 'fixture'}

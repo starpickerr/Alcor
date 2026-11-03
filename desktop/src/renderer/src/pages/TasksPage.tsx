@@ -165,7 +165,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                       <span className="font-medium text-sm text-content truncate">{task.name || task.id}</span>
                       <div className="flex-1" />
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
-                      <span className="text-xs text-content-tertiary">{task.run_permission_mode === 'custom' ? (getLang() === 'en' ? 'Custom' : '自定义') : t(permissionLabel(task.run_permission_mode))}</span>
+                      <span className="text-xs text-content-tertiary">{t(permissionLabel(task.run_permission_mode))}</span>
                     </div>
                     {content && <p className="text-xs text-content-secondary mb-2 line-clamp-2">{content}</p>}
                     {task.linked_todo_id && <button type="button" className="text-xs text-accent mb-2 hover:underline"
@@ -230,21 +230,6 @@ const TaskEditModal: React.FC<{
   const [name, setName] = useState(task?.name || '')
   const [enabled, setEnabled] = useState(task?.enabled ?? true)
   const [newPolicy, setNewPolicy] = useState<RunPolicy>({ filesystem_mode: 'read-only', policy_revision: 0 })
-  const policyDraftVersion = useRef(0)
-  const [defaultPolicy, setDefaultPolicy] = useState<RunPolicy | null>(null)
-  const [defaultError, setDefaultError] = useState('')
-  useEffect(() => {
-    if (!isCreate) return
-    let active = true
-    const draftVersion = policyDraftVersion.current
-    void apiClient.getRunPolicy('template', 'default').then(result => {
-      if (!active) return
-      if (result.migration_status !== 'complete') throw new Error(getLang() === 'en' ? 'Default permissions require confirmation in Security Center.' : '请先在安全中心确认默认权限。')
-      setDefaultPolicy(result.policy)
-      if (draftVersion === policyDraftVersion.current) setNewPolicy(result.policy)
-    }).catch(cause => { if (active) setDefaultError(cause instanceof Error ? cause.message : String(cause)) })
-    return () => { active = false }
-  }, [isCreate])
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task?.schedule.type || 'cron')
   const [cron, setCron] = useState(task?.schedule.expression || '0 9 * * *')
   const [interval, setIntervalVal] = useState(task?.schedule.seconds ? String(task.schedule.seconds) : '')
@@ -405,8 +390,7 @@ const TaskEditModal: React.FC<{
           schedule: buildSchedule(),
           action: buildAction(),
           ...(conversationMode === 'independent' ? {} : { session_id: sourceSessionId || sessionId }),
-          run_policy: { filesystem_mode: newPolicy.filesystem_mode, permission_mode: newPolicy.permission_mode || newPolicy.filesystem_mode,
-            ...(newPolicy.permission_mode === 'custom' ? { rules: newPolicy.rules || {} } : {}) },
+          run_policy: { filesystem_mode: newPolicy.filesystem_mode, permission_mode: newPolicy.permission_mode || newPolicy.filesystem_mode },
           ...(route ? { notification_route: route } : {}),
         })
         if (result.status !== 'success') throw new Error(result.message || t('task_save_error'))
@@ -482,7 +466,7 @@ const TaskEditModal: React.FC<{
             {t('task_cancel')}
           </Btn>
           {!linked && (
-            <Btn variant="primary" onClick={save} disabled={saving || isCreate && !defaultPolicy}>
+            <Btn variant="primary" onClick={save} disabled={saving}>
               {t('task_save')}
             </Btn>
           )}
@@ -502,9 +486,7 @@ const TaskEditModal: React.FC<{
       </div>
 
       {isCreate && <div className="rounded-card border border-default p-4"><p className="mb-4 text-xs text-content-secondary">{getLang() === 'en' ? 'Permissions apply only to this task. Resource access is checked separately. Background operations requiring confirmation stop with a recorded reason.' : '权限仅作用于当前任务，资源访问授权仍需分别检查。后台遇到需要确认的操作会停止该操作并记录原因。'}</p>
-        {defaultError && <p role="alert" className="mb-3 text-sm text-danger">{defaultError}</p>}
-        <PolicyFields value={newPolicy} onChange={value => { policyDraftVersion.current++; setNewPolicy(value) }} disabled={saving || !defaultPolicy} />
-        {newPolicy.permission_mode === 'custom' && <p className="mt-3 text-xs text-content-secondary">{getLang() === 'en' ? 'Custom rules are copied independently. Save this task, then edit its rules in Security → Agent permissions.' : '自定义规则会独立复制。保存任务后，可前往安全 → Agent 权限编辑该任务的具体规则。'}</p>}
+        <PolicyFields value={newPolicy} onChange={setNewPolicy} disabled={saving} />
       </div>}
 
       <Field label={t('task_schedule_type')}>
@@ -577,8 +559,7 @@ const TaskEditModal: React.FC<{
         <Dropdown value={conversationMode} onChange={(value) => {
           setConversationMode(value as 'independent' | 'source' | 'reuse' | 'new')
           if (isCreate) {
-            policyDraftVersion.current++
-            setNewPolicy(value === 'independent' && defaultPolicy ? defaultPolicy : { filesystem_mode: 'read-only', permission_mode: 'read-only', policy_revision: 0 })
+            setNewPolicy({ filesystem_mode: 'read-only', permission_mode: 'read-only', policy_revision: 0 })
           }
         }}
           options={[
@@ -648,7 +629,7 @@ const TaskEditModal: React.FC<{
       {!isCreate && task && <div className="mt-6 space-y-5 border-t border-default pt-5">
         <h3 className="text-sm font-semibold">{getLang() === 'en' ? 'Independent task permissions' : '任务独立权限'}</h3>
         {task.last_error && <p role="alert" className="text-xs text-danger">{task.last_error}</p>}
-        <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Save permission changes here, then use Run now to retry a denied task.' : '在此保存权限修改，再使用“立即执行”重试被拒绝的任务。')}</p>
+        <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Permission changes save immediately. Use Run now to retry a denied task.' : '权限修改立即保存。可使用“立即执行”重试被拒绝的任务。')}</p>
         <RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} />
       </div>}
     </Modal>

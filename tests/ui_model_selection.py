@@ -36,8 +36,6 @@ def backend(route):
         data = {'status': 'ok'}
     elif path == '/auth/check':
         data.update(auth_required=False, authenticated=True)
-    elif path == '/api/security/center':
-        data = {'status': 'error', 'message': 'Security contents are tested in ui_security_modes.py'}
     elif path == '/api/models':
         if route.request.method == 'POST':
             body = route.request.post_data_json

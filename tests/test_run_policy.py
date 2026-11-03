@@ -19,15 +19,13 @@ def test_retired_template_cannot_widen_new_conversations():
     assert resolve_run_policy('existing')['filesystem_mode'] == 'workspace-write'
 
 
-def test_current_default_is_owner_editable_but_retired_template_is_not():
+def test_default_template_has_no_public_write_interface():
     from core.security.control import PermissionControl
     control = PermissionControl()
-    current = control.read('template', 'default')['policy']
-    saved = control.save('template', 'default', {'filesystem_mode': 'full-access',
-                         'policy_revision': current['policy_revision']})
-    assert saved['policy']['filesystem_mode'] == 'full-access'
-    with pytest.raises(ValueError, match='default'):
-        control.save('template', 'retired', {'filesystem_mode': 'full-access', 'policy_revision': 1})
+    with pytest.raises(ValueError):
+        control.read('template', 'default')
+    with pytest.raises(ValueError):
+        control.save('template', 'default', {'filesystem_mode': 'full-access', 'policy_revision': 1})
 
 
 def test_project_conversations_have_independent_policies(tmp_path):

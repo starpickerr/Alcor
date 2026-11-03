@@ -274,7 +274,7 @@ def test_draining_prevents_late_tool_publication(setup):
         assert manager._publish_mcp_tools(config, old, 1, schemas) is False
 
 
-def test_managed_domain_validation_cannot_read_account_or_migration_data(tmp_path, monkeypatch, native_settings_action):
+def test_managed_domain_validation_cannot_read_account_or_migration_data(tmp_path, monkeypatch, native_settings_action, offline_runtime_artifacts):
     from core.mcp.lifecycle import McpLifecycle
     from test_managed_mcp_domains import server_config
     monkeypatch.setattr(ToolManager, '_instances', {})
@@ -296,59 +296,8 @@ def test_managed_domain_validation_cannot_read_account_or_migration_data(tmp_pat
             manager.shutdown_mcp()
 
 
-def test_mcp_rebuild_api_and_inventory_reuse_owner_lifecycle(setup, monkeypatch):
-    import channel.desktop.desktop_channel as desktop
-    from core.security.control import RuntimeControl
-    make, start, _ = setup
-    manager, config, _ = make()
-    body = {'action': 'rebuild', 'kind': 'mcp', 'id': 'probe'}
-    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(body).encode())
-    with identity_scope(user_id='alice'):
-        old = start(config)
-        row = next(row for row in RuntimeControl().inventory()['runtimes'] if row['kind'] == 'mcp')
-        assert row['can_rebuild'] is True
-        reply = json.loads(desktop.SecurityRuntimeTrustHandler().POST())
-        assert reply['status'] == 'success', reply
-        assert old._proc is None
-        row = next(row for row in reply['runtimes'] if row['kind'] == 'mcp')
-        assert row['environment']['id'] != old.environment['id'] and row['running'] is False
-        assert row['can_rebuild'] is True
-    for scope in ({'session_id': 'agent-session'}, {'task_id': 'background-task'}):
-        with identity_scope(user_id='alice', **scope):
-            assert json.loads(desktop.SecurityRuntimeTrustHandler().POST())['status'] == 'error'
 
 
-def test_mcp_resume_api_only_exposes_current_workspace_owner_operation(setup, monkeypatch):
-    import channel.desktop.desktop_channel as desktop
-    from core.mcp.lifecycle import McpLifecycle
-    from core.security.control import RuntimeControl
-    make, _, _ = setup
-    manager, _, _ = make()
-    class Interrupted(BaseException):
-        pass
-    def interrupt(stage, operation):
-        if stage == 'prepared':
-            raise Interrupted()
-    with identity_scope(user_id='alice'):
-        service = McpLifecycle(manager)
-        with pytest.raises(Interrupted):
-            service.rebuild('probe', checkpoint=interrupt)
-        operation = service.pending('probe')[0]
-        row = next(row for row in RuntimeControl().inventory()['runtimes'] if row['kind'] == 'mcp')
-        assert row['can_rebuild'] is False and row['rebuild_operation'] == operation['operationId']
-    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    body = {'action': 'resume', 'kind': 'mcp', 'id': 'probe', 'operationId': operation['operationId']}
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(body).encode())
-    with identity_scope(user_id='bob'):
-        assert json.loads(desktop.SecurityRuntimeTrustHandler().POST())['status'] == 'error'
-    with identity_scope(user_id='alice'):
-        assert service.pending('probe')[0]['stage'] == 'prepared'
-        reply = json.loads(desktop.SecurityRuntimeTrustHandler().POST())
-        assert reply['status'] == 'success', reply
-        assert service.pending('probe') == []
 
 
 @pytest.mark.parametrize('config', [
@@ -368,15 +317,6 @@ def test_remote_or_executable_provider_does_not_claim_dependency_rebuild(setup, 
         assert McpLifecycle(manager).pending('probe') == []
 
 
-@pytest.mark.parametrize('field,value', [('kind', []), ('action', {})])
-def test_rebuild_api_rejects_malformed_discriminators_without_internal_error(setup, monkeypatch, field, value):
-    import channel.desktop.desktop_channel as desktop
-    body = {'action': 'rebuild', 'kind': 'mcp', 'id': 'probe', field: value}
-    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps(body).encode())
-    with identity_scope(user_id='alice'):
-        assert json.loads(desktop.SecurityRuntimeTrustHandler().POST())['status'] == 'error'
 
 
 def test_selection_finalization_failure_keeps_maintenance_gate_until_recovery(setup, monkeypatch):

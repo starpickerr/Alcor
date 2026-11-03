@@ -103,6 +103,6 @@ def test_mode_only_owner_save_repairs_missing_task_policy(tmp_path, monkeypatch)
 
 def test_mode_control_no_longer_exposes_per_capability_settings():
     from core.security.control import PermissionControl
-    state = PermissionControl().read('template', 'default')
+    state = PermissionControl().read('session', 'three-mode-check')
     assert 'capabilities' not in state['policy']
     assert not state.get('capabilities')

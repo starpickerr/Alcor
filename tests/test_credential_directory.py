@@ -90,13 +90,6 @@ def test_agent_cannot_use_legacy_secret_management_or_enumeration():
             set_secret('INVALID-NAME', 'must-not-be-saved')
 
 
-def test_sensitive_resources_http_requires_auth_and_owner(monkeypatch):
-    from channel.desktop import desktop_channel as desktop
-    def unauthenticated():
-        raise PermissionError('unauthenticated')
-    monkeypatch.setattr(desktop, '_require_auth', unauthenticated)
-    with pytest.raises(PermissionError):
-        desktop.SecuritySensitiveResourcesHandler().GET()
 
 
 def test_retired_credential_tool_cannot_read_or_mutate_even_when_called_directly(tmp_path, monkeypatch):

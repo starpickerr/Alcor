@@ -73,7 +73,7 @@ def dispatch(session, params: dict, parent: dict) -> dict:
         raise PermissionError('invalid callback deadline') from exc
     if deadline <= datetime.now(timezone.utc):
         raise PermissionError('callback deadline expired')
-    session.registry.require_generation(session.plugin_id, session.generation)
+    session.registry.require_generation(session.plugin_id, session.generation, user_id=session.user_id)
     if runtime:
         from core.security.delegated_runtime import invoke_runtime
         from core.security.service import SecurityService

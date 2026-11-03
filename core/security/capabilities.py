@@ -91,7 +91,7 @@ def authorization(policy, descriptor):
         granted = 'allow' if descriptor.filesystem else 'confirm'
     else:
         granted = 'allow' if descriptor.operation == 'write' else 'confirm'
-    if policy.get('permission_mode') == 'custom':
+    if policy.get('rules'):
         from agent.permission.security_policy import rule
         operation_rules = {
             'read': ('workspace_read',), 'write': ('workspace_write',),

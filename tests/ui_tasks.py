@@ -60,7 +60,7 @@ def backend(route):
         )]
     elif path == '/api/todos/reminders/uncertain':
         data['reminders'] = []
-    elif path == '/api/security/run-policy':
+    elif path == '/api/run-policy':
         if route.request.method == 'POST':
             body = json.loads(route.request.post_data or '{}')
             subject = body['subject']
@@ -75,7 +75,7 @@ def backend(route):
             if subject == 'default':
                 default_requests.append(route)
                 return
-            policy = task.get('run_policy') or {'filesystem_mode': task.get('run_permission_mode') or 'read-only', 'capabilities': {}, 'policy_revision': 1}
+            policy = task.get('run_policy') or {'filesystem_mode': task.get('run_permission_mode') or 'read-only', 'policy_revision': 1}
         data.update(policy=policy, capabilities=[{'id': 'plugin:stella.tasks', 'name': '事务', 'source': 'plugin', 'installed': True}],
                     migration_status='complete', compatibility_restrictions={})
     elif route.request.method == 'POST' and path == '/api/scheduler/update':
@@ -110,9 +110,8 @@ with sync_playwright() as playwright:
         fresh.get_by_role('button', name='独立任务', exact=True).click()
         page.get_by_text('关联已有对话', exact=True).click()
         expect(fresh.get_by_text('选择关联对话', exact=True)).to_be_visible()
-        assert default_requests, 'Default request should still be pending'
-        for pending in list(default_requests):
-            pending.fulfill(json={'status': 'success', 'policy': {'filesystem_mode': 'full-access', 'permission_mode': 'custom', 'rules': {'network': 'deny'}, 'policy_revision': 3}, 'migration_status': 'complete', 'compatibility_restrictions': {}, 'capabilities': []}, headers={'Access-Control-Allow-Origin': test_url, 'Access-Control-Allow-Credentials': 'true'})
+        assert not default_requests, 'New tasks must use the fixed read-only default without a template request'
+        assert fresh.get_by_role('radio').count() == 3
         expect(fresh.get_by_role('button', name='保存', exact=True)).to_be_enabled()
         expect(fresh.get_by_role('radio', name='只读', exact=True)).to_be_checked()
         fresh.get_by_role('button', name='关联已有对话', exact=True).click()
@@ -122,9 +121,9 @@ with sync_playwright() as playwright:
         fresh.get_by_role('button', name='保存', exact=True).click()
         expect(fresh).to_be_hidden()
         assert created[-1]['action']['conversation_mode'] == 'independent'
-        assert created[-1]['run_policy']['permission_mode'] == 'custom'
-        assert created[-1]['run_policy']['rules'] == {'network': 'deny'}
-        assert created[-1]['run_policy']['filesystem_mode'] == 'full-access'
+        assert created[-1]['run_policy']['permission_mode'] == 'read-only'
+        assert 'rules' not in created[-1]['run_policy']
+        assert created[-1]['run_policy']['filesystem_mode'] == 'read-only'
         assert 'source_session_id' not in created[-1]['action']
         assert 'session_id' not in created[-1]
         page.get_by_text('Linked reminder').click()
@@ -163,9 +162,9 @@ with sync_playwright() as playwright:
         expect(editor.get_by_text('数据与连接访问', exact=True)).to_have_count(0)
         expect(editor.get_by_text('授予资源访问', exact=True)).to_have_count(0)
         expect(editor.get_by_role('radio', name='只读', exact=True)).to_be_checked()
-        assert editor.get_by_role('radio').count() == 4
-        editor.get_by_role('radio', name='完全访问', exact=True).check()
-        editor.get_by_role('button', name='保存权限', exact=True).click()
+        assert editor.get_by_role('radio').count() == 3
+        editor.get_by_role('radio', name='完全访问', exact=True).click()
+        expect(editor.get_by_role('button', name='保存权限', exact=True)).to_have_count(0)
         expect(editor.get_by_role('status').filter(has_text='权限已保存')).to_be_visible()
         editor.get_by_role('button', name='保存', exact=True).click()
         expect(editor).to_be_hidden()

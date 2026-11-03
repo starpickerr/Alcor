@@ -36,7 +36,6 @@ import CalendarPage from './pages/CalendarPage'
 import BriefingPage from './pages/BriefingPage'
 import BillsPage from './pages/BillsPage'
 import SourceSettingsPage from './pages/data/SourceSettingsPage'
-import SecurityPage from './pages/SecurityPage'
 import PluginPageHost from './pages/plugins/PluginPageHost'
 import PluginContributionPage from './pages/plugins/PluginContributionPage'
 import { product } from '@product'
@@ -262,7 +261,6 @@ const App: React.FC = () => {
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
             <Route path="/data" element={<DataManagementPage />} />
-            <Route path="/security" element={<SecurityPage baseUrl={backend.baseUrl} />} />
             <Route path="/plugins" element={<Navigate to="/skills#plugins" replace />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/general" element={<GeneralPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />

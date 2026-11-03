@@ -199,7 +199,7 @@ class SecurityService:
     @staticmethod
     def authorize_model(session, parent, method):
         SecurityService.check_execution()
-        session.registry.require_generation(session.plugin_id, session.generation)
+        session.registry.require_generation(session.plugin_id, session.generation, user_id=session.user_id)
         capability = {'complete': 'models.chat', 'embed': 'models.embedding',
                       'embedding_status': 'models.embedding'}.get(method)
         if capability is None:
@@ -215,7 +215,7 @@ class SecurityService:
             raise PermissionError('data capability not declared by invoking method')
         if not isinstance(source_id, str) or not source_id:
             raise ValueError('source_id is required')
-        session.registry.require_generation(session.plugin_id, session.generation)
+        session.registry.require_generation(session.plugin_id, session.generation, user_id=session.user_id)
         SecurityService.check_execution()
         # Source ownership/account/resource authorization is enforced by the
         # Data Service; a plugin-specific capability grant is no longer issued.

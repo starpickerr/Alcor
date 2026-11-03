@@ -163,5 +163,3 @@ def test_frozen_managed_mcp_settings_and_persisted_switch(frozen_call):
     assert frozen_call('GET','/api/email/accounts')['status']=='success'
     data=frozen_call('GET','/api/data?refresh=1')
     assert data['status']=='success' and data['sources']==[],data
-    security=frozen_call('GET','/api/security/center')
-    assert security['status']=='success' and security['data_access']['inherited_grants']==[],security

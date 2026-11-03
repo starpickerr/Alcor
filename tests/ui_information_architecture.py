@@ -96,8 +96,9 @@ with sync_playwright() as playwright:
         for text in ('数据', '知识', '记忆'):
             expect(info.get_by_role('button', name=text, exact=True)).to_be_visible()
         system = page.get_by_test_id('nav-group-system')
-        for text in ('模型', 'Agent 配置', '能力', '安全', '通用', '日志'):
+        for text in ('模型', 'Agent 配置', '能力', '通用', '日志'):
             expect(system.get_by_role('button', name=text, exact=True)).to_be_visible()
+        expect(system.get_by_role('button', name='安全', exact=True)).to_have_count(0)
         expect(page.get_by_role('complementary').get_by_role('button', name='日志', exact=True)).to_have_count(1)
         logs = system.get_by_role('button', name='日志', exact=True)
         logs.focus()

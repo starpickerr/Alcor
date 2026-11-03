@@ -203,12 +203,8 @@ def test_removed_provider_management_cannot_replace_legacy_denial(env, monkeypat
     from core.security.resource_grants import ResourceGrantStore
     from core.security.service import SecurityService
     ensure_migrated()
-    revision = ResourceGrantStore().connection_revision(user_id='local-default', connection='mcp:email')
-    response = call(
-        desktop.CapabilityAccessSettingsHandler,
-        body={"id": "email", "kind": "mcp", "action": "connection", "allowed": True, "scopes": ["read"], "revision": revision},
-    )
-    assert response["status"] == "error"
+    assert ResourceGrantStore().connection_revision(user_id='local-default', connection='mcp:email') >= 0
+    assert not hasattr(desktop, 'CapabilityAccessSettingsHandler')
     assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': False, 'scopes': []}]
     assert conf()['security_policy']['connections'] == {'email': {'allowed': False, 'scopes': []}}
 
