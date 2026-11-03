@@ -25,7 +25,9 @@ def approve_synthetic_egress(url):
     worker = threading.Thread(target=confirm, daemon=True)
     worker.start()
     try:
-        yield
+        from core.plugins.caller import caller_origin_scope
+        with caller_origin_scope('desktop'):
+            yield
     finally:
         stop.set()
         worker.join(2)

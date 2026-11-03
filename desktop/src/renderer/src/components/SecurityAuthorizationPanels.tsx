@@ -38,7 +38,7 @@ export function Feedback({ error, notice, busy }: { error: string; notice: strin
   return <>{error && <p role="alert" className="text-sm text-danger">{error}</p>}{notice && <p role="status" className="text-sm text-accent">{notice}</p>}{busy && <p className="text-xs text-content-secondary">{getLang() === 'en' ? 'Updating…' : '正在读取或更新…'}</p>}</>
 }
 
-function RuntimeStatus({ row, busy, onRebuild, onAdopt }: { row: RuntimeStatusState['runtimes'][number]; busy: boolean; onRebuild: (row: RuntimeStatusState['runtimes'][number]) => void; onAdopt: (row: RuntimeStatusState['runtimes'][number], source: string) => void }) {
+export function RuntimeStatus({ row, busy, onRebuild, onAdopt }: { row: RuntimeStatusState['runtimes'][number]; busy: boolean; onRebuild: (row: RuntimeStatusState['runtimes'][number]) => void; onAdopt: (row: RuntimeStatusState['runtimes'][number], source: string) => void }) {
   const en = getLang() === 'en'
   const [confirming, setConfirming] = useState(false)
   const [source, setSource] = useState('')
@@ -49,6 +49,7 @@ function RuntimeStatus({ row, busy, onRebuild, onAdopt }: { row: RuntimeStatusSt
     <div className="flex flex-wrap justify-between gap-2"><p className="break-all text-sm font-semibold">{row.id}</p><span className="text-xs text-content-secondary">{en ? row.mode : mode}</span></div>
     <p className="text-xs leading-6 text-content-secondary">{row.reason}</p>
     {row.environment && <p className="break-all text-xs leading-5 text-content-secondary">{en ? 'Independent dependency environment' : '独立依赖环境'} · {row.environment.base.version} · {row.environment.state}</p>}
+    {row.kind === 'mcp' && row.capabilities && row.digest && <McpCapabilities key={`${row.digest}:${row.capabilities.revision}`} row={row} />}
     {row.environment_error && <p className="text-xs leading-6 text-danger">{row.environment_error}</p>}
     {migration && (confirming ? <div className="space-y-3 rounded-btn border border-default p-3">
       <p className="text-sm leading-6">{en ? 'Confirm that the selected data belongs to this MCP. It will be copied to the current version; original files stay in place. Active processes will stop.' : '请确认所选数据属于此 MCP。数据将复制到当前版本，原文件保留；当前进程会停止。'}</p>
@@ -113,4 +114,43 @@ export function PermissionMigrationPanel() {
       </div>
     </div>
   </details>
+}
+
+
+function McpCapabilities({ row }: { row: RuntimeStatusState['runtimes'][number] }) {
+  const en = getLang() === 'en'
+  const [network, setNetwork] = useState(row.capabilities!.network)
+  const [credentials, setCredentials] = useState(row.capabilities!.credentials)
+  const [current, setCurrent] = useState(row)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const perform = async (prepare = false) => {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await apiClient.saveMcpRuntime(row.id, prepare ? null : { digest: current.digest!, network, credentials, revision: current.capabilities!.revision })
+      const updated = result.runtimes.find(item => item.kind === 'mcp' && item.id === row.id)
+      if (!updated?.capabilities || !prepare && updated.digest !== current.digest) throw new Error(en ? 'Launch content changed. Refresh this page.' : '启动内容已变化，请刷新页面。')
+      setCurrent(updated); setNetwork(updated.capabilities.network); setCredentials(updated.capabilities.credentials)
+      setNotice(prepare ? (en ? 'Package prepared. Runtime uses the fixed environment.' : '包入口已准备，运行时使用固定环境。') : (en ? 'Saved. Existing processes stopped; reconnect to apply.' : '已保存，旧进程已停止，下次连接时生效。'))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+  return <div className="space-y-3 rounded-btn border border-default p-3">
+    <p className="text-sm font-medium">{en ? 'Local MCP capabilities' : '本地 MCP 运行能力'}</p>
+    <p className="text-xs leading-6 text-content-secondary">{en ? 'Applies to this launch content. Networking allows the whole process to connect; it is not limited to domains. Dedicated credentials can be read by this process. File isolation remains enabled.' : '仅对当前启动内容生效。联网是整个进程的能力，不限制目标域名；进程可读取注入的专用凭据。文件隔离继续生效。'}</p>
+    <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={network} onChange={event => setNetwork(event.target.checked)} />{en ? 'Allow process networking' : '允许进程联网'}</label>
+    <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={credentials} onChange={event => setCredentials(event.target.checked)} />{en ? 'Allow its dedicated env credentials' : '允许注入此服务的专用 env 凭据'}</label>
+    <button type="button" className={secondary} disabled={busy} onClick={() => void perform()}>{en ? 'Save runtime capabilities' : '保存运行能力'}</button>
+    {row.package_launcher && <div className="space-y-2"><p className="text-xs text-content-secondary">{row.package_error || (en ? 'Prepare the exact package version before use. Preparation downloads dependencies without business credentials; runtime never downloads.' : '使用前准备固定版本包。准备阶段下载依赖且不使用业务凭据；运行时不下载。')}</p><button type="button" className={secondary} disabled={busy || !!row.package_error} onClick={() => void perform(true)}>{en ? 'Prepare fixed package' : '准备固定版本包'}</button></div>}
+    {error && <p role="alert" className="break-words text-sm text-danger">{error}</p>}{notice && <p role="status" className="text-sm text-accent">{notice}</p>}
+  </div>
+}
+
+export function McpRuntimeSettings({ name }: { name: string }) {
+  const state = useSecurityData(loadRuntime)
+  const row = state.data?.runtimes.find(item => item.kind === 'mcp' && item.id === name)
+  return <section className="space-y-3"><Feedback {...state} />{row && <RuntimeStatus key={`${name}:${row.digest}`} row={row} busy={state.busy}
+    onRebuild={value => void state.run(() => apiClient.rebuildRuntime(value.kind, value.id, value.rebuild_operation), getLang() === 'en' ? 'Environment rebuilt.' : '环境已重建。')}
+    onAdopt={(value, source) => void state.run(() => apiClient.adoptRuntimeStorage(value.id, value.storage_migration!.token, source), getLang() === 'en' ? 'Storage confirmed.' : '数据归属已确认。')} />}</section>
 }

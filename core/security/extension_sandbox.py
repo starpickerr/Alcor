@@ -111,4 +111,4 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
             argv += ['--tmpfs', folder]
         argv += ['--proc', '/proc', '--dev', '/dev',
                  '--chdir', str(storage), '--', *command]
-    return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'reason': 'OS file and network isolation enabled.'}, protection_revision)
+    return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'network': bool(network), 'reason': 'OS file isolation enabled; process networking allowed.' if network else 'OS file and network isolation enabled.'}, protection_revision)

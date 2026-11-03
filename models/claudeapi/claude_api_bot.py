@@ -428,6 +428,8 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                 return self._handle_stream_response(request_params)
             else:
                 return self._handle_sync_response(request_params)
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"Claude API call error: {e}")
             if stream:
@@ -700,6 +702,8 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                 "message": f"Connection error: {str(e)}",
                 "status_code": 0
             }
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"Claude streaming error: {e}")
             yield {

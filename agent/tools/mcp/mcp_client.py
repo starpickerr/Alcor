@@ -464,6 +464,8 @@ class McpClient:
         origin = service_id(configured)[1]
         if service_id(url)[1] != origin:
             raise PermissionError('MCP transport cannot change the configured receiving service')
+        from core.security.http_transport import configured_route
+        route = configured_route(url, config=self.config)
         from core.security.mcp_credentials import has_authentication, runtime_headers
         for key, value in runtime_headers(self.config, url).items():
             request.add_header(key, value)
@@ -483,12 +485,34 @@ class McpClient:
             public_control = method in allowed and isinstance(params, dict) and not set(params) - allowed[method]
             sources = ('public:mcp-protocol',) if public_control else ('private:mcp-tool-input',)
             request_control = _HTTP_REQUEST.get()
+            transport_check = None
+            if method == 'tools/call' and isinstance(params, dict):
+                from copy import deepcopy
+                from core.security.approvals import inherited
+                from core.security.capabilities import mcp_descriptor
+                from agent.runtime.tool_invocation import _current_authorization
+                from common.runtime_identity import current_identity
+                configuration = deepcopy(dict(self.config))
+                arguments = deepcopy(params.get('arguments') or {})
+                descriptor = mcp_descriptor(self.name, params.get('name'), self.config)
+                identity = current_identity()
+                def transport_check():
+                    if dict(self.config) != configuration:
+                        raise PermissionError('MCP configuration changed during transport')
+                    binding = _current_authorization(None, identity.agent_id, identity.session_id, None, False)[2]
+                    allowed = SecurityService.native_user_operation() or inherited(descriptor, binding, arguments)
+                    if allowed:
+                        SecurityService.authorize_connection(self.name, descriptor.operation)
+                    return allowed
             permit = SecurityService.authorize_egress(url, body, sources=sources,
                 cancel_event=request_control.cancelled if request_control else None,
+                method=request.get_method(), headers=dict(request.header_items()), transport_check=transport_check)
+        else:
+            permit = SecurityService.authorize_egress(url, b'', sources=('public:mcp-protocol',),
                 method=request.get_method(), headers=dict(request.header_items()))
         control = _HTTP_REQUEST.get()
         response = open_request(request.get_method(), url, body=body, headers=dict(request.header_items()),
-            timeout=timeout, permit=permit, configured_origin=origin,
+            timeout=timeout, permit=permit, **route,
             cancel_event=control.cancelled if control else None)
         if response.status >= 400:
             if has_authentication(self.config, dict(request.header_items())):
@@ -530,7 +554,8 @@ class McpClient:
         if not self._command_allowed(command):
             return False
 
-        env = self._build_stdio_env(self.config.get("env", None))
+        from core.security.mcp_credentials import runtime_env
+        env = self._build_stdio_env(runtime_env(self.config))
         from core.security.mcp_runtime import prepare_mcp
         plan, self._runtime_key = prepare_mcp(self.config, env)
         self.sandbox_state = plan.state
@@ -602,7 +627,7 @@ class McpClient:
         """Build the environment for a stdio MCP subprocess.
 
         Only startup system vars and the explicit env block are considered.
-        The launch boundary separately rejects ordinary MCP credentials.
+        Core resolves only this implementation’s explicitly granted credential fields.
         Legacy full inheritance cannot expose arbitrary Core environment data.
         """
         extra_env = extra_env or {}
@@ -614,18 +639,13 @@ class McpClient:
         return env
 
     def _url_allowed(self, url: str) -> bool:
-        """SSRF guard for remote (SSE / streamable-http) MCP endpoints.
-
-        Delegates to the shared ``validate_url_safe`` helper, which is a no-op
-        unless ``web_security_ssrf_protection`` is enabled, so local/LAN MCP
-        servers keep working by default.
-        """
+        """Validate configuration without DNS; the controlled transport checks IO."""
         try:
-            from agent.tools.utils.url_safety import validate_url_safe
-            validate_url_safe(url)
+            from core.security.http_transport import configured_route
+            configured_route(url, config=self.config)
             return True
-        except ValueError as e:
-            logger.warning(f"[MCP:{self.name}] url blocked: {e}")
+        except (ValueError, PermissionError):
+            logger.warning('[MCP:%s] Repair endpoint or proxy in MCP settings', self.name)
             return False
 
     def _drain_stderr(self, stream):

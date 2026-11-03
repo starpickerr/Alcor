@@ -128,16 +128,18 @@ class EnvironmentStore:
                     pending.append(library)
         return found
 
-    def _execute(self, argv, *, package, candidate, write=True, read_roots=(), executable_reads=(), cwd=None):
+    def _execute(self, argv, *, package, candidate, write=True, read_roots=(), executable_reads=(), cwd=None, network=False):
         from core.security.extension_sandbox import prepare_extension
         from common.process_tree import stop_process_tree
         env = {key: value for key, value in os.environ.items() if key in {'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'SYSTEMROOT', 'WINDIR'}}
         env.update(UV_OFFLINE='1', UV_NO_CACHE='1', UV_NO_CONFIG='1', PYTHONNOUSERSITE='1',
                    NPM_CONFIG_OFFLINE='true', NPM_CONFIG_USERCONFIG=os.devnull, OPENSSL_CONF=os.devnull)
+        if network:
+            env.update(UV_OFFLINE='0', NPM_CONFIG_OFFLINE='false')
         build = candidate / 'build'
         plan = prepare_extension(argv, package, build, env, writable=write,
                                  read_roots=[candidate, *read_roots], write_roots=[candidate] if write else [],
-                                 executable_reads=executable_reads)
+                                 executable_reads=executable_reads, network=network)
         from core.security.protected_paths import launch_guard
         with launch_guard(plan.protection_revision) as launch:
             process = subprocess.Popen(plan.argv, cwd=str(cwd) if cwd else plan.cwd, env=plan.env, start_new_session=True,

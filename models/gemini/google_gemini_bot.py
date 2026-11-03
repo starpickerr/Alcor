@@ -522,6 +522,8 @@ class GoogleGeminiBot(Bot):
             else:
                 return self._handle_gemini_rest_sync_response(response, model_name)
                 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] call_with_tools error: {e}", exc_info=True)
             error_msg = str(e)  # Capture error message before creating generator
@@ -661,6 +663,8 @@ class GoogleGeminiBot(Bot):
                 "safety_ratings": safety_ratings
             }
             
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] sync response error: {e}", exc_info=True)
             return {
@@ -833,6 +837,8 @@ class GoogleGeminiBot(Bot):
                 }]
             }
                     
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] stream response error: {e}", exc_info=True)
             error_msg = str(e)
@@ -967,6 +973,8 @@ class GoogleGeminiBot(Bot):
                                 }]
                             }
                             
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] stream response error: {e}")
             yield {

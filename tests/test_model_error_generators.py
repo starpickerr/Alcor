@@ -34,3 +34,26 @@ def test_claude_streaming_setup_failure_preserves_original_error(monkeypatch):
     chunk = next(bot.call_with_tools([], stream=True, model="claude-sonnet-4", max_tokens=64))
 
     assert chunk == {"error": True, "message": "offline sentinel", "status_code": 500}
+
+
+@pytest.mark.parametrize('bot_class', [DeepSeekBot, DoubaoBot, LinkAIBot, MimoBot, MinimaxBot, MoonshotBot])
+def test_local_policy_failure_is_not_wrapped_as_retryable_server_error(bot_class, monkeypatch):
+    bot=bot_class.__new__(bot_class)
+    def denied(_messages):
+        raise PermissionError('Local network policy denied this request')
+    monkeypatch.setattr(bot,'_convert_messages_to_openai_format',denied)
+    with pytest.raises(PermissionError,match='Local network policy'):
+        next(bot.call_with_tools([],stream=True))
+
+
+def test_openai_sync_and_stream_preserve_local_policy_error(monkeypatch):
+    from models.openai_compatible_bot import OpenAICompatibleBot
+    from types import SimpleNamespace
+    bot=OpenAICompatibleBot()
+    def denied(**kwargs):
+        raise PermissionError('Repair HTTP/Mixed proxy in settings')
+    monkeypatch.setattr(bot,'_get_http_client',lambda:SimpleNamespace(chat_completions=denied))
+    with pytest.raises(PermissionError,match='HTTP/Mixed'):
+        bot._handle_sync_response({},'synthetic','https://model.invalid')
+    with pytest.raises(PermissionError,match='HTTP/Mixed'):
+        next(bot._handle_stream_response({},'synthetic','https://model.invalid'))

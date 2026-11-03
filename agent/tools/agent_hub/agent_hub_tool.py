@@ -94,15 +94,4 @@ class AgentHubTool(AgentHubExecution, BaseTool):
     def _providers(self) -> dict[str, Any]:
         from core.services import agent_hub_gateway
 
-        agent_hub_gateway.apply_user_preferences()
-        overview = agent_hub_gateway.invoke_ok("status_overview")
-        for row in overview.get("providers") or []:
-            if not row.get("enabled"):
-                continue
-            try:
-                agent_hub_gateway.invoke_ok(
-                    "probe_provider", {"provider_config_id": row["providerConfigId"]}
-                )
-            except Exception:
-                continue
         return agent_hub_gateway.invoke_ok("status_overview")

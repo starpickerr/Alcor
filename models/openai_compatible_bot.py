@@ -155,6 +155,8 @@ class OpenAICompatibleBot:
             else:
                 return self._handle_sync_response(request_params, api_key, api_base)
                 
+        except PermissionError:
+            raise
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[{self.__class__.__name__}] call_with_tools error: {error_msg}")
@@ -208,6 +210,8 @@ class OpenAICompatibleBot:
                 "message": e.message,
                 "status_code": e.status_code or 500,
             }
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] sync response error: {e}")
             return {
@@ -248,6 +252,8 @@ class OpenAICompatibleBot:
                 "message": e.message,
                 "status_code": e.status_code or 500,
             }
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] stream response error: {e}")
             yield {

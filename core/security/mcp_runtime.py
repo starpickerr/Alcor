@@ -128,14 +128,17 @@ def _launch_inputs(config):
     return files, package
 
 
-def launch_identity(config):
+def launch_identity(config, *, include_prepared=True):
+    if config.get('cwd'):
+        raise PermissionError('Local MCP uses a private runtime directory; remove cwd and pass explicit data paths instead')
     files, package = _launch_inputs(config)
     digest = sha256(json.dumps(config, sort_keys=True, ensure_ascii=False).encode())
     for path in files:
         if path.is_file():
             digest.update(str(path.resolve()).encode())
             digest.update(path.read_bytes())
-    if ((len(files) > 1 and files[1].is_file())
+    launcher = Path(config['command']).name in {'npx', 'uvx'}
+    if not launcher and ((len(files) > 1 and files[1].is_file())
             or (files[0].is_file() and files[0].read_bytes().startswith(b'#!'))):
         # Bind trust to local imported implementation too, without opening
         # account databases, credential files or interpreter caches.
@@ -146,13 +149,20 @@ def launch_identity(config):
                 if path.suffix in {'.py', '.pyi', '.js', '.mjs', '.cjs', '.so', '.dylib', '.node'}:
                     digest.update(path.relative_to(package).as_posix().encode())
                     digest.update(path.read_bytes())
+    if launcher and include_prepared:
+        from common.runtime_identity import current_identity
+        from core.runtime.environments import EnvironmentStore
+        selected = EnvironmentStore().current('mcp', config['name'], current_identity().user_id or 'local-default',
+                                              launch_digest=environment_identity(config))
+        if selected and selected.get('launcher'):
+            digest.update(selected['launcher']['content_digest'].encode())
     return digest.hexdigest(), package
 
 
 def environment_identity(config):
     """Scope dependencies by executable inputs, independently of UI/enablement."""
     return launch_identity({'command': config['command'], 'args': config.get('args', []),
-                            'env': config.get('env') or {}})[0]
+                            'env': config.get('env') or {}, **({'entrypoint':config.get('entrypoint')} if Path(config['command']).name in {'npx', 'uvx'} else {})}, include_prepared=False)[0]
 
 
 class McpStorageMigrationRequired(PermissionError):
@@ -270,6 +280,8 @@ def prepare_mcp(config, env):
             script_command = entry.read(2) == b'#!'
     read_package = (len(files) > 1 or script_command or isinstance(config, ManagedMcpConfig)
                     and bool(config.data_root is not None or config.legacy_roots) and bool(config.package_digest))
+    if Path(config['command']).name in {'npx', 'uvx'}:
+        read_package = False
     if read_package:
         validate_source_root(package)
     digest, package = launch_identity(config)
@@ -291,15 +303,19 @@ def prepare_mcp(config, env):
     environment_digest = config.original_launch_digest if maintenance else environment_identity(config)
     name = Path(config['command']).name.lower()
     args = config.get('args', [])
-    if name in {'npx', 'uvx', 'bunx', 'npm', 'pip', 'pip3', 'uv'}:
+    launcher = name in {'npx', 'uvx'}
+    if name in {'bunx', 'npm', 'pip', 'pip3', 'uv'}:
         raise ValueError('Select a fixed installed entry; implicit package installers cannot be launched')
+    capabilities = RuntimeTrustStore().capabilities(**key)
     from agent.tools.mcp.mcp_client import _STDIO_ENV_SENSITIVE
     for variable, value in env.items():
         sensitive = (variable.upper().endswith(_STDIO_ENV_SENSITIVE) or variable.upper() in {
             'PASSWORD', 'PASSWD', 'TOKEN', 'SECRET', 'CREDENTIAL', 'APIKEY', 'GITHUB_TOKEN', 'GH_TOKEN'})
         if value and sensitive:
-            raise PermissionError('Raw credentials cannot be passed to a local MCP; use a trusted connector')
-    if not _fixed_executable_entry(config):
+            from core.security.mcp_credentials import runtime_env
+            if not capabilities['credentials'] or runtime_env(config).get(variable) != value:
+                raise PermissionError('Local MCP credential is not bound to this implementation')
+    if not launcher and not _fixed_executable_entry(config):
         raise PermissionError('Select a fixed local implementation and explicit script entry')
     storage = (config.maintenance_storage if maintenance else
                private_storage(config, user_id, environment_digest))
@@ -307,7 +323,14 @@ def prepare_mcp(config, env):
     environment = None
     command = [config['command'], *args]
     from core.runtime.environments import EnvironmentStore
-    if name.startswith('python'):
+    if launcher:
+        from core.mcp.packages import prepared_entry
+        environment, command = prepared_entry(config)
+        if environment.get('runtime') == 'node':
+            env['OPENSSL_CONF'] = os.devnull
+        package = Path(environment['package'])
+        read_package = False
+    elif name.startswith('python'):
         index = next((index for index, arg in enumerate(args) if isinstance(arg, str) and arg.endswith('.py')), None)
         if index is None or any(arg not in {'-u', '-I', '-B', '-s', '-E'} for arg in args[:index]) or not Path(args[index]).is_file():
             raise PermissionError('Python MCP requires a fixed local explicit script entry')
@@ -344,7 +367,8 @@ def prepare_mcp(config, env):
     directory_reads = (tuple(config.output_scope.root.parents)
                        if isinstance(config, ManagedMcpConfig) and config.output_scope is not None else ())
     plan = prepare_extension(command, package, storage, env, read_roots=reads, write_roots=writes,
-                             executable_reads=libraries, directory_reads=directory_reads, read_package=read_package)
+                             executable_reads=libraries, directory_reads=directory_reads, read_package=read_package, network=capabilities['network'])
+    plan.state['runtime_capabilities'] = capabilities
     if environment:
         plan.state['environment'] = environment
     return plan, key
@@ -374,7 +398,15 @@ def check_mcp(client):
         except (ValueError, OSError):
             client.shutdown()
             raise
+    from core.security.mcp_credentials import StoredMcpConfig, _config
+    if isinstance(client.config, StoredMcpConfig):
+        _, rows, _ = client.config.credential_store._read()
+        if key['identifier'] not in rows or _config(key['identifier'], rows[key['identifier']]) != dict(client.config):
+            client.shutdown()
+            raise PermissionError('Saved MCP configuration changed; reconnect before use')
     choice = RuntimeTrustStore().choice(**key)
-    if digest != key['digest'] or choice is False:
+    capabilities = RuntimeTrustStore().capabilities(**key)
+    if (digest != key['digest'] or choice is False
+            or client.sandbox_state.get('runtime_capabilities', capabilities) != capabilities):
         client.shutdown()
         raise PermissionError('MCP runtime trust or launch content changed; restart the connection')

@@ -66,6 +66,50 @@ class ResourceGrantStore(RunPolicyStore):
             self._write(db, row)
         return row
 
+    @staticmethod
+    def _session_access(db, user_id, subject):
+        from hashlib import sha256
+        rows = ResourceGrantStore._rows(db)
+        ResourceGrantStore._restrictions(db)
+        restrictions = [tuple(row) for row in db.execute(
+            'SELECT subject,connection,revision,body FROM resource_restrictions WHERE user=? ORDER BY subject,connection',
+            (user_id,)) if row[0] in {subject, 'user:' + user_id}]
+        owned = sorted((row for row in rows.values() if row['user_id'] == user_id), key=lambda row: row['grant_id'])
+        revision = sha256(json.dumps([owned, restrictions], sort_keys=True).encode()).hexdigest()
+        return rows, restrictions, revision
+
+    def session_access_revision(self, *, user_id, subject):
+        with self.transaction() as db:
+            return self._session_access(db, user_id, subject)[2]
+
+    def enable_session_connection(self, *, user_id, subject, connection, operations, expected_revision):
+        """One owner action, idempotent within an unchanged live grant snapshot."""
+        operations = sorted(set(operations))
+        if not subject.startswith('session:') or not connection.startswith('mcp:') or not operations or not set(operations) <= set(OPERATIONS):
+            raise ValueError('Select a conversation, MCP and allowed operations')
+        resource = dict(kind='connection', id=connection)
+        with self.transaction() as db:
+            rows, restrictions, revision = self._session_access(db, user_id, subject)
+            if revision != expected_revision:
+                raise ValueError('Access changed; refresh before authorizing this conversation')
+            names = {connection, connection.removeprefix('mcp:')}
+            for _, name, _, body in restrictions:
+                policy = json.loads(body)
+                scopes = set(policy.get('scopes') or [])
+                if name in names and (not policy.get('allowed', True) or scopes and '*' not in scopes and not set(operations) <= scopes):
+                    raise PermissionError('Existing connection limits exclude these operations; review advanced access settings')
+            matching = [row for row in rows.values() if row['user_id'] == user_id and row['subject'] == subject and row['resource'] == resource]
+            covered = {operation for row in matching if self._valid(row, rows) and 'interactive' in row['purposes'] for operation in row['operations']}
+            missing = set(operations) - covered
+            if not missing:
+                return
+            if any(not self._valid(row, rows) and missing & set(row['operations']) for row in matching):
+                raise PermissionError('A previous grant was revoked or expired; explicitly review a new grant in advanced settings')
+            row = dict(grant_id=str(uuid.uuid4()), user_id=user_id, subject=subject, resource=resource,
+                       operations=sorted(missing), purposes=['interactive'], valid_until=None, revoked=False,
+                       revision=1, parent_grant_id=None)
+            self._write(db, row)
+
     def delegate(self, parent_id, *, user_id, subject, operations, purposes, valid_until=None):
         with self.transaction() as db:
             rows = self._rows(db)
