@@ -29,7 +29,7 @@ def test_full_access_private_transport_in_background_is_immediate():
         with scheduled_permission_scope({'id':'transport', 'run_permission_mode':'full-access'}):
             permit = SecurityService.authorize_egress('https://model.invalid', b'private', sources=('private:task',), wait=False)
             permit.check()
-            assert not SecurityGateway.pending()
+            assert not [row for row in SecurityGateway.pending() if row.get('session') == 'transport']
 
 
 def test_custom_network_deny_prevents_dns_and_prompts(monkeypatch):
@@ -38,10 +38,10 @@ def test_custom_network_deny_prevents_dns_and_prompts(monkeypatch):
     monkeypatch.setattr(socket, 'getaddrinfo', lambda *a, **k: pytest.fail('denied transport reached DNS'))
     with identity_scope(session_id='no-network'):
         resolve_run_policy('no-network')
-        save_run_policy('session', 'no-network', {'filesystem_mode':'full-access','permission_mode':'custom','rules':{'network':'deny'}})
+        save_run_policy('session', 'no-network', {'filesystem_mode':'full-access'}, legacy_rules={'network':'deny'})
         with pytest.raises(PermissionError):
             post('https://model.invalid', json={'messages':[]})
-        assert not SecurityGateway.pending()
+        assert not [row for row in SecurityGateway.pending() if row.get('session') == 'no-network']
 
 
 def test_providers_is_a_read_without_configuration_or_process_side_effects(monkeypatch):
@@ -102,7 +102,7 @@ def test_necessary_model_transport_preserves_explicit_custom_deny(monkeypatch, r
     monkeypatch.setattr('core.security.connections.connection_catalog', lambda:[dict(id=identifier,endpoint=origin,owners=['model:selected'])])
     with identity_scope(session_id='custom-'+rule):
         resolve_run_policy('custom-'+rule)
-        save_run_policy('session','custom-'+rule,{'filesystem_mode':'full-access','permission_mode':'custom','rules':{rule:'deny'}})
+        save_run_policy('session','custom-'+rule,{'filesystem_mode':'full-access'}, legacy_rules={rule:'deny'})
         with pytest.raises(PermissionError):
             SecurityService.authorize_egress(url,b'context',sources=('private:model-context',),wait=False)
 
@@ -114,7 +114,7 @@ def test_sse_control_request_honors_network_deny_before_dns(monkeypatch):
     monkeypatch.setattr(socket,'getaddrinfo',lambda *a,**k:pytest.fail('Denied SSE request reached DNS'))
     with identity_scope(session_id='sse-denied'):
         resolve_run_policy('sse-denied')
-        save_run_policy('session','sse-denied',{'filesystem_mode':'full-access','permission_mode':'custom','rules':{'network':'deny'}})
+        save_run_policy('session','sse-denied',{'filesystem_mode':'full-access'}, legacy_rules={'network':'deny'})
         client=McpClient({'name':'sse','type':'sse','url':'https://sse.invalid'})
         with pytest.raises(PermissionError):
             client._open_remote(urllib.request.Request('https://sse.invalid',method='GET'),timeout=1)

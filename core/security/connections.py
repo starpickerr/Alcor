@@ -60,10 +60,12 @@ def connection_catalog():
         networks = (cfg.get('local_service_networks') or {}).get(endpoint)
         if networks:
             row['localNetworks'] = networks
-    if cfg.get('proxy'):
+    from urllib.request import getproxies
+    proxies = [cfg['proxy']] if cfg.get('proxy') else [value for key, value in getproxies().items() if key in {'http', 'https', 'all'}]
+    for proxy in proxies:
         from core.security.http_transport import proxy_endpoint
         try:
-            add(proxy_endpoint(cfg['proxy'])[0], 'proxy', 'Network proxy', '/settings?tab=network')
+            add(proxy_endpoint(proxy)[0], 'proxy', 'Network proxy', '/settings')
         except (ValueError, PermissionError):
             pass
     from models.catalog import PROVIDER_MODELS

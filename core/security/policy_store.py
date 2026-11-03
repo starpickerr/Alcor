@@ -33,7 +33,8 @@ class RunPolicyStore:
         row = db.execute('SELECT revision,body FROM run_policies WHERE user=? AND agent=? AND kind=? AND subject=?', key).fetchone()
         if row is None:
             return None
-        return {**json.loads(row[1]), 'policy_revision': row[0]}
+        from core.security.run_policy import normalize_stored_policy
+        return normalize_stored_policy({**json.loads(row[1]), 'policy_revision': row[0]})
 
     def get(self, key):
         with self.transaction() as db:

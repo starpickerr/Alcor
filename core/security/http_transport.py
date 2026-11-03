@@ -95,6 +95,26 @@ def destination(url, *, configured_origin=None, allow_configured_local=True, loc
     return Destination(host, port, parsed.scheme == "https", path, addresses)
 
 
+def network_proxy(url):
+    """Owner configuration wins; otherwise use the OS/environment HTTP proxy."""
+    from config import conf
+    from urllib.request import getproxies, proxy_bypass_environment
+    saved = conf().get('proxy') or ''
+    if saved:
+        return saved
+    parsed = urlsplit(url)
+    try:
+        if not ipaddress.ip_address(parsed.hostname).is_global:
+            return ''
+    except ValueError:
+        if parsed.hostname == 'localhost':
+            return ''
+    proxies = getproxies()
+    if proxy_bypass_environment(parsed.hostname, proxies):
+        return ''
+    return proxies.get(parsed.scheme) or proxies.get('all') or ''
+
+
 def configured_route(url, *, owner=None, config=None):
     """Snapshot the owner-selected route without DNS or opening a socket."""
     from config import conf
@@ -115,7 +135,7 @@ def configured_route(url, *, owner=None, config=None):
     configuration_store = conf()
     network_revision = getattr(configuration_store, 'network_revision', 0)
     saved_proxy = configuration_store.get('proxy') or ''
-    proxy = saved_proxy if configured else ''
+    proxy = network_proxy(url) if configured else ''
     # Validate options before authorization can queue a prompt.
     destination(url, configured_origin=origin if configured else None, local_networks=networks, resolve=False)
     if proxy:
@@ -129,7 +149,8 @@ def configured_route(url, *, owner=None, config=None):
     def check():
         def current():
             if (conf() is not configuration_store or getattr(conf(), 'network_revision', 0) != network_revision
-                    or (conf().get('proxy') or '') != saved_proxy):
+                    or (conf().get('proxy') or '') != saved_proxy
+                    or configured and network_proxy(url) != proxy):
                 raise PermissionError('Proxy configuration changed; restart the request')
             if proxy and proxy_store.state(proxy_user, proxy_id) != proxy_state:
                 raise PermissionError('Proxy connection changed; restart the request')

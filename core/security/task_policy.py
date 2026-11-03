@@ -64,6 +64,10 @@ def _check_delegation(candidate, ceiling):
     # a caller cannot conceal an escalation behind an identical mode name.
     if custom and any(_ORDER[value] > _ORDER[parent_rules[name]] for name, value in child_rules.items()):
         raise PermissionError('Task custom rules exceed the delegating run')
+    if not custom:
+        # Named modes inherit restrictions before comparing operation ceilings.
+        candidate_policy = {**candidate_policy, 'rules': {
+            name: min((value, parent_rules[name]), key=_ORDER.get) for name, value in child_rules.items()}}
     if any(_ORDER[authorization(candidate_policy, CapabilityDescriptor('builtin:delegated', 'builtin', operation, filesystem))]
            > _ORDER[authorization(parent_policy, CapabilityDescriptor('builtin:delegated', 'builtin', operation, filesystem))]
            for operation in OPERATIONS for filesystem in (True, False)):
@@ -128,8 +132,6 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
             base['legacy_restrictions'] = {}
             base['migration_status'] = 'complete'
         if 'filesystem_mode' in patch and patch.get('permission_mode') != 'custom':
-            if current and current.get('permission_mode') == 'custom' and 'permission_mode' not in patch:
-                raise ValueError('This custom task requires a custom-aware client')
             base.pop('permission_mode', None)
             base.pop('rules', None)
         base.update(patch)
@@ -139,8 +141,6 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
     if mode not in (None, '', 'inherit'):
         if mode not in _MODES:
             raise ValueError('invalid run permission mode')
-        if current and current.get('permission_mode') == 'custom':
-            raise ValueError('This custom task requires a custom-aware client')
         base.pop('permission_mode', None)
         base.pop('rules', None)
         base['filesystem_mode'] = mode
@@ -164,8 +164,7 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
             base['filesystem_mode'] = merged['filesystem_mode']
             base['extra_roots'] = merged['extra_roots']
             base['connections'] = merged['connections']
-            base['permission_mode'] = 'custom'
-            base['rules'] = merged['rules']
+            base['legacy_restrictions'] = merged['rules']
         _check_delegation(base, ceiling)
         # Persist restrictions too: a later scheduler must not lose a caller's
         # legacy deny merely because its filesystem mode has the same name.

@@ -12,7 +12,7 @@
 
 权限模式与平台边界已有 [详细说明](../security-permission-modes.md)。运行时的可信判定点是 `agent/runtime/tool_invocation.py` 和 `agent/permission/gateway.py`；`Application.command` 对定时业务写入再次校验。Web/API 端还需验证认证，不能把前端隐藏按钮当作授权。涉及外部资源的工具要检查路径、URL、重定向与凭证泄露。权限和事务的失败恢复必须有隔离测试。
 
-普通本地 MCP 的历史私有目录由 Owner 在安全中心“执行环境”选择来源并确认后复制。`core/mcp/storage.py` 将确认绑定当前用户、启动实现、配置、开关版本及目录/文件快照；客户端仅传来源 ID，不能指定任意路径。复制拒绝符号链接、硬链接和特殊文件，原目录保留，当前目标通过系统原子排他重命名发布，不覆盖已有数据。确认记录在发布前保存 staging inode，发布后中断仍可恢复；目标或历史根目录被替换后需重新确认。邮箱/eLearning 的固定可信连接器继续使用各自的账号迁移入口。
+普通本地 MCP 的历史私有目录保留既有内部安全复制实现；对应安全管理页面及 API 已移除，不再提供用户可编辑的迁移表单。`core/mcp/storage.py` 将确认绑定当前用户、启动实现、配置、开关版本及目录/文件快照；客户端仅传来源 ID，不能指定任意路径。复制拒绝符号链接、硬链接和特殊文件，原目录保留，当前目标通过系统原子排他重命名发布，不覆盖已有数据。确认记录在发布前保存 staging inode，发布后中断仍可恢复；目标或历史根目录被替换后需重新确认。邮箱/eLearning 的固定可信连接器继续使用各自的账号迁移入口。
 
 Email保留独立MCP协议、原账号/游标格式及唯一托管连接；旧邮箱路由跳转到同一能力配置表单。Stella以`--hosted-connector`启动受管Server，Worker不访问账号库、原配置或密码，也不直接联网。每次请求只可回调当前Core已准入操作；方法、参数与资源范围由Core持有，Worker不能改成另一接收方或通用文件/网络调用。原email.db继续保存账号及Keychain引用，SQLite事务提交后才清理旧凭据。原设置支持状态刷新、修复、删除及测试连接，已保存密码不回填；凭据目录直接汇总声明字段状态，不启动Worker或解密。文件工具与Shell的凭据路径清单继续保护Email目录及SQLite附属文件。
 
@@ -20,6 +20,6 @@ Email保留独立MCP协议、原账号/游标格式及唯一托管连接；旧�
 
 Core 服务协调入口新增 `core/workspace/service.py`、`core/execution/context.py` 与 `core/security/service.py`。运行上下文不可变；独立 RunPolicy 保存在既有授权库中，调用和返回仍复查当前 revision、有效策略及 Grant。通用插件私有数据使用用户级 `plugins/<plugin-id>`，第一方数据句柄保持旧路径；文件/shell 的保护清单覆盖通用私有目录及原账单、事务、日程、Agent Hub、简报与自动化数据库及 SQLite 附属文件。详细协作、兼容及平台边界见[工作区与执行服务](execution-services.md)。
 
-模型凭据的唯一编辑入口为安全中心 `/security?tab=secrets`。`agent/permission/center.py::set_secret` 更新原配置字段、`custom_providers[].api_key` 或原搜索命名空间，不创建第二份凭据库；配置文件原子替换并使用 `0600`。自定义厂商凭据的稳定键为 `CUSTOM:<id>`，展示名称可改，清除凭据保留厂商、地址、模型与用途绑定。保存后重建模型客户端并刷新现有进程环境，撤销同时清除兼容环境值。状态接口不返回密钥正文，修改记录 L3 审计。旧受认证模型配置 API 继续兼容；Desktop、精简版模型设置及首次设置不再复制密钥编辑器。
+模型凭据在模型设置 `/models?credential=<name>` 内编辑，经 `/api/models` 的 credential action 更新。`agent/permission/center.py::set_secret` 更新原配置字段、`custom_providers[].api_key` 或原搜索命名空间，不创建第二份凭据库；配置文件原子替换并使用 `0600`。自定义厂商凭据的稳定键为 `CUSTOM:<id>`，展示名称可改，清除凭据保留厂商、地址、模型与用途绑定。保存后重建模型客户端并刷新现有进程环境，撤销同时清除兼容环境值。状态接口不返回密钥正文，修改记录 L3 审计。旧受认证模型配置 API 继续兼容；Desktop、精简版模型设置及首次设置共用模型凭据编辑器；没有安全中心跳转。
 
 对话/任务权限统一为 RunPolicy + Capability Authorization + Resource Grants。项目不再持有执行授权，默认模板只影响新建主体。统一存储、迁移与真实插件隔离的接口及限制见[权限与执行边界](../security-permission-modes.md)。

@@ -47,66 +47,15 @@ interface ApiResult {
   message?: string
 }
 
-export interface SecurityPolicy {
-  preset?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-  base_preset?: 'read-only' | 'workspace-write' | 'full-access'
-  rules?: Record<string, 'allow' | 'confirm' | 'deny'>
-  connections?: Record<string, { allowed: boolean; scopes: string[] }>
-  extra_roots?: string[]
-  filesystem_mode?: FileMode
-  permission_mode?: PermissionMode
-  capabilities?: Record<string, CapabilityOperations>
-  policy_revision?: number
-}
-
 export type FileMode = 'read-only' | 'workspace-write' | 'full-access'
-export type PermissionMode = FileMode | 'custom'
-export type Operation = 'read' | 'write' | 'delete' | 'external_send' | 'system_execute'
-export type AuthorizationRule = 'allow' | 'confirm' | 'deny'
-export type CapabilityOperations = Partial<Record<Operation, AuthorizationRule>>
+export type PermissionMode = FileMode
 export interface RunPolicy {
   filesystem_mode: FileMode
   permission_mode?: PermissionMode
-  rules?: Record<string, AuthorizationRule>
-  capabilities?: Record<string, CapabilityOperations>
   policy_revision: number
-  extra_roots?: string[]
-  connections?: SecurityPolicy['connections']
-}
-export interface CapabilityEntry {
-  id: string; name: string; source: string; installed?: boolean; enabled?: boolean; runtime_state?: string
 }
 export interface RunPolicyState extends ApiResult {
-  policy: RunPolicy; migration_status: string; compatibility_restrictions: Record<string, AuthorizationRule>
-  capabilities: CapabilityEntry[]
-}
-export interface PermissionSubject {
-  agent: string; kind: 'session' | 'task'; subject: string; policy: RunPolicy
-  source: string; migration_status: string; original_url: string
-}
-export interface ResourceGrant {
-  grant_id: string; subject: string; resource: { kind: string; id: string }; operations: Operation[]
-  purposes: string[]; valid_until: string | null; revoked: boolean; revision: number; effective: boolean
-  legacy_scope?: string
-}
-export interface FeatureAccessContext { module: 'sessions' | 'capabilities'; id: string; kind?: 'connection'; agent?: string }
-export interface FeatureAccessState extends ApiResult {
-  revision?: string
-  retired?: boolean
-  restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
-  owner_restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
-  connection?: { id: string; allowed: boolean; scopes: string[]; revision: number } | null
-  grants: ResourceGrant[]; subjects: { id: string; kind: string; subject: string; agent?: string }[]
-  available: { kind: string; id: string; name: string; operations: Operation[] }[]; inherited: InheritedMcpGrant[]
-}
-export interface RuntimeStatusState extends ApiResult {
-  isolation: { status: string; reason: string }
-  application_isolation?: { status: string; protected: boolean; reason: string; unprotected: string[] }
-  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; capabilities?: { network: boolean; credentials: boolean; revision: number }; package_launcher?: boolean; package_error?: string | null; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; storage_migration?: { token: string; sources: { id: string; path: string }[] }; environment?: { base: { version: string }; state: string } | null }[]
-}
-export interface SensitiveResourceState extends ApiResult {
-  credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
-  folder_protection: { status: string; protected: boolean; reason: string; code: string }
+  policy: RunPolicy; migration_status: string
 }
 export interface McpAuthorizationState {
   state: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
@@ -118,112 +67,10 @@ export interface McpCredentialState {
   revision: string; transport: string
   fields: { area: 'headers' | 'env'; key: string; state: 'configured' | 'not_configured' | 'unavailable' | 'repair_required' }[]
 }
-export interface ExternalConnection {
-  id: string; name: string; endpoint: string; owners: string[]; configure_url?: string
-  enabled: boolean; revision: number; active_requests: number
-}
-
-export interface SecurityRecord {
-  at: number
-  agent: string
-  conversation: string | null
-  project: string | null
-  tool: string
-  operation: string
-  event: string
-  resource: string
-  risk: string
-  decision: string
-  reason: string
-  trace: string[]
-}
-
-export interface InheritedMcpGrant {
-  id: string; server: string; consumer: string | null; capabilities: string[]; methods: string[]
-  purposes: string[]; resources: { kind: string; id: string }[]; valid_until: string | null
-  revoked: boolean; revision: number; scoped: boolean
-}
-
-export interface SecurityCenterState extends ApiResult {
-  global_policy: SecurityPolicy
-  effective_policy: SecurityPolicy
-  effective_mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-  effective_rules: Record<string, 'allow' | 'confirm' | 'deny'>
-  policy_source: 'template' | 'independent'
-  mode_definitions: SecurityModeDefinition[]
-  authorized_roots: string[]
-  policy_error?: string | null
-  process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
-  project: string | null
-  project_policy: SecurityPolicy
-  projects: { path: string; name: string; policy: SecurityPolicy }[]
-  conversation_policy: SecurityPolicy
-  connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null; revision?: number }[]
-  secrets: { name: string; display_name?: string; source: string; configured: boolean | null }[]
-  background_tasks?: SecurityBackgroundTask[]
-  privacy?: SecurityPrivacyInventory
-  data_access?: { inherited_grants?: InheritedMcpGrant[]; available: boolean; resources: { id: string; name: string; provider: string; account_id: string; connection?: string }[]; external_transfers: NonNullable<SecurityPrivacyInventory['external_transfers']> }
-  summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
-    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[];
-    activity_counts?: SecurityActivityCounts
-    background_tasks?: SecurityBackgroundTaskSummary }
-}
-
-export interface SecurityBackgroundTask {
-  owner_agent_id?: string
-  id: string
-  name: string
-  enabled: boolean
-  conversation_mode?: string | null
-  execution_session_id?: string | null
-  execution_project_dir?: string | null
-  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | null
-  effective_mode?: string | null
-  permission_source?: string
-  unknown?: boolean
-  policy_error?: string | null
-}
-
-export interface SecurityBackgroundTaskSummary {
-  total: number | null
-  enabled: number | null
-  paused: number | null
-  modes: Record<string, number> | null
-  unknown: number | null
-  available: boolean
-}
-
-export interface SecurityPrivacyCategory {
-  id: string
-  name: { zh: string; en: string }
-  path: string
-  bytes: number
-  exists: boolean
-  retention: { zh: string; en: string }
-  actions: string[]
-  detail?: Record<string, unknown>
-}
-
-export interface SecurityPrivacyInventory {
-  available: boolean
-  categories: SecurityPrivacyCategory[]
-  external_transfers?: { id: string; name: string; available: boolean; note: { zh: string; en: string } }[]
-}
-
-export interface SecurityActivityCounts {
-  auto_allow: number
-  user_authorized: number
-  denied: number
-  uncertain: boolean
-  since: number
-  until: number
-}
-
 export interface SecurityModeDefinition {
-  id: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  id: FileMode
   name: { zh: string; en: string }
   description: { zh: string; en: string }
-  rules: Record<string, 'allow' | 'confirm' | 'deny'>
 }
 
 const AUTH_TOKEN_KEY = 'cow_auth_token'
@@ -573,7 +420,7 @@ class ApiClient {
    *  field to drop the override and follow the global default. */
   async updateSessionSettings(
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
+    body: { provider?: string | null; model?: string | null }
   ): Promise<{ status: string } & Partial<SessionSettingsState> & { message?: string }> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
       method: 'POST',
@@ -648,136 +495,34 @@ class ApiClient {
     return result
   }
 
-  async getSecurityCenter(session?: string): Promise<SecurityCenterState> {
-    return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
+  async saveModelCredential(name: string, value: string | null): Promise<ApiResult> {
+    return this.request('/api/models', { method: 'POST', body: JSON.stringify({ action: 'credential', name, value }) })
   }
 
-  async getRunPolicy(kind: 'template' | 'session' | 'task', subject: string, agent?: string): Promise<RunPolicyState> {
-    const result = await this.request<RunPolicyState>(`/api/security/run-policy?${new URLSearchParams({ kind, subject, ...(agent ? { agent } : {}) })}`)
+  async getRunPolicy(kind: 'session' | 'task', subject: string, agent?: string): Promise<RunPolicyState> {
+    const result = await this.request<RunPolicyState>(`/api/run-policy?${new URLSearchParams({ kind, subject, ...(agent ? { agent } : {}) })}`)
     if (result.status !== 'success') throw new Error(result.message || '无法读取权限')
     return result
   }
 
-  async getRunPolicySubjects(): Promise<PermissionSubject[]> {
-    const result = await this.request<ApiResult & { subjects: PermissionSubject[] }>('/api/security/run-policy?view=inventory')
-    if (result.status !== 'success') throw new Error(result.message || 'Unable to read permissions')
-    return result.subjects
-  }
-
-  async saveRunPolicy(kind: 'template' | 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
-    const result = await this.request<RunPolicyState>('/api/security/run-policy', { method: 'POST', body: JSON.stringify({ kind, subject, policy, agent }) })
+  async saveRunPolicy(kind: 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
+    const result = await this.request<RunPolicyState>('/api/run-policy', { method: 'POST', body: JSON.stringify({ kind, subject, policy, agent }) })
     if (result.status !== 'success') throw new Error(result.message || '保存权限失败')
     notifySecurityPolicyChanged()
     return result
   }
 
-  async featureAccess(context: FeatureAccessContext, body?: Record<string, unknown>): Promise<FeatureAccessState> {
-    const { module, ...scope } = context
-    const query = new URLSearchParams(Object.entries(scope).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
-    const result = await this.request<FeatureAccessState>(`/api/${module}/access${body ? '' : `?${query}`}`,
-      body ? { method: 'POST', body: JSON.stringify({ ...body, ...scope }) } : undefined)
-    if (result.status !== 'success') throw new Error(result.message || '访问设置不可用')
-    return result
-  }
-
-  async runtimeStatus(): Promise<RuntimeStatusState> {
-    const result = await this.request<RuntimeStatusState>('/api/security/runtime')
-    if (result.status !== 'success') throw new Error(result.message || '执行环境状态不可用')
-    return result
-  }
-
-  async saveMcpRuntime(id: string, change: { digest: string; network: boolean; credentials: boolean; revision: number } | null): Promise<RuntimeStatusState> {
-    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
-      method: 'POST', body: JSON.stringify({ action: change ? 'capabilities' : 'prepare-package', kind: 'mcp', id, ...change }),
-    })
-    if (result.status !== 'success') throw new Error(result.message || 'MCP 运行设置保存失败')
-    return result
-  }
-
-  async rebuildRuntime(kind: 'plugin' | 'mcp', id: string, operationId?: string): Promise<RuntimeStatusState> {
-    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
-      method: 'POST', body: JSON.stringify({ action: operationId ? 'resume' : 'rebuild', kind, id, ...(operationId ? { operationId } : {}) }),
-    })
-    if (result.status !== 'success') throw new Error(result.message || '依赖环境重建失败')
-    return result
-  }
-
-  async sensitiveResources(): Promise<SensitiveResourceState> {
-    const result = await this.request<SensitiveResourceState>('/api/security/sensitive-resources')
-    if (result.status !== 'success') throw new Error(result.message || 'Sensitive resource status is unavailable')
-    return result
-  }
-
-  async adoptRuntimeStorage(id: string, token: string, sourceId: string): Promise<RuntimeStatusState> {
-    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
-      method: 'POST', body: JSON.stringify({ action: 'adopt-storage', kind: 'mcp', id, token, sourceId }),
-    })
-    if (result.status !== 'success') throw new Error(result.message || '数据归属确认失败，请刷新后重试')
-    return result
-  }
-
-  async externalConnections(): Promise<ExternalConnection[]> {
-    const result = await this.request<ApiResult & { connections: ExternalConnection[] }>('/api/security/connections')
-    if (result.status !== 'success') throw new Error(result.message || 'Connection state is unavailable')
-    return result.connections
-  }
-
-  async setExternalConnection(id: string, enabled: boolean, revision: number): Promise<void> {
-    const result = await this.request<ApiResult>('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, enabled, revision }) })
-    if (result.status !== 'success') throw new Error(result.message || 'Connection state could not be saved')
-  }
-
-  async permissionMigration(body?: { action: string; fingerprint?: string }): Promise<{
-    status: string; message?: string; preview?: { fingerprint: string; pending: number; needs_confirmation: number; status: string }
-    verification?: { status: string; valid: boolean }; migration?: { status: string; migration_id?: string; valid?: boolean }
-  }> {
-    return this.request('/api/security/migration', body ? { method: 'POST', body: JSON.stringify(body) } : undefined)
-  }
-
-  async getSecurityRecords(filters: Record<string, string> = {}): Promise<{
-    records: SecurityRecord[]
-    counts?: SecurityActivityCounts
-  }> {
-    const query = new URLSearchParams(filters).toString()
-    const result = await this.request<{ status: string; records: SecurityRecord[]; counts?: SecurityActivityCounts }>(
-      `/api/security/activity${query ? `?${query}` : ''}`,
-    )
-    if (result.status !== 'success') throw new Error('Unable to load security activity')
-    return { records: result.records || [], counts: result.counts }
-  }
-
-  async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
-    options: { project?: string; session?: string } = {}): Promise<{ status: string; message?: string }> {
-    const result = await this.request<ApiResult>('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
-    if (result.status === 'success') notifySecurityPolicyChanged()
-    return result
-  }
-
-
-  async saveSecuritySecret(name: string, value: string): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/secrets', { method: 'POST', body: JSON.stringify({ name, value }) })
-  }
-
-  async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
-  }
-
-
-  async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
-    return this.request('/api/security/privacy', { method: 'POST', body: JSON.stringify({ action }) })
-  }
-
   async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[]> {
-    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/security/confirmations')
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/confirmations')
     return result.pending || []
   }
 
   async approveSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
+    return this.request('/api/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
   }
 
   async rejectSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
+    return this.request('/api/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
   }
 
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {

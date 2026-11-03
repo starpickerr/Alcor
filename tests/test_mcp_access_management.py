@@ -1,5 +1,3 @@
-import json
-from unittest.mock import patch
 import pytest
 from common.runtime_identity import identity_scope
 from core.plugins.authz import PluginAuthorizationStore
@@ -85,30 +83,15 @@ def test_grants_cannot_be_edited_cross_user_or_from_agent(access):
     assert access.get("mail-read").revoked
 
 
-def test_removed_native_provider_grant_api_keeps_revocation_and_requires_auth(access, monkeypatch):
+def test_removed_native_provider_grant_api_keeps_revocation(access, monkeypatch):
     from agent.tools.tool_manager import ToolManager
     manager = ToolManager()
     monkeypatch.setitem(manager.__dict__, '_load_mcp_configs', lambda: [{'name': 'email', 'type': 'stdio'}])
     assert manager._load_mcp_configs()[0]['name'] == 'email'
     from channel.desktop import desktop_channel as desktop
 
-    with (
-        patch.object(desktop, "_require_auth") as auth,
-        patch.object(desktop.web, "header"),
-        patch.object(
-            desktop.web,
-            "data",
-            return_value=json.dumps(
-                {"id": "email", "kind": "mcp", "action": "legacy", "legacy_id": "mail-read", "revision": 2, "revoked": False}
-            ).encode(),
-        ),
-    ):
-        result = json.loads(desktop.CapabilityAccessSettingsHandler().POST())
-        assert result["status"] == "error" and access.get("mail-read").revoked
-        auth.assert_called_once()
-        auth.side_effect = PermissionError("unauthenticated")
-        with pytest.raises(PermissionError):
-            desktop.CapabilityAccessSettingsHandler().POST()
+    assert not hasattr(desktop, 'CapabilityAccessSettingsHandler')
+    assert access.get('mail-read').revoked
 
 
 def test_expired_legacy_scope_can_be_revoked_without_reissuing_expiry(access):

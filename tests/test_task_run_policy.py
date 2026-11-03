@@ -173,7 +173,7 @@ def test_owner_can_repair_missing_task_policy_with_cas(scheduler, monkeypatch):
     control = PermissionControl(task_service=lambda agent: scheduler)
     revision = control.read('task', 'daily')['policy']['policy_revision']
     assert revision == 0
-    patch = {'policy_revision': revision, 'filesystem_mode': 'read-only', 'capabilities': {}}
+    patch = {'policy_revision': revision, 'filesystem_mode': 'read-only'}
     with identity_scope(session_id='model'), pytest.raises(PermissionError):
         control.save('task', 'daily', patch)
     saved = control.save('task', 'daily', patch)
@@ -195,9 +195,9 @@ def test_owner_can_confirm_untranslatable_task_policy(scheduler):
         'migration_status': 'needs_confirmation', 'legacy_restrictions': {'network': 'deny'}})
     control = PermissionControl(task_service=lambda agent: scheduler)
     policy = control.read('task', 'daily')['policy']
-    saved = control.save('task', 'daily', {**policy, 'filesystem_mode': 'read-only', 'capabilities': {}})
+    saved = control.save('task', 'daily', {**policy, 'filesystem_mode': 'read-only'})
     assert saved['migration_status'] == 'complete'
-    assert saved['compatibility_restrictions'] == {}
+    assert scheduler.get('daily')['run_policy']['legacy_restrictions'] == {}
 
 
 def test_delegated_path_grant_survives_captured_ceiling(scheduler, tmp_path):

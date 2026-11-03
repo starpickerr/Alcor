@@ -10,11 +10,10 @@ def test_native_control_updates_one_subject_and_rejects_stale_revision():
     one = control.read('session', 'control-one')
     policy = one['policy']
     saved = control.save('session', 'control-one', {'filesystem_mode': 'read-only',
-        'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}},
         'policy_revision': policy['policy_revision']})
     assert saved['policy']['filesystem_mode'] == 'read-only'
     assert 'capabilities' not in saved['policy']
-    assert control.read('session', 'control-two')['policy'] == control.read('template', 'default')['policy']
+    assert control.read('session', 'control-two')['policy'] == control.read('session', 'default-check')['policy']
     with pytest.raises(ValueError, match='revision'):
         control.save('session', 'control-one', policy)
 
@@ -36,7 +35,7 @@ def test_task_control_uses_business_mutation_and_updates_expected_policy_referen
         'action': {'type': 'tool_call', 'tool_name': 'todos', 'tool_params': {}}})
     control = PermissionControl(task_service=lambda agent: scheduler)
     policy = control.read('task', 'daily')['policy']
-    updated = control.save('task', 'daily', {**policy, 'capabilities': {'plugin:stella.tasks': {'write': 'allow'}}})
+    updated = control.save('task', 'daily', {**policy, 'filesystem_mode': 'workspace-write'})
     assert scheduler.store.get_task('daily')['run_policy_revision'] == updated['policy']['policy_revision']
 
 
@@ -48,41 +47,38 @@ def test_run_policy_http_requires_auth_and_returns_authoritative_policy(monkeypa
     monkeypatch.setattr(desktop, '_require_auth', lambda: calls.append('auth'))
     monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
     monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: SimpleNamespace(kind='session', subject='api-one', agent=''))
-    reply = json.loads(desktop.SecurityRunPolicyHandler().GET())
+    reply = json.loads(desktop.RunPolicyHandler().GET())
     assert calls == ['auth'] and reply['status'] == 'success'
     assert reply['policy']['policy_revision'] >= 1
     def reject():
         raise PermissionError('unauthenticated')
     monkeypatch.setattr(desktop, '_require_auth', reject)
     with pytest.raises(PermissionError):
-        desktop.SecurityRunPolicyHandler().GET()
+        desktop.RunPolicyHandler().GET()
 
 
-def test_resource_and_runtime_http_routes_require_auth(monkeypatch):
+def test_security_management_handlers_and_routes_are_removed():
+    import inspect
     from channel.desktop import desktop_channel as desktop
-    def reject():
-        raise PermissionError('unauthenticated')
-    monkeypatch.setattr(desktop, '_require_auth', reject)
-    for handler in (desktop.SessionAccessSettingsHandler, desktop.CapabilityAccessSettingsHandler, desktop.SecurityMigrationHandler, desktop.SecurityConnectionsHandler, desktop.SecuritySensitiveResourcesHandler):
-        with pytest.raises(PermissionError):
-            handler().GET()
-        if hasattr(handler, 'POST'):
-            with pytest.raises(PermissionError):
-                handler().POST()
-    with pytest.raises(PermissionError):
-        desktop.SecurityRuntimeTrustHandler().GET()
-    with pytest.raises(PermissionError):
-        desktop.SecurityRuntimeTrustHandler().POST()
+    for name in ('SecurityCenterHandler', 'SecurityPolicyHandler', 'SessionAccessSettingsHandler',
+                 'CapabilityAccessSettingsHandler', 'SecurityRuntimeTrustHandler', 'SecurityConnectionsHandler',
+                 'SecuritySensitiveResourcesHandler', 'SecurityMigrationHandler'):
+        assert not hasattr(desktop, name)
+    source = inspect.getsource(desktop)
+    assert '/api/security/' not in source
+    assert '/api/sessions/access' not in source
+    assert '/api/capabilities/access' not in source
+    assert "'/api/run-policy'" in source
 
 
-def test_desktop_task_creation_persists_the_selected_business_capabilities(tmp_path):
+def test_desktop_task_creation_rejects_advanced_permission_fields(tmp_path):
     from tests.test_scheduler_web_update import _post_create
     result = _post_create(tmp_path, {'name': 'business task', 'schedule': {'type': 'interval', 'seconds': 3600},
         'action': {'type': 'agent_task', 'task_description': 'synthetic task',
             'conversation_mode': 'reuse', 'conversation_space': 'personal'}, 'session_id': 'source-chat',
         'run_policy': {'filesystem_mode': 'read-only', 'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}}})
-    assert result['status'] == 'success', result
-    assert result['task']['run_policy']['capabilities']['plugin:stella.tasks']['write'] == 'allow'
+    assert result['status'] == 'error'
+    assert 'three permission modes' in result['message']
 
 
 def test_linked_reminder_permission_edit_does_not_change_managed_schedule(tmp_path):
@@ -116,11 +112,11 @@ def test_connection_owner_edit_uses_revision_and_does_not_change_template_or_leg
     from core.security.run_policy import gateway_policy, resolve_run_policy
     legacy = {'preset': 'full-access', 'connections': {'mcp:email': {'allowed': False, 'scopes': []}}}
     monkeypatch.setitem(conf(), 'security_policy', deepcopy(legacy))
-    before = PermissionControl().read('template', 'default')['policy']
+    before = PermissionControl().read('session', 'default-check')['policy']
     store = ResourceGrantStore()
     revision = store.connection_revision(user_id='local-default', connection='mcp:email')
     ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=True, scopes=['read']), expected_revision=revision)
-    assert PermissionControl().read('template', 'default')['policy'] == before
+    assert PermissionControl().read('session', 'default-check')['policy'] == before
     assert conf()['security_policy'] == legacy
     with pytest.raises(ValueError, match='revision'):
         ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=False, scopes=[]), expected_revision=revision)
@@ -136,8 +132,8 @@ def test_connection_owner_edit_uses_revision_and_does_not_change_template_or_leg
 
 def test_permission_control_has_no_capability_catalog():
     from core.security.control import PermissionControl
-    result = PermissionControl().read('template', 'default')
-    assert result['capabilities'] == []
+    result = PermissionControl().read('session', 'default-check')
+    assert 'capabilities' not in result
     assert 'capabilities' not in result['policy']
 
 
@@ -155,7 +151,7 @@ def test_explicit_mode_replaces_hidden_legacy_file_denial():
         assert permission_denial('write', {'path': '/outside/blocked.txt', 'content': 'blocked'})
 
 
-def test_session_settings_report_independent_policy_and_four_mode_choices(tmp_path, monkeypatch):
+def test_session_settings_report_independent_policy_and_three_mode_choices(tmp_path, monkeypatch):
     from channel.desktop import desktop_channel as desktop
     from agent.workspace import project_store
     project = tmp_path / 'project'
@@ -167,23 +163,8 @@ def test_session_settings_report_independent_policy_and_four_mode_choices(tmp_pa
     state = desktop._session_settings_state('report-one', None)['permission']
     assert state['source'] == 'independent'
     assert state['mode'] == 'workspace-write'
-    assert state['presets'] == ['read-only', 'workspace-write', 'full-access', 'custom']
+    assert state['presets'] == ['read-only', 'workspace-write', 'full-access']
 
-
-def test_legacy_http_cannot_change_project_permission_authority(tmp_path, monkeypatch):
-    import json
-    from channel.desktop import desktop_channel as desktop
-    from agent.workspace import project_store
-    project = tmp_path / 'project'
-    project.mkdir()
-    original = project_store.get_security_policy(str(project))
-    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
-    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
-    monkeypatch.setattr(desktop.web, 'data', lambda: json.dumps({'target': 'project', 'project': str(project),
-        'policy': {'preset': 'full-access'}}).encode())
-    result = json.loads(desktop.SecurityPolicyHandler().POST())
-    assert result['status'] != 'success'
-    assert project_store.get_security_policy(str(project)) == original
 
 
 def test_background_summary_uses_authoritative_task_snapshot():

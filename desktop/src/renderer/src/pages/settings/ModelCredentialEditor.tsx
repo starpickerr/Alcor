@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import apiClient from '../api/client'
-import { getLang } from '../i18n'
-import { notifySecurityPolicyChanged } from '../store/securityPolicyEvents'
+import apiClient from '../../api/client'
+import { getLang } from '../../i18n'
+import { notifySecurityPolicyChanged } from '../../store/securityPolicyEvents'
 
-/** Reuse the protected owner API. No stored value is fetched into this form. */
-export default function CredentialEditor({ name, configured = false, needsRepair = false }: { name: string; configured?: boolean | null; needsRepair?: boolean }) {
+/** Model credentials are write-only in the renderer. */
+export default function ModelCredentialEditor({ name, configured = false, needsRepair = false }: { name: string; configured?: boolean | null; needsRepair?: boolean }) {
   const en = getLang() === 'en'
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
@@ -22,7 +22,7 @@ export default function CredentialEditor({ name, configured = false, needsRepair
     request.busy = true
     setBusy(true); setError(''); setNotice('')
     try {
-      const result = remove ? await apiClient.deleteSecuritySecret(name) : await apiClient.saveSecuritySecret(name, value)
+      const result = await apiClient.saveModelCredential(name, remove ? null : value)
       if (result.status !== 'success') throw new Error(result.message || (en ? 'Credential update failed' : '凭据更新失败'))
       notifySecurityPolicyChanged()
       if (owner.current === request) {

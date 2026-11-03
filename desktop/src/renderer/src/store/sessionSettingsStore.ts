@@ -3,8 +3,7 @@ import type { ViteHotContext } from 'vite/types/hot.d.ts'
 import apiClient from '../api/client'
 import { t } from '../i18n'
 import type { SessionSettingsState } from '../types'
-import type { SecurityPolicy } from '../api/client'
-import { notifySecurityPolicyChanged, SECURITY_POLICY_CHANGED } from './securityPolicyEvents'
+import { SECURITY_POLICY_CHANGED } from './securityPolicyEvents'
 
 /**
  * Per-session model + permission overrides, mirroring the web console's
@@ -31,7 +30,7 @@ interface SessionSettingsStore {
   /** Apply a model / permission change, then repaint from the server echo. */
   apply: (
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
+    body: { provider?: string | null; model?: string | null }
   ) => Promise<boolean>
   /** Drop cached settings (e.g. on a brand-new chat) so chips fall back to global. */
   reset: () => void
@@ -83,7 +82,6 @@ export const useSessionSettingsStore = create<SessionSettingsStore>((set, get) =
         return false
       }
       if (token === requestSeq) set({ cfg: { model: data.model, permission: data.permission }, sessionId })
-      if ('security_policy' in body) notifySecurityPolicyChanged()
       return true
     } catch (cause) {
       if (token === requestSeq) set({ error: cause instanceof Error ? cause.message : t('session_settings_failed') })
