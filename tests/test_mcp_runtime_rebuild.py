@@ -274,7 +274,7 @@ def test_draining_prevents_late_tool_publication(setup):
         assert manager._publish_mcp_tools(config, old, 1, schemas) is False
 
 
-def test_managed_domain_validation_cannot_read_account_or_migration_data(tmp_path, monkeypatch, native_settings_action):
+def test_managed_domain_validation_cannot_read_account_or_migration_data(tmp_path, monkeypatch, native_settings_action, offline_runtime_artifacts):
     from core.mcp.lifecycle import McpLifecycle
     from test_managed_mcp_domains import server_config
     monkeypatch.setattr(ToolManager, '_instances', {})

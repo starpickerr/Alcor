@@ -4261,7 +4261,7 @@ class ModelsHandler:
             if action == "credential":
                 from config import MODEL_CONFIG_TO_ENV
                 name = data.get('name')
-                allowed = set(MODEL_CONFIG_TO_ENV.values()) | {'BOCHA_API_KEY'}
+                allowed = {env for field, env in MODEL_CONFIG_TO_ENV.items() if field.endswith('_api_key')} | {'BOCHA_API_KEY'}
                 if not isinstance(name, str) or (name not in allowed and not name.startswith('CUSTOM:')):
                     raise ValueError('Unknown model credential')
                 from agent.permission.center import set_secret
@@ -6040,14 +6040,6 @@ def _scheduler_store():
     return TaskStore(store_path)
 
 
-
-
-
-
-
-
-
-
 def _permission_control():
     from core.security.control import PermissionControl
     def tasks(agent):
@@ -6081,23 +6073,6 @@ class RunPolicyHandler:
                 body.get('subject'), body.get('policy'), body.get('agent'))}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
             return _api_reject('Permissions', error)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class OperationConfirmationsHandler:

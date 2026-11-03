@@ -110,7 +110,7 @@ def connection_catalog():
             pass
     import os
     if cfg.get('github_token') or os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN'):
-        add('https://api.github.com', 'github', 'GitHub', '/security?tab=resources&credential=GITHUB_TOKEN')
+        add('https://api.github.com', 'github', 'GitHub', '/settings')
     return [*indexed.values(),
         dict(id='public-browser', name='Public web', endpoint='', owners=['browser']),
         dict(id='public-packages', name='Package registries', endpoint='', owners=['runtime'])]

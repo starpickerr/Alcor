@@ -629,7 +629,7 @@ const TaskEditModal: React.FC<{
       {!isCreate && task && <div className="mt-6 space-y-5 border-t border-default pt-5">
         <h3 className="text-sm font-semibold">{getLang() === 'en' ? 'Independent task permissions' : '任务独立权限'}</h3>
         {task.last_error && <p role="alert" className="text-xs text-danger">{task.last_error}</p>}
-        <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Save permission changes here, then use Run now to retry a denied task.' : '在此保存权限修改，再使用“立即执行”重试被拒绝的任务。')}</p>
+        <p className="text-xs text-content-secondary">{linked ? (getLang() === 'en' ? 'Permission changes apply to the next reminder. Manage reminder delivery in the linked task.' : '权限修改在下次提醒生效。投递操作请前往关联事务。') : (getLang() === 'en' ? 'Permission changes save immediately. Use Run now to retry a denied task.' : '权限修改立即保存。可使用“立即执行”重试被拒绝的任务。')}</p>
         <RunPolicyEditor kind="task" subject={task.id} agent={task.owner_agent_id} />
       </div>}
     </Modal>
