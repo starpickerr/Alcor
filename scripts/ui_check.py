@@ -62,7 +62,7 @@ if __name__ == '__main__':
                'tests/ui_apple_settings.py', 'tests/ui_embedded_agents.py', 'tests/ui_work_shares.py',
                'tests/ui_security_modes.py', 'tests/ui_run_policy.py', 'tests/ui_knowledge_links.py', 'tests/ui_settings_entry.py',
                'tests/ui_information_architecture.py', 'tests/ui_capabilities.py', 'tests/ui_capability_details.py', 'tests/ui_capability_features.py', 'tests/ui_model_selection.py',
-               'tests/ui_data_management.py', 'tests/ui_elearning_settings.py']
+               'tests/ui_data_management.py', 'tests/ui_elearning_settings.py', 'tests/ui_mcp_storage_adoption.py']
     scripts = [path for path in scripts if (ROOT / path).is_file()]
     checks = [str(python_path(ROOT)), '-c', 'import runpy; ' + '; '.join(
         f'runpy.run_path({path!r})' for path in scripts)]

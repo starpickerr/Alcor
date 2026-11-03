@@ -100,7 +100,7 @@ export interface FeatureAccessState extends ApiResult {
 export interface RuntimeStatusState extends ApiResult {
   isolation: { status: string; reason: string }
   application_isolation?: { status: string; protected: boolean; reason: string; unprotected: string[] }
-  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; environment?: { base: { version: string }; state: string } | null }[]
+  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; storage_migration?: { token: string; sources: { id: string; path: string }[] }; environment?: { base: { version: string }; state: string } | null }[]
 }
 export interface SensitiveResourceState extends ApiResult {
   credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
@@ -695,6 +695,14 @@ class ApiClient {
   async sensitiveResources(): Promise<SensitiveResourceState> {
     const result = await this.request<SensitiveResourceState>('/api/security/sensitive-resources')
     if (result.status !== 'success') throw new Error(result.message || 'Sensitive resource status is unavailable')
+    return result
+  }
+
+  async adoptRuntimeStorage(id: string, token: string, sourceId: string): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
+      method: 'POST', body: JSON.stringify({ action: 'adopt-storage', kind: 'mcp', id, token, sourceId }),
+    })
+    if (result.status !== 'success') throw new Error(result.message || '数据归属确认失败，请刷新后重试')
     return result
   }
 

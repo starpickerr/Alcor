@@ -174,8 +174,8 @@ def _has_private_storage_data(directory):
     return False
 
 
-def private_storage(config, user, execution_digest=None):
-    """Derive a private namespace without creating or importing any data."""
+def storage_layout(config, user, execution_digest=None):
+    """Derive historical and current namespaces without granting or creating them."""
     from common.state_dir import user_root
     from core.mcp.managed import ManagedMcpConfig, _installed_digest
     root = user_root() / 'mcp-runtime'
@@ -186,8 +186,6 @@ def private_storage(config, user, execution_digest=None):
     bound_connector = (isinstance(config, ManagedMcpConfig) and config.data_root is not None
                        and config['name'] in {'email', 'elearning'}
                        and config.package_digest == _installed_digest(config['name']))
-    if legacy.exists() and not bound_connector and _has_private_storage_data(legacy):
-        raise McpStorageMigrationRequired('旧版 MCP 私有数据的归属尚未确认，原目录已保留。完成迁移后才能启动此服务。')
     digest = execution_digest or environment_identity(config)
     # The family identifies configured executable inputs without code content.
     # Code versions stay separate until a verified update migrates private data.
@@ -195,17 +193,21 @@ def private_storage(config, user, execution_digest=None):
                                config.get('env') or {}], sort_keys=True).encode()).hexdigest()
     directory = root / 'identities' / family
     _check_private_storage_path(directory)
-    if directory.exists() and not bound_connector:
-        for previous in directory.iterdir():
-            if previous.name == digest:
-                continue
-            _check_private_storage_path(previous)
-            if _has_private_storage_data(previous):
-                raise McpStorageMigrationRequired('MCP 实现已变更，旧私有数据已保留，需通过已验证的更新流程迁移后再启动。')
     # A sibling of legacy directories: an old process's recursive grant must
     # not include the new namespaces.
     storage = directory / digest
     _check_private_storage_path(storage)
+    return legacy, directory, storage, bound_connector
+
+
+def private_storage(config, user, execution_digest=None):
+    """Require Owner attribution before using retained data in a new identity."""
+    from core.mcp.storage import approved, sources
+    digest = execution_digest or environment_identity(config)
+    _, _, storage, _ = storage_layout(config, user, digest)
+    retained = sources(config, user, digest)
+    if retained and not approved(config, user, digest, storage, retained):
+        raise McpStorageMigrationRequired('旧版或已变更实现的 MCP 私有数据尚未确认归属，原目录已保留。请在执行环境中选择迁移来源并确认后再启动。')
     return storage
 
 

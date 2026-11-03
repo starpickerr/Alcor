@@ -6246,10 +6246,13 @@ class SecurityRuntimeTrustHandler:
             if not isinstance(body, dict):
                 raise ValueError('Environment action must be an object')
             action = body.get('action')
-            fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else set())
-            if (set(body) != fields or action not in ('rebuild', 'resume') or body['kind'] not in ('plugin', 'mcp')
+            fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else
+                                                {'token', 'sourceId'} if action == 'adopt-storage' else set())
+            if (set(body) != fields or action not in ('rebuild', 'resume', 'adopt-storage') or body['kind'] not in ('plugin', 'mcp')
                     or not isinstance(body['id'], str) or not body['id']):
                 raise ValueError('Select a supported installed plugin or local MCP environment to rebuild')
+            if action == 'adopt-storage' and body['kind'] != 'mcp':
+                raise ValueError('Retained private data confirmation requires a local MCP')
             if action == 'resume' and (not isinstance(body['operationId'], str) or not body['operationId']):
                 raise ValueError('Rebuild operation is required')
             if body['kind'] == 'mcp':
@@ -6258,6 +6261,8 @@ class SecurityRuntimeTrustHandler:
                 lifecycle = McpLifecycle(ToolManager())
                 if action == 'rebuild':
                     lifecycle.rebuild(body['id'])
+                elif action == 'adopt-storage':
+                    lifecycle.adopt_storage(body['id'], body['token'], body['sourceId'])
                 else:
                     lifecycle.resume(body['id'], body['operationId'])
             else:

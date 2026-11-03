@@ -173,16 +173,21 @@ class RuntimeControl:
                     except (ValueError, OSError):
                         environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
                 storage_error = None
+                storage_migration = None
                 try:
                     private_storage(config, user, execution_digest)
                 except (ValueError, OSError) as error:
                     storage_error = str(error)
+                    from core.security.mcp_runtime import McpStorageMigrationRequired
+                    if isinstance(error, McpStorageMigrationRequired):
+                        storage_migration = McpLifecycle(manager).storage_preview(config['name'])
                 rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
                     'mode': 'unavailable' if storage_error else client.sandbox_state['mode'] if client else 'stopped',
                     'running': client is not None,
                     'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
                     **({'rebuild_operation': resume} if resume else {}),
                     **({'environment_error': environment_error} if environment_error else {}),
+                    **({'storage_migration': storage_migration} if storage_migration else {}),
                     'reason': storage_error or (client.sandbox_state.get('reason') if client else 'Server has not started.')})
             except (ValueError, OSError) as error:
                 rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable', 'reason': str(error)})

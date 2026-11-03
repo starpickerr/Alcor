@@ -116,6 +116,14 @@ class McpLifecycle:
         self._owner()
         return pending(name, self.user)
 
+    def storage_preview(self, name):
+        from core.mcp.storage import preview
+        return preview(self, name)
+
+    def adopt_storage(self, name, token, source_id):
+        from core.mcp.storage import adopt
+        return adopt(self, name, token, source_id)
+
     def _facts(self, config):
         digest, package = launch_identity(config)
         _verify_bound_implementation(config, package)
@@ -150,21 +158,24 @@ class McpLifecycle:
                 raise ValueError('MCP rebuild operation cannot be resumed')
             return self._complete(name, operation, checkpoint=checkpoint)
 
-    def _stop_connections(self, name, digest):
+    def _stop_connections(self, name, digest, *, family=None):
         from agent.tools.mcp.mcp_client import LIVE_CLIENTS
         from agent.tools.tool_manager import ToolManager
+        def matches(config):
+            return family is None or all(config.get(field) == family.get(field)
+                                         for field in ('command', 'args', 'env'))
         for manager in ToolManager.instances():
             if (manager.identity.user_id or 'local-default') != self.user:
                 continue
             with manager._mcp_lock:
                 config = manager._mcp_active_configs.get(name)
-                if config is not None and environment_identity(config) == digest:
+                if config is not None and matches(config) and (digest is None or environment_identity(config) == digest):
                     manager._teardown_mcp_server(name)
                     manager._mcp_loaded = False
         for client in list(LIVE_CLIENTS):
             key = client._runtime_key
-            if key and (key['user_id'], key['identifier']) == (self.user, name) and (
-                    client.environment and client.environment.get('launch_digest') == digest):
+            if key and matches(client.config) and (key['user_id'], key['identifier']) == (self.user, name) and (
+                    digest is None or client.environment and client.environment.get('launch_digest') == digest):
                 client.shutdown()
 
     def _complete(self, name, operation, *, checkpoint):
