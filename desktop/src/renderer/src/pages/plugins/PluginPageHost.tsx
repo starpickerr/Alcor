@@ -7,6 +7,8 @@ type Props = {
   title?: string
 }
 
+const THEME_TOKENS = ['--bg-base', '--bg-surface', '--bg-surface-2', '--bg-inset', '--text-primary', '--text-secondary', '--text-tertiary', '--border-default', '--accent', '--accent-soft', '--accent-contrast']
+
 type Opened = {
   contentUrl: string
   channelNonce: string
@@ -53,12 +55,24 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
   useEffect(() => {
     if (!opened) return
     let active = true
+    const sendTheme = () => {
+      const style = getComputedStyle(document.documentElement)
+      iframeRef.current?.contentWindow?.postMessage({
+        type: 'stella-theme', ...opened,
+        tokens: Object.fromEntries(THEME_TOKENS.map(key => [key, style.getPropertyValue(key).trim()])),
+        colorScheme: style.colorScheme.includes('dark') ? 'dark' : 'light',
+      }, '*')
+    }
+    const observer = new MutationObserver(sendTheme)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
+    sendTheme()
     const onMessage = async (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow || event.origin !== 'null') return
       const data = event.data || {}
-      if (data.type !== 'stella-bridge-invoke') return
       if (data.pluginId !== opened.pluginId || data.pageId !== opened.pageId) return
-      if (data.channelNonce !== opened.channelNonce) return
+      if (data.channelNonce !== opened.channelNonce || data.generation !== opened.generation) return
+      if (data.type === 'stella-page-ready') { sendTheme(); return }
+      if (data.type !== 'stella-bridge-invoke') return
       const source = event.source as Window | null
       try {
         const response = await fetch(`${baseUrl}/api/plugins/bridge/invoke`, {
@@ -79,6 +93,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
         source?.postMessage(
           {
             type: 'stella-bridge-result',
+            pluginId: opened.pluginId, pageId: opened.pageId, channelNonce: opened.channelNonce, generation: opened.generation,
             requestId: data.requestId,
             ok: body.status === 'ok',
             value: body.value,
@@ -91,6 +106,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
         source?.postMessage(
           {
             type: 'stella-bridge-result',
+            pluginId: opened.pluginId, pageId: opened.pageId, channelNonce: opened.channelNonce, generation: opened.generation,
             requestId: data.requestId,
             ok: false,
             error: String(err),
@@ -100,7 +116,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
       }
     }
     window.addEventListener('message', onMessage)
-    return () => { active = false; window.removeEventListener('message', onMessage) }
+    return () => { active = false; observer.disconnect(); window.removeEventListener('message', onMessage) }
   }, [opened, baseUrl])
 
   if (error) {
@@ -122,7 +138,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
       ref={iframeRef}
       title={title || pageId}
       src={`${baseUrl}${opened.contentUrl}`}
-      className="flex-1 w-full min-h-0 border-0 bg-[#f6f4ef]"
+      className="flex-1 w-full min-h-0 border-0 bg-[var(--bg-base)]"
       sandbox="allow-scripts"
     />
   )

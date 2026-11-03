@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from domain.providers._local_runtime import run_version_probe, write_goal_file
+from domain.providers._local_runtime import run_version_probe
 from domain.providers._cli_process import ManagedCliProvider
 
 
@@ -23,14 +23,15 @@ class CodexCliProvider(ManagedCliProvider):
             "contractVersion": "1",
             "taskKinds": ["coding.task", "research.report", "general.delegate"],
             "capabilities": {
-                "streaming": False,
+                "streaming": True,
                 "persistentSession": False,
                 "reattach": False,
                 "continuation": False,
                 "approvalBridge": False,
                 "statusQuery": False,
-                "structuredOutput": False,
+                "structuredOutput": True,
                 "artifacts": True,
+                "modelSelection": "explicit-id",
                 "usage": False,
                 "cost": False,
                 "localOrRemote": "local",
@@ -76,5 +77,4 @@ class CodexCliProvider(ManagedCliProvider):
         if not binary:
             return {"status": "rejected", "error": {"code": "not_configured", "message": "CLI binary missing"}}
         workspace = Path(task["workspacePath"])
-        write_goal_file(workspace, task.get("goal") or "")
-        return self._start_cli([binary, "exec", "--skip-git-repo-check", "--cd", str(workspace), task.get("goal") or ""], task, "codex-result.txt")
+        return self._start_cli([binary, "exec", "--json", "--skip-git-repo-check", "--cd", str(workspace), *self.model_args(task), self.task_prompt(task)], task, "codex-result.txt")

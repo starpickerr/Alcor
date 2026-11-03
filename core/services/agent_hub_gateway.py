@@ -23,6 +23,8 @@ _SESSION: PluginSession | None = None
 _GRANT_REF = "agent-hub-default-grant"
 
 AGENT_HUB_READ_METHODS: dict[str, tuple[str, ...]] = {
+    "list_tasks": ('limit',),
+    "get_task": ('task_id',),
     "list_catalog": (),
     "status_overview": (),
     "list_providers": ("enabled_only",),
@@ -31,9 +33,18 @@ AGENT_HUB_READ_METHODS: dict[str, tuple[str, ...]] = {
     "select_provider": ("selector",),
     "get_external_run": ("execution_id",),
     "list_external_runs": ("limit",),
-    "provider_observe": ("execution_id",),
+    "provider_observe": ("execution_id", "after_cursor"),
 }
 AGENT_HUB_WRITE_METHODS: dict[str, tuple[str, ...]] = {
+    "create_task": ('payload', 'request_id'),
+    "add_participant": ("task_id", "participant", "expected_revision", "request_id"),
+    "set_coordinator": ("task_id", "participant_id", "expected_revision", "request_id"),
+    "update_participant": ('task_id', 'participant_id', 'patch', 'expected_revision', 'request_id'),
+    "post_message": ('task_id', 'body', 'recipient_ids', 'intent', 'expected_revision', 'request_id'),
+    "set_workflow": ('task_id', 'steps', 'expected_revision', 'request_id'),
+    "claim_step": ('task_id', 'step_id', 'retry'),
+    "sync_attempt": ('task_id', 'step_id', 'execution_id', 'result'),
+    "mark_cancelled": ('task_id',),
     "ensure_defaults": (),
     "upsert_provider": ("provider",),
     "delete_provider": ("provider_config_id",),
@@ -207,7 +218,8 @@ def invoke_agent_hub(
                 or task.get("attemptId") != execution["attemptId"]):
             raise PermissionError("provider task does not match the Core execution lease")
         task = {**task, "goal": execution["goal"], "budget": execution["budget"],
-                "workspaceLeaseRef": execution["workspaceLeaseRef"], "acceptance": execution["acceptance"]}
+                "workspaceLeaseRef": execution["workspaceLeaseRef"], "acceptance": execution["acceptance"],
+                "runConfig": execution["acceptance"].get("hubRunConfig", {})}
         params = {**params, "task": task}
     session = ensure_agent_hub_session(db_path)
     write = method in AGENT_HUB_WRITE_METHODS
@@ -218,6 +230,8 @@ def invoke_agent_hub(
         "agentId": agent_id,
         "userId": owner_user_id or "",
     }
+    if method in {"claim_step", "sync_attempt", "mark_cancelled"}:
+        handle["hubCoordinator"] = True
     if execution is not None:
         handle["executionTask"] = dict(params["task"])
     from contextlib import nullcontext

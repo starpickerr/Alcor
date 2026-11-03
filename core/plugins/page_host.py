@@ -30,6 +30,9 @@ _AGENT_HUB_METHODS = frozenset({
     "list_catalog", "status_overview", "list_providers", "get_provider",
     "probe_provider", "ensure_defaults", "upsert_provider", "delete_provider",
     "list_external_runs", "get_external_run",
+    "list_tasks", "get_task", "create_task", "update_participant", "post_message", "set_workflow",
+    "start_task", "cancel_task", "task_activity", "refresh_task", "native_participants", "adopt_proposal",
+    "add_participant", "set_coordinator",
 })
 
 
@@ -78,7 +81,7 @@ class PluginPageHost:
         method: str,
         input: dict[str, Any] | None = None,
     ) -> Any:
-        self.bridges.authorize_invoke(
+        channel = self.bridges.authorize_invoke(
             channel_nonce,
             plugin_id=plugin_id,
             generation=generation,
@@ -100,7 +103,7 @@ class PluginPageHost:
         if plugin_id == "stella.automation":
             return self._invoke_automation(method, params)
         if plugin_id == "stella.agent-hub":
-            return self._invoke_agent_hub(method, params)
+            return self._invoke_agent_hub(method, params, user_id=channel.user_id)
         raise PermissionError(f"bridge invoke not enabled for {plugin_id}")
 
     def _invoke_bills(self, method: str, params: dict[str, Any]) -> Any:
@@ -253,13 +256,17 @@ class PluginPageHost:
             raise RuntimeError(f"automation plugin returned {status}")
         return result.get("value")
 
-    def _invoke_agent_hub(self, method: str, params: dict[str, Any]) -> Any:
+    def _invoke_agent_hub(self, method: str, params: dict[str, Any], *, user_id: str = "desktop") -> Any:
         if method not in _AGENT_HUB_METHODS:
             raise PermissionError(f"method not allowed on agent-hub page: {method}")
         from common.runtime_identity import RuntimeIdentity, use_identity
         from core.services import agent_hub_gateway
 
-        with use_identity(RuntimeIdentity(agent_id="plugin-ui", user_id="desktop")):
+        from core.plugins.caller import caller_origin_scope
+        from core.services import agent_hub_collaboration
+        with use_identity(RuntimeIdentity(user_id=user_id)), caller_origin_scope('desktop'):
+            if method in {'start_task', 'cancel_task', 'task_activity', 'refresh_task', 'native_participants', 'adopt_proposal'}:
+                return getattr(agent_hub_collaboration, method)(**params)
             result = agent_hub_gateway.invoke_agent_hub(
                 method, params, agent_id="plugin-ui",
             )
