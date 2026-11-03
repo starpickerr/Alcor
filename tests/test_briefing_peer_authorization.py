@@ -138,11 +138,9 @@ def test_native_worker_reads_need_no_plugin_grant(peers):
     from core.services import briefing_gateway
 
     peers.publish()
-    result = briefing_gateway.ensure_briefing_session().invoke_contract(
-        contract='stella.briefing@1', method='get_action_targets', input_payload={'kind': 'todo', 'query': ''},
-        origin='system', grant_ref='briefing-default-grant',
-        data_handle={'dbPath': str(peers.path / 'briefing.sqlite'), 'namespace': 'stella.briefing'})
-    assert result['status'] == 'succeeded'
+    result = briefing_gateway.invoke_briefing('get_action_targets', {'kind': 'todo', 'query': ''},
+        db_path=peers.path / 'briefing.sqlite')
+    assert result['status'] == 'succeeded', result
 
 
 def test_native_reminder_configuration_reaches_task_owner(peers):

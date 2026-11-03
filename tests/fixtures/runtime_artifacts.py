@@ -8,8 +8,7 @@ import shutil
 import pytest
 
 
-@pytest.fixture
-def offline_runtime_artifacts():
+def seed_runtime_artifacts():
     from common.state_dir import shared_root
     source = Path(os.environ.get('STELLA_TEST_RUNTIME_ARTIFACTS',
         str(Path(__file__).resolve().parents[2] / '.superpowers/sdd/2026-10-25-security-managed-runtime/public-artifacts')))
@@ -31,3 +30,8 @@ def offline_runtime_artifacts():
         shutil.copy2(binary, tool)
     (target / 'tools/uv.json').write_text(json.dumps(marker))
     return target
+
+
+@pytest.fixture
+def offline_runtime_artifacts():
+    return seed_runtime_artifacts()

@@ -207,9 +207,9 @@ with sync_playwright() as playwright:
         page = browser.new_page(viewport={'width': 1280, 'height': 900})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.add_init_script("""localStorage.setItem('stella_lang','zh'); window.electronAPI = {platform: 'darwin',
+        page.add_init_script("""if (window === window.top) { localStorage.setItem('stella_lang','zh'); window.electronAPI = {platform: 'darwin',
             getBackendPort: async () => 9876, onBackendStatus: () => () => {}, getBackendError: async () => null
-        };""")
+        }; }""")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(test_url + '/#/skills', wait_until='networkidle')
         nav = page.get_by_role('navigation')
@@ -257,7 +257,8 @@ with sync_playwright() as playwright:
         expect(page.get_by_role('heading', name='搜索记忆', exact=True)).to_be_visible()
         expect(page.get_by_text(DETAIL, exact=True)).to_be_visible()
         expect(page.get_by_text('插件提供', exact=False)).to_be_visible()
-        expect(page.get_by_role('tab')).to_have_text(['概览'])
+        expect(page.get_by_role('tab')).to_have_count(0)
+        expect(page.get_by_role('tabpanel')).to_contain_text(DETAIL)
         fail_tools[0] = True
         page.goto(test_url + '/#/skills', wait_until='networkidle')
         expect(page.get_by_role('alert')).to_contain_text('部分目录暂不可用')

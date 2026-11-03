@@ -296,7 +296,7 @@ with sync_playwright() as playwright:
         }''')
         page.get_by_role('button', name='返回原页面', exact=True).click()
         expect(page).to_have_url(url + '/#/security?tab=resources')
-        page.wait_for_function('typeof window.releaseCredentialDirectory === "function"')
+        page.wait_for_function('() => typeof window.releaseCredentialDirectory === "function"')
         page.evaluate('window.releaseCredentialDirectory()')
         expect(page.get_by_role('link', name='前往配置', exact=True)).to_have_count(30)
         expect(page.locator('[data-stella-scroll]')).to_have_js_property("scrollTop", source_scroll, timeout=3000)

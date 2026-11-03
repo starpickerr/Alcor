@@ -26,12 +26,11 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
     from agent.tools.bills.bills_tool import BillsTool
     from agent.tools.catalog import CATALOG
     from agent.tools.mcp.mcp_client import McpClient
+    from agent.tools.tool_manager import ToolManager
     from core.capabilities.catalog import CapabilityCatalog
-    from core.mcp.managed import PUBLIC_TOOLS
+    from core.mcp.managed import PUBLIC_TOOLS, configurations
 
-    repo = ROOT.parent / 'MCP/fudan-elearning-mcp'
-    client = McpClient({'name': 'elearning', 'type': 'stdio', 'command': str(repo / '.venv/bin/python'),
-                       'args': [str(repo / 'mcp_server.py'), '--data-dir', state], 'timeout': 10})
+    client = McpClient(next(config for config in configurations(ToolManager()) if config['name'] == 'elearning'))
     try:
         assert client.initialize()
         discovered = [tool for tool in client.list_tools() if tool['name'] in PUBLIC_TOOLS['elearning']]
@@ -97,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
             page = browser.new_page(viewport={'width': 1280, 'height': 1000})
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
-            page.add_init_script("localStorage.setItem('stella_lang','zh'); window.electronAPI={platform:'darwin',getBackendPort:async()=>9876,onBackendStatus:()=>()=>{},getBackendError:async()=>null};")
+            page.add_init_script("if (window === window.top) { localStorage.setItem('stella_lang','zh'); window.electronAPI={platform:'darwin',getBackendPort:async()=>9876,onBackendStatus:()=>()=>{},getBackendError:async()=>null}; }")
             page.route('http://127.0.0.1:9876/**', backend)
             page.goto(URL + '/#/skills/mcp/elearning?section=features', wait_until='networkidle')
             panel = page.get_by_role('tabpanel')
