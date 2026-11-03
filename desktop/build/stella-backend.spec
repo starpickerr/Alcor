@@ -163,6 +163,8 @@ hiddenimports += collect_submodules('playwright')
 # Runtime-read files/dirs that must travel with the executable. Paths are
 # (source, dest_dir_in_bundle).
 datas = [
+    (rp('THIRD_PARTY_NOTICES.md'), '.'),
+    (rp('licenses'), 'licenses'),
     (rp('config-template.json'), '.'),
     # First-boot plugin bootstrap list (bytes still come from Stella-Plugins catalog).
     (rp('resources', 'default-plugins.json'), 'resources'),

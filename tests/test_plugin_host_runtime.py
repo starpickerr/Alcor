@@ -64,6 +64,30 @@ def test_stale_generation_rejected(registry):
         session.dispose()
 
 
+def test_same_plugin_workers_are_independent_per_user(registry):
+    from common.runtime_identity import identity_scope
+
+    alice, bob = [PluginSession(
+        Path('samples/plugins/alpha'), source_label='test', registry=registry, user_id=user,
+    ) for user in ('alice', 'bob')]
+    try:
+        alice.start()
+        bob.start()
+        assert alice.is_running and bob.is_running
+        with identity_scope(user_id='alice'):
+            assert alice.invoke('ping')['value']['plugin'] == 'alpha'
+            with pytest.raises(PermissionError, match='user'):
+                bob.invoke('ping')
+        alice.dispose()
+        assert registry.get(alice.plugin_id, user_id='alice') is None
+        assert bob.is_running
+        with identity_scope(user_id='bob'):
+            assert bob.invoke('ping')['value']['plugin'] == 'alpha'
+    finally:
+        alice.dispose()
+        bob.dispose()
+
+
 def test_worker_uses_selected_interpreter_not_implicit_system(registry):
     session = PluginSession(
         Path("samples/plugins/alpha"),

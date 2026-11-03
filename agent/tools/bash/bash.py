@@ -164,8 +164,8 @@ SAFETY:
                     f"Safety Warning: {warning}\n\nIf you believe this command is safe and necessary, please ask the user for confirmation first, explaining what the command does and why it's needed.")
 
         try:
-            # Prepare environment with .env file variables
-            env = os.environ.copy()
+            from core.security.process_environment import core_process_environment
+            env = core_process_environment()
 
             # Anchor artifact outputs to the workspace/project dir regardless of
             # any `cd` inside the command, so tools (e.g. image-generation) can
@@ -202,8 +202,9 @@ SAFETY:
                     pass
                 except Exception as e:
                     logger.debug(f"[Bash] Could not inspect credential names: {e}")
+            credential_names = {key.upper() for key in dotenv_vars}
             for key in list(env):
-                if key in dotenv_vars or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
+                if key.upper() in credential_names or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
                     env.pop(key, None)
 
             # getuid() only exists on Unix-like systems

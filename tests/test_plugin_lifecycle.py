@@ -34,6 +34,33 @@ def test_install_uses_real_migration_then_selects_package_and_keeps_disabled_int
     assert manager.inventory('local-default')[0]['state'] == 'stopped'
 
 
+def test_inventory_and_disable_are_scoped_to_plugin_user(tmp_path, monkeypatch):
+    from core.plugins import lifecycle, management
+    from core.plugins.registry import ContributionSnapshot, PluginRegistry
+
+    store = ManagementStore(tmp_path / 'packages')
+    registry = PluginRegistry()
+    monkeypatch.setattr(management, 'default_store', lambda: store)
+    monkeypatch.setattr(lifecycle, 'DEFAULT_REGISTRY', registry)
+    plugin = 'stella.sample.alpha'
+    manager = PluginManager(store, catalog_path=_catalog(tmp_path, Path('samples/plugins/alpha')))
+    manager.install(plugin, user_id='alice')
+    for user in ('alice', 'bob'):
+        manager.set_intent(plugin, user, 'enabled')
+        registry.publish(ContributionSnapshot(plugin, registry.next_generation(plugin, user_id=user),
+            user, 'digest', {}, (plugin + '@1',), user))
+    for user in ('alice', 'bob'):
+        row = manager.inventory(user)[0]
+        assert row['state'] == 'active' and row['sourceLabel'] == user
+    pending = ContributionSnapshot(plugin, registry.next_generation(plugin, user_id='alice'),
+                                   'alice', 'digest', {}, (), 'alice')
+    manager.set_intent(plugin, 'alice', 'disabled')
+    with pytest.raises(PermissionError):
+        registry.publish(pending)
+    assert manager.inventory('alice')[0]['services'] == []
+    assert manager.inventory('bob')[0]['state'] == 'active'
+
+
 def test_remove_preserves_data_and_prevents_bootstrap_resurrection(tmp_path, monkeypatch):
     from core.plugins import management
     store = ManagementStore(tmp_path / 'packages')

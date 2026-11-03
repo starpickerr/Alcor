@@ -106,9 +106,7 @@ class PluginManager:
         if intent != 'enabled':
             self.management.set_runtime(plugin_id, user_id, 'draining')
             stop_session(plugin_id, user_id=user_id)
-            snapshot = DEFAULT_REGISTRY.get(plugin_id)
-            if snapshot and snapshot.user_id == user_id:
-                DEFAULT_REGISTRY.revoke(plugin_id, snapshot.generation)
+            DEFAULT_REGISTRY.revoke(plugin_id, user_id=user_id)
         with package_lock(self.management.root, plugin_id + ':policy', exclusive=True):
             result = self.management.set_intent(plugin_id, user_id, intent)
             self.management.set_runtime(plugin_id, user_id, 'stopped')
@@ -358,8 +356,8 @@ class PluginManager:
                              'firstParty': plugin_id in FIRST_PARTY_PLUGIN_IDS,
                              'hideUninstall': plugin_id in FIRST_PARTY_PLUGIN_IDS})
                 continue
-            snapshot = DEFAULT_REGISTRY.get(plugin_id)
-            active = snapshot is not None and snapshot.user_id == user_id and state['intent'] == 'enabled' and state['state'] != 'maintenance'
+            snapshot = DEFAULT_REGISTRY.get(plugin_id, user_id=user_id)
+            active = snapshot is not None and state['intent'] == 'enabled' and state['state'] != 'maintenance'
             rows.append({**state, 'name': manifest['name'], 'version': current['version'], 'digest': current['digest'],
                          'sourceLabel': snapshot.source_label if snapshot else 'installed',
                          'generation': snapshot.generation if active else 0,

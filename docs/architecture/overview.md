@@ -43,6 +43,8 @@ flowchart LR
 
 Core Workspace Service 统一运行目录与文件浏览，Execution Context 绑定不可变执行身份、工作区和调用约束，Security Service 复用现有 Gateway/Grant 进行实时授权。工具、插件 callback、子 Agent 和模型边界及旧数据兼容见[工作区与执行服务](execution-services.md)。
 
+子进程环境白名单、按用户与代次隔离的插件贡献，以及 Codex / DeepSeek Harness 源码参考与许可记录见[Runtime 安全与插件实例边界](runtime-reference-integration.md)。
+
 ## 数据服务
 
 `core/data` 提供 Provider / Source / Resource 目录、采集检查点、去重记录与可靠变更通知。邮箱保留采集链路；eLearning、事务、日程、账单、简报、知识、记忆通过原 MCP 或插件 RPC 提供资源引用。正文仍由原所有者管理，读取前后复查当前授权与来源状态。契约、事件语义与性能限制见[数据服务](data-service.md)。

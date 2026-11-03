@@ -54,6 +54,8 @@ MCP 调用在启动等待、授权、实际传输和结果释放处检查同一�
 
 ## 私有数据与兼容
 
+PluginRegistry 按 `(user_id, plugin_id, generation)` 核对实例，服务名称按用户隔离。发布只接受最新预留且未撤销的代次；管理停用也取消待发布代次。Shell 与委托进程以固定平台白名单继承环境，再由原沙箱落实文件、网络及临时目录边界；委托进程另使用私有 HOME。源码来源、契约及兼容限制见[Runtime 安全与插件实例边界](runtime-reference-integration.md)。
+
 `core/plugins/storage.py::private_data_handle` 为通用插件分配用户根下 `plugins/<plugin-id>`，拒绝不合法 ID 与目录符号链接；创建时收紧目录权限。第三方插件安装和调用均可取得宿主选择的句柄，调用方不能用 callback 替换数据路径。
 
 已有账单、事务、日程、简报、知识、记忆、自动化、Agent Hub 的 `domain_data_handle` 保持原路径与迁移机制；没有全库搬迁，也不重签或扩大旧 Grant。通用插件私有目录、账单/事务/日程/Agent Hub 原始存储加入统一文件与 shell 保护清单；简报及自动化数据库和 SQLite sidecar 也受保护。插件私有目录的祖先路径与 Work 私有路径均检查符号链接，避免通过目录别名绕过所有权。知识目录仍保留用户文档语义。
