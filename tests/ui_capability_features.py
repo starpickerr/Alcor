@@ -29,7 +29,9 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
     from agent.tools.tool_manager import ToolManager
     from core.capabilities.catalog import CapabilityCatalog
     from core.mcp.managed import PUBLIC_TOOLS, configurations
+    from tests.fixtures.runtime_artifacts import seed_runtime_artifacts
 
+    seed_runtime_artifacts()
     client = McpClient(next(config for config in configurations(ToolManager()) if config['name'] == 'elearning'))
     try:
         assert client.initialize()
