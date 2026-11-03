@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
   MessageSquare,
   Eye,
@@ -13,6 +13,8 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { SECURITY_POLICY_CHANGED } from '../../store/securityPolicyEvents'
 import { t, localizedLabel } from '../../i18n'
 import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
@@ -77,6 +79,8 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     apiClient.setBaseUrl(baseUrl)
     load()
   }, [baseUrl, load])
+
+  useEffect(() => { const refresh = () => { void load() }; window.addEventListener(SECURITY_POLICY_CHANGED, refresh); return () => window.removeEventListener(SECURITY_POLICY_CHANGED, refresh) }, [load])
 
   const flash = (key: string, msg: string) => {
     setStatusMap((m) => ({ ...m, [key]: msg }))
@@ -251,9 +255,21 @@ const VendorSection: React.FC<VendorSectionProps> = ({ data, onChanged }) => {
   // Custom provider modal: 'new' to create, or a provider to edit.
   const [customEditing, setCustomEditing] = useState<ModelProvider | 'new' | null>(null)
 
+  const location = useLocation()
+  const requestedCredential = new URLSearchParams(location.search).get('credential') || ''
+  const focusedCredential = useRef('')
+  useEffect(() => {
+    if (!requestedCredential || focusedCredential.current === requestedCredential) return
+    const provider = data.providers.find(row => requestedCredential === (row.is_custom ? `CUSTOM:${row.custom_id}` : modelSecretName(row.api_key_field)))
+    if (!provider) return
+    focusedCredential.current = requestedCredential
+    if (provider.is_custom) setCustomEditing(provider)
+    else setEditing(provider)
+  }, [requestedCredential, data.providers])
+
   const isCustomCard = (p: ModelProvider) => p.is_custom && !!p.custom_name
   // Unified grid: configured built-ins + all custom provider cards (web parity).
-  const shown = data.providers.filter((p) => p.configured || isCustomCard(p))
+  const shown = data.providers.filter((p) => p.configured || isCustomCard(p) || p.credential_status === 'repair-required' || p.credential_status === 'unavailable')
 
   return (
     <Card icon={<Database size={16} />} title={t('models_vendors')} subtitle={t('models_vendors_sub')}>
@@ -449,7 +465,7 @@ const VendorModal: React.FC<{
         label="API Key"
         labelAction={effective?.id === 'linkai' ? <ManageLinkAIKeyLink /> : undefined}
       >
-        <ModelCredentialLink name={modelSecretName(effective?.api_key_field)} configured={!!effective?.api_key_masked} />
+        <ModelCredentialLink name={modelSecretName(effective?.api_key_field)} configured={effective?.credential_status === 'unavailable' ? null : !!effective?.api_key_masked} needsRepair={effective?.credential_status === 'repair-required'} />
       </Field>
       {hasBase && (
         <Field label="API Base">
@@ -596,8 +612,8 @@ const CustomProviderModal: React.FC<{
         <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={setProtocolId} />
       </Field>
       <Field label="API Key">
-        {editing ? <ModelCredentialLink name={`CUSTOM:${editing.custom_id}`} configured={!!editing.api_key_masked} /> :
-          <p className="text-xs text-content-secondary">{localizedLabel({ zh: '保存厂商后，在安全中配置凭据。', en: 'Save this provider, then configure its credential in Security.' })}</p>}
+        {editing ? <ModelCredentialLink name={`CUSTOM:${editing.custom_id}`} configured={editing.credential_status === 'unavailable' ? null : !!editing.api_key_masked} needsRepair={editing.credential_status === 'repair-required'} /> :
+          <p className="text-xs text-content-secondary">{localizedLabel({ zh: '保存厂商后，可在此配置凭据。', en: 'Save this provider, then configure its credential here.' })}</p>}
       </Field>
       <Field label={t('models_custom_models')} hint={t('models_custom_models_hint')}>
         <div className="space-y-2">

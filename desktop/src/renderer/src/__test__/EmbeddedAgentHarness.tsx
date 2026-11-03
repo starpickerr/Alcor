@@ -1,5 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
 import EmbeddedAgent from '../components/EmbeddedAgent'
 
 const mount = document.createElement('div')
@@ -15,5 +16,5 @@ declare global {
 }
 
 window.mountEmbedded = (context, presetRequest) => root.render(
-  <EmbeddedAgent key={context} context={context} presetRequest={presetRequest || undefined} />)
+  <HashRouter><EmbeddedAgent key={context} context={context} presetRequest={presetRequest || undefined} /></HashRouter>)
 window.detachEmbedded = () => root.render(null)

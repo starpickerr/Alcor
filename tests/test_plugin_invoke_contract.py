@@ -82,7 +82,7 @@ def test_read_only_agent_can_query_but_cannot_write(tmp_path):
 
     authz = PluginAuthorizationStore()
     session = PluginSession(Path("stella-plugins-workspace/plugins/bills"),
-                            source_label="test", registry=PluginRegistry(), authz=authz)
+                            source_label="test", registry=PluginRegistry(), authz=authz, data_handle={'namespace':'stella.bills','dbPath':str(tmp_path/'bills.db')})
     authz.issue(grant_ref="read", plugin_id="stella.bills", user_id=session.user_id,
                 capabilities=["bills.read"], purposes=["interactive"])
     try:

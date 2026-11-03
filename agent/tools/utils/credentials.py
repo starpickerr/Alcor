@@ -2,7 +2,7 @@
 Shared credential-path guard for file tools.
 
 The agent's API keys live in ~/.stella/.env and must only ever be reached through
-the env_config tool. Every tool that can surface file contents to the model has
+the owning feature settings. Every tool that can surface file contents to the model has
 to apply the same check - guarding only the read tool leaves the others as
 bypasses (a successful edit, for example, returns a diff containing the
 surrounding lines).
@@ -16,17 +16,18 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from common.utils import expand_path
 
 # Paths whose CONTENT mirrors the process environment (and thus any secrets
-# loaded from ~/.stella/.env). Reading them bypasses the env_config boundary.
+# loaded from ~/.stella/.env). Reading them bypasses the owner configuration boundary.
 # Matches /proc/self/environ, /proc/thread-self/environ and /proc/<pid>/environ.
 _PROC_ENVIRON_RE = re.compile(r"^/proc/(\d+|self|thread-self)/environ$")
 
 DENIED_MESSAGE = (
     "Error: Access denied. API keys and credentials must be accessed "
-    "through the env_config tool only."
+    "through their owning feature settings only."
 )
 ELEARNING_DENIED_MESSAGE = (
     "Error: Direct access to eLearning login settings and session cookies is denied; "
@@ -48,6 +49,9 @@ def is_elearning_credential_path(absolute_path: str) -> bool:
 
 
 def credential_denial_message(absolute_path: str) -> str:
+    from core.security.protected_paths import denial_reason
+    if reason := denial_reason(absolute_path):
+        return 'Error: ' + reason
     from common.state_dir import data_service_db
     root=os.path.realpath(data_service_db(ensure=False).parent)
     real=os.path.realpath(absolute_path)
@@ -57,12 +61,16 @@ def credential_denial_message(absolute_path: str) -> str:
 
 
 def protected_credential_paths() -> set[str]:
+    from core.security.policy_store import RunPolicyStore
     from config import get_data_root, get_weixin_credentials_path
     from common.state_dir import mcp_config_file, shared_root, state_root, briefing_db, scheduler_file
     email_db = briefing_db(ensure=False).parent.parent / "email/email.db"
     elearning_config = briefing_db(ensure=False).with_name('elearning.json')
     return {os.path.realpath(path) for path in (
+        str(RunPolicyStore().path),
         expand_path("~/.stella/.env"),
+        expand_path("~/.stella/mcp_oauth.json"),
+        expand_path("~/.stella/mcp_oauth.json.tmp"),
         os.path.join(get_data_root(), "config.json"),
         get_weixin_credentials_path(),
         str(mcp_config_file()),
@@ -83,18 +91,25 @@ def protected_credential_paths() -> set[str]:
 
 def protected_credential_folders() -> set[str]:
     """Private connector files and Core lifecycle state, including migration copies."""
-    from common.state_dir import briefing_db, shared_root
+    from common.state_dir import briefing_db, shared_root, user_root
     user = briefing_db(ensure=False).parent.parent
     folders = {
         user / 'email', user / 'elearning', user / 'data', user / 'plugins',
         user / 'bills', user / 'todos', user / 'calendar', user / 'agent-hub', user / 'briefing' / 'elearning-sessions',
         user / '.stella-private-migrations',
         shared_root() / 'plugin-packages' / 'management',
+        shared_root() / 'managed-runtimes',
+        user_root() / 'mcp-runtime',
     }
+    import sys
+    if sys.platform == 'darwin':
+        # Fixed OS credential stores, not a scan or enumeration of accounts.
+        folders.update({Path.home() / 'Library/Keychains', Path('/Library/Keychains'), Path('/private/var/Keychains')})
     # Historical directory migrations left retired data next to the active
     # directory. Keep these protected while new operations use the fixed root.
     folders.update(user.glob('.stella-migrate-*'))
     folders.update(user.glob('.stella-retired-*'))
+    folders.update(Path(path).parent / '.security-private-writes' for path in protected_credential_paths())
     return {os.path.realpath(path) for path in folders}
 
 
@@ -108,6 +123,9 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
       2. Symlinks resolving to ~/.stella/.env; an exact abspath match keeps the
          link target and can be bypassed.
     """
+    from core.security.protected_paths import denial_reason
+    if denial_reason(absolute_path):
+        return True
     # Compare on both the normalized path and the symlink-resolved path,
     # in POSIX form so the /proc regex matches regardless of os.sep.
     candidates = set()
@@ -123,7 +141,14 @@ def is_credential_path(absolute_path: str, protected_paths: set[str] | None = No
             return True
     if is_elearning_credential_path(absolute_path):
         return True
-    from common.state_dir import briefing_db
+    from common.state_dir import briefing_db, shared_root
+    # A fixed Core layout, not a scan of other users' private folders.
+    users = os.path.realpath(shared_root() / 'users').replace(os.sep, '/')
+    for candidate in candidates:
+        if candidate.startswith(users + '/'):
+            parts = candidate[len(users) + 1:].split('/')
+            if len(parts) > 1 and parts[1] == 'mcp-runtime':
+                return True
     user = os.path.realpath(briefing_db(ensure=False).parent.parent)
     for candidate in candidates:
         if candidate.startswith(user + '/'):

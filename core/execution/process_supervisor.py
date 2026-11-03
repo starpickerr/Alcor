@@ -37,4 +37,4 @@ class ProcessSupervisor:
     @staticmethod
     def _stop(process: subprocess.Popen) -> None:
         from common.process_tree import stop_process_tree
-        stop_process_tree(process)
+        stop_process_tree(process, owned_session=True)

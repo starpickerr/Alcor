@@ -45,6 +45,8 @@ class _FakeExecutor:
 
 def _make_agent(history):
     agent = Agent.__new__(Agent)
+    from core.security.protected_paths import current_revision
+    agent._protection_revision = current_revision()  # Same current-context admission as Agent.__init__.
     agent.model = object()  # truthy; run_stream only checks `if not self.model`
     agent.tools = []
     agent.max_steps = 100

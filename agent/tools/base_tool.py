@@ -188,7 +188,12 @@ class BaseTool:
                 )
                 return ToolResult.fail(denial)
         try:
-            return self.execute(params)
+            from core.security.protected_paths import current_revision
+            revision = current_revision()
+            result = self.execute(params)
+            if current_revision() != revision:
+                return ToolResult.fail('Protection policy changed during execution; the result was stopped. Start a new operation.')
+            return result
         except Exception as e:
             logger.exception("[Tool] %s execute raised", self.name)
             return ToolResult.fail(str(e))

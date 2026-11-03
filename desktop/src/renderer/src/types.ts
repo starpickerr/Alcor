@@ -37,13 +37,6 @@ export interface ElectronAPI {
   // Optional app config: first-run default theme + display name. Null when
   // the build ships no app config (standard build).
   getAppConfig?: () => Promise<{ defaultTheme?: string; appName?: string } | null>
-  // Generic HTTPS relay via the main process (bypasses renderer CORS).
-  httpRelay?: (req: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) => Promise<{ ok: boolean; status: number; headers: Record<string, string>; body: string }>
   // Update checks against GitHub Releases. downloadUpdate opens the given URL
   // (or the releases page) in the system browser.
   checkForUpdate?: () => Promise<void>
@@ -507,6 +500,7 @@ export interface ModelProvider {
   id: string
   label: LocalizedLabel
   configured: boolean
+  credential_status?: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
   is_custom: boolean
   custom_id?: string
   custom_name?: string
@@ -774,7 +768,7 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   notification_route?: NotificationRoute | null
-  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
+  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
   run_policy?: import('./api/client').RunPolicy
   owner_agent_id?: string
   permission_needs_confirmation?: boolean
@@ -1104,6 +1098,8 @@ export interface BriefingRule {
 export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<BriefingRule, 'enabled' | 'source'>>
 
 export interface BriefingMailbox {
+  credential_status?: 'configured' | 'not_configured' | 'unavailable' | 'repair_required'
+  credential_revision?: string | null
   id: string
   enabled: boolean
   host: string
@@ -1123,6 +1119,7 @@ export interface BriefingSettings {
 }
 
 export interface BriefingMailboxInput {
+  credential_revision?: string
   id?: string
   enabled?: boolean
   action?: 'add' | 'save'
@@ -1158,9 +1155,14 @@ export interface ElearningSettings {
   account_id: string
   password_set: boolean
   password_masked: string
+  credential_states?: Record<ElearningCredentialField, 'configured' | 'not_configured' | 'unavailable' | 'repair_required'>
+  credential_revision?: string
+  session_revision?: string
 }
 
-export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
+export type ElearningCredentialField = 'password' | 'token' | 'session'
+export type ElearningCredentialInput = { credential_field: ElearningCredentialField; credential_value: string; credential_revision: string }
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string; token?: string; credential_revision?: string }
 
 export interface McpServerInfo {
   settings_url?: string | null

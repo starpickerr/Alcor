@@ -88,7 +88,7 @@ def test_bootstrap_survives_kill_with_single_current_pointers(tmp_path, monkeypa
         proc2.wait(timeout=15)
     except subprocess.TimeoutExpired:
         proc2.kill()
-    assert ok, log2.read_text(errors="replace")[-2000:]
+    assert ok, log2.read_text(errors="replace")
 
     packages = home / "stella" / "plugin-packages" / "packages"
     currents = {p.parent.name for p in packages.glob("stella.*/current.json")}

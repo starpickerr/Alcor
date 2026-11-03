@@ -31,19 +31,6 @@ echo "==> Installing build dependencies"
 
 # --- run pyinstaller from repo root so relative datas resolve -------------
 cd "$ROOT"
-echo "==> Running PyInstaller (onedir)"
-"$PYTHON" -m PyInstaller "$BUILD_DIR/stella-backend.spec" \
-  --noconfirm \
-  --distpath "$BUILD_DIR/dist" \
-  --workpath "$BUILD_DIR/build-work"
-
-echo "==> Running PyInstaller (onedir) for stella-plugin-runner"
-"$PYTHON" -m PyInstaller "$BUILD_DIR/stella-plugin-runner.spec" \
-  --noconfirm \
-  --distpath "$BUILD_DIR/dist" \
-  --workpath "$BUILD_DIR/build-work-runner"
-
-# Build independently owned MCP deliverables; fail the release if either is missing.
 for spec in "email-mcp:email" "fudan-elearning-mcp:elearning"; do
   MCP_REPO="$ROOT/../MCP/${spec%%:*}"
   MCP_PYTHON="$MCP_REPO/.venv/bin/python"
@@ -53,6 +40,18 @@ for spec in "email-mcp:email" "fudan-elearning-mcp:elearning"; do
   fi
   "$MCP_PYTHON" "$MCP_REPO/build_mcp.py" --dist-dir "$BUILD_DIR/dist"
 done
+"$PYTHON" "$ROOT/scripts/build_mcp_resources.py" --dist "$BUILD_DIR/dist" --resources "$BUILD_DIR/connector-resources"
+echo "==> Running PyInstaller (onedir)"
+"$PYTHON" -m PyInstaller "$BUILD_DIR/stella-backend.spec" \
+  --clean --noconfirm \
+  --distpath "$BUILD_DIR/dist" \
+  --workpath "$BUILD_DIR/build-work"
+
+echo "==> Running PyInstaller (onedir) for stella-plugin-runner"
+"$PYTHON" -m PyInstaller "$BUILD_DIR/stella-plugin-runner.spec" \
+  --clean --noconfirm \
+  --distpath "$BUILD_DIR/dist" \
+  --workpath "$BUILD_DIR/build-work-runner"
 
 echo ""
 echo "==> Done. Bundles at:"

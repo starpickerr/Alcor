@@ -52,7 +52,9 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
 
   useEffect(() => {
     if (!opened) return
+    let active = true
     const onMessage = async (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow || event.origin !== 'null') return
       const data = event.data || {}
       if (data.type !== 'stella-bridge-invoke') return
       if (data.pluginId !== opened.pluginId || data.pageId !== opened.pageId) return
@@ -73,6 +75,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
           }),
         })
         const body = await response.json()
+        if (!active || source !== iframeRef.current?.contentWindow) return
         source?.postMessage(
           {
             type: 'stella-bridge-result',
@@ -84,6 +87,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
           '*'
         )
       } catch (err) {
+        if (!active || source !== iframeRef.current?.contentWindow) return
         source?.postMessage(
           {
             type: 'stella-bridge-result',
@@ -96,7 +100,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
       }
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => { active = false; window.removeEventListener('message', onMessage) }
   }, [opened, baseUrl])
 
   if (error) {
@@ -119,7 +123,7 @@ const PluginPageHost: React.FC<Props> = ({ baseUrl, pluginId, pageId, title }) =
       title={title || pageId}
       src={`${baseUrl}${opened.contentUrl}`}
       className="flex-1 w-full min-h-0 border-0 bg-[#f6f4ef]"
-      sandbox="allow-scripts allow-same-origin allow-forms"
+      sandbox="allow-scripts"
     />
   )
 }

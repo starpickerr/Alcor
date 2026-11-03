@@ -45,13 +45,29 @@ def policy_for_task(task, agent_id=None):
 
 def describe_task(task, agent_id=None):
     policy = policy_for_task(task, agent_id)
-    return {**task, 'run_policy': policy, 'run_permission_mode': policy['filesystem_mode'],
+    return {**task, 'run_policy': policy, 'run_permission_mode': policy.get('permission_mode', policy['filesystem_mode']),
             'permission_source': 'independent', 'permission_needs_confirmation': policy.get('migration_status') != 'complete'}
 
 
 def _check_delegation(candidate, ceiling):
-    if _MODES[candidate['filesystem_mode']] > _MODES[ceiling['filesystem_mode']]:
+    custom = candidate.get('permission_mode') == 'custom' or ceiling.get('permission_mode') == 'custom'
+    if not custom and _MODES[candidate['filesystem_mode']] > _MODES[ceiling['filesystem_mode']]:
         raise PermissionError('Task filesystem permission exceeds the delegating run')
+    from agent.permission.security_policy import effective_rules
+    from core.security.capabilities import authorization, CapabilityDescriptor
+    from core.security.run_policy import OPERATIONS
+    candidate_policy = gateway_policy(candidate) if 'preset' not in candidate else candidate
+    parent_policy = gateway_policy(ceiling) if 'preset' not in ceiling else ceiling
+    child_rules, parent_rules = effective_rules(candidate_policy), effective_rules(parent_policy)
+    # Named legacy modes keep inheriting the caller's historical restrictions
+    # below. Explicit custom rules must be checked before that inheritance so
+    # a caller cannot conceal an escalation behind an identical mode name.
+    if custom and any(_ORDER[value] > _ORDER[parent_rules[name]] for name, value in child_rules.items()):
+        raise PermissionError('Task custom rules exceed the delegating run')
+    if any(_ORDER[authorization(candidate_policy, CapabilityDescriptor('builtin:delegated', 'builtin', operation, filesystem))]
+           > _ORDER[authorization(parent_policy, CapabilityDescriptor('builtin:delegated', 'builtin', operation, filesystem))]
+           for operation in OPERATIONS for filesystem in (True, False)):
+        raise PermissionError('Task operation permission exceeds the delegating run')
     for path in candidate.get('extra_roots') or []:
         real = os.path.realpath(path)
         if not any(os.path.commonpath((real, os.path.realpath(root))) == os.path.realpath(root)
@@ -93,8 +109,15 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
     current = RunPolicyStore().get(key)
     if not creating and not trusted_user_edit(origin) and (current is None or current.get('migration_status') == 'needs_confirmation'):
         raise PermissionError('Task policy repair requires an authenticated user action')
-    base = ({'filesystem_mode': 'read-only', 'capabilities': {}, 'connections': {}, 'extra_roots': [],
-             'legacy_restrictions': {}, 'migration_status': 'complete'} if creating or current is None else deepcopy(current))
+    from core.security.run_policy import default_template
+    base = deepcopy(default_template() if creating or current is None else current)
+    action = task.get('action') or {}
+    if creating and trusted_user_edit(origin) and (action.get('conversation_mode') in {'source', 'reuse', 'new'}
+            or action.get('source_session_id') or action.get('execution_session_id')):
+        # Linking a conversation supplies context, never its permissions or a
+        # wider default intended only for directly created independent jobs.
+        from core.security.run_policy import _seed
+        base = _seed({'filesystem_mode': 'read-only'})
     if requested is not None:
         patch = validate_policy(requested)
         if not creating and patch.get('policy_revision') is not None and patch['policy_revision'] != (current or {}).get('policy_revision', 0):
@@ -104,6 +127,11 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
                 raise ValueError('Task policy repair requires a complete explicit choice')
             base['legacy_restrictions'] = {}
             base['migration_status'] = 'complete'
+        if 'filesystem_mode' in patch and patch.get('permission_mode') != 'custom':
+            if current and current.get('permission_mode') == 'custom' and 'permission_mode' not in patch:
+                raise ValueError('This custom task requires a custom-aware client')
+            base.pop('permission_mode', None)
+            base.pop('rules', None)
         base.update(patch)
         if trusted_user_edit(origin) and 'filesystem_mode' in patch:
             base['legacy_restrictions'] = {}
@@ -111,7 +139,13 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
     if mode not in (None, '', 'inherit'):
         if mode not in _MODES:
             raise ValueError('invalid run permission mode')
+        if current and current.get('permission_mode') == 'custom':
+            raise ValueError('This custom task requires a custom-aware client')
+        base.pop('permission_mode', None)
+        base.pop('rules', None)
         base['filesystem_mode'] = mode
+    if base.get('migration_status') != 'complete':
+        raise PermissionError('Permissions require owner confirmation')
     base.pop('policy_revision', None)
     if not trusted_user_edit(origin):
         if not creating:
@@ -123,6 +157,15 @@ def prepare_task_policy(task, *, agent_id=None, origin='user', creating=True):
         _, effective, _ = _current_authorization(None, identity.agent_id or agent_id,
                                                  identity.session_id, None, False)
         ceiling = effective['policy']
+        if creating and requested is None and mode in (None, '', 'inherit'):
+            # New Agent-created tasks copy the effective intersection, never the
+            # caller's later edits or a subsequently changed default template.
+            merged = intersect(gateway_policy(base), ceiling)
+            base['filesystem_mode'] = merged['filesystem_mode']
+            base['extra_roots'] = merged['extra_roots']
+            base['connections'] = merged['connections']
+            base['permission_mode'] = 'custom'
+            base['rules'] = merged['rules']
         _check_delegation(base, ceiling)
         # Persist restrictions too: a later scheduler must not lose a caller's
         # legacy deny merely because its filesystem mode has the same name.

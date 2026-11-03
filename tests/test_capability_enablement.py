@@ -282,38 +282,30 @@ def test_closed_mcp_client_cannot_reinitialize(monkeypatch):
 
 def test_mcp_disable_terminates_a_real_process_during_initialize(tmp_path, monkeypatch):
     import sys
-
-    from hashlib import sha256
-    from common.state_dir import user_root
     from common.runtime_identity import identity_scope
-    with identity_scope(user_id='alice'):
-        marker = user_root() / 'mcp-runtime' / sha256(b'Documents').hexdigest() / 'initializing'
+    from core.security.mcp_runtime import private_storage
+
     script = tmp_path / "slow_mcp.py"
     script.write_text(
-        "import sys,time\nfrom pathlib import Path\nfor line in sys.stdin:\n Path(sys.argv[1]).touch()\n time.sleep(30)\n"
+        "import sys,time\nfrom pathlib import Path\nfor line in sys.stdin:\n Path('initializing').touch()\n time.sleep(30)\n"
     )
+    config = {"name": "Documents", "type": "stdio", "command": sys.executable, "args": [str(script)]}
+    with identity_scope(user_id='alice'):
+        marker = private_storage(config, 'alice') / 'initializing'
     manager = _manager(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        manager,
-        "_load_mcp_configs",
-        lambda: [
-            {
-                "name": "Documents",
-                "type": "stdio",
-                "command": sys.executable,
-                "args": [str(script), str(marker)],
-            }
-        ],
-    )
-    manager.set_mcp_enabled("Documents", True)
-    _wait(marker.exists)
-    with manager._mcp_lock:
-        client = next(iter(manager._mcp_pending_clients.values()))
-        process = client._proc
-    manager.set_mcp_enabled("Documents", False)
-    _wait(lambda: process.poll() is not None)
-    assert manager._mcp_tool_instances == {}
-    assert manager.mcp_catalog()[0]["state"] == "disabled"
+    monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
+    try:
+        manager.set_mcp_enabled("Documents", True)
+        _wait(marker.exists)
+        with manager._mcp_lock:
+            client = next(iter(manager._mcp_pending_clients.values()))
+            process = client._proc
+        manager.set_mcp_enabled("Documents", False)
+        _wait(lambda: process.poll() is not None)
+        assert manager._mcp_tool_instances == {}
+        assert manager.mcp_catalog()[0]["state"] == "disabled"
+    finally:
+        manager.shutdown_mcp()
 
 
 def test_toggle_http_persists_and_catalog_reads_never_start_other_servers(
@@ -518,7 +510,7 @@ def test_oauth_callback_reloads_only_originating_live_generation(
                 error="", error_description="", code="test-code", state=state
             ),
         )
-        assert "授权成功" in web.McpOAuthCallbackHandler().GET()
+        assert ("会话已过期" if stale else "授权成功") in web.McpOAuthCallbackHandler().GET()
         assert b._mcp_generations["Documents"] == before_b
         if stale:
             assert a._mcp_generations["Documents"] == before_a
@@ -610,7 +602,8 @@ def test_remote_mcp_disable_during_preparation_never_dispatches(monkeypatch, pha
     assert results == [False] and client._initialized is False
 
 
-def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
+@pytest.mark.parametrize("notification_stream", [False, True])
+def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch, notification_stream):
     import threading
     from agent.tools.mcp.mcp_client import McpClient
 
@@ -644,10 +637,17 @@ def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
             assert release.wait(3)
         return Response()
 
-    monkeypatch.setattr("urllib.request.urlopen", remote)
+    monkeypatch.setattr(client, "_open_remote", remote)
     monkeypatch.setattr(client, "_url_allowed", lambda url: True)
     monkeypatch.setattr(client, "_maybe_load_oauth", lambda: None)
-    worker = threading.Thread(target=lambda: results.append(client.initialize()))
+    def read_late_response():
+        from urllib.request import Request
+        try:
+            with client._remote_response(Request('https://mcp.invalid', data=b'{}'), 3):
+                raise AssertionError('Closed generation accepted a late response')
+        except RuntimeError:
+            results.append(False)
+    worker = threading.Thread(target=read_late_response if notification_stream else lambda: results.append(client.initialize()))
     worker.start()
     try:
         assert entered.wait(3)
@@ -657,7 +657,7 @@ def test_remote_mcp_closes_session_assigned_after_shutdown(monkeypatch):
         worker.join(3)
     assert not worker.is_alive()
     assert results == [False]
-    assert requests == [("POST", None), ("DELETE", "late-session")]
+    assert requests == [("POST", None)]  # Revocation must never emit a new cleanup request.
     assert client._http_session_id is None and client._initialized is False
     assert closed
 

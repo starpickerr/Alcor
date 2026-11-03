@@ -132,7 +132,7 @@ def invoke_briefing(
     idem = payload.pop("idempotencyKey", None)
     from core.security.briefing_peers import briefing_peer_workflow
 
-    with briefing_peer_workflow(method):
+    with briefing_peer_workflow(method, session=session):
         return session.invoke_contract(
             contract=CONTRACT,
             method=method,

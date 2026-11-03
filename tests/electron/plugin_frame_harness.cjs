@@ -35,7 +35,7 @@ document.addEventListener('securitypolicyviolation', (e) => window.__violations.
   try {
     const resp = await fetch('/probe.js');
     r.cspHeader = resp.headers.get('content-security-policy');
-  } catch (e) { r.cspHeaderError = String(e); }
+  } catch (e) { r.sameOriginFetchBlocked = true; }
   try {
     await fetch('http://example.invalid/x', { mode: 'no-cors' });
     r.foreignFetch = 'allowed';
@@ -74,6 +74,13 @@ app.whenReady().then(() => {
         resourceUrl: `http://127.0.0.1:${port}/index.html`,
         parent
       })
+      let cspHeader = ''
+      child.webContents.session.webRequest.onCompleted(details => {
+        if (details.resourceType === 'mainFrame') {
+          const headers = details.responseHeaders || {}
+          cspHeader = (headers['Content-Security-Policy'] || headers['content-security-policy'] || []).join('; ')
+        }
+      })
       const prefs = child.webContents.getLastWebPreferences()
       await new Promise((resolve, reject) => {
         child.webContents.once('did-finish-load', resolve)
@@ -85,6 +92,7 @@ app.whenReady().then(() => {
         if (!probe) await new Promise((r) => setTimeout(r, 100))
       }
       const violations = await child.webContents.executeJavaScript('window.__violations')
+      probe.cspHeader = cspHeader
 
       // Navigation / popup hardening (R03): foreign navigations and window.open must be denied.
       const allowedOrigin = `http://127.0.0.1:${port}/`
@@ -100,6 +108,9 @@ app.whenReady().then(() => {
       )
       await new Promise((r) => setTimeout(r, 300))
       const urlAfterNav = child.webContents.getURL()
+      await child.webContents.executeJavaScript('void location.assign(' + JSON.stringify(allowedOrigin + 'index.html.evil') + ')')
+      await new Promise(r => setTimeout(r, 100))
+      const urlAfterPrefix = child.webContents.getURL()
 
       // window.open must be denied by setWindowOpenHandler.
       const openResult = await child.webContents.executeJavaScript(
@@ -120,6 +131,7 @@ app.whenReady().then(() => {
           identity: child.__stellaPluginIdentity || null,
           navigation: {
             urlAfterForeignAssign: urlAfterNav,
+            urlAfterPrefix,
             navigatedAway,
             windowOpen: openResult
           }

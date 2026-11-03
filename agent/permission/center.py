@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
@@ -47,16 +46,6 @@ def save_conversation_policy(session: str, value: dict | None, agent: str | None
     return gateway_policy(saved)
 
 
-def _write_config(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".security-tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.chmod(tmp, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, ensure_ascii=False, indent=4)
-    os.replace(tmp, path)
-
-
 def _env_path() -> Path:
     from common.utils import expand_path
     return Path(expand_path("~/.stella/.env"))
@@ -76,116 +65,91 @@ def _env_keys() -> set[str]:
 
 
 def secrets() -> list[dict]:
+    from core.security.control import require_owner
+    require_owner()
     from config import MODEL_CONFIG_TO_ENV, conf
-    names = {name: "credential store" for name in _env_keys()}
+    from core.security.env_store import environment_statuses
+    configured = environment_statuses(_env_path())
+    names = {name: "credential store" for name in configured}
     display_names = {}
-    cfg = conf()
-    for key, value in cfg.items():
-        if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
+    from config import get_data_root
+    from core.security.config_credentials import read_document, statuses
+    path = Path(get_data_root()) / 'config.json'
+    cfg = read_document(path, default=dict(conf()))
+    model_states = statuses(path, cfg)
+    for key, state in model_states.items():
+        if key.startswith('CUSTOM:'):
+            name = key
+            names[name] = 'custom model provider'
+            entry = next(p for p in cfg.get('custom_providers', []) if 'CUSTOM:' + p['id'] == key)
+            display_names[name] = str(entry.get('name') or entry['id']).strip()
+        else:
             name = MODEL_CONFIG_TO_ENV.get(key, key.upper())
-            names[name] = "model configuration" if name not in names else "model configuration + credential store"
-    search = (cfg.get("tools") or {}).get("web_search") or {}
-    if search.get("bocha_api_key"):
-        names["BOCHA_API_KEY"] = "model configuration"
-    for entry in cfg.get("custom_providers") or []:
-        if not isinstance(entry, dict):
-            continue
-        key = str(entry.get("api_key") or "").strip()
-        provider_id = str(entry.get("id") or "").strip()
-        if not key or not provider_id:
-            continue
-        name = f"CUSTOM:{provider_id}"
-        names[name] = "custom model provider"
-        display_name = entry.get("name")
-        if isinstance(display_name, str) and display_name.strip():
-            display_names[name] = display_name.strip()
+            names[name] = 'model configuration' if name not in names else 'model configuration + credential store'
+        configured[name] = state
     return [
-        {"name": name, "source": source, "configured": True,
+        {"name": name, "source": source, "configured": configured[name],
          **({"display_name": display_names[name]} if name in display_names else {})}
         for name, source in sorted(names.items())
     ]
 
 
 def set_secret(name: str, value: str | None) -> None:
+    from core.security.control import require_owner
+    require_owner()
     if not isinstance(name, str) or (not name.startswith("CUSTOM:") and not _KEY.fullmatch(name)):
         raise ValueError("invalid credential name")
     if value is not None and (not isinstance(value, str) or "\n" in value or "\r" in value):
         raise ValueError("invalid credential value")
-    from config import MODEL_CONFIG_TO_ENV, conf, get_data_root, read_config_template, sync_model_config_to_env
+    from config import (MODEL_CONFIG_TO_ENV, conf, get_data_root, read_config_template,
+                        sync_model_config_to_env, sync_image_generation_custom_provider_env)
+    from core.security.config_credentials import read_document, save_runtime
+    path = Path(get_data_root()) / 'config.json'
+    data = read_document(path, default=read_config_template())
     current = conf()
-    if name == "BOCHA_API_KEY":
-        from copy import deepcopy
-        path = Path(get_data_root()) / "config.json"
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-        tools = deepcopy(current.get("tools") or {})
-        tools.setdefault("web_search", {})["bocha_api_key"] = value or ""
-        data["tools"] = tools
-        _write_config(path, data)
-        current["tools"] = tools
-        if name in _env_keys():
-            from agent.tools.env_config.env_config import EnvConfig
-            tool = EnvConfig()
-            entries = tool._read_env_file()
-            entries.pop(name, None)
-            tool._write_env_file(entries)
-        if value:
-            os.environ[name] = value
-        else:
-            os.environ.pop(name, None)
-        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
-               decision="policy_change", reason="Search credential status changed.")
-        return
-    if name.startswith("CUSTOM:"):
-        provider_id = name[len("CUSTOM:"):]
-        providers = current.get("custom_providers") or []
-        if not provider_id or not any(isinstance(p, dict) and p.get("id") == provider_id for p in providers):
-            raise ValueError("unknown custom model provider")
-        updated = [{**p, "api_key": value or ""} if isinstance(p, dict) and p.get("id") == provider_id else p for p in providers]
-        path = Path(get_data_root()) / "config.json"
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-        data["custom_providers"] = updated
-        _write_config(path, data)
-        current["custom_providers"] = updated
-        from config import sync_image_generation_custom_provider_env
-        sync_image_generation_custom_provider_env(current, overwrite=True)
-        _refresh_model_clients()
-        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
-               decision="policy_change", reason="Custom model credential status changed.")
-        return
     config_key = next((key for key, env_key in MODEL_CONFIG_TO_ENV.items() if env_key == name), name.lower())
-    if (config_key in current or config_key in MODEL_CONFIG_TO_ENV or config_key == "custom_api_key") and (config_key.endswith("_api_key") or config_key.endswith("_token")):
-        if name in _env_keys():
-            from agent.tools.env_config.env_config import EnvConfig
-            env_tool = EnvConfig()
-            entries = env_tool._read_env_file()
-            entries.pop(name, None)
-            env_tool._write_env_file(entries)
-        path = Path(get_data_root()) / "config.json"
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-        data[config_key] = value or ""
-        _write_config(path, data)
-        current[config_key] = value or ""
+    is_model = config_key in MODEL_CONFIG_TO_ENV and config_key.endswith('_api_key') or config_key == 'custom_api_key'
+    if name.startswith('CUSTOM:') or name == 'BOCHA_API_KEY' or is_model:
+        if name.startswith('CUSTOM:'):
+            provider_id = name[len('CUSTOM:'):]
+            provider = next((p for p in data.get('custom_providers', [])
+                             if isinstance(p, dict) and p.get('id') == provider_id), None)
+            if provider is None:
+                raise ValueError('unknown custom model provider')
+            provider['api_key'] = value or ''
+        elif name == 'BOCHA_API_KEY':
+            data.setdefault('tools', {}).setdefault('web_search', {})['bocha_api_key'] = value or ''
+        else:
+            data[config_key] = value or ''
+        save_runtime(path, data, current)
         sync_model_config_to_env(current, overwrite=True)
-        if config_key not in MODEL_CONFIG_TO_ENV:
+        sync_image_generation_custom_provider_env(current, overwrite=True)
+        if name == 'BOCHA_API_KEY' or (is_model and config_key not in MODEL_CONFIG_TO_ENV):
             if value:
                 os.environ[name] = value
             else:
                 os.environ.pop(name, None)
         _refresh_model_clients()
-        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
-               decision="policy_change", reason="Model credential status changed.")
+        # This is a separate, recoverable cleanup after the authoritative file
+        # and runtime agree. Its failure must not revive the retired env value.
+        if name in _env_keys():
+            from core.security.env_store import EnvironmentFile
+            try:
+                EnvironmentFile().update_secret(name, None)
+            except (OSError, PermissionError):
+                from common.log import logger
+                logger.warning('[Credentials] Legacy duplicate cleanup pending; model configuration remains authoritative')
+        record(operation='delete' if value is None else 'set', resource=f'credential:{name}', risk='L3',
+               decision='policy_change', reason='Model credential status changed.')
         return
-    from agent.tools.env_config.env_config import EnvConfig
-    tool = EnvConfig()
+    from core.security.env_store import EnvironmentFile
+    tool = EnvironmentFile()
     tool._ensure_env_file()
-    entries = tool._read_env_file()
+    tool.update_secret(name, value)
     if value is None:
-        entries.pop(name, None)
         os.environ.pop(name, None)
     else:
-        entries[name] = value
         os.environ[name] = value
-    tool._write_env_file(entries)
     record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
            decision="policy_change", reason="Credential status changed in the credential store.")
 
@@ -341,7 +305,7 @@ def describe_task_permission(task: dict) -> dict:
         return {**base, 'effective_mode': None, 'permission_source': 'independent', 'unknown': True,
                 'policy_error': 'Task policy is missing or changed; repair permissions before rerunning.'}
     if policy:
-        return {**base, 'effective_mode': policy['filesystem_mode'], 'permission_source': 'independent',
+        return {**base, 'effective_mode': policy.get('permission_mode', policy['filesystem_mode']), 'permission_source': 'independent',
                 'unknown': policy.get('migration_status') == 'needs_confirmation',
                 'policy_error': 'Legacy permissions need confirmation.' if policy.get('migration_status') == 'needs_confirmation' else None}
     if explicit in {"read-only", "workspace-write", "full-access"}:
@@ -439,8 +403,8 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
         data_access = {"available":False,"resources":[],"external_transfers":[]}
     return {
         "global_policy": global_policy(), "effective_policy": effective,
-        "effective_mode": effective.get("filesystem_mode", effective_mode(effective)), "effective_rules": effective_rules(effective),
-        "policy_source": source, "mode_definitions": [row for row in MODE_DEFINITIONS if row['id'] != 'custom'],
+        "effective_mode": effective.get("permission_mode", effective.get("filesystem_mode", effective_mode(effective))), "effective_rules": effective_rules(effective),
+        "policy_source": source, "mode_definitions": MODE_DEFINITIONS,
         "authorized_roots": [work_root, *(effective.get("extra_roots") or [])],
         "policy_error": effective.get("error"),
         "process_isolation": isolation,

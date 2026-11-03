@@ -137,14 +137,17 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ValueError("security policy must be an object")
     value = _migrate_legacy(value)
-    run_fields = {'filesystem_mode', 'capabilities', 'policy_revision', 'migration_status'}
+    run_fields = {'filesystem_mode', 'permission_mode', 'capabilities', 'policy_revision', 'migration_status'}
     unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"} - run_fields
     if unknown:
         raise ValueError(f"unknown security policy fields: {', '.join(sorted(unknown))}")
     result = {}
     if any(key in value for key in run_fields - {'migration_status'}):
         from core.security.run_policy import validate_policy
-        result.update(validate_policy({key: value[key] for key in run_fields - {'migration_status'} if key in value}))
+        run_patch = {key: value[key] for key in run_fields - {'migration_status'} if key in value}
+        if value.get('permission_mode') == 'custom':
+            run_patch['rules'] = value.get('rules')
+        result.update(validate_policy(run_patch))
     if 'migration_status' in value:
         if value['migration_status'] not in {'complete', 'needs_confirmation'}:
             raise ValueError('invalid policy migration status')
@@ -205,7 +208,7 @@ def merge(base: dict, patch: dict) -> dict:
         result.setdefault(key, {}).update(deepcopy(patch.get(key) or {}))
     if "extra_roots" in patch:
         result["extra_roots"] = list(patch["extra_roots"])
-    for key in ('filesystem_mode', 'capabilities', 'policy_revision', 'migration_status'):
+    for key in ('filesystem_mode', 'permission_mode', 'capabilities', 'policy_revision', 'migration_status'):
         if key in patch:
             result[key] = deepcopy(patch[key])
     return result
@@ -393,6 +396,8 @@ def intersect(current: dict, ceiling: dict) -> dict:
                 roots.append(parent)
     result = {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
               "connections": connections, "extra_roots": sorted(set(roots))}
+    if current.get('permission_mode') == 'custom' or ceiling.get('permission_mode') == 'custom':
+        result['permission_mode'] = 'custom'
     if 'capabilities' in current or 'capabilities' in ceiling:
         from core.security.capabilities import CapabilityDescriptor, authorization
         from core.security.run_policy import OPERATIONS, from_legacy

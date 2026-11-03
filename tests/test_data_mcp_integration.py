@@ -21,11 +21,12 @@ def integration(tmp_path, monkeypatch, native_settings_action):
         {"preset": "full-access", "rules": {}, "connections": {}},
     )
     manager = ToolManager()
+    config = fake_config("email", tmp_path / "email")
     config = ManagedMcpConfig({
-        **fake_config("email", tmp_path / "email"),
+        **config,
         "agentTools": ["list_accounts", "list_sources", "fetch_messages"],
         "settingsUrl": "/email",
-    })
+    }, data_root=tmp_path / 'email', package_digest=config.package_digest)
     config['args'][config['args'].index('--user-id') + 1] = 'local-default'
     monkeypatch.setattr(manager, "_load_mcp_configs", lambda: [config])
     was_enabled = manager._mcp_enabled(config)
@@ -193,11 +194,16 @@ def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
 
     root = Path(__file__).resolve().parents[2]
     manager = ToolManager()
+    import shutil
+    package = tmp_path / 'generic-source-package'
+    package.mkdir()
+    shutil.copy2(Path(__file__).parent / 'fixtures/generic_data_mcp.py', package / 'server.py')
+    shutil.copy2(root / 'MCP/email-mcp/requirements.lock', package / 'requirements.lock')
     config = {
         "name": "generic-source",
         "type": "stdio",
         "command": str(root / "MCP/email-mcp/.venv/bin/python"),
-        "args": [str(Path(__file__).parent / "fixtures/generic_data_mcp.py")],
+        "args": [str(package / 'server.py')],
         "timeout": 10,
         "toolOperations": {'accounts': 'read', 'messages': 'read'},
     }

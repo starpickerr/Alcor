@@ -7,6 +7,7 @@ import platform
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -37,9 +38,16 @@ class PluginHostError(RuntimeError):
 _LIVE_SESSIONS = weakref.WeakSet()
 
 
+def stop_plugin_sessions(plugin_id, *, user_id=None):
+    """Drain all Core-owned workers, including plugins without domain gateways."""
+    for session in list(_LIVE_SESSIONS):
+        if session.plugin_id == plugin_id and (user_id is None or session.user_id == user_id):
+            session.dispose()
+
+
 def revoke_runtime_trust(user_id, plugin_id, digest):
     for session in list(_LIVE_SESSIONS):
-        if (session.user_id, session.plugin_id, session.package_digest) == (user_id, plugin_id, digest) and session.sandbox_state.get('mode') == 'trusted':
+        if (session.user_id, session.plugin_id, session.package_digest) == (user_id, plugin_id, digest):
             session.sandbox_state = {'mode': 'unavailable', 'reason': 'Runtime trust was revoked; restart in isolation.'}
             session.dispose()
 
@@ -151,8 +159,7 @@ def _managed_boundary(function):
                                  consumer_plugin_id=current_consumer_plugin() or self.plugin_id,
                                  deadline=current_invocation_deadline()):
                 if kwargs.get('data_handle') is None and self.manifest.get('data'):
-                    from core.plugins.lifecycle import domain_data_handle
-                    kwargs['data_handle'] = domain_data_handle(self.plugin_id, self.user_id)
+                    kwargs['data_handle'] = dict(self._bound_data_handle)
                 from common.log import logger
                 try:
                     result = admit(self, **kwargs)
@@ -188,6 +195,7 @@ class PluginSession:
         authz: PluginAuthorizationStore | None = None,
         runner_command: list[str] | None = None,
         maintenance: bool = False,
+        rebuild_environment: bool = False,
         data_handle: Mapping[str, Any] | None = None,
     ) -> None:
         self.plugin_root = Path(plugin_root).resolve()
@@ -206,6 +214,9 @@ class PluginSession:
         self._python = python_executable or sys.executable
         self._runner_command = runner_command
         self.maintenance = maintenance
+        if rebuild_environment and not maintenance:
+            raise ValueError('Environment rebuild requires candidate maintenance validation')
+        self._rebuild_environment = rebuild_environment
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.RLock()
         self._inflight: set[str] = set()
@@ -217,6 +228,8 @@ class PluginSession:
         self._method_operations: dict[tuple[str, str], str] = {}
         self._method_descriptors = {}
         self.sandbox_state = {'mode': 'unavailable', 'reason': 'Worker has not started.'}
+        self.environment = None
+        self._maintenance_storage = None
         _LIVE_SESSIONS.add(self)
 
     def matches_storage(self, handle):
@@ -265,11 +278,18 @@ class PluginSession:
         from core.mcp.retired import RETIRED_PLUGIN_IDS
         if self.plugin_id in RETIRED_PLUGIN_IDS:
             raise PluginHostError('This capability has migrated to MCP; the old plugin cannot start')
-        from core.plugins.caller import invocation_budget, invocation_lock
+        from core.plugins.caller import invocation_budget, invocation_lock, managed_data_lease, managed_plugin
 
-        with invocation_budget(), invocation_lock(self._lock):
+        admission = nullcontext() if self.maintenance else managed_data_lease(self.plugin_id, user_id=self.user_id)
+        with invocation_budget(), admission, invocation_lock(self._lock):
             if self._proc is not None:
                 raise PluginHostError("session already started")
+            if not self.maintenance and managed_plugin(self.plugin_id, self.user_id):
+                from core.plugins.management import default_store
+                from core.plugins.package_ops import PackageStore
+                current = PackageStore(default_store().root).current_package(self.plugin_id)
+                if not current or current['digest'] != self.package_digest:
+                    raise PermissionError('worker package selection changed; resolve the current package before starting')
             try:
                 return self._start()
             except Exception:
@@ -302,26 +322,41 @@ class PluginSession:
             if env.get("STELLA_ALLOW_REPO_IMPORT") not in {"1", "true", "yes"}:
                 env.pop("STELLA_REPO_ROOT", None)
             cmd = self._runner_command or resolve_runner_command(python_executable=self._python)
+            if len(cmd) == 3 and cmd[1:] == ['-m', RUNNER_DEV_MODULE]:
+                from core.runtime.environments import EnvironmentStore
+                self.environment = EnvironmentStore().prepare_python(kind='plugin', identifier=self.plugin_id,
+                    user=self.user_id, package=self.plugin_root, digest=self.package_digest, rebuild=self._rebuild_environment)
+                cmd = [self.environment['python'], *cmd[1:]]
             from core.security.extension_sandbox import prepare_extension
             from core.security.runtime_trust import plugin_trusted
             from core.plugins.storage import private_data_handle
-            storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
+            if self.maintenance:
+                # A candidate/migration may only touch its explicit scratch
+                # handle. Its HOME/cache must not grant access to live data.
+                self._maintenance_storage = tempfile.TemporaryDirectory(prefix='stella-plugin-maintenance-')
+                storage = self._maintenance_storage.name
+            else:
+                storage = private_data_handle(self.plugin_id, self.user_id, ensure=True)['dataDir']
             self._storage_directory = storage
             from core.plugins.storage import storage_paths
             domain, legacy_reads = storage_paths(self._bound_data_handle, legacy=self.maintenance)
             plan = prepare_extension(cmd, self.plugin_root, storage, env, trusted=plugin_trusted(
                 self.plugin_root, self.plugin_id, self.package_digest, self.user_id),
-                read_roots=[Path(cmd[0]).resolve().parent, *legacy_reads], write_roots=[domain])
+                read_roots=[Path(cmd[0]).resolve().parent,
+                            *([Path(self.environment['path'])] if self.environment else []), *legacy_reads], write_roots=[domain])
             self.sandbox_state = plan.state
-            self._proc = subprocess.Popen(
-                plan.argv,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=plan.cwd,
-                env=plan.env,
-                start_new_session=True,
-            )
+            from core.security.protected_paths import launch_guard
+            with launch_guard(plan.protection_revision) as launch:
+                self._proc = subprocess.Popen(
+                    plan.argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=plan.cwd,
+                    env=plan.env,
+                    start_new_session=True,
+                )
+                launch.bind(self._proc)
             process = self._proc
             self._stderr_bytes = 0
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(process,), daemon=True)
@@ -382,6 +417,9 @@ class PluginSession:
                     services=tuple(service_ids),
                     user_id=self.user_id,
                 )
+            if self.environment and not self.maintenance:
+                from core.runtime.environments import EnvironmentStore
+                EnvironmentStore().activate(self.environment, validate=lambda candidate: self._proc is not None and self._proc.poll() is None)
             if not self.maintenance:
                 self.registry.publish(snapshot)
             return {"initialize": init, "prepare": prepared}
@@ -501,11 +539,8 @@ class PluginSession:
         managed = managed_plugin(self.plugin_id, self.user_id)
         if managed and skip_authz:
             raise PermissionError('managed authorization cannot be bypassed')
-        if managed:
-            from core.security.runtime_trust import plugin_trusted, verified_first_party
-            if not (verified_first_party(self.plugin_root, self.plugin_id, self.package_digest) or
-                    plugin_trusted(self.plugin_root, self.plugin_id, self.package_digest, self.user_id)):
-                raise PermissionError('Third-party plugin requires owner trust for this package digest')
+        if self.sandbox_state.get('mode') != 'isolated':
+            raise PermissionError('Plugin execution requires verified OS process isolation')
         # Every Agent and task uses the same mode gate, including delegated calls.
         if origin in {"tool", "job"}:
             from core.security.capabilities import method_operation
@@ -596,9 +631,6 @@ class PluginSession:
             try:
                 self.registry.require_generation(self.plugin_id, self.generation)
                 if managed:
-                    if not (verified_first_party(self.plugin_root, self.plugin_id, self.package_digest) or
-                            plugin_trusted(self.plugin_root, self.plugin_id, self.package_digest, self.user_id)):
-                        raise PermissionError('Plugin trust changed during the call')
                     current = default_store().instance(self.plugin_id, self.user_id)
                     if (current['intent'] != 'enabled' or
                             default_store().runtime_state(self.plugin_id, self.user_id) in {'maintenance', 'draining'}):
@@ -629,6 +661,8 @@ class PluginSession:
             raise PluginHostError(str(exc)) from exc
 
     def dispose(self) -> None:
+        if hasattr(self, '_delegated_processes'):
+            self._delegated_processes.close()
         # An invocation owns the transport lock, so waiting on it without a
         # bound would make disable/dispose wait for a long network deadline.
         if not self._lock.acquire(timeout=2):
@@ -679,6 +713,9 @@ class PluginSession:
                     self._proc = None
                 if self._stderr_thread:
                     self._stderr_thread.join(timeout=1)
+                if self._maintenance_storage:
+                    self._maintenance_storage.cleanup()
+                    self._maintenance_storage = None
 
     def _drain_stderr(self, process) -> None:
         # Only the runner's bounded diagnostic envelopes may reach host logs.

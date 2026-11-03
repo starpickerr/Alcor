@@ -68,21 +68,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppConfig: () =>
     ipcRenderer.invoke('app-config-get') as Promise<{ defaultTheme?: string; appName?: string } | null>,
 
-  // Generic HTTPS relay via the main process (bypasses the renderer's CORS
-  // restrictions for external endpoints). Optional extensions may use it.
-  httpRelay: (req: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) =>
-    ipcRenderer.invoke('http-relay', req) as Promise<{
-      ok: boolean
-      status: number
-      headers: Record<string, string>
-      body: string
-    }>,
-
   // Update checks: ask main to poll GitHub Releases, then open a download URL
   // in the system browser. There is no in-app installer.
   checkForUpdate: () => ipcRenderer.invoke('update-check'),

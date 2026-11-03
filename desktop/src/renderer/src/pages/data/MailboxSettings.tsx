@@ -7,7 +7,6 @@ import type { BriefingMailbox, BriefingMailboxCheck, BriefingMailboxInput } from
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
 const emptyMailbox = { host: '', user: '', port: 993, folder: 'INBOX', password: '', enabled: true }
-const passwordMask = '********'
 
 export const MailboxSettings: React.FC = () => {
   const [mailboxes, setMailboxes] = useState<BriefingMailbox[]>([])
@@ -25,7 +24,7 @@ export const MailboxSettings: React.FC = () => {
 
   const openMailbox = (row?: BriefingMailbox) => {
     setSelectedId(row?.id ?? null)
-    setDraft(row ? { host: row.host, user: row.user, port: Number(row.port) || 993, folder: row.folder, password: row.password_masked, enabled: row.enabled } : { ...emptyMailbox })
+    setDraft(row ? { host: row.host, user: row.user, port: Number(row.port) || 993, folder: row.folder, password: '', enabled: row.enabled } : { ...emptyMailbox })
     setPasswordDirty(false); setPasswordVisible(false)
     setSaved(false); setConnection('idle'); setFolders([]); setError('')
   }
@@ -48,8 +47,16 @@ export const MailboxSettings: React.FC = () => {
   const payload = (): BriefingMailboxInput => ({
     host: draft.host, user: draft.user, port: draft.port, folder: draft.folder, enabled: draft.enabled,
     ...(selectedId ? { id: selectedId, action: 'save' as const } : { action: 'add' as const }),
-    ...(passwordDirty && draft.password !== passwordMask ? { password: draft.password } : {}),
+    ...(selected?.credential_revision ? { credential_revision: selected.credential_revision } : {}),
+    ...(passwordDirty ? { password: draft.password } : {}),
   })
+
+  const refresh = async () => {
+    setBusy(true); setError('')
+    try { setMailboxes((await apiClient.getBriefingSettings()).mailboxes) }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setBusy(false) }
+  }
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,9 +92,12 @@ export const MailboxSettings: React.FC = () => {
   }
 
   return <section className="rounded-card border border-default bg-surface p-5 space-y-4">
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <h3 className="flex items-center gap-2 font-semibold text-sm text-content"><Mail size={16} />{t('briefing_mailbox')}</h3>
-      <button type="button" disabled={busy || loading} onClick={() => openMailbox()} className={`${buttonClass} inline-flex items-center gap-1`}><Plus size={14} />{t('briefing_add_mailbox')}</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || loading} onClick={() => void refresh()} className={buttonClass}>{t('credential_refresh')}</button>
+        <button type="button" disabled={busy || loading} onClick={() => openMailbox()} className={`${buttonClass} inline-flex items-center gap-1`}><Plus size={14} />{t('briefing_add_mailbox')}</button>
+      </div>
     </div>
     <p className="text-sm text-content-secondary leading-relaxed">{t('briefing_mail_help')}</p>
     {error && <p role="alert" className="rounded-card p-3 bg-danger-soft text-danger text-sm">{error}</p>}
@@ -97,6 +107,7 @@ export const MailboxSettings: React.FC = () => {
         <p className="text-sm font-medium text-content break-all">{row.user}</p>
         <p className="text-xs text-content-tertiary mt-1 break-all">{row.host}:{row.port} · {row.folder}</p>
         <p className="text-xs text-content-tertiary mt-1">{t(row.enabled ? 'briefing_source_active' : 'briefing_source_inactive')}</p>
+        <p role="status" className="text-xs text-content-secondary mt-1">{t('credential_state_' + (row.credential_status ?? (row.password_set ? 'configured' : 'not_configured')))}</p>
         {!row.configured && <p className="text-xs text-warning mt-1">{t('briefing_mail_missing')}</p>}
       </div>
       <div className="flex gap-2">
@@ -110,8 +121,6 @@ export const MailboxSettings: React.FC = () => {
       <label className="text-xs text-content-secondary">{t('briefing_user')}<input required value={draft.user} disabled={busy || loading} autoComplete="username" className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ user: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_password')}<div className="relative mt-1">
         <input type={passwordVisible ? 'text' : 'password'} required={!selected?.password_set} value={draft.password} disabled={busy || loading} autoComplete="new-password" className={`${fieldClass} block w-full pr-9 font-mono`}
-          onFocus={() => { if (!passwordDirty && draft.password === passwordMask) setDraft((value) => ({ ...value, password: '' })) }}
-          onBlur={() => { if (!passwordDirty) setDraft((value) => ({ ...value, password: selected?.password_masked ?? '' })) }}
           onChange={(e) => { setPasswordDirty(true); edit({ password: e.target.value }) }} />
         <button type="button" disabled={busy || loading} aria-label={t(passwordVisible ? 'briefing_hide_password' : 'briefing_show_password')} onClick={() => setPasswordVisible(!passwordVisible)} className="absolute right-2 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary">{passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div></label>

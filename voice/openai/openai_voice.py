@@ -4,9 +4,10 @@ google voice service
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 from voice.voice import Voice
-import requests
+from core.security.requests_transport import voice_requests as requests
 from common import const
 import datetime
 import random
@@ -24,7 +25,7 @@ class OpenaiVoice(Voice):
             api_base = conf().get("open_ai_api_base") or "https://api.openai.com/v1"
             url = f'{api_base}/audio/transcriptions'
             headers = {
-                'Authorization': 'Bearer ' + conf().get("open_ai_api_key"),
+                'Authorization': 'Bearer ' + model_key("open_ai_api_key"),
                 # 'Content-Type': 'multipart/form-data' # 加了会报错，不知道什么原因
             }
             files = {
@@ -58,7 +59,7 @@ class OpenaiVoice(Voice):
             api_base = conf().get("open_ai_api_base") or "https://api.openai.com/v1"
             url = f'{api_base}/audio/speech'
             headers = {
-                'Authorization': 'Bearer ' + conf().get("open_ai_api_key"),
+                'Authorization': 'Bearer ' + model_key("open_ai_api_key"),
                 'Content-Type': 'application/json'
             }
             data = {

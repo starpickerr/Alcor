@@ -2,7 +2,7 @@
 
 import json
 import time
-import requests
+from models import transport_requests as requests
 
 from models.bot import Bot
 from models.session_manager import SessionManager
@@ -10,6 +10,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
 from config import conf, load_config
+from core.security.config_credentials import model_key
 from .modelscope_session import ModelScopeSession
 
 
@@ -111,7 +112,7 @@ class ModelScopeBot(Bot):
         try:
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.api_key
+                "Authorization": "Bearer " + model_key("modelscope_api_key")
             }
             
             body = args.copy() if args else {}
@@ -175,7 +176,7 @@ class ModelScopeBot(Bot):
         try:
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.api_key
+                "Authorization": "Bearer " + model_key("modelscope_api_key")
             }
             
             body = args.copy() if args else {}
@@ -244,7 +245,7 @@ class ModelScopeBot(Bot):
             logger.info("[ModelScopeImage] image_query={}".format(query))
             
             create_headers = {
-                "Authorization": "Bearer " + self.api_key,
+                "Authorization": "Bearer " + model_key("modelscope_api_key"),
                 "Content-Type": "application/json; charset=utf-8",
                 "X-ModelScope-Async-Mode": "true"
             }
@@ -287,7 +288,7 @@ class ModelScopeBot(Bot):
                 time.sleep(wait_interval)
                 
                 poll_headers = {
-                    "Authorization": "Bearer " + self.api_key,
+                    "Authorization": "Bearer " + model_key("modelscope_api_key"),
                     "X-ModelScope-Task-Type": "image_generation"
                 }
                 
@@ -526,7 +527,7 @@ class ModelScopeBot(Bot):
         try:
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.api_key
+                "Authorization": "Bearer " + model_key("modelscope_api_key")
             }
             
             body = args.copy()

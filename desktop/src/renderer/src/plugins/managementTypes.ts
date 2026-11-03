@@ -19,7 +19,13 @@ export type SettingsField = {
 export type SettingsDescriptor = {
   id: string; categories: { id: string; title: string }[]; fields: SettingsField[]
 }
-export type SettingsSnapshot = { revision: number; values: Record<string, unknown>; secretFields: string[] }
+export type SecretState = 'configured' | 'not_configured' | 'unavailable' | 'repair_required'
+export type PluginCredential = {
+  settingsId: string; category: string; field: string; title: string; revision: number; state: SecretState; retired: boolean
+}
+export type SettingsSnapshot = {
+  revision: number; values: Record<string, unknown>; secretFields: string[]; secretStates?: Record<string, SecretState>
+}
 export const pluginStateLabel: Record<string, string> = {
   active: '运行中', stopped: '已停止', disabled: '已停用', removed: '已卸载', maintenance: '维护中', failed: '故障',
   enabled: '已启用', blocked: '不可用', degraded: '部分可用'

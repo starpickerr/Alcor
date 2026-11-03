@@ -4,12 +4,13 @@ import json
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.session_manager import SessionManager
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, load_config
 from .moonshot_session import MoonshotSession
 
@@ -30,7 +31,7 @@ class MoonshotBot(Bot):
 
     @property
     def api_key(self):
-        return conf().get("moonshot_api_key")
+        return model_key("moonshot_api_key")
 
     @property
     def base_url(self):

@@ -10,6 +10,8 @@ def create_bot(bot_type):
     :param bot_type: bot type code
     :return: bot instance
     """
+    if bot_type in {const.XUNFEI, const.QWEN, const.QWEN_DASHSCOPE, const.ZHIPU_AI, 'glm-4'}:
+        raise PermissionError('This SDK/WebSocket provider has no controlled transport adapter. Use a supported HTTP protocol; saved credentials are preserved.')
     if bot_type == const.BAIDU:
         # 替换Baidu Unit为Baidu文心千帆对话接口
         # from models.baidu.baidu_unit_bot import BaiduUnitBot

@@ -11,6 +11,8 @@ from core.mcp.managed import configurations
 @pytest.mark.parametrize('frozen', [False, True])
 def test_managed_config_loads_description_from_the_server_package(tmp_path, monkeypatch, frozen):
     monkeypatch.setenv('STELLA_MANAGED_MCP', '1')
+    # Each case needs a manager that has not been booted by an earlier test.
+    monkeypatch.setattr('common.state_dir.real_state_root', lambda: str(tmp_path / 'workspace'))
     monkeypatch.setattr(sys, 'frozen', frozen, raising=False)
     monkeypatch.setattr(sys, 'executable', str(tmp_path / 'backend/stella-backend/stella-backend'))
     for domain in ('email', 'elearning'):

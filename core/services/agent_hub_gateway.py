@@ -220,27 +220,44 @@ def invoke_agent_hub(
     }
     if execution is not None:
         handle["executionTask"] = dict(params["task"])
+    from contextlib import nullcontext
+    runtime_scope = nullcontext()
     if method in {'provider_start', 'probe_provider', 'select_provider'}:
-        from core.security.delegated_runtime import prepare_delegated
+        from core.security.delegated_runtime import delegated_scope
         from core.plugins.storage import private_data_handle
         providers = invoke_ok('list_providers', {}, db_path=db_path, agent_id=agent_id, owner_user_id=owner_user_id)
-        binaries = [row.get('binaryPath') for row in providers]
+        catalog = {row['providerLocalId']: row for row in invoke_ok('list_catalog', {}, db_path=db_path,
+                   agent_id=agent_id, owner_user_id=owner_user_id)}
+        import shutil
+        binaries = []
+        for row in providers:
+            if params.get('provider_config_id') and row['providerConfigId'] != params['provider_config_id']:
+                continue
+            if not row.get('enabled') and method != 'probe_provider':
+                continue
+            if row.get('binaryPath'):
+                binaries.append(row['binaryPath'])
+            else:
+                binaries.extend(path for hint in catalog.get(row['providerLocalId'], {}).get('binaryHints', [])
+                                if (path := shutil.which(hint)))
         workspace = execution['workspacePath'] if execution else private_data_handle(PLUGIN_ID,
             session.user_id, ensure=True)['dataDir']
-        handle['executionSandbox'] = prepare_delegated(workspace, binaries)
+        runtime_scope = delegated_scope(session, workspace, binaries, task=handle.get('executionTask'))
+        handle['executionSandbox'] = {'mode': 'core'}
     payload = dict(params)
     idem = payload.pop("idempotencyKey", None)
-    return session.invoke_contract(
-        contract=CONTRACT,
-        method=method,
-        input_payload=payload,
-        origin="system",
-        grant_ref=user_grant_ref(_GRANT_REF),
-        permissions=("agent_hub.write",) if write else ("agent_hub.read",),
-        purpose="interactive",
-        idempotency_key=idem or (uuid.uuid4().hex if write else None),
-        data_handle=handle,
-    )
+    with runtime_scope:
+        return session.invoke_contract(
+            contract=CONTRACT,
+            method=method,
+            input_payload=payload,
+            origin="system",
+            grant_ref=user_grant_ref(_GRANT_REF),
+            permissions=("agent_hub.write",) if write else ("agent_hub.read",),
+            purpose="interactive",
+            idempotency_key=idem or (uuid.uuid4().hex if write else None),
+            data_handle=handle,
+        )
 
 
 def invoke_ok(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> Any:

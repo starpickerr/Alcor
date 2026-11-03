@@ -24,7 +24,7 @@ import json
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
 from models.session_manager import SessionManager
@@ -64,7 +64,8 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
 
     @property
     def api_key(self):
-        return conf().get("deepseek_api_key") or conf().get("open_ai_api_key")
+        from core.security.config_credentials import model_key
+        return model_key("deepseek_api_key") or model_key("open_ai_api_key")
 
     @property
     def api_base(self):

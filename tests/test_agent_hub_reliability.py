@@ -15,7 +15,8 @@ def isolated_hub(tmp_path, monkeypatch):
     monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN', '1')
     monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: tmp_path / 'hub.db')
     monkeypatch.setattr('common.state_dir.executions_dir', lambda **_: tmp_path / 'executions')
-    monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN_ROOT', str(Path('stella-plugins-workspace/plugins/agent-hub').resolve()))
+    plugin = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins/agent-hub'
+    monkeypatch.setenv('STELLA_AGENT_HUB_PLUGIN_ROOT', str(plugin))
     monkeypatch.setenv('STELLA_DATA_DIR', str(tmp_path / 'data'))
     monkeypatch.setenv('HOME', str(tmp_path / 'home'))
     monkeypatch.setattr(agent_hub_gateway, 'apply_user_preferences', lambda: {})
@@ -177,12 +178,12 @@ def test_supervisor_revokes_descendants_after_leader_exit(tmp_path):
 
 
 @pytest.mark.skipif(__import__('os').name == 'nt', reason='POSIX process groups')
-def test_cli_completion_does_not_leave_descendants(tmp_path):
+def test_cli_completion_does_not_leave_descendants(tmp_path, native_settings_action):
     import os
     import signal
     import sys
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("child.pid","w").write(str(p.pid))\nprint("complete")\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nwith open("child.tmp","w") as output: output.write(str(p.pid))\nos.replace("child.tmp","child.pid")\nprint("complete")\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})
@@ -209,13 +210,13 @@ def test_cli_completion_does_not_leave_descendants(tmp_path):
 
 
 @pytest.mark.skipif(__import__('os').name == 'nt', reason='POSIX session ownership')
-def test_worker_crash_reaps_owned_cli_groups(tmp_path):
+def test_worker_crash_reaps_owned_cli_groups(tmp_path, native_settings_action):
     import json
     import os
     import signal
     import sys
     fake = tmp_path / 'codex'
-    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nopen("children.json","w").write(json.dumps([os.getpid(),p.pid]))\ntime.sleep(30)\n')
+    fake.write_text(f'#!{sys.executable}\nimport subprocess,sys,os,json,time\np=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])\nwith open("children.tmp","w") as output: output.write(json.dumps([os.getpid(),p.pid]))\nos.replace("children.tmp","children.json")\ntime.sleep(30)\n')
     fake.chmod(0o755)
     row = agent_hub_gateway.invoke_ok('upsert_provider', {'provider': {
         'providerLocalId': 'codex-cli', 'enabled': True, 'binaryPath': str(fake), 'settings': {}}})

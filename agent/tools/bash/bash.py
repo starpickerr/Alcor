@@ -153,7 +153,7 @@ SAFETY:
         # Security check: Prevent direct access to the credential file
         if re.search(r'\.stella[/\\]\.env', command):
             return ToolResult.fail(
-                "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
+                "Error: Access denied. API keys and credentials must be accessed through their owning feature settings only."
             )
 
         # Optional safety check - only warn about extremely dangerous commands
@@ -442,16 +442,19 @@ SAFETY:
         return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
     def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True, plan=None):
-        process = subprocess.Popen(
-            command,
-            shell=shell,
-            cwd=self.cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            start_new_session=not self._IS_WIN,
-        )
+        from core.security.protected_paths import launch_guard, current_revision
+        with launch_guard(plan.protection_revision if plan is not None else current_revision()) as launch:
+            process = subprocess.Popen(
+                command,
+                shell=shell,
+                cwd=self.cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                start_new_session=not self._IS_WIN,
+            )
+            launch.bind(process)
         from agent.permission.process_sandbox import register_share_process, unregister_share_process
         try:
             if plan is not None:

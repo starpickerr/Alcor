@@ -105,7 +105,8 @@ def _patch_paths(monkeypatch, tmp_path):
     )
 
 
-def test_application_port_routes_todos_via_plugin(tmp_path, monkeypatch):
+def test_application_port_routes_todos_via_plugin(tmp_path, monkeypatch, registered_agent):
+    registered_agent('test-agent')
     from application.api import Application
     from common.runtime_identity import RuntimeIdentity, use_identity
 

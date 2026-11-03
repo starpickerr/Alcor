@@ -44,12 +44,15 @@ class CapabilitySettings:
                            (self.user_id, kind, name, int(enabled)))
         return enabled
 
-    def revision(self, kind):
+    def revision(self, kind, name=None):
+        if name is not None:
+            self._validate(kind, name)
         if not self.path.exists():
             return 0
         with closing(sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, timeout=10)) as db:
-            return db.execute('SELECT COALESCE(SUM(revision),0) FROM capabilities WHERE user=? AND kind=?',
-                              (self.user_id, kind)).fetchone()[0]
+            query = 'SELECT COALESCE(SUM(revision),0) FROM capabilities WHERE user=? AND kind=?'
+            return db.execute(query + (' AND name=?' if name is not None else ''),
+                              (self.user_id, kind, name) if name is not None else (self.user_id, kind)).fetchone()[0]
 
 
 def tool_enabled(name, *, tool=None, agent_id=None, workspace_root=None):

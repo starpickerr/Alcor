@@ -8,7 +8,7 @@ This includes: OpenAI, LinkAI, Azure OpenAI, and many third-party providers.
 """
 
 import json
-import requests
+from models import transport_requests as requests
 from typing import Optional
 from common.log import logger
 from agent.protocol.message_utils import drop_orphaned_tool_results_openai
@@ -67,6 +67,13 @@ class OpenAICompatibleBot:
         raise NotImplementedError("Subclasses must implement get_api_config()")
     
     def call_with_tools(self, messages, tools=None, stream=False, **kwargs):
+        if stream:
+            def chunks():
+                yield from self._call_with_current_config(messages, tools=tools, stream=True, **kwargs)
+            return chunks()
+        return self._call_with_current_config(messages, tools=tools, stream=False, **kwargs)
+
+    def _call_with_current_config(self, messages, tools=None, stream=False, **kwargs):
         """
         Call OpenAI-compatible API with tool support for agent integration
         

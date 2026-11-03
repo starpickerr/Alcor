@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../../api/client'
 import { getLang, t } from '../../i18n'
-import { PluginRow, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
+import { PluginCredential, PluginRow, SecretState, SettingsDescriptor, SettingsSnapshot } from '../../plugins/managementTypes'
 import { Dropdown, Group, Row, SaveRow, Segmented, TextInput, Toggle } from './primitives'
 import { SettingsPanel as BriefingSettingsPanel } from '../briefing/SettingsPanel'
+import { c } from '../capabilities/presentation'
 
 type Draft = { snapshot: SettingsSnapshot; values: Record<string, unknown>; conflict?: boolean }
 type Props = {
@@ -23,6 +24,12 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const working = useRef(false)
+  const [credentials, setCredentials] = useState<PluginCredential[]>([])
+  const stateLabel = (state?: SecretState) => ({
+    configured: c('已配置', 'Configured'), not_configured: c('未配置', 'Not configured'),
+    unavailable: c('暂不可用', 'Unavailable'), repair_required: c('需要修复', 'Needs repair'),
+  })[state || 'unavailable']
 
   const row = rows.find((item) => item.pluginId === selected)
   const available = row?.intent === 'enabled' && !['maintenance', 'failed'].includes(row.state)
@@ -55,14 +62,13 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
       .then((data) => {
         if (cancelled) return
         if (!Array.isArray(data.plugins)) throw new Error(getLang() === 'zh' ? '无法读取插件目录，请重试。' : 'Could not read the plugin inventory. Retry.')
-        if (pluginId && !data.plugins.some((item) => item.pluginId === pluginId)) {
-          setRows([])
-          setSelected('')
-          throw new Error(getLang() === 'zh' ? '此插件已不可用，请重新打开详情。' : 'This plugin is unavailable. Reopen its details.')
-        }
         setRows(data.plugins)
+        if (pluginId && !data.plugins.some(item => item.pluginId === pluginId)) {
+          setSelected('')
+          throw new Error(c('此插件已不可用，请返回能力目录。', 'This plugin is no longer available. Return to capabilities.'))
+        }
         setSelected((value) => {
-          if (pluginId && data.plugins.some((item) => item.pluginId === pluginId)) return pluginId
+          if (pluginId) return pluginId
           return value || data.plugins[0]?.pluginId || ''
         })
       })
@@ -84,9 +90,13 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
     if (!selected) return
     let cancelled = false
     setDescriptors([])
+    setCredentials([])
     setError('')
     setMessage('')
     setSection('')
+    void apiClient.pluginRequest<PluginCredential[]>('settings', { action: 'credentials', pluginId: selected })
+      .then((result) => { if (!cancelled && Array.isArray(result)) setCredentials(result) })
+      .catch((err) => { if (!cancelled) setError(String(err)) })
     void apiClient
       .pluginRequest<SettingsDescriptor[]>('settings', { action: 'describe', pluginId: selected })
       .then((result) => {
@@ -137,6 +147,8 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
   }, [selected, category?.id, category?.descriptor.id, draft, draftKey])
 
   async function run(work: () => Promise<void>) {
+    if (working.current) return
+    working.current = true
     setBusy(true)
     setError('')
     setMessage('')
@@ -145,6 +157,7 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
     } catch (err) {
       setError(String(err))
     } finally {
+      working.current = false
       setBusy(false)
     }
   }
@@ -171,6 +184,8 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
           changes,
         })
         setDrafts((previous) => ({ ...previous, [draftKey]: { snapshot, values: snapshot.values } }))
+        setCredentials((previous) => previous.map(item => item.settingsId === category.descriptor.id && item.category === category.id
+          ? { ...item, revision: snapshot.revision } : item))
         setMessage(t('settings_plugin_saved'))
       } catch (err) {
         setDrafts((previous) => ({ ...previous, [draftKey]: { ...draft, conflict: true } }))
@@ -195,6 +210,21 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
       )
       setDrafts((previous) => ({ ...previous, [draftKey]: { snapshot, values: { ...snapshot.values, ...edits } } }))
       setMessage(t('settings_plugin_merged'))
+    })
+  }
+
+  async function removeCredential(item: PluginCredential) {
+    await run(async () => {
+      const result = await apiClient.pluginRequest<PluginCredential[]>('settings', {
+        action: 'remove-secret', pluginId: selected, settingsId: item.settingsId, category: item.category,
+        field: item.field, expectedRevision: item.revision,
+      })
+      setCredentials(result)
+      setDrafts(previous => {
+        const next = { ...previous }
+        delete next[`${selected}/${item.settingsId}/${item.category}`]
+        return next
+      })
     })
   }
 
@@ -253,8 +283,24 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
         <Group title={category.title}>
           {!fields.length && <Row label={t('settings_plugin_empty_category')} />}
           {fields.map((field) => {
-            if (field.secret) {
-              return <Row key={field.key} label={field.title} hint={t('settings_plugin_secret_hint')} />
+            if (field.secret || draft?.snapshot.secretFields?.includes(field.key)) {
+              return <Row key={field.key} label={field.title} htmlFor={`plugin-field-${field.key}`}
+                hint={c('已保存的凭据不会回填。输入新值可修复；删除操作在保存本类别后生效。普通插件不会获得凭据原文。',
+                  'Saved credentials are never filled in. Enter a replacement to repair; deletion takes effect when this category is saved. Ordinary plugins do not receive secret values.')}>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="text-sm text-content-secondary">{stateLabel(draft?.snapshot.secretStates?.[field.key])}</span>
+                  <button type="button" disabled={!draft || busy} onClick={() => edit(field.key, '')}
+                    className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary disabled:opacity-50">
+                    {c(`删除${field.title}`, `Remove ${field.title}`)}
+                  </button>
+                </div>
+                <TextInput id={`plugin-field-${field.key}`} type="password" autoComplete="new-password"
+                  placeholder={c('输入替换值，留空不修改', 'Enter a replacement; leave untouched to keep')}
+                  disabled={!draft || busy} value={String(draft?.values[field.key] ?? '')}
+                  onChange={event => edit(field.key, event.target.value)} />
+                {draft && draft.values[field.key] === '' && field.key in draft.values &&
+                  <p className="text-xs text-content-secondary">{c('保存后删除此凭据', 'This credential will be removed on save')}</p>}
+              </Row>
             }
             if (field.type === 'boolean') {
               return (
@@ -318,9 +364,14 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
               </Row>
             )
           })}
-          {!!fields.filter((field) => !field.secret).length && (
+          {!!fields.length && (
             <div className="px-4 py-3.5 space-y-3">
               <SaveRow status={message} onSave={() => void save()} label={t('settings_plugin_save_category')} />
+              {fields.some(field => field.secret || draft?.snapshot.secretFields?.includes(field.key)) &&
+                <button type="button" disabled={!draft || busy} onClick={() => void mergeLatest()}
+                  className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary disabled:opacity-50">
+                  {c('刷新凭据状态', 'Refresh credential status')}
+                </button>}
               {draft?.conflict && (
                 <div className="flex justify-end">
                   <button
@@ -337,6 +388,25 @@ export default function PluginSettings({ baseUrl, pluginId, onPluginChange, embe
           )}
         </Group>
       )}
+
+      {credentials.some(item => item.retired) && <Group title={c('保留的凭据', 'Retained credentials')}
+        description={c('这些字段已从插件声明中移除。凭据继续保留并对插件隐藏，可单独删除。',
+          'These fields were removed from the plugin declaration. Saved credentials remain hidden from the plugin and can be removed individually.')}>
+        {credentials.filter(item => item.retired).map(item => <Row key={`${item.settingsId}/${item.category}/${item.field}`}
+          label={item.title} hint={`${item.settingsId} · ${item.category} · ${stateLabel(item.state)}`}
+          control={<button type="button" disabled={busy} onClick={() => void removeCredential(item)}
+            className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary disabled:opacity-50">
+            {c(`删除${item.title}`, `Remove ${item.title}`)}
+          </button>} />)}
+        <div className="px-4 py-3.5">
+          <button type="button" disabled={busy} onClick={() => void run(async () => {
+            const result = await apiClient.pluginRequest<PluginCredential[]>('settings', { action: 'credentials', pluginId: selected })
+            setCredentials(result)
+          })} className="rounded-btn border border-default px-3 py-1.5 text-sm text-content-secondary disabled:opacity-50">
+            {c('刷新凭据状态', 'Refresh credential status')}
+          </button>
+        </div>
+      </Group>}
 
       {selected === 'stella.briefing' && <BriefingSettingsPanel key={selected} />}
     </div>

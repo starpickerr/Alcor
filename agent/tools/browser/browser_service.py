@@ -698,6 +698,10 @@ class BrowserService:
 
     def _launch_browser(self):
         """Launch / connect Chromium on the background thread."""
+        # Native application protection alone does not authorize a browser to
+        # reuse private cookies or make uncontrolled subrequests. The public
+        # compartment and broker must be integrated before this path can run.
+        raise PermissionError('Managed public browser isolation and controlled subrequest transport are not ready.')
         # Point Playwright at our pinned download dir before any launch so a
         # bundled-Chromium fallback finds the browser downloaded to ~/.stella.
         try:

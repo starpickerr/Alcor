@@ -10,9 +10,10 @@ from core.plugins.registry import PluginRegistry
 
 def test_real_bills_migration_creates_and_verifies_schema_without_publishing(tmp_path):
     registry = PluginRegistry()
-    session = PluginSession(Path('stella-plugins-workspace/plugins/bills'), source_label='test',
-                            registry=registry, maintenance=True)
     db = tmp_path / 'bills.sqlite'
+    session = PluginSession(Path('stella-plugins-workspace/plugins/bills'), source_label='test',
+                            registry=registry, maintenance=True,
+                            data_handle={'dbPath': str(db), 'namespace': 'stella.bills'})
     try:
         session.start()
         assert registry.get(session.plugin_id) is None

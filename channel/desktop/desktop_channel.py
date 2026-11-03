@@ -1,3 +1,4 @@
+from copy import deepcopy
 from common.runtime_identity import current_identity
 import base64
 import datetime
@@ -83,10 +84,8 @@ def _read_config_file_for_write() -> dict:
     (model, agent limits, ...), silently changing behavior after a restart.
     """
     config_path = os.path.join(get_data_root(), "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return read_config_template()
+    from core.security.config_credentials import read_document
+    return read_document(config_path, default=read_config_template())
 
 
 def _get_web_password() -> str:
@@ -140,6 +139,12 @@ def desktop_only_wsgi(application, token: str):
             return [b""]
         path = environ.get("PATH_INFO", "")
         if path in ("/api/health", "/mcp/oauth/callback"):
+            return application(environ, respond)
+        # The resource handler validates its exact, opened page nonce. Plugin
+        # subframes receive static assets only, never the desktop owner token.
+        if environ.get('REQUEST_METHOD') == 'GET' and re.fullmatch(
+            r'/api/plugins/pages/content/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+', path
+        ):
             return application(environ, respond)
         supplied = environ.get("HTTP_X_STELLA_DESKTOP_TOKEN", "")
         authorization = environ.get("HTTP_AUTHORIZATION", "")
@@ -2049,10 +2054,13 @@ class DesktopChannel(ChatChannel):
             '/api/runs/pending', 'PendingRunsHandler',
             '/api/security/activity', 'SecurityActivityHandler',
             '/api/security/center', 'SecurityCenterHandler',
+            '/api/security/sensitive-resources', 'SecuritySensitiveResourcesHandler',
             '/api/security/policy', 'SecurityPolicyHandler',
             '/api/security/run-policy', 'SecurityRunPolicyHandler',
             '/api/security/migration', 'SecurityMigrationHandler',
             '/api/security/runtime-trust', 'SecurityRuntimeTrustHandler',
+            '/api/security/runtime', 'SecurityRuntimeTrustHandler',
+            '/api/security/connections', 'SecurityConnectionsHandler',
             '/api/security/secrets', 'SecuritySecretsHandler',
             '/api/security/confirmations', 'SecurityConfirmationsHandler',
             '/api/security/privacy', 'SecurityPrivacyHandler',
@@ -2345,8 +2353,10 @@ class PluginSettingsHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         from core.plugins.management import RevisionConflict
         try:
+            from core.security.control import require_owner
+            require_owner()
             body = json.loads(web.data() or b'{}')
-            allowed = {'action', 'pluginId', 'settingsId', 'category', 'expectedRevision', 'changes'}
+            allowed = {'action', 'pluginId', 'settingsId', 'category', 'expectedRevision', 'changes', 'field'}
             if not isinstance(body, dict) or set(body) - allowed:
                 raise ValueError('unsupported settings fields')
             service, user = _plugin_settings_service(), _plugin_user()
@@ -2354,7 +2364,12 @@ class PluginSettingsHandler:
             if action == 'describe':
                 result = service.descriptors(body['pluginId'])
             elif action == 'read':
-                result = service.read(body['pluginId'], user, body['settingsId'], body['category'])
+                result = service.read(body['pluginId'], user, body['settingsId'], body['category'], credential_status=True)
+            elif action == 'credentials':
+                result = service.credentials(body['pluginId'], user)
+            elif action == 'remove-secret':
+                result = service.remove_secret(body['pluginId'], user, body['settingsId'], body['category'], body['field'],
+                                               expected_revision=body['expectedRevision'])
             elif action == 'save':
                 result = service.save(body['pluginId'], user, body['settingsId'], body['category'], body['changes'],
                                       expected_revision=body['expectedRevision'])
@@ -2406,9 +2421,12 @@ class PluginPageOpenHandler:
                 instance_id=body.get('instanceId') or 'desktop', generation=generation)
             token = opened['channelNonce']
             _PAGE_CONTENT[token] = opened
+            from urllib.parse import urlencode
+            query = urlencode(dict(nonce=token, pluginId=plugin_id, pageId=page_id,
+                                   channelNonce=token, generation=opened['generation']))
             opened = {
                 **opened,
-                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={token}",
+                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?{query}",
             }
             return json.dumps({'status': 'ok', 'result': opened}, ensure_ascii=False)
         except Exception as exc:
@@ -2422,7 +2440,6 @@ class PluginPageContentHandler:
     def GET(self, plugin_id, page_id):
         from pathlib import Path
 
-        _require_auth()
         params = web.input(nonce='', file='')
         opened = _PAGE_CONTENT.get(params.nonce)
         if not opened or opened['pluginId'] != plugin_id or opened['pageId'] != page_id:
@@ -2438,6 +2455,11 @@ class PluginPageContentHandler:
             web.header('Content-Type', 'application/javascript; charset=utf-8')
             return target.read_text(encoding='utf-8')
         web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Content-Security-Policy',
+                   "default-src 'none'; script-src 'self' 'nonce-" + params.nonce +
+                   "'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; "
+                   "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
+        web.header('Referrer-Policy', 'no-referrer')
         html = target.read_text(encoding='utf-8')
         # Point the page script at the authenticated content endpoint.
         html = html.replace(
@@ -2445,8 +2467,7 @@ class PluginPageContentHandler:
             f'src="/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={params.nonce}&file=app.js"')
         # Embed host-bound identity for the Bridge postMessage handshake.
         inject = (
-            f'<script>window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=False)};'
-            f'history.replaceState(null,"","?pluginId={plugin_id}&pageId={page_id}&channelNonce={params.nonce}&generation={opened["generation"]}");</script>'
+            f'<script nonce="{params.nonce}">window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=True)};</script>'
         )
         return html.replace('</head>', inject + '</head>', 1)
 
@@ -2483,9 +2504,14 @@ class McpOAuthCallbackHandler:
 
     def GET(self):
         web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        web.header('Referrer-Policy', 'no-referrer')
+        web.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
         params = web.input(code="", state="", error="", error_description="")
 
         def _page(title: str, message: str) -> str:
+            from html import escape
+            title, message = escape(title), escape(message)
             return (
                 "<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -2497,6 +2523,11 @@ class McpOAuthCallbackHandler:
 
         if params.error:
             logger.warning("[MCP-OAuth] callback returned an error")
+            if params.state:
+                from agent.tools.mcp.mcp_oauth import pop_pending, cancel_pending
+                handler = pop_pending(params.state)
+                if handler is not None:
+                    cancel_pending(handler=handler)
             return _page("授权失败", f"{params.error}: {params.error_description or ''}")
 
         if not params.code or not params.state:
@@ -2517,6 +2548,8 @@ class McpOAuthCallbackHandler:
         except Exception as e:
             logger.warning(f"[MCP-OAuth] token exchange crashed: {e}")
             ok = False
+        finally:
+            handler._authorization_in_progress = False
 
         if not ok:
             return _page("授权失败", "换取令牌失败，请重试。")
@@ -2863,138 +2896,7 @@ class StreamHandler:
 
 class ConfigHandler:
 
-    _RECOMMENDED_MODELS = [
-        const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
-        const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
-        # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
-        const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
-        const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
-        const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
-        const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
-        const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
-        const.MIMO_V2_5_PRO, const.MIMO_V2_5,
-    ]
-
-    # Generic placeholder hints surfaced in the web console. We deliberately
-    # show the version-path tail (e.g. "/v1") so users are reminded to type
-    # the full base URL. The form is intentionally vague (`...../v1`) so it
-    # never looks like a real default a user might paste verbatim — and we
-    # never auto-rewrite anything on the server side.
-    _PLACEHOLDER_V1 = "https://...../v1"
-    _PLACEHOLDER_QIANFAN = "https://...../v2"
-    _PLACEHOLDER_ZHIPU = "https://...../api/paas/v4"
-    _PLACEHOLDER_DOUBAO = "https://...../api/v3"
-    _PLACEHOLDER_GEMINI = "https://....."
-
-    PROVIDER_MODELS = OrderedDict([
-        ("deepseek", {
-            "label": "DeepSeek",
-            "api_key_field": "deepseek_api_key",
-            "api_base_key": "deepseek_api_base",
-            "api_base_default": "https://api.deepseek.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
-        }),
-        ("claudeAPI", {
-            "label": "Claude",
-            "api_key_field": "claude_api_key",
-            "api_base_key": "claude_api_base",
-            "api_base_default": "https://api.anthropic.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
-        }),
-        ("openai", {
-            "label": "OpenAI",
-            "api_key_field": "open_ai_api_key",
-            "api_base_key": "open_ai_api_base",
-            "api_base_default": "https://api.openai.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
-        }),
-        ("gemini", {
-            "label": "Gemini",
-            "api_key_field": "gemini_api_key",
-            "api_base_key": "gemini_api_base",
-            "api_base_default": "https://generativelanguage.googleapis.com",
-            "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
-        }),
-        ("minimax", {
-            "label": "MiniMax",
-            "api_key_field": "minimax_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.MINIMAX_M3, const.MINIMAX_M2_7, const.MINIMAX_M2_7_HIGHSPEED],
-        }),
-        ("zhipu", {
-            "label": {"zh": "智谱AI", "en": "GLM"},
-            "api_key_field": "zhipu_ai_api_key",
-            "api_base_key": "zhipu_ai_api_base",
-            "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
-            "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
-        }),
-        ("dashscope", {
-            "label": {"zh": "通义千问", "en": "Qwen"},
-            "api_key_field": "dashscope_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
-        }),
-        ("moonshot", {
-            "label": "Kimi",
-            "api_key_field": "moonshot_api_key",
-            "api_base_key": "moonshot_base_url",
-            "api_base_default": "https://api.moonshot.cn/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
-        }),
-        ("doubao", {
-            "label": {"zh": "豆包", "en": "Doubao"},
-            "api_key_field": "ark_api_key",
-            "api_base_key": "ark_base_url",
-            "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_base_placeholder": _PLACEHOLDER_DOUBAO,
-            "models": [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE],
-        }),
-        ("qianfan", {
-            "label": {"zh": "百度千帆", "en": "ERNIE"},
-            "api_key_field": "qianfan_api_key",
-            "api_base_key": "qianfan_api_base",
-            "api_base_default": "https://qianfan.baidubce.com/v2",
-            "api_base_placeholder": _PLACEHOLDER_QIANFAN,
-            "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
-        }),
-        ("mimo", {
-            "label": {"zh": "小米 MiMo", "en": "MiMo"},
-            "api_key_field": "mimo_api_key",
-            "api_base_key": "mimo_api_base",
-            "api_base_default": "https://api.xiaomimimo.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
-        }),
-        ("linkai", {
-            "label": "LinkAI",
-            "api_key_field": "linkai_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": _RECOMMENDED_MODELS,
-        }),
-        ("custom", {
-            "label": {"zh": "自定义", "en": "Custom"},
-            "api_key_field": "custom_api_key",
-            "api_base_key": "custom_api_base",
-            "api_base_default": "",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [],
-        }),
-    ])
+    from models.catalog import PROVIDER_MODELS, _RECOMMENDED_MODELS
 
     EDITABLE_KEYS = {
         "stella_lang",
@@ -3019,8 +2921,10 @@ class ConfigHandler:
     @staticmethod
     def _mask_key(value: str) -> str:
         """Mask the middle part of an API key for display."""
-        if not value or len(value) <= 8:
-            return value
+        if not value:
+            return ''
+        if len(value) <= 8:
+            return '********'
         return value[:4] + "*" * (len(value) - 8) + value[-4:]
 
     def GET(self):
@@ -3030,7 +2934,7 @@ class ConfigHandler:
             from agent.subagent import SubagentSettings
             from agent.evolution.config import get_evolution_config
 
-            local_config = conf()
+            local_config = deepcopy(conf())
             use_agent = local_config.get("agent", True)
             title = "Stella" if use_agent else "AI Assistant"
 
@@ -3140,7 +3044,7 @@ class ConfigHandler:
             if not updates:
                 return json.dumps({"status": "error", "message": "no updates provided"})
 
-            local_config = conf()
+            local_config = deepcopy(conf())
             applied = {}
             nested = {}
             for key, value in updates.items():
@@ -3192,9 +3096,8 @@ class ConfigHandler:
                 file_cfg[section] = merged
                 local_config[section] = merged
                 applied[section] = merged
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(file_cfg, f, indent=4, ensure_ascii=False)
-            os.chmod(config_path, 0o600)
+            from core.security.config_credentials import save_runtime
+            save_runtime(config_path, file_cfg, conf())
 
             if any(key.endswith(("_api_key", "_api_base")) for key in applied):
                 sync_model_config_to_env(
@@ -3643,15 +3546,15 @@ class ModelsHandler:
 
     @classmethod
     def _write_file_config(cls, data: dict) -> None:
-        with open(cls._config_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        from core.security.config_credentials import save_runtime
+        save_runtime(cls._config_path(), data, conf())
 
     @staticmethod
     def _is_real_key(value: str) -> bool:
         return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
 
     @classmethod
-    def _custom_provider_cards(cls, local_config: dict) -> List[dict]:
+    def _custom_provider_cards(cls, local_config: dict, credential_states=None) -> List[dict]:
         """Expand ``custom_providers`` into one card per provider.
 
         Each user-defined OpenAI-compatible provider becomes its own card with
@@ -3689,6 +3592,7 @@ class ModelsHandler:
                 "id": f"custom:{pid}",
                 "label": {"zh": name, "en": name},
                 "configured": configured,
+                "credential_status": (credential_states or {}).get(f'CUSTOM:{pid}', 'configured' if configured else 'not-configured'),
                 "is_custom": True,
                 "custom_id": pid,
                 "custom_name": name,
@@ -3730,8 +3634,10 @@ class ModelsHandler:
         ``_custom_provider_cards``). Otherwise the legacy single ``custom``
         card is shown unchanged.
         """
-        local_config = conf()
-        custom_cards = cls._custom_provider_cards(local_config)
+        local_config = deepcopy(conf())
+        from core.security.config_credentials import public_states
+        credential_states = public_states(cls._config_path())
+        custom_cards = cls._custom_provider_cards(local_config, credential_states)
         # Keep the legacy single "custom" card visible alongside the expanded
         # ones when the flat custom_api_key/base config is active or filled,
         # so existing single-provider setups never disappear from the UI.
@@ -3753,6 +3659,7 @@ class ModelsHandler:
                 "id": pid,
                 "label": p["label"],
                 "configured": configured,
+                "credential_status": credential_states.get(key_field, 'configured' if configured else 'not-configured'),
                 "is_custom": (pid == "custom"),
                 "api_key_field": key_field,
                 "api_base_field": base_field,
@@ -4350,7 +4257,7 @@ class ModelsHandler:
         _require_auth()
         web.header("Content-Type", "application/json; charset=utf-8")
         try:
-            local_config = conf()
+            local_config = deepcopy(conf())
             return json.dumps({
                 "status": "success",
                 "providers": self._provider_overview(),
@@ -4405,7 +4312,7 @@ class ModelsHandler:
         api_base = (data.get("api_base") or "").strip() if api_base_present else None
 
         applied = {}
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         if "protocol_id" in data:
@@ -4465,7 +4372,7 @@ class ModelsHandler:
         if not meta:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         cleared = []
@@ -4506,7 +4413,7 @@ class ModelsHandler:
                 out.append(p)
         return out
 
-    def _persist_custom_providers(self, providers: List[dict], bot_type=None) -> None:
+    def _persist_custom_providers(self, providers: List[dict], bot_type=None, *, document=None) -> None:
         """Write the providers list to both in-memory conf and the on-disk
         config, then reset the bridge so bots rebuild.
 
@@ -4516,8 +4423,8 @@ class ModelsHandler:
         agent, vision) automatically use the correct model."""
         from models.custom_provider import parse_custom_bot_type
 
-        local_config = conf()
-        file_cfg = self._read_file_config()
+        local_config = deepcopy(conf())
+        file_cfg = document if document is not None else self._read_file_config()
         local_config["custom_providers"] = providers
         file_cfg["custom_providers"] = providers
         if bot_type is not None:
@@ -4563,19 +4470,13 @@ class ModelsHandler:
                         "model",
                         "",
                     )
-                os.environ.pop(
-                    "SKILL_IMAGE_GENERATION_PROVIDER",
-                    None,
-                )
-                os.environ.pop(
-                    "SKILL_IMAGE_GENERATION_MODEL",
-                    None,
-                )
-        sync_image_generation_custom_provider_env(
-            local_config,
-            overwrite=True,
-        )
         self._write_file_config(file_cfg)
+        sync_image_generation_custom_provider_env(conf(), overwrite=True)
+        if image_provider.startswith('custom:') and not any(
+            'custom:' + str(provider.get('id')) == image_provider for provider in providers
+        ):
+            os.environ.pop('SKILL_IMAGE_GENERATION_PROVIDER', None)
+            os.environ.pop('SKILL_IMAGE_GENERATION_MODEL', None)
         self._reset_bridge()
 
     def _handle_set_custom_provider(self, data: dict) -> str:
@@ -4624,8 +4525,9 @@ class ModelsHandler:
         if protocol_id not in PROTOCOLS:
             return json.dumps({"status": "error", "message": "unsupported upstream protocol"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        local_config = deepcopy(conf())
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
 
         existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
         if models is not None:
@@ -4685,7 +4587,7 @@ class ModelsHandler:
         elif existing and local_config.get("bot_type") == f"custom:{provider_id}" and models is not None:
             new_bot_type = f"custom:{provider_id}"
 
-        self._persist_custom_providers(providers, new_bot_type)
+        self._persist_custom_providers(providers, new_bot_type, document=file_cfg)
         logger.info(
             f"[ModelsHandler] custom provider {name!r} (id={provider_id}) "
             f"{'created' if created else 'updated'}"
@@ -4705,8 +4607,9 @@ class ModelsHandler:
         if not provider_id:
             return json.dumps({"status": "error", "message": "id is required"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        local_config = deepcopy(conf())
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
         remaining = [p for p in providers if p.get("id") != provider_id]
         if len(remaining) == len(providers):
             return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
@@ -4720,7 +4623,7 @@ class ModelsHandler:
             else:
                 new_bot_type = "custom"  # revert to legacy
 
-        self._persist_custom_providers(remaining, new_bot_type)
+        self._persist_custom_providers(remaining, new_bot_type, document=file_cfg)
         logger.info(f"[ModelsHandler] custom provider id={provider_id} deleted")
         return json.dumps({"status": "success", "id": provider_id})
 
@@ -4730,13 +4633,13 @@ class ModelsHandler:
         if not provider_id:
             return json.dumps({"status": "error", "message": "id is required"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
         if not any(p.get("id") == provider_id for p in providers):
             return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
 
         new_bot_type = f"custom:{provider_id}"
-        self._persist_custom_providers(providers, new_bot_type)
+        self._persist_custom_providers(providers, new_bot_type, document=file_cfg)
         logger.info(f"[ModelsHandler] active custom provider set to id={provider_id}")
         return json.dumps({"status": "success", "active_id": provider_id})
 
@@ -4769,7 +4672,7 @@ class ModelsHandler:
         # provider field is persisted so users picking a custom model under
         # a specific vendor still get routed there — runtime falls back to
         # model-name prefix inference only when provider is empty.
-        local_config = conf()
+        local_config = deepcopy(conf())
         if provider_id.startswith("custom:"):
             custom_id = provider_id[len("custom:"):]
             providers = self._normalize_custom_providers(
@@ -4861,7 +4764,7 @@ class ModelsHandler:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         applied = {}
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         if protocol_id is not None:
@@ -4936,7 +4839,7 @@ class ModelsHandler:
                 "message": "vision model is required when a provider is selected",
             })
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
         self._set_nested_namespace_value(local_config, "tools", "vision", "model", model)
@@ -4983,7 +4886,7 @@ class ModelsHandler:
             return json.dumps({"status": "error", "message": f"invalid mode: {mode!r}"})
         always = (mode == "always")
         if_voice = (mode == "voice_if_voice")
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["always_reply_voice"] = always
         local_config["voice_reply_voice"] = if_voice
@@ -4997,7 +4900,7 @@ class ModelsHandler:
         return json.dumps({"status": "success", "mode": mode})
 
     def _set_simple(self, key: str, value: str) -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config[key] = value
         file_cfg[key] = value
@@ -5009,7 +4912,7 @@ class ModelsHandler:
         return json.dumps({"status": "success", key: value})
 
     def _set_asr(self, provider_id: str, model: str) -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["voice_to_text"] = provider_id
         file_cfg["voice_to_text"] = provider_id
@@ -5033,7 +4936,7 @@ class ModelsHandler:
         })
 
     def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["text_to_voice"] = provider_id
         file_cfg["text_to_voice"] = provider_id
@@ -5082,7 +4985,7 @@ class ModelsHandler:
                 "status": "error",
                 "message": "embedding model is required when a provider is selected",
             })
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["embedding_provider"] = provider_id
         file_cfg["embedding_provider"] = provider_id
@@ -5110,7 +5013,7 @@ class ModelsHandler:
         else:
             provider = ""
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(local_config, "tools", "web_search", "strategy", strategy)
         self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "strategy", strategy)
@@ -5128,11 +5031,12 @@ class ModelsHandler:
         model-vendor flow.
         """
         api_key = (data.get("api_key") or "").strip() if isinstance(data.get("api_key"), str) else ""
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(local_config, "tools", "web_search", "bocha_api_key", api_key)
         self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "bocha_api_key", api_key)
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(conf(), overwrite=True, fields={'BOCHA_API_KEY'})
         logger.info(f"[ModelsHandler] search credential set: bocha_api_key={'***' if api_key else ''}")
         return json.dumps({"status": "success", "provider": "bocha"})
 
@@ -5997,11 +5901,23 @@ class McpCatalogHandler:
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
         try:
             from agent.tools.tool_manager import ToolManager
             body = json.loads(web.data() or b'{}')
             if not isinstance(body, dict) or not isinstance(body.get('name'), str):
                 raise ValueError('MCP name is required')
+            if set(body) == {'name', 'action'} and body['action'] in {'oauth-status', 'oauth-authorize', 'oauth-cancel', 'oauth-remove'}:
+                result = ToolManager().manage_mcp_authorization(body['name'], body['action'].removeprefix('oauth-'))
+                return json.dumps({'status': 'success', 'oauth': result}, ensure_ascii=False)
+            if set(body) == {'name', 'action'} and body['action'] == 'credential-status':
+                result = ToolManager().manage_mcp_credentials(body['name'], 'status')
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
+            if (set(body) == {'name', 'action', 'area', 'key', 'value', 'expectedRevision'}
+                    and body['action'] == 'credential-save'):
+                result = ToolManager().manage_mcp_credentials(body['name'], 'save', area=body['area'], key=body['key'],
+                    value=body['value'], expected_revision=body['expectedRevision'])
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
             if set(body) == {'name', 'action'} and body['action'] == 'discover':
                 ToolManager().discover_mcp_tools(body['name'])
             elif set(body) == {'name', 'enabled'} and type(body['enabled']) is bool:
@@ -6150,6 +6066,45 @@ class SecurityActivityHandler:
         }, ensure_ascii=False)
 
 
+class SecurityConnectionsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.connections import ConnectionControl
+        try:
+            return json.dumps({'status': 'success', **ConnectionControl().inventory()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Connections', error)
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.security.connections import ConnectionControl
+        try:
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) != {'id', 'enabled', 'revision'}:
+                raise ValueError('Invalid connection control fields')
+            result = ConnectionControl().save(body['id'], enabled=body['enabled'], expected_revision=body['revision'])
+            return json.dumps({'status': 'success', 'connection': result}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Connections', error)
+
+
+class SecuritySensitiveResourcesHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.credentials import CredentialDirectory
+        from core.security.isolation import application_isolation
+        try:
+            return json.dumps({'status': 'success', **CredentialDirectory().inventory(),
+                'folder_protection': application_isolation()}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Sensitive resources', error)
+
+
 class SecurityCenterHandler:
     def GET(self):
         _require_auth()
@@ -6178,8 +6133,10 @@ class SecurityRunPolicyHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        params = web.input(kind='template', subject='default', agent='')
+        params = web.input(kind='template', subject='default', agent='', view='')
         try:
+            if getattr(params, 'view', '') == 'inventory':
+                return json.dumps({'status': 'success', **_permission_control().inventory()}, ensure_ascii=False)
             return json.dumps({'status': 'success', **_permission_control().read(
                 params.kind, params.subject, params.agent or None)}, ensure_ascii=False)
         except (ValueError, PermissionError, OSError) as error:
@@ -6278,6 +6235,49 @@ class CapabilityAccessSettingsHandler(FeatureAccessSettingsHandler):
 
 
 class SecurityRuntimeTrustHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        from core.security.control import RuntimeControl, require_owner
+        try:
+            require_owner()
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict):
+                raise ValueError('Environment action must be an object')
+            action = body.get('action')
+            fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else
+                                                {'token', 'sourceId'} if action == 'adopt-storage' else set())
+            if (set(body) != fields or action not in ('rebuild', 'resume', 'adopt-storage') or body['kind'] not in ('plugin', 'mcp')
+                    or not isinstance(body['id'], str) or not body['id']):
+                raise ValueError('Select a supported installed plugin or local MCP environment to rebuild')
+            if action == 'adopt-storage' and body['kind'] != 'mcp':
+                raise ValueError('Retained private data confirmation requires a local MCP')
+            if action == 'resume' and (not isinstance(body['operationId'], str) or not body['operationId']):
+                raise ValueError('Rebuild operation is required')
+            if body['kind'] == 'mcp':
+                from agent.tools.tool_manager import ToolManager
+                from core.mcp.lifecycle import McpLifecycle
+                lifecycle = McpLifecycle(ToolManager())
+                if action == 'rebuild':
+                    lifecycle.rebuild(body['id'])
+                elif action == 'adopt-storage':
+                    lifecycle.adopt_storage(body['id'], body['token'], body['sourceId'])
+                else:
+                    lifecycle.resume(body['id'], body['operationId'])
+            else:
+                manager, user = _plugin_manager(), _plugin_user()
+                if action == 'rebuild':
+                    manager.rebuild(body['id'], user_id=user)
+                else:
+                    operation = manager.management.operation(body['operationId'])
+                    if operation['userId'] != user or operation['pluginId'] != body['id'] or operation['kind'] != 'rebuild':
+                        raise PermissionError('Rebuild operation does not belong to this user and plugin')
+                    manager.resume(operation['operationId'])
+            return json.dumps({'status': 'success', **RuntimeControl().inventory()}, ensure_ascii=False)
+        except (KeyError, ValueError, PermissionError, OSError, RuntimeError) as error:
+            return _api_reject('Environment rebuild', error)
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -6288,14 +6288,6 @@ class SecurityRuntimeTrustHandler:
         except (ValueError, PermissionError, OSError) as error:
             return _api_reject('Execution environment', error)
 
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from core.security.control import RuntimeControl
-        try:
-            return json.dumps({'status': 'success', **RuntimeControl().save(json.loads(web.data() or b'{}'))}, ensure_ascii=False)
-        except (ValueError, PermissionError, OSError) as error:
-            return _api_reject('Execution environment', error)
 
 
 class SecurityPolicyHandler:
@@ -6336,7 +6328,7 @@ class SecuritySecretsHandler:
                 raise ValueError("credential value required")
             set_secret(str(body.get("name") or ""), body["value"])
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
     def DELETE(self):
@@ -6347,7 +6339,7 @@ class SecuritySecretsHandler:
             body = json.loads(web.data() or b"{}")
             set_secret(str(body.get("name") or ""), None)
             return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
 
@@ -6370,7 +6362,7 @@ class SecurityPrivacyHandler:
             body = json.loads(web.data() or b"{}")
             result = cleanup(str(body.get("action") or ""))
             return json.dumps({**result, **inventory()}, ensure_ascii=False)
-        except ValueError as error:
+        except (ValueError, PermissionError) as error:
             return _api_reject("Security", error)
 
 
@@ -7819,7 +7811,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
     global_policy = resolve(global_permission)
     source = "independent"
-    modes = [row for row in MODE_DEFINITIONS if row['id'] != 'custom']
+    modes = MODE_DEFINITIONS
     from agent.permission.process_sandbox import capability
     isolation = capability()
     if effective_mode(effective_policy) == "full-access":
@@ -7839,7 +7831,7 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "source": source,
             "preset": effective_policy["preset"],
             "global_preset": global_policy["preset"],
-            "mode": effective_policy.get("filesystem_mode", effective_mode(effective_policy)),
+            "mode": effective_policy.get("permission_mode", effective_policy.get("filesystem_mode", effective_mode(effective_policy))),
             "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
             "rules": effective_rules(effective_policy),
             "policy": effective_policy,

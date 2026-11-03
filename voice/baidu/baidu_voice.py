@@ -5,7 +5,7 @@ import json
 import os
 import time
 import threading
-import requests
+from core.security.requests_transport import voice_requests as requests
 
 from aip import AipSpeech
 

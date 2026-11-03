@@ -18,6 +18,7 @@ from zai import ZhipuAiClient
 # ZhipuAI对话模型API
 class ZHIPUAIBot(Bot, ZhipuAIImage):
     def __init__(self):
+        raise PermissionError('This SDK/WebSocket provider has no controlled transport adapter; existing configuration is preserved.')
         super().__init__()
         self.sessions = SessionManager(ZhipuAISession, model=conf().get("model") or "ZHIPU_AI")
         self.args = {

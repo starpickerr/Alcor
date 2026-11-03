@@ -50,7 +50,8 @@ def dispatch(session, params: dict, parent: dict) -> dict:
     if params['invocationRef'] != context.get('invocationRef') or context.get('userId') != session.user_id:
         raise PermissionError('callback invocationRef does not belong to this channel invocation')
     contract = params['contract']
-    if contract not in PUBLIC_SERVICES:
+    runtime = contract == 'stella.runtime@1'
+    if not runtime and contract not in PUBLIC_SERVICES:
         raise PermissionError('Core service is not public')
     chain = (current_delegation() or {}).get('chain') or context.get('delegationChain') or []
     target = contract.rsplit('@', 1)[0]
@@ -73,6 +74,13 @@ def dispatch(session, params: dict, parent: dict) -> dict:
     if deadline <= datetime.now(timezone.utc):
         raise PermissionError('callback deadline expired')
     session.registry.require_generation(session.plugin_id, session.generation)
+    if runtime:
+        from core.security.delegated_runtime import invoke_runtime
+        from core.security.service import SecurityService
+        SecurityService.check_execution()
+        result = validate_operation_result(invoke_runtime(session, parent, params['method'], params['input']))
+        SecurityService.check_execution()
+        return result
     from core.security.service import SecurityService, model_authorization_scope
     if contract == 'stella.data@1':
         SecurityService.authorize_data(session, parent, params['input'].get('source_id'))

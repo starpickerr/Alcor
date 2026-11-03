@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from models.openai_compatible_bot import OpenAICompatibleBot
 from models.openai.openai_http_client import OpenAIHTTPClient, OpenAIHTTPError
+from models.provider_config import refresh_provider
 
 
 class OpenAIChatAdapter(OpenAICompatibleBot):
@@ -15,7 +16,8 @@ class OpenAIChatAdapter(OpenAICompatibleBot):
     def get_api_config(self):
         from config import conf
         cfg = conf()
-        return {"api_key": self.provider.api_key, "api_base": self.provider.api_base,
+        provider = refresh_provider(self.provider)
+        return {"api_key": provider.api_key, "api_base": provider.api_base,
                 "default_temperature": cfg.get("temperature", 0.9),
                 "default_top_p": cfg.get("top_p", 1.0),
                 "default_frequency_penalty": cfg.get("frequency_penalty", 0.0),
@@ -38,7 +40,16 @@ class NativeProtocolAdapter:
         self.bot._stella_api_base = provider.api_base
 
     def call_with_tools(self, messages, tools=None, stream=False, **kwargs):
-        return self.bot.call_with_tools(messages, tools=tools, stream=stream, **kwargs)
+        def invoke():
+            provider = refresh_provider(self.provider)
+            if (self.bot._stella_api_key, self.bot._stella_api_base) != (provider.api_key, provider.api_base):
+                self.__init__(provider, self.protocol_id)
+            return self.bot.call_with_tools(messages, tools=tools, stream=stream, **kwargs)
+        if stream:
+            def chunks():
+                yield from invoke()
+            return chunks()
+        return invoke()
 
 
 class OpenAIResponsesAdapter(OpenAICompatibleBot):
@@ -223,7 +234,7 @@ class OpenAIResponsesAdapter(OpenAICompatibleBot):
                        "status_code": event.get("status_code") or 500}
                 return
 
-    def call_with_tools(self, messages, tools=None, stream=False, **kwargs):
+    def _call_with_current_config(self, messages, tools=None, stream=False, **kwargs):
         from config import conf
         model = kwargs.get("model")
         if not model:
@@ -240,10 +251,11 @@ class OpenAIResponsesAdapter(OpenAICompatibleBot):
         if kwargs.get("reasoning_effort"):
             payload["reasoning"] = {"effort": kwargs["reasoning_effort"]}
         client = OpenAIHTTPClient(proxy=conf().get("proxy") or None)
+        provider = refresh_provider(self.provider)
         try:
             result = client._request(path="/responses", payload=payload,
-                                     api_key=self.provider.api_key,
-                                     api_base=self.provider.api_base, timeout=None,
+                                     api_key=provider.api_key,
+                                     api_base=provider.api_base, timeout=None,
                                      stream=stream)
             return self._stream(result) if stream else self._response(result)
         except OpenAIHTTPError as exc:

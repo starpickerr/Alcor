@@ -853,7 +853,7 @@ def test_secrets_include_custom_providers_without_plaintext(tmp_path, monkeypatc
     names = {row["name"] for row in status}
     assert "OPENAI_API_KEY" in names
     assert "CUSTOM:my-lab" in names
-    assert "CUSTOM:empty" not in names
+    assert next(row for row in status if row["name"] == "CUSTOM:empty")["configured"] is False
     custom = next(row for row in status if row["name"] == "CUSTOM:my-lab")
     assert custom["display_name"] == "My Lab"
     assert "secret-key" not in json.dumps(status)
@@ -908,7 +908,10 @@ def test_custom_model_secret_updates_only_registered_credentials(tmp_path, monke
     center.set_secret("CUSTOM:Mixed-ID", "replacement-test")
     assert saved["custom_providers"][0] == {**providers[0], "api_key": "replacement-test"}
     assert saved["custom_providers"][1] == providers[1]
-    assert json.loads(path.read_text()) == saved
+    from core.security.config_credentials import resolve
+    assert resolve(path, json.loads(path.read_text()))[0] == saved
+    if config_module.sys.platform == 'darwin':
+        assert 'replacement-test' not in path.read_text()
     assert path.stat().st_mode & 0o777 == 0o600
     assert "replacement-test" not in json.dumps(center.secrets())
     before = path.read_text()

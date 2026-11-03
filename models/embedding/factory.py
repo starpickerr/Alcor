@@ -16,6 +16,9 @@ import os
 
 from common.log import logger
 
+_KEY_FIELDS = {'openai': 'open_ai_api_key', 'linkai': 'linkai_api_key', 'dashscope': 'dashscope_api_key',
+               'doubao': 'ark_api_key', 'zhipu': 'zhipu_ai_api_key', 'custom': 'custom_api_key'}
+
 # Track whether the embedding model log has been printed in this process,
 # so we avoid spamming it once per session/caller.
 _embedding_logged: bool = False
@@ -26,9 +29,13 @@ def create_default_embedding_provider():
     from config import conf
 
     explicit_provider = (conf().get("embedding_provider") or "").strip().lower()
-    if not explicit_provider:
-        return _init_legacy_provider()
-    return _init_explicit_provider(explicit_provider)
+    try:
+        if not explicit_provider:
+            return _init_legacy_provider()
+        return _init_explicit_provider(explicit_provider)
+    except OSError:
+        logger.warning('[EmbeddingFactory] Saved credential is unavailable; open its original settings to repair it')
+        return None
 
 
 def _init_legacy_provider():
@@ -39,7 +46,8 @@ def _init_legacy_provider():
     embedding_provider = None
     embedding_model = None
 
-    openai_api_key = conf().get("open_ai_api_key", "")
+    from core.security.config_credentials import runtime_value
+    openai_api_key = runtime_value('open_ai_api_key', conf().get("open_ai_api_key", ""))
     openai_api_base = conf().get("open_ai_api_base", "")
     if openai_api_key and openai_api_key not in ["", "YOUR API KEY", "YOUR_API_KEY"]:
         try:
@@ -49,13 +57,14 @@ def _init_legacy_provider():
                 model=model,
                 api_key=openai_api_key,
                 api_base=openai_api_base or "https://api.openai.com/v1",
+                credential_provider=lambda: _runtime_credentials('openai'),
             )
             embedding_model = f"openai/{model}"
         except Exception as e:
             logger.warning(f"[EmbeddingFactory] OpenAI embedding failed: {e}")
 
     if embedding_provider is None:
-        linkai_api_key = conf().get("linkai_api_key", "") or os.environ.get("LINKAI_API_KEY", "")
+        linkai_api_key = runtime_value('linkai_api_key', conf().get("linkai_api_key", "") or os.environ.get("LINKAI_API_KEY", ""))
         linkai_api_base = conf().get("linkai_api_base", "https://api.link-ai.tech")
         if linkai_api_key and linkai_api_key not in ["", "YOUR API KEY", "YOUR_API_KEY"]:
             try:
@@ -66,6 +75,7 @@ def _init_legacy_provider():
                     api_key=linkai_api_key,
                     api_base=f"{linkai_api_base}/v1",
                     source_tagged=True,
+                    credential_provider=lambda: _runtime_credentials('linkai'),
                 )
                 embedding_model = f"linkai/{model}"
             except Exception as e:
@@ -132,6 +142,7 @@ def _init_explicit_provider(provider_key: str):
             api_base=api_base,
             dimensions=dim,
             source_tagged=True if resolved_provider_key == "linkai" else None,
+            credential_provider=lambda: _runtime_credentials(provider_key),
         )
     except Exception as e:
         logger.error(
@@ -144,44 +155,39 @@ def _init_explicit_provider(provider_key: str):
     return provider
 
 
-def _resolve_api_key(provider_key: str) -> str:
+def _resolve_api_key(provider_key: str, settings=None) -> str:
     """Pick the API key for an explicit embedding provider from config."""
     from config import conf
+    cfg = conf() if settings is None else settings
 
     if provider_key.startswith("custom:"):
-        from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+        from models.custom_provider import parse_custom_bot_type, _find_provider_by_id
         _, custom_id = parse_custom_bot_type(provider_key)
         if custom_id:
-            entry = _find_provider_by_id(get_custom_providers(), custom_id)
+            entry = _find_provider_by_id(cfg.get('custom_providers', []), custom_id)
             if entry:
                 return entry.get("api_key", "")
         return ""
 
-    key_map = {
-        "openai":    "open_ai_api_key",
-        "linkai":    "linkai_api_key",
-        "dashscope": "dashscope_api_key",
-        "doubao":    "ark_api_key",
-        "zhipu":     "zhipu_ai_api_key",
-    }
-    field = key_map.get(provider_key)
+    field = _KEY_FIELDS.get(provider_key)
     if not field:
         return ""
-    value = conf().get(field, "") or ""
+    value = cfg.get(field, "") or ""
     if value in ["", "YOUR API KEY", "YOUR_API_KEY"]:
         return ""
     return value
 
 
-def _resolve_api_base(provider_key: str, default_base: str) -> str:
+def _resolve_api_base(provider_key: str, default_base: str, settings=None) -> str:
     """Pick the API base for an explicit embedding provider from config."""
     from config import conf
+    cfg = conf() if settings is None else settings
 
     if provider_key.startswith("custom:"):
-        from models.custom_provider import parse_custom_bot_type, get_custom_providers, _find_provider_by_id
+        from models.custom_provider import parse_custom_bot_type, _find_provider_by_id
         _, custom_id = parse_custom_bot_type(provider_key)
         if custom_id:
-            entry = _find_provider_by_id(get_custom_providers(), custom_id)
+            entry = _find_provider_by_id(cfg.get('custom_providers', []), custom_id)
             if entry and entry.get("api_base"):
                 return entry["api_base"]
         return default_base
@@ -191,16 +197,32 @@ def _resolve_api_base(provider_key: str, default_base: str) -> str:
         "linkai":    "linkai_api_base",
         "doubao":    "ark_base_url",
         "zhipu":     "zhipu_ai_api_base",
+        "dashscope": "dashscope_api_base",
+        "custom": "custom_api_base",
     }
     field = base_map.get(provider_key)
     if not field:
         return default_base
-    value = (conf().get(field) or "").strip()
+    value = (cfg.get(field) or "").strip()
     if not value:
         return default_base
     if provider_key == "linkai" and not value.rstrip("/").endswith("/v1"):
         return f"{value.rstrip('/')}/v1"
     return value
+
+
+def _runtime_credentials(provider_key):
+    from config import conf
+    from core.security.config_credentials import runtime_document, runtime_value
+    from models.embedding.provider import EMBEDDING_VENDORS
+    name = 'CUSTOM:' + provider_key.partition(':')[2] if provider_key.startswith('custom:') else _KEY_FIELDS[provider_key]
+    document = runtime_document(name)
+    cfg = document if document is not None else conf()
+    key = runtime_value(name, _resolve_api_key(provider_key, cfg), document=document)
+    if not key:
+        raise ValueError('Embedding credential is unavailable; repair it in its original settings')
+    vendor = 'custom' if provider_key.startswith('custom:') else provider_key
+    return key, _resolve_api_base(provider_key, EMBEDDING_VENDORS[vendor]['default_base_url'], cfg)
 
 
 def _log_provider_once(detail: str):

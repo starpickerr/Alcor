@@ -1,6 +1,6 @@
 # encoding:utf-8
 
-import requests
+from models import transport_requests as requests
 import json
 from common import const
 from models.bot import Bot

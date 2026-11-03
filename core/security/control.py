@@ -13,7 +13,7 @@ def require_owner():
 
 def public_policy(policy):
     return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'policy_revision',
-        'extra_roots', 'connections') if key in policy}
+        'extra_roots', 'connections', 'permission_mode', 'rules') if key in policy}
 
 
 class PermissionControl:
@@ -24,6 +24,18 @@ class PermissionControl:
         if self.task_service is None:
             raise ValueError('Task service is unavailable')
         return self.task_service(agent)
+
+    def inventory(self):
+        require_owner()
+        from common.runtime_identity import current_identity
+        from core.security.migration import ensure_migrated
+        from core.security.policy_store import RunPolicyStore
+        ensure_migrated()
+        rows = RunPolicyStore().subjects(current_identity().user_id or 'local-default')
+        return {'subjects': [dict(agent=agent, kind=kind, subject=subject, policy=public_policy(policy),
+            source='independent', migration_status=policy.get('migration_status', 'complete'),
+            original_url='/tasks' if kind == 'task' else '/')
+            for agent, kind, subject, policy in rows if not policy.get('revoked')]}
 
     @staticmethod
     def _prepare(kind, subject, agent):
@@ -55,14 +67,18 @@ class PermissionControl:
 
     def save(self, kind, subject, patch, agent=None):
         require_owner()
-        if kind not in {'session', 'task'}:
-            raise ValueError('Only session and task permissions are editable; defaults are fixed read-only')
+        if kind not in {'template', 'session', 'task'}:
+            raise ValueError('Invalid policy subject')
+        if kind == 'template' and subject != 'default':
+            raise ValueError('Only the current default template is editable')
         self._prepare(kind, subject, agent)
         from core.security.run_policy import validate_policy, save_run_policy
         clean = validate_policy(patch)
         if type(clean.get('policy_revision')) is not int or clean['policy_revision'] < (0 if kind == 'task' else 1):
             raise ValueError('Current policy revision is required')
-        if kind == 'task':
+        if kind == 'template':
+            save_run_policy(kind, 'owner-default-v2', clean, expected_revision=clean['policy_revision'])
+        elif kind == 'task':
             self._tasks(agent).update(subject, {'run_policy': clean}, agent_id=agent, origin='user')
         else:
             save_run_policy(kind, subject, clean, agent_id=agent, expected_revision=clean['policy_revision'])
@@ -80,13 +96,13 @@ class RuntimeControl:
         from core.plugins.management import default_store
         from core.plugins.package_ops import PackageStore
         from core.plugins.host import _LIVE_SESSIONS
-        from core.security.runtime_trust import plugin_trusted
         from agent.permission.process_sandbox import capability
         from agent.tools.mcp.mcp_client import LIVE_CLIENTS
         from agent.tools.tool_manager import ToolManager
         from core.security.mcp_runtime import launch_identity
-        from core.security.runtime_trust import RuntimeTrustStore
-        from core.mcp.managed import ManagedMcpConfig
+        from core.plugins.lifecycle import dependency_rebuild_support
+        from core.plugins.manifest import load_manifest
+        from core.runtime.environments import EnvironmentStore
         user = current_identity().user_id or 'local-default'
         packages = PackageStore(default_store().root)
         rows = []
@@ -101,41 +117,80 @@ class RuntimeControl:
                 continue
             session = next((row for row in list(_LIVE_SESSIONS) if row.plugin_id == identifier and row.user_id == user
                             and row._proc is not None and row._proc.poll() is None), None)
-            trusted = plugin_trusted(package['path'], identifier, package['digest'], user)
-            rows.append({'kind': 'plugin', 'id': identifier, 'digest': package['digest'], 'trusted': trusted,
+            supported, rebuild_reason = dependency_rebuild_support(load_manifest(Path(package['path'])))
+            store = default_store()
+            enrolled = store.has_instance(identifier, user)
+            if not enrolled or store.instance(identifier, user)['intent'] == 'removed':
+                supported, rebuild_reason = False, 'Enable or install this plugin before rebuilding'
+            pending = store.unfinished(identifier)
+            resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                      and pending[0]['kind'] == 'rebuild' and pending[0]['userId'] == user else None)
+            if pending or store.runtime_state(identifier, user) in {'maintenance', 'draining'}:
+                supported, rebuild_reason = False, 'A pending operation needs recovery first'
+            environment = getattr(session, 'environment', None)
+            environment_error = None
+            if environment is None:
+                try:
+                    environment = EnvironmentStore().current('plugin', identifier, user)
+                except (ValueError, OSError):
+                    environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+            rows.append({'kind': 'plugin', 'id': identifier, 'digest': package['digest'], 'environment': environment,
+                'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                **({'rebuild_operation': resume} if resume else {}),
+                **({'environment_error': environment_error} if environment_error else {}),
                 'running': session is not None, 'mode': session.sandbox_state['mode'] if session else 'stopped',
                 'reason': session.sandbox_state.get('reason') if session else 'Worker has not started.'})
+        from core.mcp.lifecycle import McpLifecycle, rebuild_support
+        from core.security.mcp_runtime import _verify_bound_implementation, environment_identity, private_storage
         manager = ToolManager()
         for config in manager._load_mcp_configs():
             if config.get('type', 'stdio') != 'stdio':
-                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'remote', 'reason': 'Remote connection; local process isolation does not apply.'})
+                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'remote', 'reason': 'Remote connection; local process isolation does not apply.',
+                             'can_rebuild': False, 'rebuild_reason': 'Remote MCP connections have no local dependency environment.'})
                 continue
             try:
-                digest, _ = launch_identity(config)
-                choice = RuntimeTrustStore().choice(user_id=user, kind='mcp', identifier=config['name'], digest=digest)
-                trusted = choice if choice is not None else isinstance(config, ManagedMcpConfig)
+                digest, package = launch_identity(config)
+                _verify_bound_implementation(config, package)
+                execution_digest = environment_identity(config)
                 client = next((row for row in list(LIVE_CLIENTS) if row._runtime_key and
-                               row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name'] and row._proc is not None
+                               row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name']
+                               and row._runtime_key['digest'] == digest and row._proc is not None
                                and row._proc.poll() is None), None)
-                rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest, 'trusted': trusted,
-                    'mode': client.sandbox_state['mode'] if client else 'stopped', 'running': client is not None,
-                    'reason': client.sandbox_state.get('reason') if client else 'Server has not started.'})
+                supported, rebuild_reason = rebuild_support(config)
+                pending = McpLifecycle(manager).pending(config['name'])
+                resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                          and pending[0]['kind'] == 'mcp-rebuild'
+                          and pending[0]['facts'].get('workspace') == str(manager.workspace_root) else None)
+                if pending:
+                    supported, rebuild_reason = False, 'A pending MCP operation needs recovery first'
+                environment = getattr(client, 'environment', None)
+                environment_error = None
+                if environment is None:
+                    try:
+                        environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=execution_digest)
+                        if environment and Path(environment['package']) != package:
+                            environment = None
+                    except (ValueError, OSError):
+                        environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+                storage_error = None
+                storage_migration = None
+                try:
+                    private_storage(config, user, execution_digest)
+                except (ValueError, OSError) as error:
+                    storage_error = str(error)
+                    from core.security.mcp_runtime import McpStorageMigrationRequired
+                    if isinstance(error, McpStorageMigrationRequired):
+                        storage_migration = McpLifecycle(manager).storage_preview(config['name'])
+                rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
+                    'mode': 'unavailable' if storage_error else client.sandbox_state['mode'] if client else 'stopped',
+                    'running': client is not None,
+                    'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                    **({'rebuild_operation': resume} if resume else {}),
+                    **({'environment_error': environment_error} if environment_error else {}),
+                    **({'storage_migration': storage_migration} if storage_migration else {}),
+                    'reason': storage_error or (client.sandbox_state.get('reason') if client else 'Server has not started.')})
             except (ValueError, OSError) as error:
                 rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable', 'reason': str(error)})
-        return {'runtimes': rows, 'isolation': capability()}
-
-    def save(self, body):
-        require_owner()
-        if set(body) != {'kind', 'id', 'digest', 'trusted'} or not isinstance(body['trusted'], bool):
-            raise ValueError('Invalid runtime trust choice')
-        current = next((row for row in self.inventory()['runtimes'] if row['kind'] == body['kind'] and row['id'] == body['id']), None)
-        if not current or not current.get('digest') or current['digest'] != body['digest']:
-            raise ValueError('Runtime package changed; refresh before changing trust')
-        from core.security.runtime_trust import RuntimeTrustStore
-        from core.security.access_settings import current_user
-        RuntimeTrustStore().set(user_id=current_user(), kind=body['kind'], identifier=body['id'],
-                               digest=body['digest'], trusted=body['trusted'])
-        from agent.permission.audit import record
-        record(event='runtime_trust', operation='update', resource=body['kind'], decision='policy_change',
-               reason='Owner changed digest-bound runtime trust.')
-        return self.inventory()
+        from core.security.isolation import application_isolation
+        return {'runtimes': rows, 'isolation': {**capability(), 'scope': 'child-process'},
+                'application_isolation': application_isolation()}

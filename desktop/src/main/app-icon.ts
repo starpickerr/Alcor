@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, net, shell } from 'electron'
+import { decodeIconDataUrl } from './renderer-security'
+import type { TrustedIpc } from './renderer-security'
+import { app, BrowserWindow, nativeImage, NativeImage, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -14,7 +16,6 @@ const ICON_FILE = 'icon.png'
 const ICO_FILE = 'icon.ico'
 const META_FILE = 'meta.json'
 const MAX_ICON_BYTES = 4 * 1024 * 1024
-const DOWNLOAD_TIMEOUT_MS = 10 * 1000
 
 interface CachedMeta {
   title?: string
@@ -40,55 +41,9 @@ function icoCachePath(): string {
   return path.join(cacheDir(), ICO_FILE)
 }
 
-// Download in the main process so the bytes aren't mangled by a text transport.
-function downloadBuffer(url: string): Promise<Buffer | null> {
-  return new Promise((resolve) => {
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      resolve(null)
-      return
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      resolve(null)
-      return
-    }
-    let done = false
-    const finish = (buf: Buffer | null) => {
-      if (done) return
-      done = true
-      resolve(buf)
-    }
-    const request = net.request({ method: 'GET', url })
-    const timer = setTimeout(() => {
-      request.abort()
-      finish(null)
-    }, DOWNLOAD_TIMEOUT_MS)
-    request.on('response', (response) => {
-      const chunks: Buffer[] = []
-      let size = 0
-      response.on('data', (chunk: Buffer) => {
-        size += chunk.length
-        if (size > MAX_ICON_BYTES) {
-          request.abort()
-          clearTimeout(timer)
-          finish(null)
-          return
-        }
-        chunks.push(chunk)
-      })
-      response.on('end', () => {
-        clearTimeout(timer)
-        finish(Buffer.concat(chunks))
-      })
-    })
-    request.on('error', () => {
-      clearTimeout(timer)
-      finish(null)
-    })
-    request.end()
-  })
+// Decode caller-provided raster bytes without a privileged network request.
+async function downloadBuffer(value: string): Promise<Buffer | null> {
+  return decodeIconDataUrl(value)
 }
 
 async function downloadImage(url: string): Promise<NativeImage | null> {
@@ -287,11 +242,11 @@ function syncWindowsShortcuts(opts: { icoPath?: string | null; title?: string })
 export function setupAppIconIPC(deps: {
   getWindow: () => BrowserWindow | null
   getTray: () => Electron.Tray | null
-}): void {
+}, ipc: TrustedIpc): void {
   getMainWindow = deps.getWindow
   getTrayIcon = deps.getTray
 
-  ipcMain.handle('set-app-icon', async (_event, iconUrl: unknown, icoUrl: unknown) => {
+  ipc.handle('set-app-icon', async (_event, iconUrl: unknown, icoUrl: unknown) => {
     if (typeof iconUrl !== 'string' || !iconUrl) return false
     const icon = await downloadImage(iconUrl)
     if (!icon) return false
@@ -306,7 +261,7 @@ export function setupAppIconIPC(deps: {
     return true
   })
 
-  ipcMain.handle('set-app-title', (_event, title: unknown) => {
+  ipc.handle('set-app-title', (_event, title: unknown) => {
     if (typeof title !== 'string' || !title.trim()) return false
     applyTitle(title)
     cacheMeta({ title })

@@ -22,7 +22,7 @@ def test_commit_tasks_package_and_invoke_service(tmp_path):
         Path(current["path"]),
         source_label="local-cache",
         registry=DEFAULT_REGISTRY,
-    )
+     data_handle={'dbPath':str(tmp_path/'todos.db')})
     try:
         started = session.start()
         assert started["initialize"]["pluginId"] == "stella.tasks"

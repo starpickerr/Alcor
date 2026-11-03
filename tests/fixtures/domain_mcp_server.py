@@ -16,6 +16,8 @@ repo = (
     root / "MCP" / ("fudan-elearning-mcp" if args.domain == "elearning" else "email-mcp")
 )
 pkg = "elearning_mcp" if args.domain == "elearning" else "email_mcp"
+if (Path(__file__).parent / pkg).is_dir():
+    repo = Path(__file__).parent
 sys.path.insert(0, str(repo))
 module = importlib.import_module(pkg + ".server")
 if args.domain == "elearning":

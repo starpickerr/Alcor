@@ -66,6 +66,40 @@ def test_package_name_does_not_establish_first_party_trust(tmp_path):
     assert not verified_first_party(tmp_path, 'stella.tasks', 'b' * 64)
 
 
+def test_mutable_sibling_catalog_cannot_establish_first_party_identity(tmp_path, monkeypatch):
+    import json
+    import core.security.runtime_trust as trust
+    from core.plugins.package_ops import _sha256_tree
+    package = tmp_path / 'Stella-Plugins/plugins/counterfeit'
+    package.mkdir(parents=True)
+    (package / 'plugin.json').write_text('{"id":"stella.agent-hub"}')
+    digest = _sha256_tree(package)
+    catalog = tmp_path / 'Stella-Plugins/catalog/official.json'
+    catalog.parent.mkdir()
+    catalog.write_text(json.dumps({'plugins': [{'pluginId': 'stella.agent-hub', 'sha256': digest}]}))
+    monkeypatch.setattr(trust, '__file__', str(tmp_path / 'Stella-Core/core/security/runtime_trust.py'))
+    assert not trust.verified_first_party(package, 'stella.agent-hub', digest)
+
+
+def test_core_shipped_default_manifest_can_pin_first_party_content(tmp_path, monkeypatch):
+    import json
+    import core.security.runtime_trust as trust
+    from core.plugins.package_ops import _sha256_tree
+    package = tmp_path / 'package'
+    package.mkdir()
+    code = package / 'provider.py'
+    code.write_text('VALUE = 1')
+    digest = _sha256_tree(package)
+    core = tmp_path / 'Stella-Core'
+    (core / 'resources').mkdir(parents=True)
+    (core / 'resources/default-plugins.json').write_text(json.dumps({'plugins': [
+        {'pluginId': 'stella.agent-hub', 'sourceSha256': digest}]}))
+    monkeypatch.setattr(trust, '__file__', str(core / 'core/security/runtime_trust.py'))
+    assert trust.verified_first_party(package, 'stella.agent-hub', digest)
+    code.write_text('VALUE = 2')
+    assert not trust.verified_first_party(package, 'stella.agent-hub', digest)
+
+
 def test_isolated_extension_cannot_signal_an_unrelated_host_process(tmp_path):
     from core.security.extension_sandbox import prepare_extension
     victim = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
@@ -131,7 +165,7 @@ def test_runtime_trust_revocation_stops_existing_worker(tmp_path):
     try:
         session.start()
         process = session._proc
-        assert session.sandbox_state['mode'] == 'trusted'
+        assert session.sandbox_state['mode'] == 'isolated'
         store.set(**identity, trusted=False)
         with pytest.raises(PermissionError, match='trust'):
             session.invoke('ping', {'path': str(tmp_path / 'none')})
@@ -190,7 +224,7 @@ def test_mcp_runtime_trust_revoke_stops_process_and_new_launch_digest_invalidate
     try:
         assert client.initialize()
         process = client._proc
-        assert client.sandbox_state['mode'] == 'trusted'
+        assert client.sandbox_state['mode'] == 'isolated'
         store.set(**key, trusted=False)
         assert process.poll() is not None
         with pytest.raises((PermissionError, RuntimeError)):
@@ -215,16 +249,91 @@ def test_mcp_trust_digest_covers_imported_package_code(tmp_path):
     assert launch_identity(config)[0] != before
 
 
-def test_mcp_trust_revoke_stops_ordinary_descendant(tmp_path):
-    import time
+def test_revoked_mcp_identity_cannot_be_started_as_a_new_isolated_client(tmp_path):
     from agent.tools.mcp.mcp_client import McpClient
     from core.security.mcp_runtime import launch_identity
     from core.security.runtime_trust import RuntimeTrustStore
-    heartbeat = tmp_path / 'heartbeat'
-    child = "import time; from pathlib import Path; p=Path(" + repr(str(heartbeat)) + ");\nwhile True: p.write_text(str(time.monotonic())); time.sleep(.03)"
+    script = tmp_path / 'server.py'
+    script.write_text(Path('tests/fixtures/mcp_echo_server.py').read_text())
+    config = {'name': 'revoked-restart', 'command': sys.executable, 'args': [str(script)]}
+    RuntimeTrustStore().set(user_id='local-default', kind='mcp', identifier=config['name'],
+                           digest=launch_identity(config)[0], trusted=False)
+    client = McpClient(config)
+    try:
+        assert not client.initialize(), 'A new client revived an explicitly revoked runtime'
+        assert client._proc is None
+    finally:
+        client.shutdown()
+
+
+def test_managed_mcp_rechecks_non_code_implementation_inputs_before_call(tmp_path):
+    from agent.tools.mcp.mcp_client import McpClient
+    from core.mcp.managed import ManagedMcpConfig
+    from core.runtime.paths import source_digest
+    package = tmp_path / 'package'
+    package.mkdir()
+    script = package / 'server.py'
+    script.write_text(Path('tests/fixtures/mcp_echo_server.py').read_text())
+    metadata = package / 'methods.json'
+    metadata.write_text('{"operation": "read"}')
+    config = ManagedMcpConfig(dict(name='pinned-inputs', command=sys.executable, args=[str(script)]),
+        data_root=tmp_path / 'private', package_digest=source_digest(package))
+    client = McpClient(config)
+    try:
+        assert client.initialize()
+        process = client._proc
+        metadata.write_text('{"operation": "delete"}')
+        with pytest.raises(PermissionError, match='implementation'):
+            client.call_tool('echo', {'text': 'do not dispatch'})
+        assert process.poll() is not None
+    finally:
+        client.shutdown()
+
+
+def test_local_mcp_handshake_cancellation_reaps_the_unpublished_process(tmp_path):
+    import threading
+    import time
+    from agent.tools.mcp.mcp_client import McpClient
+    script = tmp_path / 'server.py'
+    script.write_text('import sys,time\nfor line in sys.stdin:\n time.sleep(60)\n')
+    client = McpClient(dict(name='cancel-handshake', command=sys.executable, args=[str(script)], timeout=60))
+    cancel, results, failures = threading.Event(), [], []
+    def connect():
+        try:
+            results.append(client.initialize(cancel_event=cancel))
+        except Exception as error:
+            failures.append(error)
+    thread = threading.Thread(target=connect)
+    thread.start()
+    process = None
+    try:
+        deadline = time.monotonic() + 3
+        while thread.is_alive() and client._proc is None and time.monotonic() < deadline:
+            time.sleep(.01)
+        process = client._proc
+        assert process is not None, failures
+        cancel.set()
+        thread.join(2)
+        assert not thread.is_alive() and results == [False] and not failures
+        assert process.poll() is not None and not client._initialized
+    finally:
+        cancel.set()
+        client.shutdown()
+        thread.join(2)
+
+
+def test_mcp_trust_revoke_stops_ordinary_descendant(tmp_path):
+    import time
+    from agent.tools.mcp.mcp_client import McpClient
+    from core.security.mcp_runtime import launch_identity, private_storage
+    from core.security.runtime_trust import RuntimeTrustStore
+    # A child may write only its owner's private runtime storage, regardless
+    # of retained trust facts. Revocation must still reap that child.
+    child = "import time; from pathlib import Path; p=Path('heartbeat');\nwhile True: p.write_text(str(time.monotonic())); time.sleep(.03)"
     script = tmp_path / 'server.py'
     script.write_text('import subprocess, sys\nsubprocess.Popen([sys.executable, "-c", ' + repr(child) + '])\n' + Path('tests/fixtures/mcp_echo_server.py').read_text().replace('from __future__ import annotations', ''))
     config = {'name': 'trust-descendant', 'command': sys.executable, 'args': [str(script)]}
+    heartbeat = private_storage(config, 'local-default') / 'heartbeat'
     key = dict(user_id='local-default', kind='mcp', identifier=config['name'], digest=launch_identity(config)[0])
     store = RuntimeTrustStore()
     store.set(**key, trusted=True)
@@ -283,3 +392,32 @@ def test_trusted_module_launcher_requires_fixed_script():
         digest=launch_identity(config)[0], trusted=True)
     with pytest.raises(PermissionError, match='fixed local'):
         prepare_mcp(config, os.environ.copy())
+
+
+def test_legacy_trust_choice_cannot_bypass_real_kernel_boundary(tmp_path):
+    from core.security.extension_sandbox import prepare_extension
+    secret = tmp_path / 'owner-secret.txt'
+    secret.write_text('PRIVATE_OWNER')
+    plan = prepare_extension([sys.executable, '-c',
+        f"from pathlib import Path\ntry: print(Path({str(secret)!r}).read_text())\nexcept OSError: print('denied')"],
+        tmp_path / 'package', tmp_path / 'private', os.environ.copy(), trusted=True)
+    result = subprocess.run(plan.argv, cwd=plan.cwd, env=plan.env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == 'denied'
+    assert plan.state['mode'] == 'isolated'
+
+
+def test_owner_trust_does_not_establish_first_party_identity(tmp_path):
+    from core.security.runtime_trust import RuntimeTrustStore, plugin_trusted
+    from core.plugins.package_ops import _sha256_tree
+    package = tmp_path / 'package'
+    package.mkdir()
+    (package / 'plugin.json').write_text('{"id":"stella.tasks"}')
+    digest = _sha256_tree(package)
+    RuntimeTrustStore().set(user_id='local-default', kind='plugin', identifier='stella.tasks', digest=digest, trusted=True)
+    assert not plugin_trusted(package, 'stella.tasks', digest, 'local-default')
+
+
+def test_runtime_management_no_longer_exposes_a_sandbox_bypass_mutation():
+    from core.security.control import RuntimeControl
+    assert not hasattr(RuntimeControl, 'save')

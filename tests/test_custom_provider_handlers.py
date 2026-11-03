@@ -15,6 +15,8 @@ import os
 import sys
 import types
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 # Add project root to path.
@@ -39,20 +41,18 @@ def set_conf(d):
 
 
 class _HandlerHarness:
-    """Test double around ModelsHandler that captures persisted config in
-    memory instead of touching config.json, and no-ops the Bridge reset."""
+    """Use the real credential/config transaction with a disposable file."""
 
     def __init__(self):
+        from core.security.config_credentials import read_document, save_runtime
+        self.directory = tempfile.TemporaryDirectory(prefix='stella-model-settings-')
+        self.path = Path(self.directory.name) / 'config.json'
+        self.path.write_text(json.dumps(dict(config_module.conf())))
         self.handler = ModelsHandler.__new__(ModelsHandler)
-        self._file_cfg = {}
         self.bridge_resets = 0
-        # Patch the disk + bridge boundary on this instance.
-        self.handler._read_file_config = lambda: dict(self._file_cfg)
-        self.handler._write_file_config = self._capture_write
+        self.handler._read_file_config = lambda: read_document(self.path)
+        self.handler._write_file_config = lambda data: save_runtime(self.path, data, config_module.conf())
         self.handler._reset_bridge = self._capture_reset
-
-    def _capture_write(self, data):
-        self._file_cfg = dict(data)
 
     def _capture_reset(self):
         self.bridge_resets += 1
@@ -350,10 +350,8 @@ class TestCustomImageProvider(unittest.TestCase):
         self.assertNotIn("note", cap)
 
     def test_set_image_uses_custom_provider_default_model(self):
-        handler = ModelsHandler.__new__(ModelsHandler)
-        file_config = {"custom_providers": [self.provider]}
-        handler._read_file_config = lambda: file_config
-        handler._write_file_config = lambda data: None
+        harness = _HandlerHarness()
+        handler = harness.handler
 
         with patch.dict(os.environ, {}, clear=False):
             result = json.loads(
@@ -368,7 +366,7 @@ class TestCustomImageProvider(unittest.TestCase):
         self.assertEqual(payload["id"], "image_vendor")
         self.assertEqual(payload["api_base"], "https://images.example.com/v1")
         self.assertEqual(
-            file_config["skills"]["image-generation"]["provider"],
+            json.loads(harness.path.read_text())["skills"]["image-generation"]["provider"],
             "custom:image_vendor",
         )
 
@@ -380,10 +378,8 @@ class TestCustomImageProvider(unittest.TestCase):
         self.assertIn("unknown custom provider", result["message"])
 
     def test_editing_selected_provider_refreshes_skill_environment(self):
-        handler = ModelsHandler.__new__(ModelsHandler)
-        handler._read_file_config = lambda: {}
-        handler._write_file_config = lambda data: None
-        handler._reset_bridge = lambda: None
+        harness = _HandlerHarness()
+        handler = harness.handler
         updated = dict(
             self.provider,
             api_key="new-key",
@@ -403,19 +399,8 @@ class TestCustomImageProvider(unittest.TestCase):
         )
 
     def test_deleting_selected_provider_clears_image_route(self):
-        handler = ModelsHandler.__new__(ModelsHandler)
-        file_config = {
-            "custom_providers": [self.provider],
-            "skills": {
-                "image-generation": {
-                    "provider": "custom:image_vendor",
-                    "model": "vendor-image-model",
-                },
-            },
-        }
-        handler._read_file_config = lambda: file_config
-        handler._write_file_config = lambda data: None
-        handler._reset_bridge = lambda: None
+        harness = _HandlerHarness()
+        handler = harness.handler
         env = {
             "SKILL_IMAGE_GENERATION_PROVIDER": "custom:image_vendor",
             "SKILL_IMAGE_GENERATION_MODEL": "vendor-image-model",

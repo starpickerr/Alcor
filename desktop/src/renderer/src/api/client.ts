@@ -35,7 +35,7 @@ import type {
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
   BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
-  BriefingSource, ElearningSettings, ElearningSettingsInput,
+  BriefingSource, ElearningSettings, ElearningSettingsInput, ElearningCredentialInput,
   CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection,
   Todo, TodoInput, UncertainReminder,
 } from '../types'
@@ -54,16 +54,20 @@ export interface SecurityPolicy {
   connections?: Record<string, { allowed: boolean; scopes: string[] }>
   extra_roots?: string[]
   filesystem_mode?: FileMode
+  permission_mode?: PermissionMode
   capabilities?: Record<string, CapabilityOperations>
   policy_revision?: number
 }
 
 export type FileMode = 'read-only' | 'workspace-write' | 'full-access'
+export type PermissionMode = FileMode | 'custom'
 export type Operation = 'read' | 'write' | 'delete' | 'external_send' | 'system_execute'
 export type AuthorizationRule = 'allow' | 'confirm' | 'deny'
 export type CapabilityOperations = Partial<Record<Operation, AuthorizationRule>>
 export interface RunPolicy {
   filesystem_mode: FileMode
+  permission_mode?: PermissionMode
+  rules?: Record<string, AuthorizationRule>
   capabilities?: Record<string, CapabilityOperations>
   policy_revision: number
   extra_roots?: string[]
@@ -75,6 +79,10 @@ export interface CapabilityEntry {
 export interface RunPolicyState extends ApiResult {
   policy: RunPolicy; migration_status: string; compatibility_restrictions: Record<string, AuthorizationRule>
   capabilities: CapabilityEntry[]
+}
+export interface PermissionSubject {
+  agent: string; kind: 'session' | 'task'; subject: string; policy: RunPolicy
+  source: string; migration_status: string; original_url: string
 }
 export interface ResourceGrant {
   grant_id: string; subject: string; resource: { kind: string; id: string }; operations: Operation[]
@@ -89,9 +97,28 @@ export interface FeatureAccessState extends ApiResult {
   grants: ResourceGrant[]; subjects: { id: string; kind: string; subject: string; agent?: string }[]
   available: { kind: string; id: string; name: string; operations: Operation[] }[]; inherited: InheritedMcpGrant[]
 }
-export interface RuntimeTrustState extends ApiResult {
+export interface RuntimeStatusState extends ApiResult {
   isolation: { status: string; reason: string }
-  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string }[]
+  application_isolation?: { status: string; protected: boolean; reason: string; unprotected: string[] }
+  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; storage_migration?: { token: string; sources: { id: string; path: string }[] }; environment?: { base: { version: string }; state: string } | null }[]
+}
+export interface SensitiveResourceState extends ApiResult {
+  credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
+  folder_protection: { status: string; protected: boolean; reason: string; code: string }
+}
+export interface McpAuthorizationState {
+  state: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
+  configured: boolean | null; saved: boolean; can_authorize: boolean; enabled: boolean
+  authorization_url: string | null; expires_at: number | null; reason: string
+  authorizing?: boolean
+}
+export interface McpCredentialState {
+  revision: string; transport: string
+  fields: { area: 'headers' | 'env'; key: string; state: 'configured' | 'not_configured' | 'unavailable' | 'repair_required' }[]
+}
+export interface ExternalConnection {
+  id: string; name: string; endpoint: string; owners: string[]; configure_url?: string
+  enabled: boolean; revision: number; active_requests: number
 }
 
 export interface SecurityRecord {
@@ -130,7 +157,7 @@ export interface SecurityCenterState extends ApiResult {
   projects: { path: string; name: string; policy: SecurityPolicy }[]
   conversation_policy: SecurityPolicy
   connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null; revision?: number }[]
-  secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
+  secrets: { name: string; display_name?: string; source: string; configured: boolean | null }[]
   background_tasks?: SecurityBackgroundTask[]
   privacy?: SecurityPrivacyInventory
   data_access?: { inherited_grants?: InheritedMcpGrant[]; available: boolean; resources: { id: string; name: string; provider: string; account_id: string; connection?: string }[]; external_transfers: NonNullable<SecurityPrivacyInventory['external_transfers']> }
@@ -629,7 +656,13 @@ class ApiClient {
     return result
   }
 
-  async saveRunPolicy(kind: 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
+  async getRunPolicySubjects(): Promise<PermissionSubject[]> {
+    const result = await this.request<ApiResult & { subjects: PermissionSubject[] }>('/api/security/run-policy?view=inventory')
+    if (result.status !== 'success') throw new Error(result.message || 'Unable to read permissions')
+    return result.subjects
+  }
+
+  async saveRunPolicy(kind: 'template' | 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
     const result = await this.request<RunPolicyState>('/api/security/run-policy', { method: 'POST', body: JSON.stringify({ kind, subject, policy, agent }) })
     if (result.status !== 'success') throw new Error(result.message || '保存权限失败')
     notifySecurityPolicyChanged()
@@ -645,10 +678,43 @@ class ApiClient {
     return result
   }
 
-  async runtimeTrust(body?: { kind: string; id: string; digest: string; trusted: boolean }): Promise<RuntimeTrustState> {
-    const result = await this.request<RuntimeTrustState>('/api/security/runtime-trust', body ? { method: 'POST', body: JSON.stringify(body) } : undefined)
+  async runtimeStatus(): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime')
     if (result.status !== 'success') throw new Error(result.message || '执行环境状态不可用')
     return result
+  }
+
+  async rebuildRuntime(kind: 'plugin' | 'mcp', id: string, operationId?: string): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
+      method: 'POST', body: JSON.stringify({ action: operationId ? 'resume' : 'rebuild', kind, id, ...(operationId ? { operationId } : {}) }),
+    })
+    if (result.status !== 'success') throw new Error(result.message || '依赖环境重建失败')
+    return result
+  }
+
+  async sensitiveResources(): Promise<SensitiveResourceState> {
+    const result = await this.request<SensitiveResourceState>('/api/security/sensitive-resources')
+    if (result.status !== 'success') throw new Error(result.message || 'Sensitive resource status is unavailable')
+    return result
+  }
+
+  async adoptRuntimeStorage(id: string, token: string, sourceId: string): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
+      method: 'POST', body: JSON.stringify({ action: 'adopt-storage', kind: 'mcp', id, token, sourceId }),
+    })
+    if (result.status !== 'success') throw new Error(result.message || '数据归属确认失败，请刷新后重试')
+    return result
+  }
+
+  async externalConnections(): Promise<ExternalConnection[]> {
+    const result = await this.request<ApiResult & { connections: ExternalConnection[] }>('/api/security/connections')
+    if (result.status !== 'success') throw new Error(result.message || 'Connection state is unavailable')
+    return result.connections
+  }
+
+  async setExternalConnection(id: string, enabled: boolean, revision: number): Promise<void> {
+    const result = await this.request<ApiResult>('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, enabled, revision }) })
+    if (result.status !== 'success') throw new Error(result.message || 'Connection state could not be saved')
   }
 
   async permissionMigration(body?: { action: string; fingerprint?: string }): Promise<{
@@ -823,6 +889,24 @@ class ApiClient {
     return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, action: 'discover' }) })
   }
 
+  async manageMcpAuthorization(name: string, action: 'status' | 'authorize' | 'cancel' | 'remove', signal?: AbortSignal): Promise<McpAuthorizationState> {
+    const result = await this.request<ApiResult & { oauth: McpAuthorizationState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: `oauth-${action}` }), signal,
+    })
+    if (result.status !== 'success') throw new Error(result.message || 'OAuth authorization is unavailable')
+    return result.oauth
+  }
+
+  async manageMcpCredentials(name: string, change?: { area: 'headers' | 'env'; key: string; value: string; expectedRevision: string }, signal?: AbortSignal): Promise<McpCredentialState> {
+    const result = await this.request<ApiResult & { credentials: McpCredentialState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: change ? 'credential-save' : 'credential-status', ...change }), signal,
+    })
+    if (result.status !== 'success' || !result.credentials || !Array.isArray(result.credentials.fields)) {
+      throw new Error(result.message || 'MCP credential settings are unavailable')
+    }
+    return result.credentials
+  }
+
   async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {
     return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, enabled }) })
   }
@@ -919,7 +1003,7 @@ class ApiClient {
     session_id?: string
     notification_route?: SchedulerTask['notification_route']
     run_permission_mode?: SchedulerTask['run_permission_mode'] | 'inherit'
-    run_policy?: Pick<RunPolicy, 'filesystem_mode' | 'capabilities'>
+    run_policy?: Omit<RunPolicy, 'policy_revision'>
   }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler', {
       method: 'POST',
@@ -1306,7 +1390,7 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning')).settings
   }
 
-  async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
+  async saveElearningSettings(payload: ElearningSettingsInput | ElearningCredentialInput): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
   }
 

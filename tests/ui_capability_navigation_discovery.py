@@ -30,8 +30,10 @@ def backend(route):
     path, method = parsed.path, route.request.method
     requests.append((path, method))
     data = dict(status='success', sessions=[], providers=[], history=[], projects=[])
-    if path == '/auth/check': data.update(auth_required=False, authenticated=True)
-    elif path == '/api/models': data.update(providers=[dict(id='test', configured=True)], capabilities=dict(chat=dict(current_provider='test', current_model='test')))
+    if path == '/auth/check':
+        data.update(auth_required=False, authenticated=True)
+    elif path == '/api/models':
+        data.update(providers=[dict(id='test', configured=True)], capabilities=dict(chat=dict(current_provider='test', current_model='test')))
     elif path == '/api/capabilities':
         q = parse_qs(parsed.query)
         if 'id' in q:
@@ -41,7 +43,8 @@ def backend(route):
                     servers[0].update(state='failed' if phase[0] == 'failure' else 'ready', version='2.3.4')
                     servers[0]['tools'] = [] if phase[0] in {'failure', 'empty'} else [dict(name='list_courses', title='查询课程', description='查询课程列表', inputSchema={})]
             data['detail'] = catalog.detail(q['kind'][0], q['id'][0])
-        else: data = catalog.list()
+        else:
+            data = catalog.list()
     elif path == '/api/data':
         data.update(sources=sources, usages=[], usage_consumers=[], records=[], storage=dict(available=True, categories=[]))
     elif path == '/api/briefings/elearning':
@@ -50,17 +53,22 @@ def backend(route):
             saved.append(body)
             settings.update({k: v for k, v in body.items() if k != 'password'})
         data['settings'] = settings
-    elif path == '/api/briefings/elearning/test': data['courses'] = settings['course_options']
-    elif path == '/api/elearning/file-sync': data['settings'] = settings
+    elif path == '/api/briefings/elearning/test':
+        data['courses'] = settings['course_options']
+    elif path == '/api/elearning/file-sync':
+        data['settings'] = settings
     elif path == '/api/mcp' and method == 'POST':
         body = route.request.post_data_json
         assert body == dict(name='elearning', action='discover')
-        servers[0].update(state='pending', tools=[]); reads[0] = 0
+        servers[0].update(state='pending', tools=[])
+        reads[0] = 0
         data['server'] = servers[0]
     elif path == '/api/plugins/dual-update-plan':
         data = dict(status='error', message='检查服务暂不可用') if update_error[0] else dict(status='success', updates=[*([dict(pluginId='example.owner', fromVersion='1.2.3', toVersion='1.3.0')] if update_available[0] else []), dict(pluginId='other', fromVersion='1', toVersion='99')], blocked=[])
-    elif path == '/api/plugins/runtime': data['plugins'] = plugins
-    elif path == '/api/plugins/settings': data.update(status='ok', result=[])
+    elif path == '/api/plugins/runtime':
+        data['plugins'] = plugins
+    elif path == '/api/plugins/settings':
+        data.update(status='ok', result=[])
     route.fulfill(status=200, content_type='application/json', body=json.dumps(data), headers={'Access-Control-Allow-Origin': URL, 'Access-Control-Allow-Credentials': 'true'})
 
 

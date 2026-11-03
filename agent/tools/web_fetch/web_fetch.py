@@ -12,7 +12,7 @@ import uuid
 from typing import Dict, Any, Optional, Set
 from urllib.parse import urlparse, unquote
 
-import requests
+from core.security.requests_transport import web_requests as requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.truncate import truncate_head, format_size
@@ -157,6 +157,7 @@ class WebFetch(BaseTool):
                 headers=DEFAULT_HEADERS,
                 timeout=_CANCEL_SOCKET_TIMEOUT if self.cancel_event is not None else DEFAULT_TIMEOUT,
                 allow_redirects=False,
+                _cancel_event=self.cancel_event,
                 **kwargs,
             )
             if self.is_cancelled():

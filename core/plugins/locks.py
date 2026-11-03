@@ -6,10 +6,12 @@ import time
 
 
 @contextmanager
-def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float = 10):
-    from core.plugins.caller import remaining_invocation_seconds
+def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float = 10, check_active=None):
+    if check_active is None:
+        from core.plugins.caller import remaining_invocation_seconds
+        check_active = remaining_invocation_seconds
 
-    remaining = remaining_invocation_seconds()
+    remaining = check_active()
     if remaining is not None:
         timeout = min(timeout, remaining)
     # The first supported plugin platform is macOS arm64. Fail closed elsewhere
@@ -24,7 +26,7 @@ def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float 
     with path.open('a+b') as stream:
         deadline = time.monotonic() + timeout
         while True:
-            remaining_invocation_seconds()
+            check_active()
             try:
                 fcntl.flock(stream.fileno(), (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
                 break
@@ -33,7 +35,7 @@ def package_lock(root: Path, plugin_id: str, *, exclusive: bool, timeout: float 
                     raise TimeoutError('plugin data lease is busy') from None
                 time.sleep(min(0.02, max(0, deadline - time.monotonic())))
         try:
-            remaining_invocation_seconds()
+            check_active()
             yield
         finally:
             fcntl.flock(stream.fileno(), fcntl.LOCK_UN)

@@ -219,3 +219,69 @@ def test_full_access_shell_cannot_read_plugin_email_credentials_or_copies(tmp_pa
             result = _run(plan, str(work), env)
             assert result.returncode != 0
             assert 'FAKE_CREDENTIAL_FOR_SANDBOX_TEST' not in result.stdout
+
+
+def test_full_access_shell_has_no_direct_network(tmp_path):
+    import shlex
+    if process_sandbox.capability()['status'] != 'enabled':
+        pytest.skip('OS sandbox not available')
+    command = shlex.join([sys.executable, '-I', '-c', "import socket; s=socket.socket(); s.bind(('127.0.0.1',0))"])
+    env = os.environ.copy()
+    plan = process_sandbox.prepare(command, str(tmp_path), [str(tmp_path)],
+        {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
+    assert _run(plan, str(tmp_path), env).returncode != 0
+
+
+def test_shared_runtime_is_readable_but_not_mutable_even_inside_write_roots(tmp_path, monkeypatch):
+    import shlex
+    if process_sandbox.capability()['status'] != 'enabled':
+        pytest.skip('OS sandbox not available')
+    runtime = tmp_path / 'shared-runtime'
+    runtime.mkdir()
+    target = runtime / 'base.txt'
+    target.write_text('VERIFIED_BASE')
+    monkeypatch.setattr(process_sandbox, 'runtime_readonly_roots', lambda: [str(runtime)], raising=False)
+    env = os.environ.copy()
+    script = 'from pathlib import Path; p=Path(' + repr(str(target)) + '); print(p.read_text()); p.write_text("poisoned")'
+    plan = process_sandbox.prepare(shlex.join([sys.executable, '-I', '-c', script]), str(tmp_path), [str(tmp_path)],
+        {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
+    result = _run(plan, str(tmp_path), env)
+    assert 'VERIFIED_BASE' in result.stdout
+    assert result.returncode != 0
+    assert target.read_text() == 'VERIFIED_BASE'
+
+
+@pytest.mark.parametrize('mode', ['read-only', 'workspace-write'])
+def test_delegated_agents_cannot_use_raw_network_even_when_network_operations_are_allowed(tmp_path, mode):
+    import subprocess
+    import sys
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import resolve_run_policy, save_run_policy
+    from core.security.delegated_runtime import prepare_delegated
+    with identity_scope(session_id='delegated-network'):
+        resolve_run_policy('delegated-network')
+        save_run_policy('session', 'delegated-network', {'permission_mode': 'custom', 'filesystem_mode': mode, 'rules': {'network': 'allow'}})
+        plan = prepare_delegated(tmp_path, [sys.executable])
+        result = subprocess.run([*plan['prefix'], sys.executable, '-c',
+            "import socket\ntry:\n s=socket.socket();s.bind(('127.0.0.1',0));print('raw-network')\nexcept OSError:\n print('denied')"],
+            env=plan['env'], cwd=tmp_path, capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == 'denied'
+
+
+def test_full_access_shell_cannot_read_oauth_tokens_or_staging_files(tmp_path, monkeypatch):
+    home = tmp_path / 'owner'
+    work = tmp_path / 'project'
+    work.mkdir()
+    private = home / '.stella'
+    private.mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    for name in ('mcp_oauth.json', 'mcp_oauth.json.tmp'):
+        path = private / name
+        path.write_text('SYNTHETIC_OAUTH_TOKEN')
+        env = os.environ.copy()
+        plan = process_sandbox.prepare(f'/bin/cat "{path}"', str(work), [str(work)],
+            {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
+        result = _run(plan, str(work), env)
+        assert result.returncode != 0
+        assert 'SYNTHETIC_OAUTH_TOKEN' not in result.stdout

@@ -1,5 +1,10 @@
 const translations: Record<string, Record<string, string>> = {
   zh: {
+    credential_state_configured: '已配置',
+    credential_state_not_configured: '未配置',
+    credential_state_unavailable: '不可用',
+    credential_state_repair_required: '需要修复',
+    credential_refresh: '刷新凭据状态',
     briefing_host: "IMAP 服务器",
     briefing_user: "邮箱账号",
     briefing_password: "邮箱授权码",
@@ -905,6 +910,11 @@ const translations: Record<string, Record<string, string>> = {
     slash_version: '查看版本',
   },
   en: {
+    credential_state_configured: 'Configured',
+    credential_state_not_configured: 'Not configured',
+    credential_state_unavailable: 'Unavailable',
+    credential_state_repair_required: 'Needs repair',
+    credential_refresh: 'Refresh credential status',
     briefing_host: "IMAP server",
     briefing_user: "Mailbox account",
     briefing_password: "App password",

@@ -141,7 +141,7 @@ def handle_invoke(params):
             data_handle={'namespace': 'sample.storage', 'dataDir': str(alias)})
 
 
-def test_managed_third_party_needs_owner_trust_but_no_plugin_grants(tmp_path, monkeypatch):
+def test_managed_third_party_uses_isolation_without_trust_bypass_or_plugin_grants(tmp_path, monkeypatch):
     from core.plugins.management import ManagementStore
     from core.plugins.package_ops import PackageStore
     from core.plugins.host import PluginSession
@@ -160,14 +160,15 @@ def test_managed_third_party_needs_owner_trust_but_no_plugin_grants(tmp_path, mo
     try:
         session.start()
         kwargs = dict(contract='stella.sample.alpha@1', method='ping', input_payload={}, origin='ui', grant_ref='compat')
-        with pytest.raises(PermissionError, match='trust'):
-            session.invoke_contract(**kwargs)
+        assert session.sandbox_state['mode'] == 'isolated'
+        assert session.invoke_contract(**kwargs)['status'] == 'succeeded'
         RuntimeTrustStore().set(user_id='local-default', kind='plugin', identifier=session.plugin_id,
             digest=session.package_digest, trusted=True)
         assert session.invoke_contract(**kwargs)['status'] == 'succeeded'
         RuntimeTrustStore().set(user_id='local-default', kind='plugin', identifier=session.plugin_id,
             digest=session.package_digest, trusted=False)
-        with pytest.raises(PermissionError, match='trust'):
+        assert session._proc is None
+        with pytest.raises(PermissionError):
             session.invoke_contract(**kwargs)
     finally:
         session.dispose()

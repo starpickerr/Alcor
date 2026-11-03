@@ -23,7 +23,7 @@ def managed(tmp_path, monkeypatch):
     monkeypatch.setattr(management, 'default_store', lambda: store)
     authz = PluginAuthorizationStore()
     session = PluginSession(Path('stella-plugins-workspace/plugins/bills'), source_label='test',
-                            registry=PluginRegistry(), authz=authz)
+                            registry=PluginRegistry(), authz=authz, data_handle={'namespace':'stella.bills','dbPath':str(tmp_path/'bills.sqlite')})
     session.start()
     yield session, authz
     session.dispose()
@@ -169,7 +169,7 @@ def test_background_purpose_cannot_be_downgraded_by_a_callback(managed, tmp_path
         observed.append(current_invocation_purpose())
         return target.invoke_contract(contract='stella.bills@1', method='list_ledger',
             input_payload={'year': 2026, 'month': 10}, origin='system', grant_ref='g',
-            data_handle={'dbPath': str(tmp_path / 'never.sqlite')})
+            data_handle={'dbPath': str(tmp_path / 'bills.sqlite')})
 
     monkeypatch.setitem(core_invoke.PUBLIC_SERVICES, 'stella.sample.target@1', target_call)
     try:

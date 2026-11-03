@@ -129,6 +129,10 @@ def test_progressing_http_response_cannot_extend_deadline_or_leak_worker(phase):
     value = McpClient({'name': 'budget', 'type': 'streamable-http'})
     value._initialized = True
     value._http_url = f'http://127.0.0.1:{server.server_port}/mcp'
+    value.config['url'] = value._http_url
+    from tests.fixtures.egress import approve_synthetic_egress
+    approval = approve_synthetic_egress(value._http_url)
+    approval.__enter__()
     original_workers = {thread.ident for thread in threading.enumerate() if thread.name == 'mcp-http-request'}
     started = time.monotonic()
     try:
@@ -144,6 +148,8 @@ def test_progressing_http_response_cannot_extend_deadline_or_leak_worker(phase):
         assert not value._remote_responses and not pending()
         assert value.call_tool('next', {}) == 'fresh'
     finally:
+        approval.__exit__(None, None, None)
+        value.shutdown()
         server.shutdown()
         server.server_close()
         worker.join(1)

@@ -14,6 +14,7 @@ import tempfile
 import threading
 
 from agent.permission.security_policy import rule
+from core.runtime.paths import runtime_readonly_roots
 
 
 class SandboxUnavailable(RuntimeError):
@@ -27,6 +28,7 @@ class ProcessPlan:
     temp_dir: str | None
     status: str
     share_lease: tuple[tuple[str, str, str, str], ...] = ()
+    protection_revision: int = 0
 
 
 _lease_lock = threading.RLock()
@@ -122,6 +124,9 @@ def _protected_paths() -> tuple[list[str], list[str]]:
     folders.append(str(user_root() / 'briefing' / 'elearning-sessions'))
     folders.append(str(shared_root() / "skills"))
     folders.append(str(user_root()))
+    # Core-managed tenant data is private even when another user appears
+    # after this process starts. Ordinary workspace roots remain separate.
+    folders.append(str(shared_root() / 'users'))
     return files, folders
 
 
@@ -129,6 +134,8 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
             *, approved_target: str | None = None, context=None) -> ProcessPlan:
     """Build one command plan; a constrained launch fails closed if isolation fails."""
     constrained = rule(policy, "workspace_outside") != "allow"
+    from core.security.protected_paths import sandbox_paths
+    protection_revision, protected_folders = sandbox_paths()
     state = capability()
     if state["status"] != "enabled":
         raise SandboxUnavailable(state["reason"])
@@ -154,6 +161,9 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
     env.update({"TMPDIR": temp_dir, "TMP": temp_dir, "TEMP": temp_dir,
                 "XDG_CACHE_HOME": temp_dir})
     write_roots = list(dict.fromkeys(os.path.realpath(path) for path in [*roots, temp_dir]))
+    writable = rule(policy, 'workspace_write') != 'deny'
+    if not writable:
+        write_roots = [temp_dir]
     files, folders = _protected_paths()
     protected = " ".join(f"(deny file-read* file-write* (literal {_seatbelt_literal(path)}))"
                          for path in files)
@@ -170,10 +180,15 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
             permissions += ' (allow file-read* file-write* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random")) '
             permissions += "(deny file-write*) " + " ".join(
                 f"(allow file-write* (subpath {_seatbelt_literal(path)}))" for path in write_roots)
-            if approved_target:
+            if approved_target and writable:
                 permissions += f" (allow file-read* file-write* (literal {_seatbelt_literal(approved_target)}))"
-        if rule(policy, "network") == "deny":
-            permissions += " (deny network*)"
+        # Operation permissions never grant a raw socket to an untrusted child.
+        # Networking must use a Core-owned connector, independent of this mode.
+        permissions += " (deny network*)"
+        # Host services can decrypt credentials or proxy private file/network
+        # access. Execution modes never authorize a child to become a trusted
+        # Keychain client; connectors remain in Core.
+        permissions += " (deny mach-lookup)"
         work = os.path.realpath(context.work_root)
         private_rules = [f"(deny file-read* file-write* (literal {_seatbelt_literal(work)}))"]
         for name in ("sessions", "automations", "shared"):
@@ -182,20 +197,27 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         if own and own.is_dir():
             own_real = os.path.realpath(own)
             private_rules.append(f"(allow file-read* (subpath {_seatbelt_literal(own_real)}))")
-            if not constrained or any(os.path.commonpath((own_real, root)) == root for root in write_roots):
+            if writable and (not constrained or any(os.path.commonpath((own_real, root)) == root for root in write_roots)):
                 private_rules.append(f"(allow file-write* (subpath {_seatbelt_literal(own_real)}))")
         for row in shared:
             file_path = _seatbelt_literal(row["path"])
             private_rules.append(f"(allow file-read* (literal {file_path}))")
-            if row["access"] == "write" or row["owner_session"] == context.session_id:
+            if writable and (row["access"] == "write" or row["owner_session"] == context.session_id):
                 private_rules.append(f"(allow file-write* (literal {file_path}))")
-        profile = f"(version 1) (allow default) {permissions} {protected} {' '.join(private_rules)}"
+        immutable = ' '.join(f'(deny file-write* (subpath {_seatbelt_literal(path)}))'
+                             for path in runtime_readonly_roots())
+        owner_protection = ' '.join(
+            f'(deny file-read* file-write* (subpath {_seatbelt_literal(folder)})) ' + ' '.join(
+                f'(deny file-write* (literal {_seatbelt_literal(str(parent))}))'
+                for parent in Path(folder).parents)
+            for folder in protected_folders)
+        if not constrained and not writable:
+            permissions += f' (deny file-write*) (allow file-write* (subpath {_seatbelt_literal(temp_dir)}))'
+        profile = f"(version 1) (allow default) {permissions} {protected} {' '.join(private_rules)} {immutable} {owner_protection}"
         argv = [sandbox_executable(), "-p", profile, "/bin/sh", "-c", command]
     else:
         executable = sandbox_executable()
-        isolation = ["--unshare-pid"]
-        if rule(policy, "network") == "deny":
-            isolation.append("--unshare-net")
+        isolation = ["--unshare-pid", "--unshare-net"]
         if constrained:
             argv = [executable, "--die-with-parent", *isolation, "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev"]
@@ -206,7 +228,7 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                 argv.extend(['--ro-bind', path, path])
             for path in write_roots:
                 argv.extend(["--bind", path, path])
-            if approved_target:
+            if approved_target and writable:
                 target = os.path.realpath(approved_target)
                 if not os.path.exists(target):
                     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -214,8 +236,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                 argv.extend(["--bind", target, target])
             argv.extend(["--chdir", cwd, "--", "/bin/sh", "-c", command])
         else:
-            argv = [executable, "--die-with-parent", *isolation, "--bind", "/", "/", "--proc", "/proc",
+            argv = [executable, "--die-with-parent", *isolation, "--bind" if writable else "--ro-bind", "/", "/", "--proc", "/proc",
                     "--dev-bind", "/dev", "/dev", "--chdir", cwd, "--", "/bin/sh", "-c", command]
+            if not writable:
+                argv[argv.index('--'):argv.index('--')] = ['--bind', temp_dir, temp_dir]
         # Hide control data inside the mount namespace even in full-access
         # mode. The tool gate also rejects direct requests for these paths,
         # but a script must not be able to read them indirectly.
@@ -236,18 +260,24 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                     if name != "shared" and own and own.is_dir() and os.path.commonpath((str(own), category)) == category:
                         own_real = os.path.realpath(own)
                         sandbox_options.extend(["--dir", os.path.dirname(own_real)])
-                        writable = not constrained or any(os.path.commonpath((own_real, root)) == root for root in write_roots)
-                        sandbox_options.extend(["--bind" if writable else "--ro-bind", own_real, own_real])
+                        own_writable = writable and (not constrained or any(os.path.commonpath((own_real, root)) == root for root in write_roots))
+                        sandbox_options.extend(["--bind" if own_writable else "--ro-bind", own_real, own_real])
                     elif name == "shared":
                         for row in shared:
                             path = os.path.realpath(row["path"])
                             sandbox_options.extend(["--dir", os.path.dirname(path)])
-                            writable = row["access"] == "write" or row["owner_session"] == context.session_id
-                            sandbox_options.extend(["--bind" if writable else "--ro-bind", path, path])
+                            share_writable = writable and (row["access"] == "write" or row["owner_session"] == context.session_id)
+                            sandbox_options.extend(["--bind" if share_writable else "--ro-bind", path, path])
+        # Bind last so a broad workspace grant cannot remount runtime code RW.
+        for path in runtime_readonly_roots():
+            if os.path.isdir(path):
+                sandbox_options.extend(['--ro-bind', path, path])
+        for folder in protected_folders:
+            sandbox_options.extend(['--tmpfs', folder])
         argv[argv.index("--"):argv.index("--")] = sandbox_options
     leases = tuple((row["id"], row["path"], context.session_id, context.agent_id)
                    for row in shared if row["recipient_session"] == context.session_id and row["active"])
-    return ProcessPlan(argv, False, temp_dir, "enabled", leases)
+    return ProcessPlan(argv, False, temp_dir, "enabled", leases, protection_revision)
 
 
 def current_policy_and_roots(cwd: str) -> tuple[dict, list[str]]:

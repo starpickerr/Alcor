@@ -39,6 +39,13 @@ class RunPolicyStore:
         with self.transaction() as db:
             return self._read(db, key)
 
+    def subjects(self, user):
+        """Read one owner's existing snapshots without exposing original bodies."""
+        with self.transaction() as db:
+            rows = db.execute('SELECT agent,kind,subject FROM run_policies WHERE user=? AND kind IN (\'session\',\'task\') ORDER BY kind,agent,subject', (user,)).fetchall()
+            return [(agent, kind, subject, self._read(db, (user, agent, kind, subject)))
+                    for agent, kind, subject in rows]
+
     def ensure(self, key, policy):
         with self.transaction() as db:
             current = self._read(db, key)

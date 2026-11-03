@@ -72,6 +72,22 @@ def test_absolute_http_url_installs_signed_package(tmp_path, monkeypatch):
             plugin_id="stella.bills",
             package_store=store,
         )
+        assert result['status'] == 'failed'
+        assert 'disallowed' in result['error'].lower()
+        assert store.current_package('stella.bills') is None
+        # Only this synthetic fixture origin is allowed for the socket smoke.
+        # Production public downloads must continue rejecting private targets.
+        from core.security import http_transport
+        from core.security.connections import service_id
+        origin = f'http://{host}:{port}'
+        destination = http_transport.destination
+        def synthetic_destination(url, **kwargs):
+            assert url.startswith(origin + '/')
+            assert kwargs['allow_configured_local'] is False
+            return destination(url, configured_origin=service_id(origin)[1])
+        monkeypatch.setattr(http_transport, 'destination', synthetic_destination)
+        result = fetch_and_install_from_catalog(
+            catalog_path=catalog_path, plugin_id='stella.bills', package_store=store)
         assert result["status"] == "installed"
         assert store.current_package("stella.bills") is not None
         boot = bootstrap_default_plugins(
@@ -82,3 +98,5 @@ def test_absolute_http_url_installs_signed_package(tmp_path, monkeypatch):
         assert boot["status"] == "ok"
     finally:
         server.shutdown()
+        server.server_close()
+        thread.join(2)

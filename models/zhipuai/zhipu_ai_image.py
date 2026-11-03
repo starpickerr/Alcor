@@ -6,6 +6,7 @@ from config import conf
 
 class ZhipuAIImage(object):
     def __init__(self):
+        raise PermissionError('This SDK/WebSocket provider has no controlled transport adapter; existing configuration is preserved.')
         from zai import ZhipuAiClient
         # 初始化客户端，支持自定义 API base URL（例如智谱国际版 z.ai）
         api_key = conf().get("zhipu_ai_api_key")

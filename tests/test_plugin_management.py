@@ -119,8 +119,10 @@ def test_settings_schema_validation_and_revisions_are_enforced_without_worker(tm
         service.save(manifest['id'], 'alice', 'preferences', 'general', {'notes': 'stale'}, expected_revision=1)
     with pytest.raises(ValueError):
         service.save(manifest['id'], 'alice', 'preferences', 'general', {'unexpected': True}, expected_revision=2)
-    with pytest.raises(ValueError, match='secret'):
-        service.save(manifest['id'], 'alice', 'preferences', 'general', {'password': 'never-store-here'}, expected_revision=2)
+    from common.runtime_identity import identity_scope
+    with identity_scope(session_id='agent-settings', agent_id='default'):
+        with pytest.raises(PermissionError):
+            service.save(manifest['id'], 'alice', 'preferences', 'general', {'password': 'never-store-here'}, expected_revision=2)
 
 
 def test_managed_install_does_not_issue_full_grant_when_worker_starts(tmp_path, monkeypatch):

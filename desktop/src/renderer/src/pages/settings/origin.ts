@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useEffect, type MouseEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 export interface SettingsOrigin {
   from: string
@@ -23,4 +23,15 @@ export function useRestoreScroll(ready = true) {
     const scroller = document.querySelector('[data-stella-scroll]')
     if (scroller instanceof HTMLElement) scroller.scrollTop = scroll
   }, [location.state, ready])
+}
+
+// Capture the origin when the link is used, after the user has scrolled.
+export function useSettingsLink() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return (event: MouseEvent<HTMLAnchorElement>, to: string) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    navigate(to, { state: currentSettingsOrigin(location.pathname, location.search) })
+  }
 }

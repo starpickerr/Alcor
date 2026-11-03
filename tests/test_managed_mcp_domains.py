@@ -7,6 +7,7 @@ import pytest
 
 from agent.tools.mcp.mcp_client import McpClient
 from core.mcp.managed import ManagedMcpConfig, OPERATIONS
+from core.runtime.paths import source_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,7 +30,8 @@ def server_config(domain, data):
         ],
         "timeout": 10,
         "toolOperations": OPERATIONS[domain],
-    })
+    }, data_root=data, package_digest=source_digest(repo),
+        filesystem_outputs={'sync_files': ('get_settings', 'file_sync_root')} if domain == 'elearning' else {})
 
 
 @pytest.mark.parametrize(
@@ -211,13 +213,80 @@ def test_mcp_file_download_keeps_filesystem_write_permission():
 
 
 def fake_config(domain, data):
+    import ast
+    import shutil
     config = server_config(domain, data)
-    config["args"][0] = str(Path(__file__).parent / "fixtures/domain_mcp_server.py")
-    config["args"] += ["--domain", domain]
+    repo = ROOT / 'MCP' / ('fudan-elearning-mcp' if domain == 'elearning' else 'email-mcp')
+    bundle = Path(data).parent / (domain + '-fixture-package')
+    bundle.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(repo / (domain + '_mcp'), bundle / (domain + '_mcp'), dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    shutil.copy2(repo / 'requirements.lock', bundle / 'requirements.lock')
+    script = bundle / 'server.py'
+    shutil.copy2(Path(__file__).parent / 'fixtures/domain_mcp_server.py', script)
+    if domain == 'email':
+        # Copy the two upstream test doubles, without importing pytest in the
+        # runtime or inheriting the host's test/site-packages environment.
+        source = (repo / 'tests/test_compatibility.py').read_text()
+        nodes = [ast.get_source_segment(source, node) for node in ast.parse(source).body
+                 if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in {'_raw', 'FakeImap'}]
+        folder = bundle / 'tests'
+        folder.mkdir(exist_ok=True)
+        (folder / 'test_compatibility.py').write_text('from email.message import EmailMessage as RfcMessage\nSECRET="SYNTHETIC_TOKEN"\n' + '\n'.join(nodes))
+    config['args'][0] = str(script)
+    config['args'] += ['--domain', domain]
+    config.package_digest = source_digest(bundle)
     return config
 
 
-def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_path):
+@pytest.mark.parametrize('stop', ['worker-exit', 'parent-stop'])
+def test_output_process_exit_reclaims_only_owned_temporary_files(tmp_path, native_settings_action, stop):
+    import threading
+    import time
+    from contextvars import copy_context
+    data, output = tmp_path / 'data', tmp_path / 'output'
+    output.mkdir()
+    sentinel = output / '.elearning-user-kept'
+    sentinel.write_text('KEEP_USER_DATA')
+    client = McpClient(fake_config('elearning', data))
+    thread = None
+    failures = []
+    try:
+        assert client.initialize()
+        client.call_tool('save_settings', {'payload': {'username': 'test', 'password': 'fake',
+            'courses': ['42'], 'file_sync_root': str(output)}})
+        (data / 'slow-download').touch()
+        def download():
+            try:
+                client.call_tool('sync_files', {})
+            except Exception as error:
+                failures.append(type(error).__name__)
+        thread = threading.Thread(target=copy_context().run, args=(download,))
+        thread.start()
+        deadline = time.monotonic() + 5
+        while not (data / 'download-started').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert (data / 'download-started').exists()
+        child = next(iter(client._operation_clients))
+        if stop == 'worker-exit':
+            child._proc.kill()
+            child._proc.wait(timeout=3)
+        else:
+            client.shutdown()
+        thread.join(4)
+        assert not thread.is_alive() and failures
+        actual = {path.relative_to(output).as_posix() for path in output.rglob('*') if path.is_file()}
+        assert actual == {'.elearning-user-kept'}, actual
+        assert sentinel.read_text() == 'KEEP_USER_DATA'
+        if stop == 'worker-exit':
+            assert json.loads(client.call_tool('get_settings', {}))['value']['username'] == 'test'
+    finally:
+        client.shutdown()
+        if thread is not None:
+            thread.join(5)
+
+
+def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_path, native_settings_action):
     import threading
     import time
 
@@ -227,6 +296,7 @@ def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_pat
     client = McpClient(fake_config("elearning", data))
     try:
         assert client.initialize()
+        persistent_process = client._proc
         client.call_tool(
             "save_settings",
             {
@@ -243,6 +313,7 @@ def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_pat
                 client.call_tool("sync_files", {"layout": "courseware"})
             )["value"]
             assert result["status"] == "completed" and not result["errors"]
+            assert client._proc is persistent_process and persistent_process.poll() is None
         files = {str(p): p.stat().st_mtime_ns for p in folder.rglob("*.pdf")}
         assert (
             len(files) == 1 and next(folder.rglob("*.pdf")).read_bytes() == b"coursepdf"
@@ -262,7 +333,8 @@ def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_pat
             except Exception as error:
                 failures.append(str(error))
 
-        thread = threading.Thread(target=download)
+        from contextvars import copy_context
+        thread = threading.Thread(target=copy_context().run, args=(download,))
         thread.start()
         deadline = time.monotonic() + 3
         while not (data / "download-started").exists() and time.monotonic() < deadline:
@@ -285,6 +357,71 @@ def test_mcp_download_repeats_and_cancellation_prevents_late_publication(tmp_pat
         assert files == {str(p): p.stat().st_mtime_ns for p in folder.rglob("*.pdf")}
     finally:
         client.shutdown()
+
+
+def test_sync_output_permission_does_not_widen_the_persistent_mcp(tmp_path, native_settings_action):
+    data, folder = tmp_path / 'data', tmp_path / 'output'
+    folder.mkdir()
+    client = McpClient(fake_config('elearning', data))
+    try:
+        assert client.initialize()
+        client.call_tool('save_settings', {'payload': {'username': 'test', 'password': 'fake',
+            'courses': ['42'], 'file_sync_root': str(folder)}})
+        result = client.call_tool_result('sync_files', {})['structuredContent']['value']
+        assert result['status'] == 'completed' and len(list(folder.rglob('*.pdf'))) == 1
+        # Start a new output, bypass the Core call adapter, and exercise the
+        # still-running control process's actual OS profile.
+        second = tmp_path / 'second'
+        second.mkdir()
+        client.call_tool('save_file_sync_settings', {'root': str(second)})
+        raw = client._send_request('tools/call', {'name': 'sync_files', 'arguments': {}})
+        assert raw['result']['structuredContent']['value']['errors']
+        assert not list(second.rglob('*.pdf'))
+    finally:
+        client.shutdown()
+
+
+@pytest.mark.parametrize('revoke', [False, True])
+def test_closing_parent_mcp_reaps_active_output_process(tmp_path, native_settings_action, revoke):
+    import threading
+    import time
+    from contextvars import copy_context
+    from core.security.runtime_trust import RuntimeTrustStore
+    data, folder = tmp_path / 'data', tmp_path / 'output'
+    folder.mkdir()
+    client = McpClient(fake_config('elearning', data))
+    failures = []
+    def download():
+        try:
+            client.call_tool('sync_files', {})
+        except Exception as error:
+            failures.append(error)
+    thread = threading.Thread(target=copy_context().run, args=(download,))
+    try:
+        assert client.initialize()
+        client.call_tool('save_settings', {'payload': {'username': 'test', 'password': 'fake',
+            'courses': ['42'], 'file_sync_root': str(folder)}})
+        (data / 'slow-download').touch()
+        thread.start()
+        deadline = time.monotonic() + 4
+        while not (data / 'download-started').exists() and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert (data / 'download-started').exists(), failures
+        children = list(client._operation_clients)
+        processes = [child._proc for child in children]
+        assert len(processes) == 1 and processes[0].poll() is None
+        if revoke:
+            RuntimeTrustStore().set(**client._runtime_key, trusted=False)
+        else:
+            client.shutdown()
+        thread.join(3)
+        assert not thread.is_alive() and failures
+        assert all(process.poll() is not None for process in processes)
+        assert not client._operation_clients and not list(folder.rglob('*.pdf'))
+    finally:
+        client.shutdown()
+        if thread.ident is not None:
+            thread.join(3)
 
 
 def test_mail_mcp_fetch_proposes_cursor_and_commit_survives_restart(tmp_path):
@@ -333,6 +470,32 @@ def test_mail_mcp_fetch_proposes_cursor_and_commit_survives_restart(tmp_path):
         )
     finally:
         client.shutdown()
+
+
+def test_verified_email_connector_preserves_legacy_environment_and_deleted_state(tmp_path, monkeypatch):
+    config = server_config('email', tmp_path / 'email')
+    config.hosted_connector = 'email'
+    config['args'][config['args'].index('--user-id') + 1] = 'local-default'
+    config['args'].append('--hosted-connector')
+    for name, value in {'IMAP_HOST': 'imap.example.test', 'IMAP_USER': 'owner@example.test',
+                        'IMAP_PASSWORD': 'SYNTHETIC_LEGACY_SECRET'}.items():
+        monkeypatch.setenv(name, value)
+    client = McpClient(config)
+    try:
+        assert client.initialize()
+        accounts = client.call_tool_result('list_accounts', {})['structuredContent']['value']
+        assert accounts['configured'] and accounts['mailboxes'][0]['id'] == 'environment'
+        assert 'SYNTHETIC_LEGACY_SECRET' not in str(accounts)
+        client.call_tool('delete_account', {'account_id': 'environment'})
+    finally:
+        client.shutdown()
+    restarted = McpClient(config)
+    try:
+        assert restarted.initialize()
+        accounts = restarted.call_tool_result('list_accounts', {})['structuredContent']['value']
+        assert accounts['mailboxes'] == [] and accounts['configured'] is False
+    finally:
+        restarted.shutdown()
 
 
 @pytest.mark.parametrize("domain", ["email", "elearning"])
@@ -434,7 +597,7 @@ def test_frozen_mcp_command_uses_independent_packaged_server(tmp_path, monkeypat
         c for c in managed.configurations(ToolManager()) if c["name"] == "elearning"
     )
     assert cfg["command"] == str(standalone)
-    assert cfg["args"][0] == "--data-dir"
+    assert cfg["args"][:2] == ["--hosted-connector", "--data-dir"]
 
 
 def test_server_enforces_request_resource_scope(tmp_path):
@@ -465,6 +628,7 @@ def test_server_enforces_request_resource_scope(tmp_path):
 
 @pytest.mark.parametrize("domain", ["email", "elearning"])
 def test_independent_frozen_mcp_artifact_protocol(tmp_path, domain):
+    from core.runtime.paths import bundle_digest
     executable = (
         ROOT / "Stella-Core/desktop/build/dist" / (domain + "-mcp") / (domain + "-mcp")
     )
@@ -476,7 +640,7 @@ def test_independent_frozen_mcp_artifact_protocol(tmp_path, domain):
         "command": str(executable),
         "args": ["--data-dir", str(tmp_path / domain)],
         "timeout": 90,
-    })
+    }, data_root=tmp_path / domain, package_digest=bundle_digest(executable.parent))
     client = McpClient(config)
     try:
         assert client.initialize()

@@ -62,9 +62,6 @@ class AgentInitializer:
         profile = get_agent_registry().get(agent_id or identity.agent_id)
         workspace_root = profile.workspace
         
-        # Migrate API keys
-        self._migrate_config_to_env(workspace_root)
-        
         # Load environment variables
         self._load_env_file()
         
@@ -194,6 +191,8 @@ class AgentInitializer:
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
+        except PermissionError:
+            raise
         except Exception as e:
             logger.warning(
                 f"[AgentInitializer] Failed to restore conversation history for "
@@ -280,8 +279,8 @@ class AgentInitializer:
         env_file = expand_path("~/.stella/.env")
         if os.path.exists(env_file):
             try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file, override=True)
+                from core.security.env_store import load_environment
+                load_environment(env_file, override=True)
             except ImportError:
                 logger.warning("[AgentInitializer] python-dotenv not installed")
             except Exception as e:
@@ -333,12 +332,7 @@ class AgentInitializer:
                         logger.debug("[AgentInitializer] evolution_undo skipped - self-evolution disabled")
                         continue
 
-                # Special handling for EnvConfig tool
-                if tool_name == "env_config":
-                    from agent.tools import EnvConfig
-                    tool = EnvConfig({"agent_bridge": self.agent_bridge})
-                else:
-                    tool = tool_manager.create_tool(tool_name)
+                tool = tool_manager.create_tool(tool_name)
 
                 if tool:
                     # Apply workspace config to file operation tools.
@@ -521,69 +515,6 @@ class AgentInitializer:
             "_get_current_time": get_current_time  # Dynamic time function
         }
     
-    def _migrate_config_to_env(self, workspace_root: str):
-        """Migrate API keys from config.json to .env file"""
-        from config import conf
-        
-        key_mapping = {
-            "open_ai_api_key": "OPENAI_API_KEY",
-            "open_ai_api_base": "OPENAI_API_BASE",
-            "gemini_api_key": "GEMINI_API_KEY",
-            "claude_api_key": "CLAUDE_API_KEY",
-            "linkai_api_key": "LINKAI_API_KEY",
-        }
-        
-        env_file = expand_path("~/.stella/.env")
-        
-        # Read existing env vars (key -> value)
-        existing_env_vars = {}
-        if os.path.exists(env_file):
-            try:
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, val = line.split('=', 1)
-                            existing_env_vars[key.strip()] = val.strip()
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Failed to read .env file: {e}")
-        
-        # Sync config.json values into .env (add/update/remove)
-        updated = False
-        for config_key, env_key in key_mapping.items():
-            raw = conf().get(config_key, "")
-            value = raw.strip() if raw else ""
-            old_value = existing_env_vars.get(env_key)
-
-            if value:
-                if old_value == value:
-                    continue
-                existing_env_vars[env_key] = value
-                os.environ[env_key] = value
-                updated = True
-            else:
-                if old_value is None:
-                    continue
-                existing_env_vars.pop(env_key, None)
-                os.environ.pop(env_key, None)
-                updated = True
-
-        if updated:
-            try:
-                env_dir = os.path.dirname(env_file)
-                os.makedirs(env_dir, exist_ok=True)
-
-                # Rewrite the entire .env file to ensure consistency
-                with open(env_file, 'w', encoding='utf-8') as f:
-                    f.write('# Environment variables for agent\n')
-                    f.write('# Auto-managed - synced from config.json on startup\n\n')
-                    for key, value in sorted(existing_env_vars.items()):
-                        f.write(f'{key}={value}\n')
-
-                logger.info("[AgentInitializer] Synced API keys from config.json to .env")
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Failed to sync API keys: {e}")
-
     def _start_daily_flush_timer(self):
         """Start a background thread that flushes all agents' memory daily at 23:55."""
         if getattr(self.agent_bridge, '_daily_flush_started', False):

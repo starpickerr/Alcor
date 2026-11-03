@@ -3,11 +3,11 @@ import { BookOpen, Check, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { t, getLang } from '../../i18n'
-import type { ElearningSettings as Config, ElearningSettingsInput } from '../../types'
+import type { ElearningSettings as Config, ElearningSettingsInput, ElearningCredentialField } from '../../types'
 
 const fieldClass = 'h-8 px-2 rounded-btn border border-default bg-surface text-sm text-content disabled:opacity-50'
 const buttonClass = 'h-8 px-3 rounded-btn border border-default text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50'
-const initial: Config = { enabled: false, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '', file_sync_root: '' }
+const initial: Config = { enabled: false, configured: false, base_url: 'https://elearning.fudan.edu.cn', username: '', courses: [], course_options: [], account_id: '', password_set: false, password_masked: '', file_sync_root: '', credential_states: { password: 'not_configured', token: 'not_configured', session: 'not_configured' } }
 const courseName = (value: string): string | null => {
   const name = value.trim().replace(/^[A-Za-z]{2,}[-_]?\d{3,}(?:[.-]\d+)*\s+/, '')
   return name && !/^\d+$/.test(name) ? name : null
@@ -16,19 +16,23 @@ const courseName = (value: string): string | null => {
 export const ElearningSettings: React.FC = () => {
   const [config, setConfig] = useState(initial)
   const [password, setPassword] = useState('')
+  const [token, setToken] = useState('')
+  const [storedIdentity, setStoredIdentity] = useState([initial.base_url, initial.username])
   const [chosen, setChosen] = useState<string[]>([])
   const [courses, setCourses] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [credentialSaved, setCredentialSaved] = useState(false)
   const [connected, setConnected] = useState(false)
 
   const open = (cfg: Config) => {
     setConfig(cfg)
-    setPassword(cfg.password_masked)
+    setPassword(''); setToken('')
+    setStoredIdentity([cfg.base_url, cfg.username])
     setChosen(cfg.courses)
-    setSaved(false); setConnected(false); setCourses(cfg.course_options ?? [])
+    setSaved(false); setCredentialSaved(false); setConnected(false); setCourses(cfg.course_options ?? [])
   }
 
   useEffect(() => {
@@ -40,18 +44,38 @@ export const ElearningSettings: React.FC = () => {
   }, [])
 
   const payload = (): ElearningSettingsInput => ({ enabled: config.enabled, base_url: config.base_url,
-    username: config.username, courses: chosen, ...(password && password !== '********' ? { password } : {}) })
+    username: config.username, courses: chosen, credential_revision: config.credential_revision,
+    ...(password ? { password } : {}), ...(token ? { token } : {}) })
   const run = async (operation: () => Promise<void>) => {
-    setBusy(true); setError(''); setSaved(false)
+    setBusy(true); setError(''); setSaved(false); setCredentialSaved(false)
     try { await operation() }
     catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy(false) }
   }
   const edit = (changes: Partial<Config>) => {
     if (changes.username !== undefined || changes.base_url !== undefined) { setCourses([]); setChosen([]) }
-    setConfig((value) => ({ ...value, ...changes })); setSaved(false); setConnected(false)
+    setConfig((value) => ({ ...value, ...changes })); setSaved(false); setCredentialSaved(false); setConnected(false)
   }
   const missingNames = chosen.filter((id) => !courses.some((row) => row.id === id && courseName(row.name))).length
+  const zh = getLang() === 'zh'
+  const stateOf = (field: ElearningCredentialField) => config.credential_states?.[field] ?? 'unavailable'
+  const stateText = (field: ElearningCredentialField) => ({ configured: zh ? '已配置' : 'Configured',
+    not_configured: zh ? '未配置' : 'Not configured', unavailable: zh ? '不可用' : 'Unavailable',
+    repair_required: zh ? '需要修复' : 'Needs repair' })[stateOf(field)]
+  const canEditCredentials = !busy && !loading && !!config.username &&
+    storedIdentity[0] === config.base_url && storedIdentity[1] === config.username
+  const updateMetadata = (cfg: Config) => setConfig((value) => ({ ...value,
+    credential_states: cfg.credential_states, credential_revision: cfg.credential_revision,
+    session_revision: cfg.session_revision, password_set: cfg.password_set,
+    password_masked: cfg.password_masked, configured: cfg.configured }))
+  const updateCredential = async (field: ElearningCredentialField, value: string) => {
+    const revision = field === 'session' ? config.session_revision : config.credential_revision
+    if (!revision) throw new Error(zh ? '请刷新凭据状态后重试' : 'Refresh credential status and retry')
+    updateMetadata(await apiClient.saveElearningSettings({ credential_field: field, credential_value: value, credential_revision: revision }))
+    if (field === 'password') setPassword('')
+    if (field === 'token') setToken('')
+    setConnected(false); setCredentialSaved(true)
+  }
 
   return <section className="rounded-card border border-default bg-surface p-5 space-y-4">
     <div className="flex items-center justify-between gap-3">
@@ -66,9 +90,29 @@ export const ElearningSettings: React.FC = () => {
     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { open(await apiClient.saveElearningSettings(payload())); setSaved(true) }) }}>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_url')}<input required type="url" disabled={busy || loading} value={config.base_url} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ base_url: e.target.value })} /></label>
       <label className="text-xs text-content-secondary">{t('briefing_elearning_user')}<input required autoComplete="username" disabled={busy || loading} value={config.username} className={`${fieldClass} block w-full mt-1`} onChange={(e) => edit({ username: e.target.value })} /></label>
-      <label className="text-xs text-content-secondary">{t('briefing_elearning_password')}<input type="password" autoComplete="new-password" disabled={busy || loading} value={password} className={`${fieldClass} block w-full mt-1`}
-        onFocus={() => { if (password === '********') setPassword('') }} onBlur={() => { if (!password && config.password_set) setPassword('********') }}
-        onChange={(e) => { setPassword(e.target.value); setSaved(false); setConnected(false) }} /></label>
+      {(['password', 'token'] as const).map((field) => <div key={field} className="space-y-1">
+        <label htmlFor={`elearning-${field}`} className="text-xs text-content-secondary">{field === 'password' ? t('briefing_elearning_password') : zh ? 'API Token（可选）' : 'API Token (optional)'}</label>
+        <input id={`elearning-${field}`} type="password" autoComplete="new-password" disabled={busy || loading}
+          value={field === 'password' ? password : token} className={`${fieldClass} block w-full`}
+          onChange={(e) => { (field === 'password' ? setPassword : setToken)(e.target.value); setSaved(false); setCredentialSaved(false); setConnected(false) }} />
+        <div className="flex flex-wrap items-center gap-2 text-xs text-content-secondary">
+          <span>{stateText(field)}</span>
+          <button type="button" className={buttonClass} disabled={!canEditCredentials || !config.credential_revision || !(field === 'password' ? password : token)}
+            onClick={() => void run(() => updateCredential(field, field === 'password' ? password : token))}>{field === 'password' ? zh ? '更新密码' : 'Update password' : zh ? '更新 Token' : 'Update Token'}</button>
+          <button type="button" className={`${buttonClass} text-danger`} disabled={!canEditCredentials || !config.credential_revision || stateOf(field) === 'not_configured'}
+            onClick={() => void run(() => updateCredential(field, ''))}>{field === 'password' ? zh ? '删除密码' : 'Remove password' : zh ? '删除 Token' : 'Remove Token'}</button>
+        </div>
+      </div>)}
+      <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-xs text-content-secondary">
+        <span>{zh ? '已保存登录状态' : 'Saved login session'} · {stateText('session')}</span>
+        <button type="button" className={buttonClass} disabled={!canEditCredentials || !config.session_revision || stateOf('session') === 'not_configured'}
+          onClick={() => void run(() => updateCredential('session', ''))}>{zh ? '清除登录状态' : 'Clear login session'}</button>
+        <button type="button" className={buttonClass} disabled={busy || loading} onClick={() => void run(async () => {
+          const cfg = await apiClient.getElearningSettings()
+          if (cfg.credential_revision && cfg.credential_revision === config.credential_revision) updateMetadata(cfg)
+          else open(cfg)
+        })}>{zh ? '刷新凭据状态' : 'Refresh credential status'}</button>
+      </div>
       <fieldset className="sm:col-span-2 rounded-card border border-default p-3 space-y-3">
         <legend className="px-1 text-xs text-content-secondary">{t('briefing_elearning_courses')} · {chosen.length}</legend>
         <p className="text-xs text-content-tertiary">{t('briefing_elearning_courses_help')}</p>
@@ -99,6 +143,7 @@ export const ElearningSettings: React.FC = () => {
           {busy && <Loader2 size={13} className="animate-spin" />}{t('briefing_elearning_test')}</button>
         {connected && <span role="status" className="inline-flex items-center gap-1 text-xs text-success"><Check size={13} />{t('briefing_elearning_connected')}</span>}
         {saved && <span role="status" className="text-xs text-success">{t('briefing_source_saved')}</span>}
+        {credentialSaved && <span role="status" className="text-xs text-success">{zh ? '凭据已更新' : 'Credential updated'}</span>}
       </div>
     </form>
   </section>

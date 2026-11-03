@@ -26,7 +26,7 @@ def peers(tmp_path, monkeypatch, request):
         for name, gateway in gateways.items():
             getattr(gateway, f'shutdown_{name}_session')()
             domain = 'tasks' if name == 'todos' else name
-            root = Path('stella-plugins-workspace/plugins') / domain
+            root = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins' / domain
             op = packages.stage(root)
             packages.inspect(op.operation_id)
             packages.prepare(op.operation_id)
@@ -130,7 +130,7 @@ def test_disabled_owner_hides_enrichment_and_preserves_pending_projection(peers,
 def test_nondefault_user_uses_only_its_own_owner_grants(peers):
     item = peers.publish()['items'][0]['id']
     receipt = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
-    assert receipt['state'] == 'succeeded', receipt
+    assert receipt['state'] == 'succeeded', {'error': receipt.get('error'), 'result': receipt.get('result')}
     assert peers.authz.scoped_grants('local-default') == []
 
 
@@ -138,16 +138,15 @@ def test_native_worker_reads_need_no_plugin_grant(peers):
     from core.services import briefing_gateway
 
     peers.publish()
-    result = briefing_gateway.ensure_briefing_session().invoke_contract(
-        contract='stella.briefing@1', method='get_action_targets', input_payload={'kind': 'todo', 'query': ''},
-        origin='system', grant_ref='briefing-default-grant',
-        data_handle={'dbPath': str(peers.path / 'briefing.sqlite'), 'namespace': 'stella.briefing'})
-    assert result['status'] == 'succeeded'
+    result = briefing_gateway.invoke_briefing('get_action_targets', {'kind': 'todo', 'query': ''},
+        db_path=peers.path / 'briefing.sqlite')
+    assert result['status'] == 'succeeded', result
 
 
 def test_native_reminder_configuration_reaches_task_owner(peers):
     item = peers.publish()['items'][0]['id']
-    peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
+    created = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})
+    assert created['state'] == 'succeeded', created
     reminder = peers.ok('update_action', item_id=item, payload={
         'operation': 'create', 'kind': 'reminder', 'remind_at': '2099-10-24T08:00:00Z'})
     assert reminder['business']['remind_at'] == '2099-10-24T08:00:00+00:00'
@@ -250,3 +249,14 @@ def test_background_obeys_mode_while_native_ui_does_not(peers):
             peers.call('dispatch_outbox')
     with caller_origin_scope('desktop'):
         assert peers.ok('dispatch_outbox')['pending'] == 0
+
+
+def test_native_background_workflow_does_not_replace_a_tasks_readonly_snapshot(peers):
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
+    from core.plugins.caller import caller_origin_scope
+    peers.publish()
+    save_run_policy('task', 'readonly-briefing-task', {'filesystem_mode': 'read-only'})
+    with identity_scope(task_id='readonly-briefing-task'), caller_origin_scope('scheduler'):
+        with pytest.raises(PermissionError):
+            peers.call('dispatch_outbox')

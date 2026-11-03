@@ -73,6 +73,7 @@ def _write_sqlite_plugin(root: Path) -> Path:
     backend.mkdir()
     (backend / "main.py").write_text(
         "import sqlite3\n"
+        "from zoneinfo import ZoneInfo, TZPATH\n"
         "SERVICE_DESCRIPTORS = [{'contract': 'stella.sample.sqlite@1', 'methods': "
         "[{'name': 'probe', 'permissions': ['sample.probe']}]}]\n"
         "\n"
@@ -81,7 +82,7 @@ def _write_sqlite_plugin(root: Path) -> Path:
         "        return {\n"
         "            'status': 'succeeded',\n"
         "            'sideEffects': 'none',\n"
-        "            'value': {'ok': True, 'sqlite': sqlite3.sqlite_version},\n"
+        "            'value': {'ok': True, 'sqlite': sqlite3.sqlite_version, 'timezone': ZoneInfo('Asia/Shanghai').key, 'tzpath': list(TZPATH)},\n"
         "        }\n"
         "    return {\n"
         "        'status': 'failed',\n"
@@ -126,6 +127,8 @@ def test_frozen_runner_can_import_sqlite3_for_plugin(frozen_runner, tmp_path, mo
         assert result["status"] == "succeeded"
         assert result["value"]["ok"] is True
         assert result["value"]["sqlite"]
+        assert result["value"]["timezone"] == 'Asia/Shanghai'
+        assert result["value"]["tzpath"] == []
     finally:
         session.dispose()
 

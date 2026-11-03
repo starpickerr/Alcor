@@ -272,7 +272,6 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "browser": "control the browser (screenshot key results or send to the user when help is needed)",
             "memory_search": "search memory",
             "memory_get": "read memory content",
-            "env_config": "manage API keys and skill config",
             "scheduler": "manage scheduled tasks and reminders",
             "calendar": "manage calendar events and categories",
             "todos": "manage to-dos, due dates, and completion",
@@ -294,7 +293,6 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "browser": "控制浏览器（关键结果或需要协助可截图发送给用户）",
             "memory_search": "搜索记忆",
             "memory_get": "读取记忆内容",
-            "env_config": "管理API密钥和技能配置",
             "scheduler": "管理定时任务和提醒",
             "calendar": "管理日程和分类",
             "todos": "管理事务、截止时间和完成状态",
@@ -309,7 +307,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         "bash", "terminal",
         "web_search", "web_fetch", "browser",
         "memory_search", "memory_get",
-        "env_config", "scheduler", "send", "vision", "subagent",
+        "scheduler", "send", "vision", "subagent",
     ]
 
     # Build name -> summary mapping for available tools

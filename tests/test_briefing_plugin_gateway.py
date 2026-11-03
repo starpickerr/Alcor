@@ -274,7 +274,8 @@ def _patch_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(briefing_facade, "_db_path", lambda: tmp_path / "briefing.db")
 
 
-def test_application_port_routes_briefing_via_plugin_with_core_models(tmp_path, monkeypatch):
+def test_application_port_routes_briefing_via_plugin_with_core_models(tmp_path, monkeypatch, registered_agent):
+    registered_agent('test-agent')
     from agent.briefing.models import Briefing, BriefingItem, FilterRule, SyncCursor
     from application.api import Application
     from common.runtime_identity import RuntimeIdentity, use_identity
@@ -459,7 +460,7 @@ def test_commit_briefing_package_and_invoke_service(tmp_path):
     op = store.commit(op.operation_id)
     assert op.stage == PackageStage.COMMITTED
     current = store.current_package("stella.briefing")
-    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY)
+    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, data_handle={'dbPath':str(tmp_path/'b.db')})
     try:
         assert session.start()["initialize"]["pluginId"] == "stella.briefing"
         listed = session.invoke("list_briefings", {"_dataHandle": {"dbPath": str(tmp_path / "b.db")}})

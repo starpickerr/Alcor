@@ -33,6 +33,7 @@ const locales = {
     saved: '已保存',
     saveFailed: '保存失败',
     tabs: {
+      'agent-permissions': 'Agent 权限', runtime: '运行隔离', connections: '外部连接', resources: '敏感资源保护',
       overview: '总览',
       background: '后台任务权限',
       projects: '项目与对话',
@@ -41,7 +42,7 @@ const locales = {
       privacy: '数据访问',
       plugins: '执行环境与插件',
     },
-    overviewDefaultHelp: '新建对话和定时任务固定默认只读，权限在各自功能中单独设置。',
+    overviewDefaultHelp: '默认权限仅用于新建对话和独立定时任务，已有对象保留各自权限。自定义规则在 Agent 权限中编辑。',
     overviewBackgroundTitle: '后台任务权限',
     overviewConnectionsTitle: '外部连接',
     overviewSecretsTitle: '凭据',
@@ -320,6 +321,7 @@ const locales = {
     saved: 'Saved',
     saveFailed: 'Save failed',
     tabs: {
+      'agent-permissions': 'Agent permissions', runtime: 'Runtime isolation', connections: 'External connections', resources: 'Sensitive resources',
       overview: 'Overview',
       background: 'Background tasks',
       projects: 'Projects & chats',
@@ -328,7 +330,7 @@ const locales = {
       privacy: 'Data access',
       plugins: 'Runtime & plugins',
     },
-    overviewDefaultHelp: 'New conversations and scheduled tasks start read-only. Manage their permissions individually.',
+    overviewDefaultHelp: 'Defaults apply to new conversations and independent tasks. Existing objects keep their permissions. Edit custom rules in Agent permissions.',
     overviewBackgroundTitle: 'Background task access',
     overviewConnectionsTitle: 'Connections',
     overviewSecretsTitle: 'Credentials',

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import apiClient from '../api/client'
-import type { RuntimeTrustState } from '../api/client'
+import type { RuntimeStatusState } from '../api/client'
 import { getLang } from '../i18n'
 
 const button = 'min-h-10 rounded-btn bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent'
 const secondary = 'min-h-9 rounded-btn border border-default px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent'
-const loadRuntime = () => apiClient.runtimeTrust()
+const loadRuntime = () => apiClient.runtimeStatus()
 const loadMigration = async () => {
   const result = await apiClient.permissionMigration()
   if (result.status !== 'success') throw new Error(result.message || '无法核对历史权限')
@@ -38,30 +38,57 @@ export function Feedback({ error, notice, busy }: { error: string; notice: strin
   return <>{error && <p role="alert" className="text-sm text-danger">{error}</p>}{notice && <p role="status" className="text-sm text-accent">{notice}</p>}{busy && <p className="text-xs text-content-secondary">{getLang() === 'en' ? 'Updating…' : '正在读取或更新…'}</p>}</>
 }
 
-function RuntimeChoice({ row, busy, save }: { row: RuntimeTrustState['runtimes'][number]; busy: boolean; save: (trusted: boolean) => void }) {
+function RuntimeStatus({ row, busy, onRebuild, onAdopt }: { row: RuntimeStatusState['runtimes'][number]; busy: boolean; onRebuild: (row: RuntimeStatusState['runtimes'][number]) => void; onAdopt: (row: RuntimeStatusState['runtimes'][number], source: string) => void }) {
   const en = getLang() === 'en'
-  const [trusted, setTrusted] = useState(!!row.trusted)
-  useEffect(() => setTrusted(!!row.trusted), [row.trusted, row.digest])
-  const mode = ({ isolated: 'OS 隔离', trusted: '受信任运行', stopped: '未运行', unavailable: '不可用', remote: '远程连接' } as Record<string, string>)[row.mode] || row.mode
-  return <div className="space-y-3 border-b border-default py-4">
+  const [confirming, setConfirming] = useState(false)
+  const [source, setSource] = useState('')
+  const migration = row.storage_migration
+  const mode = ({ isolated: 'OS 隔离', trusted: '旧进程需要重启', stopped: '未运行', unavailable: '不可用', remote: '远程连接' } as Record<string, string>)[row.mode] || row.mode
+  const resume = Boolean(row.rebuild_operation)
+  return <div className="space-y-2 border-b border-default py-4">
     <div className="flex flex-wrap justify-between gap-2"><p className="break-all text-sm font-semibold">{row.id}</p><span className="text-xs text-content-secondary">{en ? row.mode : mode}</span></div>
-    <p className="text-xs leading-relaxed text-content-secondary">{row.reason}</p>
-    {row.digest && <><p className="break-all text-xs text-content-tertiary">SHA256 {row.digest}</p>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={trusted} disabled={busy} aria-label={en ? `Trusted runtime ${row.id}` : `受信任运行 ${row.id}`} onChange={event => setTrusted(event.target.checked)} />{en ? 'Trust this exact package' : '允许此版本受信任运行'}</label>
-      {trusted && <p className="rounded-btn bg-surface-2 p-3 text-xs leading-relaxed">{en ? 'Trusted code can access host files and network. Package changes invalidate this choice. Revoking trust stops trusted workers; enabling trust takes effect on the next launch.' : '受信任代码可访问宿主文件和网络。选择绑定当前包版本，内容改变后失效。撤销会停止受信任进程；启用在下次启动生效。'}</p>}
-      <button type="button" className={secondary} disabled={busy || trusted === !!row.trusted} onClick={() => save(trusted)}>{en ? 'Save runtime choice' : '保存运行选择'}</button>
-    </>}
+    <p className="text-xs leading-6 text-content-secondary">{row.reason}</p>
+    {row.environment && <p className="break-all text-xs leading-5 text-content-secondary">{en ? 'Independent dependency environment' : '独立依赖环境'} · {row.environment.base.version} · {row.environment.state}</p>}
+    {row.environment_error && <p className="text-xs leading-6 text-danger">{row.environment_error}</p>}
+    {migration && (confirming ? <div className="space-y-3 rounded-btn border border-default p-3">
+      <p className="text-sm leading-6">{en ? 'Confirm that the selected data belongs to this MCP. It will be copied to the current version; original files stay in place. Active processes will stop.' : '请确认所选数据属于此 MCP。数据将复制到当前版本，原文件保留；当前进程会停止。'}</p>
+      <label className="block space-y-2 text-sm"><span>{en ? 'Retained data source' : '保留数据来源'}</span>
+        <select className="min-h-10 w-full min-w-0 rounded-btn border border-default bg-surface px-2" value={source} disabled={busy} onChange={event => setSource(event.target.value)}>
+          <option value="">{en ? 'Select a source' : '请选择来源'}</option>
+          {migration.sources.map(item => <option key={item.id} value={item.id}>{item.path}</option>)}
+        </select>
+      </label>
+      {migration.sources.find(item => item.id === source) && <p className="break-all text-xs text-content-secondary">{migration.sources.find(item => item.id === source)?.path}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={button} disabled={busy || !migration.sources.some(item => item.id === source)} onClick={() => onAdopt(row, source)}>{en ? 'Confirm and copy' : '确认并复制'}</button>
+        <button type="button" className={secondary} disabled={busy} onClick={() => { setConfirming(false); setSource('') }}>{en ? 'Cancel' : '取消'}</button>
+      </div>
+    </div> : <button type="button" className={secondary} disabled={busy} onClick={() => setConfirming(true)}>{en ? 'Confirm data ownership' : '确认数据归属'}</button>)}
+    {(row.can_rebuild || resume) && <button type="button" className={secondary} disabled={busy}
+      aria-label={en ? `${resume ? 'Resume rebuilding' : 'Rebuild'} dependency environment for ${row.id}` : `${resume ? '继续重建' : '重建'} ${row.id} 的依赖环境`}
+      onClick={() => onRebuild(row)}>{resume ? (en ? 'Resume rebuild' : '继续重建') : (en ? 'Rebuild environment' : '重建环境')}</button>}
+    {!row.can_rebuild && row.rebuild_reason && <p className="text-xs leading-6 text-content-secondary">{row.rebuild_reason}</p>}
   </div>
 }
 
 export function RuntimeAuthorizationPanel() {
   const en = getLang() === 'en'
   const state = useSecurityData(loadRuntime)
-  return <section className="min-w-0 space-y-4 text-content"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{en ? 'Execution environment' : '执行环境'}</h2><button type="button" className={secondary} disabled={state.busy} onClick={() => void state.refresh()}>{en ? 'Refresh' : '刷新'}</button></div>
+  const rebuild = (row: RuntimeStatusState['runtimes'][number]) => void state.run(
+    () => apiClient.rebuildRuntime(row.kind, row.id, row.rebuild_operation),
+    en ? 'Dependency environment rebuilt. A new worker will start on next use.' : '依赖环境已重建，后续使用时将启动新进程。',
+  )
+  const adopt = (row: RuntimeStatusState['runtimes'][number], source: string) => void state.run(
+    () => apiClient.adoptRuntimeStorage(row.id, row.storage_migration!.token, source),
+    en ? 'Data ownership confirmed. Original files are preserved; the next use starts the current version.' : '数据归属已确认，原文件已保留，下次使用时将启动当前版本。',
+  )
+  return <section className="min-w-0 space-y-4 text-content"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold text-content">{en ? 'Execution environment' : '执行环境'}</h2><button type="button" className={secondary} disabled={state.busy} onClick={() => void state.refresh()}>{en ? 'Refresh' : '刷新'}</button></div>
     <Feedback {...state} />
+    {state.data?.application_isolation && <p role="status" className="rounded-btn border border-default p-3 text-sm leading-6">{en ? 'Core and Electron are trusted hosts. Each managed child process reports its actual isolation below.' : 'Core 和 Electron 是可信宿主。下方显示各受管子进程的实际隔离状态。'}</p>}
     {state.data && <><p className="text-sm leading-relaxed text-content-secondary">{state.data.isolation.status === 'enabled' ? (en ? 'OS isolation is available. Each runtime below reports its actual boundary.' : '当前平台支持 OS 隔离。各进程的实际边界如下。') : (en ? 'OS isolation is unavailable. Untrusted local extensions cannot start.' : '当前平台无法提供 OS 隔离，未受信任的本地扩展将拒绝启动。')}</p>
       {!state.data.runtimes.length && <p className="text-sm text-content-secondary">{en ? 'No installed local extensions or configured MCP connections.' : '暂无已安装扩展或已配置的 MCP 连接。'}</p>}
-      {state.data.runtimes.map(row => <RuntimeChoice key={`${row.kind}:${row.id}`} row={row} busy={state.busy} save={trusted => { if (row.digest) void state.run(() => apiClient.runtimeTrust({ kind: row.kind, id: row.id, digest: row.digest!, trusted }), en ? 'Runtime choice saved.' : '运行选择已保存。') }} />)}
+      {state.data.runtimes.some(row => row.can_rebuild) && <p className="text-xs leading-6 text-content-secondary">{en ? 'Rebuilding keeps accounts, settings and business data. Active processes for this provider stop; the next use starts the new environment.' : '重建保留账号、配置和业务数据。该能力当前的进程会停止，下次使用时将启动新环境。'}</p>}
+      {state.data.runtimes.map(row => <RuntimeStatus key={`${row.kind}:${row.id}`} row={row} busy={state.busy} onRebuild={rebuild} onAdopt={adopt} />)}
     </>}
   </section>
 }

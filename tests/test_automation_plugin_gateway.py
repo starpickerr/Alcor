@@ -257,9 +257,10 @@ def _store(tmp_path):
 
 
 @pytest.fixture
-def identity():
+def identity(registered_agent):
     from common.runtime_identity import RuntimeIdentity, use_identity
 
+    registered_agent(AGENT)
     with use_identity(RuntimeIdentity(agent_id=AGENT, user_id=USER)):
         yield
 
@@ -401,7 +402,7 @@ def test_commit_automation_package_and_invoke_service(tmp_path):
     op = store.commit(op.operation_id)
     assert op.stage == PackageStage.COMMITTED
     current = store.current_package("stella.automation")
-    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, user_id=USER)
+    session = PluginSession(Path(current["path"]), source_label="local-cache", registry=DEFAULT_REGISTRY, user_id=USER, data_handle={'dbPath':str(tmp_path/'a.db')})
     try:
         assert session.start()["initialize"]["pluginId"] == "stella.automation"
         handle = {"dbPath": str(tmp_path / "a.db"), "agentId": AGENT, "userId": ""}

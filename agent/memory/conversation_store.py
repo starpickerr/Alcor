@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from common.log import logger
+from core.security.protected_paths import current_revision, check_context_revision
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     channel_type      TEXT    NOT NULL DEFAULT '',
     title             TEXT    NOT NULL DEFAULT '',
     context_start_seq INTEGER NOT NULL DEFAULT 0,
+    protection_revision INTEGER NOT NULL DEFAULT -1,
     created_at        INTEGER NOT NULL,
     last_active       INTEGER NOT NULL,
     msg_count         INTEGER NOT NULL DEFAULT 0,
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS run_admissions (
     user_content TEXT NOT NULL DEFAULT '',
     channel_type TEXT NOT NULL DEFAULT '',
     clear_history INTEGER NOT NULL DEFAULT 0,
+    protection_revision INTEGER NOT NULL DEFAULT -1,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at INTEGER NOT NULL
 );
@@ -436,7 +439,7 @@ class ConversationStore:
             try:
                 # Respect context_start_seq: only load messages at or after the boundary
                 ctx_row = conn.execute(
-                    "SELECT context_start_seq FROM sessions WHERE session_id = ?",
+                    "SELECT context_start_seq, protection_revision FROM sessions WHERE session_id = ?",
                     (session_id,),
                 ).fetchone()
                 ctx_start = ctx_row[0] if ctx_row else 0
@@ -455,6 +458,8 @@ class ConversationStore:
 
         if not rows:
             return []
+
+        check_context_revision(ctx_row[1])
 
         visible_turn_seqs: List[int] = []
         for seq, role, raw_content in rows:
@@ -537,10 +542,10 @@ class ConversationStore:
                     conn.execute(
                         """
                         INSERT OR IGNORE INTO sessions
-                            (session_id, channel_type, created_at, last_active, msg_count)
-                        VALUES (?, ?, ?, ?, 0)
+                            (session_id, channel_type, created_at, last_active, msg_count, protection_revision)
+                        VALUES (?, ?, ?, ?, 0, ?)
                         """,
-                        (session_id, channel_type, now, now),
+                        (session_id, channel_type, now, now, current_revision()),
                     )
                     conn.execute(
                         "UPDATE sessions SET last_active = ? WHERE session_id = ?",
@@ -637,18 +642,18 @@ class ConversationStore:
             try:
                 with conn:
                     now = int(time.time())
-                    conn.execute("INSERT OR IGNORE INTO sessions (session_id,channel_type,created_at,last_active,msg_count) VALUES (?,?,?,?,0)",
-                                 (session_id, channel_type, now, now))
+                    conn.execute("INSERT OR IGNORE INTO sessions (session_id,channel_type,created_at,last_active,msg_count,protection_revision) VALUES (?,?,?,?,0,?)",
+                                 (session_id, channel_type, now, now, current_revision()))
                     title = _extract_display_text(message.get("content"))[:50].split("\n")[0]
                     conn.execute("UPDATE sessions SET last_active=?,title=CASE WHEN title='' THEN ? ELSE title END WHERE session_id=?",
                                  (now, title, session_id))
                     conn.execute(
                         """INSERT INTO run_admissions
                            (run_id,session_id,request_id,user_seq,user_content,
-                            channel_type,clear_history,status,created_at)
-                           VALUES (?,?,?,-1,?,?,?,'queued',?)""",
+                            channel_type,clear_history,status,created_at,protection_revision)
+                           VALUES (?,?,?,-1,?,?,?,'queued',?,?)""",
                         (run_id, session_id, request_id, content, channel_type,
-                         int(clear_history), int(time.time())),
+                         int(clear_history), int(time.time()), current_revision()),
                     )
             finally:
                 conn.close()
@@ -665,24 +670,25 @@ class ConversationStore:
             try:
                 with conn:
                     row = conn.execute(
-                        """SELECT session_id,user_content,channel_type,clear_history,status
+                        """SELECT session_id,user_content,channel_type,clear_history,status,protection_revision
                            FROM run_admissions WHERE run_id=?""", (run_id,)
                     ).fetchone()
                     if row is None or row[4] != "queued" or not row[1]:
                         raise ValueError("run has no queued user admission")
-                    session_id, content, channel_type, clear_history, _ = row
+                    session_id, content, channel_type, clear_history, _, revision = row
+                    check_context_revision(revision)
                     now = int(time.time())
                     if clear_history:
                         conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
                         conn.execute(
-                            """UPDATE sessions SET context_start_seq=0,msg_count=0,title=''
-                               WHERE session_id=?""", (session_id,)
+                            """UPDATE sessions SET context_start_seq=0,msg_count=0,title='',protection_revision=?
+                               WHERE session_id=?""", (current_revision(), session_id)
                         )
                     conn.execute(
                         """INSERT OR IGNORE INTO sessions
-                           (session_id,channel_type,created_at,last_active,msg_count)
-                           VALUES (?,?,?,?,0)""",
-                        (session_id, channel_type, now, now),
+                           (session_id,channel_type,created_at,last_active,msg_count,protection_revision)
+                           VALUES (?,?,?,?,0,?)""",
+                        (session_id, channel_type, now, now, current_revision()),
                     )
                     conn.execute(
                         "UPDATE sessions SET last_active=? WHERE session_id=?",
@@ -775,8 +781,8 @@ class ConversationStore:
                     ).fetchone()
                     new_start = row[0] + 1
                     conn.execute(
-                        "UPDATE sessions SET context_start_seq = ? WHERE session_id = ?",
-                        (new_start, session_id),
+                        "UPDATE sessions SET context_start_seq = ?, protection_revision = ? WHERE session_id = ?",
+                        (new_start, current_revision(), session_id),
                     )
                     return new_start
             finally:
@@ -1501,6 +1507,11 @@ class ConversationStore:
                 logger.info("[ConversationStore] Migrated: added context_start_seq column")
             except Exception as e:
                 logger.warning(f"[ConversationStore] Migration (context_start_seq) failed: {e}")
+        if "protection_revision" not in cols:
+            # Unknown historical inputs stay on disk, but require an explicit
+            # context reset before they can be reused by a model.
+            conn.execute('ALTER TABLE sessions ADD COLUMN protection_revision INTEGER NOT NULL DEFAULT -1')
+            conn.commit()
         if "pinned" not in cols:
             try:
                 conn.execute(_MIGRATION_ADD_PINNED)
@@ -1528,6 +1539,7 @@ class ConversationStore:
             ("user_content", "TEXT NOT NULL DEFAULT ''"),
             ("channel_type", "TEXT NOT NULL DEFAULT ''"),
             ("clear_history", "INTEGER NOT NULL DEFAULT 0"),
+            ("protection_revision", "INTEGER NOT NULL DEFAULT -1"),
         ):
             if column not in admission_cols:
                 conn.execute(f"ALTER TABLE run_admissions ADD COLUMN {column} {definition}")

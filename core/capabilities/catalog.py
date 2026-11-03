@@ -41,7 +41,13 @@ class CapabilityCatalog:
     @staticmethod
     def _mcp():
         from agent.tools.tool_manager import ToolManager
-        return ToolManager().mcp_catalog()
+        from agent.tools.mcp.mcp_oauth import credential_statuses
+        rows = ToolManager().mcp_catalog()
+        known = {row['name'] for row in rows}
+        return [*rows, *[dict(name=item['server'], transport='retained', enabled=False, state='removed', tools=[], retained=True,
+            description={'zh': '连接已移除，已保存的 OAuth 授权可在原配置页删除。',
+                         'en': 'Connection removed. Saved OAuth authorization can be removed from its configuration.'})
+            for item in credential_statuses() if item['server'] not in known]]
 
     def _skills(self):
         if self.skill_manager is None:
@@ -64,11 +70,15 @@ class CapabilityCatalog:
         rows = {'plugins': self._plugins, 'tools': self.tool_rows,
                 'skills': self._skills, 'mcp': self.mcp_rows}[kind]()
         if kind == 'plugins':
+            from common.runtime_identity import current_identity
+            from core.plugins.management import default_store
             from core.security.access_settings import retained_plugins
             known = {row['pluginId'] for row in rows}
+            retained = set(retained_plugins()) | set(default_store().credential_plugins(current_identity().user_id or 'local-default'))
             rows = [*rows, *[dict(pluginId=key, name=key, intent='removed', state='stopped', version=None, retained=True,
-                manifest={'description': {'zh': '插件已移除，旧访问限制仍继续生效。', 'en': 'Plugin removed. Existing access restrictions remain in effect.'}})
-                for key in sorted(retained_plugins()) if key not in known]]
+                manifest={'description': {'zh': '插件已移除。保留的配置、凭据及访问限制可通过原入口处理。',
+                                          'en': 'Plugin removed. Retained configuration, credentials and access restrictions remain accessible.'}})
+                for key in sorted(retained) if key not in known]]
         if kind == 'mcp':
             from core.security.access_settings import retained_connections
             known = {row['name'] for row in rows}
