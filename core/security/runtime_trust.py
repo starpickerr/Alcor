@@ -14,6 +14,10 @@ class RuntimeTrustStore(RunPolicyStore):
             user TEXT NOT NULL, kind TEXT NOT NULL, identifier TEXT NOT NULL, digest TEXT NOT NULL,
             trusted INTEGER NOT NULL, revision INTEGER NOT NULL,
             PRIMARY KEY(user,kind,identifier,digest))''')
+        columns = {row[1] for row in db.execute('PRAGMA table_info(runtime_trust)')}
+        for name in ('network', 'credentials'):
+            if name not in columns:
+                db.execute(f'ALTER TABLE runtime_trust ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
 
     def set(self, *, user_id, kind, identifier, digest, trusted):
         if not user_id or kind not in {'plugin', 'mcp'} or not identifier or not re.fullmatch('[0-9a-f]{64}', digest):
@@ -22,7 +26,7 @@ class RuntimeTrustStore(RunPolicyStore):
             raise ValueError('trusted must be boolean')
         with self.transaction() as db:
             self._table(db)
-            db.execute('''INSERT INTO runtime_trust VALUES (?,?,?,?,?,1) ON CONFLICT(user,kind,identifier,digest)
+            db.execute('''INSERT INTO runtime_trust (user,kind,identifier,digest,trusted,revision) VALUES (?,?,?,?,?,1) ON CONFLICT(user,kind,identifier,digest)
                 DO UPDATE SET trusted=excluded.trusted,revision=runtime_trust.revision+1''',
                        (user_id, kind, identifier, digest, int(trusted)))
         if not trusted and kind == 'plugin':
@@ -41,6 +45,39 @@ class RuntimeTrustStore(RunPolicyStore):
             row = db.execute('SELECT trusted FROM runtime_trust WHERE user=? AND kind=? AND identifier=? AND digest=?',
                              (user_id, kind, identifier, digest)).fetchone()
             return bool(row[0]) if row is not None else None
+
+    def capabilities(self, *, user_id, kind, identifier, digest):
+        with self.transaction() as db:
+            self._table(db)
+            row = db.execute('SELECT trusted,network,credentials,revision FROM runtime_trust WHERE user=? AND kind=? AND identifier=? AND digest=?',
+                             (user_id, kind, identifier, digest)).fetchone()
+            return dict(network=bool(row and row[0] and row[1]), credentials=bool(row and row[0] and row[2]), revision=row[3] if row else 0)
+
+    def set_capabilities(self, *, user_id, identifier, digest, network, credentials, expected_revision):
+        from core.security.control import require_owner
+        from common.runtime_identity import current_identity
+        require_owner()
+        if (user_id != (current_identity().user_id or 'local-default') or not identifier
+                or not re.fullmatch('[0-9a-f]{64}', digest) or type(network) is not bool or type(credentials) is not bool):
+            raise ValueError('Exact local MCP runtime and explicit capabilities required')
+        with self.transaction() as db:
+            self._table(db)
+            row = db.execute('SELECT trusted,revision FROM runtime_trust WHERE user=? AND kind=? AND identifier=? AND digest=?',
+                             (user_id, 'mcp', identifier, digest)).fetchone()
+            if type(expected_revision) is not int or expected_revision != (row[1] if row else 0):
+                raise ValueError('MCP runtime permissions changed; refresh before saving')
+            if row and not row[0] and (network or credentials):
+                raise PermissionError('Runtime identity was revoked; select a new verified implementation')
+            db.execute('''INSERT INTO runtime_trust (user,kind,identifier,digest,trusted,revision,network,credentials)
+                VALUES (?, 'mcp', ?, ?, 1, 1, ?, ?) ON CONFLICT(user,kind,identifier,digest)
+                DO UPDATE SET network=excluded.network,credentials=excluded.credentials,revision=runtime_trust.revision+1''',
+                (user_id, identifier, digest, int(network), int(credentials)))
+        from agent.tools.mcp.mcp_client import LIVE_CLIENTS
+        key = dict(user_id=user_id, kind='mcp', identifier=identifier, digest=digest)
+        for client in list(LIVE_CLIENTS):
+            if client._runtime_key == key:
+                client.shutdown()
+        return self.capabilities(**key)
 
     def allowed(self, **identity):
         return self.choice(**identity) is True

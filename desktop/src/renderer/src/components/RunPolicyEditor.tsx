@@ -7,7 +7,7 @@ import { getLang } from '../i18n'
 
 import { permissionInput } from './permissionStyles'
 export { permissionInput } from './permissionStyles'
-import FeatureAccessEditor from './FeatureAccessEditor'
+import { ConversationMcpAccess } from './FeatureAccessEditor'
 import { ruleGroups, securityCopy } from '../pages/securityLocale'
 const saveButton = 'min-h-10 rounded-btn bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent'
 const modes: { id: PermissionMode; zh: string; en: string; zhHelp: string; enHelp: string }[] = [
@@ -52,7 +52,6 @@ export default function RunPolicyEditor({ kind, subject, agent, onSaved, detaile
   const location = useLocation()
   const editorLink = `/security?${new URLSearchParams({ tab: 'agent-permissions', kind, subject, ...(agent ? { agent } : {}), returnTo: location.pathname + location.search })}`
   const [state, setState] = useState<RunPolicyState | null>(null)
-  const [connectionOpen, setConnectionOpen] = useState(false)
   const [draft, setDraft] = useState<RunPolicy | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -108,6 +107,6 @@ export default function RunPolicyEditor({ kind, subject, agent, onSaved, detaile
       <button type="button" disabled={busy} onClick={() => void load()} className="flex min-h-10 items-center gap-1.5 text-sm text-content-secondary hover:text-content focus-visible:outline-2 focus-visible:outline-accent"><RefreshCw size={13} />{en ? 'Refresh' : '刷新'}</button>
       {draft && <span className="text-xs text-content-tertiary">{en ? `Revision ${draft.policy_revision}` : `权限版本 ${draft.policy_revision}`}</span>}
     </div>
-    {kind === 'session' && <details onToggle={event => setConnectionOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm text-accent">{en ? 'Retained connection limits' : '保留的连接访问范围'}</summary>{connectionOpen && <div className="mt-4"><FeatureAccessEditor context={{ module: 'sessions', id: subject, agent }} restrictionsOnly /></div>}</details>}
+    {kind === 'session' && <ConversationMcpAccess key={`${agent}:${subject}`} session={subject} agent={agent} />}
   </div>
 }

@@ -91,8 +91,10 @@ export interface ResourceGrant {
 }
 export interface FeatureAccessContext { module: 'sessions' | 'capabilities'; id: string; kind?: 'connection'; agent?: string }
 export interface FeatureAccessState extends ApiResult {
+  revision?: string
   retired?: boolean
   restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
+  owner_restrictions?: { id: string; allowed: boolean; scopes: string[]; revision: number }[]
   connection?: { id: string; allowed: boolean; scopes: string[]; revision: number } | null
   grants: ResourceGrant[]; subjects: { id: string; kind: string; subject: string; agent?: string }[]
   available: { kind: string; id: string; name: string; operations: Operation[] }[]; inherited: InheritedMcpGrant[]
@@ -100,7 +102,7 @@ export interface FeatureAccessState extends ApiResult {
 export interface RuntimeStatusState extends ApiResult {
   isolation: { status: string; reason: string }
   application_isolation?: { status: string; protected: boolean; reason: string; unprotected: string[] }
-  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; storage_migration?: { token: string; sources: { id: string; path: string }[] }; environment?: { base: { version: string }; state: string } | null }[]
+  runtimes: { kind: 'plugin' | 'mcp'; id: string; digest?: string; capabilities?: { network: boolean; credentials: boolean; revision: number }; package_launcher?: boolean; package_error?: string | null; trusted?: boolean; running?: boolean; mode: string; reason: string; can_rebuild?: boolean; rebuild_reason?: string; rebuild_operation?: string; environment_error?: string; storage_migration?: { token: string; sources: { id: string; path: string }[] }; environment?: { base: { version: string }; state: string } | null }[]
 }
 export interface SensitiveResourceState extends ApiResult {
   credentials: { id: string; owners: string[]; account: string; kind: string; configured: boolean | null; configure_url: string | null; reason: string }[]
@@ -681,6 +683,14 @@ class ApiClient {
   async runtimeStatus(): Promise<RuntimeStatusState> {
     const result = await this.request<RuntimeStatusState>('/api/security/runtime')
     if (result.status !== 'success') throw new Error(result.message || '执行环境状态不可用')
+    return result
+  }
+
+  async saveMcpRuntime(id: string, change: { digest: string; network: boolean; credentials: boolean; revision: number } | null): Promise<RuntimeStatusState> {
+    const result = await this.request<RuntimeStatusState>('/api/security/runtime', {
+      method: 'POST', body: JSON.stringify({ action: change ? 'capabilities' : 'prepare-package', kind: 'mcp', id, ...change }),
+    })
+    if (result.status !== 'success') throw new Error(result.message || 'MCP 运行设置保存失败')
     return result
   }
 

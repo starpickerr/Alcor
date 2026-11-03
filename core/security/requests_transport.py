@@ -15,7 +15,7 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import get_encoding_from_headers
 
 from core.security.connections import ConnectionControl, service_id
-from core.security.http_transport import open_request
+from core.security.http_transport import open_request, configured_route
 from core.security.service import SecurityService
 
 RequestException = _requests.RequestException
@@ -62,8 +62,16 @@ def request(method, url, *, _category=None, _source="private:model-context", _ca
         "allow_redirects",
         "verify",
     }
-    if set(kwargs) - accepted or kwargs.get("proxies") or kwargs.get("verify") is False:
+    if set(kwargs) - accepted or kwargs.get("verify") is False:
         raise PermissionError("This controlled transport option is not safely supported")
+    try:
+        route = configured_route(url, owner='model:' if _source in {'private:model-context', 'private:voice-input'} and _category is None else None)
+    except ValueError:
+        raise PermissionError('Invalid model endpoint or network configuration; repair it in settings') from None
+    supplied = kwargs.get('proxies') or {}
+    if supplied and (not route['proxy'] or any(value != route['proxy'] for value in supplied.values())
+                     or set(supplied) - {'http', 'https'}):
+        raise PermissionError('Request proxy must match the saved network proxy')
     headers = dict(kwargs.get("headers") or {})
     if any(key.lower() == "cookie" for key in headers):
         raise PermissionError("Model transport does not use a private browser login")
@@ -120,6 +128,7 @@ def request(method, url, *, _category=None, _source="private:model-context", _ca
             permit=permit,
             category=_category,
             cancel_event=_cancel_event,
+            **route,
         )
         if raw.headers.get("Content-Encoding", "identity").lower() not in {
             "identity",

@@ -7,12 +7,12 @@ _MODEL_AUTHORIZATION = ContextVar('stella_model_authorization', default=())
 
 class SecurityService:
     @staticmethod
-    def authorize_egress(url, body, *, sources, wait=True, cancel_event=None, method="POST", headers=None, category=None):
+    def authorize_egress(url, body, *, sources, wait=True, cancel_event=None, method="POST", headers=None, category=None, transport_check=None):
         # Sources are supplied by Core adapters, never accepted from tool/MCP
         # parameters. The same gateway owns the one-use approval and audit.
         from core.security.egress import authorize
         check_model_authorization()
-        return authorize(url, body, sources=sources, wait=wait, cancel_event=cancel_event, method=method, headers=headers, category=category)
+        return authorize(url, body, sources=sources, wait=wait, cancel_event=cancel_event, method=method, headers=headers, category=category, transport_check=transport_check)
 
     @staticmethod
     def native_user_operation():

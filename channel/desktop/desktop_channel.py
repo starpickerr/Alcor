@@ -6246,9 +6246,9 @@ class SecurityRuntimeTrustHandler:
             if not isinstance(body, dict):
                 raise ValueError('Environment action must be an object')
             action = body.get('action')
-            fields = {'action', 'kind', 'id'} | ({'operationId'} if action == 'resume' else
+            fields = {'action', 'kind', 'id'} | ({'digest', 'network', 'credentials', 'revision'} if action == 'capabilities' else {'operationId'} if action == 'resume' else
                                                 {'token', 'sourceId'} if action == 'adopt-storage' else set())
-            if (set(body) != fields or action not in ('rebuild', 'resume', 'adopt-storage') or body['kind'] not in ('plugin', 'mcp')
+            if (set(body) != fields or action not in ('rebuild', 'resume', 'adopt-storage', 'capabilities', 'prepare-package') or body['kind'] not in ('plugin', 'mcp')
                     or not isinstance(body['id'], str) or not body['id']):
                 raise ValueError('Select a supported installed plugin or local MCP environment to rebuild')
             if action == 'adopt-storage' and body['kind'] != 'mcp':
@@ -6259,13 +6259,26 @@ class SecurityRuntimeTrustHandler:
                 from agent.tools.tool_manager import ToolManager
                 from core.mcp.lifecycle import McpLifecycle
                 lifecycle = McpLifecycle(ToolManager())
-                if action == 'rebuild':
+                if action == 'capabilities':
+                    from core.security.mcp_runtime import launch_identity
+                    from core.security.runtime_trust import RuntimeTrustStore
+                    config = lifecycle._config(body['id'])
+                    if config.get('type', 'stdio') != 'stdio' or launch_identity(config)[0] != body['digest']:
+                        raise PermissionError('MCP launch content changed; refresh before allowing capabilities')
+                    RuntimeTrustStore().set_capabilities(user_id=lifecycle.user, identifier=body['id'], digest=body['digest'],
+                        network=body['network'], credentials=body['credentials'], expected_revision=body['revision'])
+                elif action == 'prepare-package':
+                    from core.mcp.packages import prepare_package
+                    prepare_package(lifecycle._config(body['id']))
+                elif action == 'rebuild':
                     lifecycle.rebuild(body['id'])
                 elif action == 'adopt-storage':
                     lifecycle.adopt_storage(body['id'], body['token'], body['sourceId'])
                 else:
                     lifecycle.resume(body['id'], body['operationId'])
             else:
+                if action in {'capabilities', 'prepare-package'}:
+                    raise ValueError('Select a local MCP for this action')
                 manager, user = _plugin_manager(), _plugin_user()
                 if action == 'rebuild':
                     manager.rebuild(body['id'], user_id=user)

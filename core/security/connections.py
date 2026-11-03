@@ -57,6 +57,15 @@ def connection_catalog():
             return
         row = indexed.setdefault(identifier, dict(id=identifier, name=name, endpoint=endpoint, owners=[], configure_url=configuration))
         row['owners'] = sorted(set([*row['owners'], owner]))
+        networks = (cfg.get('local_service_networks') or {}).get(endpoint)
+        if networks:
+            row['localNetworks'] = networks
+    if cfg.get('proxy'):
+        from core.security.http_transport import proxy_endpoint
+        try:
+            add(proxy_endpoint(cfg['proxy'])[0], 'proxy', 'Network proxy', '/settings?tab=network')
+        except (ValueError, PermissionError):
+            pass
     from models.catalog import PROVIDER_MODELS
     from config import MODEL_CONFIG_TO_ENV
     # Reuse the settings catalog and credential mappings; no shadow endpoint configuration.

@@ -148,6 +148,9 @@ class FeatureAccessControl:
         if connection and not self.retired:
             result['connection'] = next((row for row in restrictions if row['id'] == connection),
                 dict(id=connection, allowed=True, scopes=[], revision=0))
+        if pinned:
+            result['owner_restrictions'] = ResourceGrantStore().connection_settings(user_id=current_user(), subject='user:' + current_user())
+            result['revision'] = ResourceGrantStore().session_access_revision(user_id=current_user(), subject=pinned['id'])
         result['retired'] = self.retired
         return result
 
@@ -158,7 +161,15 @@ class FeatureAccessControl:
         body = dict(body)
         action = body.pop('action', None)
         store = ResourceGrantStore()
-        if action == 'issue':
+        if action == 'enable_mcp' and self.module == 'sessions':
+            if set(body) != {'connection', 'operations', 'revision'}:
+                raise ValueError('Select an MCP and operation scope')
+            available = next((row for row in state['available'] if row['kind'] == 'connection' and row['id'] == body['connection']), None)
+            if not available or not isinstance(body['operations'], list) or any(not isinstance(value, str) for value in body['operations']) or not set(body['operations']) <= set(available['operations']):
+                raise PermissionError('MCP is outside this conversation settings')
+            store.enable_session_connection(user_id=current_user(), subject=state['subjects'][0]['id'],
+                connection=body['connection'], operations=body['operations'], expected_revision=body['revision'])
+        elif action == 'issue':
             if set(body) - {'subject', 'resource', 'operations', 'purposes', 'valid_until'}:
                 raise ValueError('Invalid access fields')
             if body.get('subject') not in {row['id'] for row in state['subjects'] if not row.get('retained')}:

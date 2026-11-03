@@ -145,7 +145,13 @@ class RuntimeControl:
         manager = ToolManager()
         for config in manager._load_mcp_configs():
             if config.get('type', 'stdio') != 'stdio':
-                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'remote', 'reason': 'Remote connection; local process isolation does not apply.',
+                from core.security.http_transport import configured_route
+                route_error = None
+                try:
+                    configured_route(config.get('url') or '', config=config)
+                except (ValueError, PermissionError):
+                    route_error = 'Repair endpoint, localNetworks or HTTP/Mixed proxy configuration in settings.'
+                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable' if route_error else 'remote', 'reason': route_error or 'Remote connection; local process isolation does not apply.',
                              'can_rebuild': False, 'rebuild_reason': 'Remote MCP connections have no local dependency environment.'})
                 continue
             try:
@@ -163,12 +169,13 @@ class RuntimeControl:
                           and pending[0]['facts'].get('workspace') == str(manager.workspace_root) else None)
                 if pending:
                     supported, rebuild_reason = False, 'A pending MCP operation needs recovery first'
+                package_launcher = Path(config['command']).name in {'npx', 'uvx'}
                 environment = getattr(client, 'environment', None)
                 environment_error = None
                 if environment is None:
                     try:
                         environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=execution_digest)
-                        if environment and Path(environment['package']) != package:
+                        if environment and not package_launcher and Path(environment['package']) != package:
                             environment = None
                     except (ValueError, OSError):
                         environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
@@ -181,7 +188,17 @@ class RuntimeControl:
                     from core.security.mcp_runtime import McpStorageMigrationRequired
                     if isinstance(error, McpStorageMigrationRequired):
                         storage_migration = McpLifecycle(manager).storage_preview(config['name'])
+                from core.security.runtime_trust import RuntimeTrustStore
+                from core.mcp.packages import package_spec
+                package_error = None
+                if package_launcher:
+                    try:
+                        package_spec(config)
+                    except ValueError as error:
+                        package_error = str(error)
                 rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
+                    'capabilities': RuntimeTrustStore().capabilities(user_id=user, kind='mcp', identifier=config['name'], digest=digest),
+                    'package_launcher': package_launcher, 'package_error': package_error,
                     'mode': 'unavailable' if storage_error else client.sandbox_state['mode'] if client else 'stopped',
                     'running': client is not None,
                     'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,

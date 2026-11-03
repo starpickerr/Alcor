@@ -676,9 +676,11 @@ class ToolManager:
         # without issuing a second upstream read. This is a Core-only option.
         if check_only:
             return None
-        result = client.call_tool_result(
-            method, arguments, cancel_event=cancel_event, meta=meta
-        )
+        from core.security.approvals import approved_invocation
+        with approved_invocation():
+            result = client.call_tool_result(
+                method, arguments, cancel_event=cancel_event, meta=meta
+            )
         remaining_invocation_seconds()
         if not self._mcp_admitted(server_name, generation) or not self._mcp_enabled(cfg):
             raise PermissionError('MCP connection was disabled or replaced during the call')

@@ -127,6 +127,12 @@ class DelegatedProcesses:
                         reason = 'worker_stopped'
                     if time.monotonic() >= record['deadline']:
                         reason = 'wall_time_exceeded'
+                    if record.get('outputIdentity'):
+                        try:
+                            if os.path.getsize(record['outputPath']) > 8 * 1024 * 1024:
+                                reason = 'output_limit_exceeded'
+                        except OSError:
+                            reason = 'output_unavailable'
                     if exited is not None or reason:
                         # Reap all groups in the owned OS session, including
                         # ordinary descendants left by an exited leader.
@@ -167,6 +173,7 @@ class DelegatedProcesses:
                 reference, record = self._spawn(scope, argv, output,
                     wall=float(task['budget']['maxWallTime']), execution_id=task['executionId'])
                 record['outputPath'] = str(scope['workspace'] / filename)
+                record['outputIdentity'] = (os.fstat(output.fileno()).st_dev, os.fstat(output.fileno()).st_ino)
             return {'externalRunRef': reference, 'status': 'started'}
         finally:
             os.close(directory)
@@ -178,13 +185,46 @@ class DelegatedProcesses:
                 raise PermissionError('Runtime reference does not belong to this execution')
             return record
 
-    def observe(self, reference, execution_id):
+    def observe(self, reference, execution_id, after_cursor=0):
+        if type(after_cursor) is not int or after_cursor < 0:
+            raise ValueError('invalid output cursor')
         with self.lock:
             record = self.get(reference, execution_id)
-            if record['status'] == 'running':
-                return [{'type': 'progress', 'message': 'CLI task is running'}]
-            return [{'type': 'terminal', 'status': record['status'], 'outputPath': record['outputPath'],
-                     'summary': 'CLI task finished', 'error': record.get('error')}]
+            events = []
+            descriptor = os.open(record['outputPath'], os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                import stat
+                info = os.fstat(descriptor)
+                if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) != record['outputIdentity'] or after_cursor > info.st_size:
+                    raise PermissionError('Execution output was replaced or truncated')
+                os.lseek(descriptor, after_cursor, os.SEEK_SET)
+                chunk = os.read(descriptor, 65536)
+            finally:
+                os.close(descriptor)
+            terminal = record['status'] != 'running'
+            if chunk:
+                # Leave incomplete lines for the next read. Oversize lines remain
+                # process output; they never become a guessed final answer.
+                end = chunk.rfind(b'\n') + 1
+                if end:
+                    chunk = chunk[:end]
+                elif not terminal and len(chunk) < 65536:
+                    chunk = b''
+                if chunk:
+                    import codecs
+                    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+                    decoded = decoder.decode(chunk, final=terminal and after_cursor + len(chunk) >= info.st_size)
+                    pending = decoder.getstate()[0]
+                    if pending:
+                        chunk = chunk[:-len(pending)]
+                    events.append({'type': 'output', 'text': decoded, 'cursor': after_cursor + len(chunk),
+                                   'structured': not record.get('partialLine', False) and bool(end or terminal)})
+                    record['partialLine'] = not chunk.endswith(b'\n')
+            cursor = events[-1]['cursor'] if events else after_cursor
+            if terminal and cursor >= info.st_size:
+                events.append({'type': 'terminal', 'status': record['status'], 'outputPath': record['outputPath'],
+                               'summary': 'CLI task finished', 'error': record.get('error')})
+            return events
 
     def cancel(self, reference, execution_id):
         with self.lock:
@@ -218,7 +258,7 @@ def invoke_runtime(session, parent, method, payload):
     if not hasattr(session, '_delegated_processes'):
         session._delegated_processes = DelegatedProcesses(session)
     manager = session._delegated_processes
-    fields = {'start': {'argv', 'filename'}, 'probe': {'argv'}, 'observe': {'reference'}, 'cancel': {'reference'}}[method]
+    fields = {'start': {'argv', 'filename'}, 'probe': {'argv'}, 'observe': {'reference', 'after_cursor'}, 'cancel': {'reference'}}[method]
     if not isinstance(payload, dict) or set(payload) != fields:
         raise PermissionError('Runtime callback cannot supply environment, paths or authority')
     if method == 'probe':
@@ -226,5 +266,8 @@ def invoke_runtime(session, parent, method, payload):
     elif method == 'start':
         value = manager.start(scope, payload['argv'], payload['filename'])
     else:
-        value = getattr(manager, method)(payload['reference'], parent['input'].get('execution_id'))
+        args = [payload['reference'], parent['input'].get('execution_id')]
+        if method == 'observe':
+            args.append(payload['after_cursor'])
+        value = getattr(manager, method)(*args)
     return {'status': 'succeeded', 'sideEffects': 'none' if method in {'probe', 'observe'} else 'committed', 'value': value}

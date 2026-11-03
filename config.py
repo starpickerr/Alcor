@@ -94,7 +94,8 @@ available_setting = {
     # Multiple custom (OpenAI-compatible) providers. Activated via bot_type: "custom:<id>".
     # Each item: {"id": "3f2a9c1b", "name": "my-provider", "api_key": "sk-...", "api_base": "https://api.example.com/v1", "model": "model-name"}
     "custom_providers": [],
-    "proxy": "",  # proxy used by openai
+    "proxy": "",  # Owner-selected HTTP/Mixed proxy for configured models and remote MCP.
+    "local_service_networks": {},  # Canonical origin -> explicit private CIDRs for configured model services.
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "deepseek-v4-flash",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
     "bot_type": "",  # optional; for OpenAI-compatible third-party services set "openai" or "custom" (in custom mode switching model won't auto-switch bot_type). See common/const.py for bot names; inferred from model name if left empty
@@ -383,6 +384,8 @@ class Config(dict):
         return super().__getitem__(key)
 
     def __setitem__(self, key, value):
+        if key in {'proxy', 'local_service_networks'} and super().get(key) != value:
+            self.network_revision = getattr(self, 'network_revision', 0) + 1
         return super().__setitem__(key, value)
 
     def get(self, key, default=None):

@@ -127,3 +127,35 @@ function ConnectionAccess({ connection, busy, save }: { connection: NonNullable<
     <button type="button" className={secondary} disabled={busy || allowed && !scopes.length} onClick={() => save({ allowed, scopes, revision: connection.revision })}>{en ? 'Save connection access' : '保存连接访问范围'}</button>
   </div>
 }
+
+
+export function ConversationMcpAccess({ session, agent, only }: { session: string; agent?: string; only?: string }) {
+  const context: FeatureAccessContext = { module: 'sessions', id: session, agent }
+  const load = useCallback(() => apiClient.featureAccess({ module: 'sessions', id: session, agent }), [session, agent])
+  const state = useSecurityData(load)
+  const en = getLang() === 'en'
+  const [scope, setScope] = useState<'read' | 'all'>('read')
+  const [advanced, setAdvanced] = useState(false)
+  const connections = state.data?.available.filter(row => row.kind === 'connection' && row.id.startsWith('mcp:') && (!only || row.id === `mcp:${only}`)) || []
+  return <section className="min-w-0 space-y-3" aria-label={en ? 'MCP for this conversation' : '当前对话的 MCP'}>
+    <h3 className="text-sm font-semibold">{en ? 'MCP for this conversation' : '当前对话的 MCP'}</h3>
+    <p className="text-xs leading-6 text-content-secondary">{en ? 'Choose access for this conversation. Its permission mode and account scopes still apply.' : '为本对话选择连接范围，操作仍遵守当前权限模式和账号资源范围。'}</p>
+    <Feedback {...state} />
+    <label className="flex flex-wrap items-center gap-2 text-sm">{en ? 'Access scope' : '使用范围'}<select className={permissionInput} value={scope} disabled={state.busy} onChange={event => setScope(event.target.value as 'read' | 'all')}>
+      <option value="read">{en ? 'Read only' : '仅读取'}</option><option value="all">{en ? 'All operations, including unknown tools' : '全部操作（含未知工具）'}</option>
+    </select></label>
+    {connections.map(row => {
+      const grants = state.data!.grants.filter(grant => grant.resource.kind === 'connection' && grant.resource.id === row.id)
+      const operations = scope === 'read' ? ['read'] : row.operations
+      const active = operations.every(operation => grants.some(grant => grant.effective && grant.purposes.includes('interactive') && grant.operations.includes(operation as Operation)))
+      const restriction = [...(state.data!.restrictions || []), ...(state.data!.owner_restrictions || [])].find(value => value.id === row.id && !value.allowed)
+      return <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-btn border border-default p-3">
+        <div className="min-w-0"><p className="break-words text-sm">{row.name}</p><p className="text-xs text-content-secondary">{restriction ? (en ? 'Connection access restricted' : '连接访问受限') : active ? (en ? 'Authorized for this scope' : '本对话已授权此范围') : grants.some(grant => !grant.effective) ? (en ? 'Previous access expired or revoked' : '旧授权已过期或撤销') : (en ? 'Resource authorization required' : '缺少资源授权')}</p></div>
+        <button type="button" className={secondary} disabled={state.busy || active || !!restriction} onClick={() => void state.run(() => apiClient.featureAccess(context, { action: 'enable_mcp', connection: row.id, operations, revision: state.data!.revision }), en ? 'MCP access saved for this conversation.' : '已为当前对话保存 MCP 授权。')}>{active ? (en ? 'Authorized' : '已授权') : (en ? 'Use in this conversation' : '在当前对话使用')}</button>
+      </div>
+    })}
+    {state.data && !connections.length && <p className="text-xs text-content-secondary">{en ? 'No configured MCP connections.' : '暂无已配置的 MCP 连接。'}</p>}
+    <Link className="block text-xs text-accent" to="/skills?tab=mcp">{en ? 'Configure MCP connections' : '管理 MCP 连接'}</Link>
+    <details onToggle={event => { setAdvanced(event.currentTarget.open); if (!event.currentTarget.open) void state.refresh() }}><summary className="cursor-pointer text-sm text-accent">{en ? 'Advanced scopes and revocation' : '高级范围与撤销'}</summary>{advanced && <div className="mt-3"><FeatureAccessEditor context={context} /></div>}</details>
+  </section>
+}

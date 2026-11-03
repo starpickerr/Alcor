@@ -478,6 +478,8 @@ class ModelScopeBot(Bot):
             else:
                 return self._handle_sync_response(session, args)
                 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error("[MODELSCOPE] call_with_tools error: {}".format(e))
             error_msg = "{}".format(e)
@@ -729,6 +731,8 @@ class ModelScopeBot(Bot):
                 }]
             }
             
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error("[MODELSCOPE] stream tool call error: {}".format(e))
             error_msg = "{}".format(e)

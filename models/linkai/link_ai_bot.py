@@ -635,6 +635,8 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
         else:
             return self._handle_linkai_sync_response(base_url, headers, body)
             
+    except PermissionError:
+        raise
     except Exception as e:
         logger.error(f"[LinkAI] call_with_tools error: {e}")
         if stream:
@@ -746,6 +748,8 @@ def _handle_linkai_stream_response(self, base_url, headers, body):
                     # messages for the next request. Standard OpenAI fields are unchanged.
                     yield chunk
                         
+    except PermissionError:
+        raise
     except Exception as e:
         logger.error(f"[LinkAI] stream response error: {e}")
         yield {

@@ -57,8 +57,8 @@ export default function McpCredentialSettings({ name }: { name: string }) {
     {notice && <p role="status" className="text-sm text-accent">{notice}</p>}
     <p className="text-xs leading-6 text-content-secondary">{c('凭据保存在此服务的原配置中，已保存值不会回填。每次只保存或删除一个字段；刷新状态会保留未保存输入。',
       'Credentials use this service’s existing configuration. Saved values are never filled in. Each save or removal affects one field; refreshing keeps unsaved input.')}</p>
-    {data?.transport === 'stdio' && fields.length > 0 && <p className="text-sm leading-6 text-content-secondary">{c('本地 MCP 不接收宿主凭据；需要认证的业务请使用已适配的可信连接器。',
-      'Local MCP processes do not receive host credentials. Use an adapted trusted connector for authenticated services.')}</p>}
+    {data?.transport === 'stdio' && fields.length > 0 && <p className="text-sm leading-6 text-content-secondary">{c('本地 MCP 仅接收此服务专用凭据；保存后，在运行能力中明确允许注入。进程可读取这些值，请使用受限账号。',
+      'Local MCP receives only its dedicated credentials after explicit runtime permission. The process can read these values; use a limited account.')}</p>}
     {fields.map(field => {
       const id = fieldId(field)
       const value = drafts[id] || ''

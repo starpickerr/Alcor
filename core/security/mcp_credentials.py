@@ -135,6 +135,11 @@ class McpCredentialStore:
                     row.get(area, {}).pop(key, None)
             private_atomic_write(self.path, json.dumps(data, ensure_ascii=False, indent=2))
         credential_values.publish(self.path, selected, before, env_store.keychain_for, commit)
+        from agent.tools.mcp.mcp_client import LIVE_CLIENTS
+        source = (str(self.path.resolve()), self.root_key)
+        for client in list(LIVE_CLIENTS):
+            if client.config.get('name') == name and getattr(client.config, 'credential_source', None) == source:
+                client.shutdown()
 
     def inventory(self, name, *, migrate=False):
         require_owner()
@@ -216,6 +221,39 @@ def runtime_headers(config, url):
     for value in headers.values():
         _header_value(value)
     return {key: value for key, value in headers.items() if value != ''}
+
+
+def runtime_env(config):
+    """Resolve only this implementation's explicitly granted, declared env fields."""
+    env = dict(config.get('env') or {})
+    if any(not isinstance(key, str) or not isinstance(value, str) or '\0' in key or '\0' in value or '=' in key for key, value in env.items()):
+        raise ValueError('MCP environment must contain valid string names and values')
+    if not isinstance(config, StoredMcpConfig):
+        if any(_secret('env', key) and value or value.startswith(credential_values.REFERENCE) for key, value in env.items()):
+            raise PermissionError('Store this MCP dedicated credential in its original configuration before launch')
+        return env
+    store = config.credential_store
+    _, rows, _ = store._read()
+    name = config['name']
+    if name not in rows or _config(name, rows[name]) != dict(config):
+        raise PermissionError('MCP configuration changed; reconnect before injecting credentials')
+    fields = {pair: identifier for pair, identifier in _fields(name, rows[name]).items() if pair[0] == 'env'}
+    if not any(env.get(key) for _, key in fields):
+        return env
+    from common.runtime_identity import current_identity
+    from core.security.mcp_runtime import launch_identity
+    from core.security.runtime_trust import RuntimeTrustStore
+    capabilities = RuntimeTrustStore().capabilities(user_id=current_identity().user_id or 'local-default',
+        kind='mcp', identifier=name, digest=launch_identity(config)[0])
+    if not capabilities['credentials']:
+        raise PermissionError('Allow this implementation to receive its dedicated env credentials in MCP settings')
+    values = {identifier: env.get(pair[1], '') for pair, identifier in fields.items()}
+    if any(value and not value.startswith(credential_values.REFERENCE) for value in values.values()):
+        raise PermissionError('Migrate raw MCP env credentials to protected storage before launch')
+    decoded, _ = credential_values.resolve(store.path, values, env_store.keychain_for)
+    for (_, key), identifier in fields.items():
+        env[key] = decoded[identifier]
+    return {key: value for key, value in env.items() if value != ''}
 
 
 def has_authentication(config, headers):

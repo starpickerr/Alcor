@@ -238,10 +238,9 @@ def _permission_denial(
                             identity.task_id, identity.run_id)) and
                            decision.kind is DecisionKind.CONFIRM)
         if decision.allowed or owner_confirmed:
-            if decision.approval_used:
-                remember(descriptor, binding, arguments)
             if not tool_enabled(tool_name, **capability_scope):
                 return f'Tool {tool_name} is disabled.'
+            remember(descriptor, binding, arguments)
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
                 from core.workspace.service import resolve_context
                 context = resolve_context(identity.execution_session_id or session_id, agent_id,

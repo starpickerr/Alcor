@@ -87,12 +87,12 @@ with sync_playwright() as p:
     expect(one.get_by_role('status')).to_contain_text('已保存')
     assert saved[-1]['policy'] == {'filesystem_mode': 'read-only', 'permission_mode': 'read-only', 'policy_revision': 1}
     expect(two.get_by_role('radio', name='工作区写入', exact=True)).to_be_checked()
-    one.get_by_text('保留的连接访问范围', exact=True).click()
+    one.get_by_text('高级范围与撤销', exact=True).click()
     expect(one.get_by_label('允许访问此连接')).not_to_be_checked()
     one.get_by_label('允许访问此连接').check()
     one.get_by_role('button', name='保存连接访问范围', exact=True).click()
     expect(one.get_by_role('status').filter(has_text='连接访问范围已保存')).to_be_visible()
-    one.get_by_text('保留的连接访问范围', exact=True).click()
+    one.get_by_text('高级范围与撤销', exact=True).click()
     reject[0] = True
     one.get_by_role('radio', name='完全访问', exact=True).check()
     one.get_by_role('button', name='保存权限', exact=True).click()

@@ -286,6 +286,8 @@ class MinimaxBot(Bot):
             else:
                 return self._handle_sync_response(request_body)
 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MINIMAX] call_with_tools error: {e}")
             import traceback
@@ -510,6 +512,8 @@ class MinimaxBot(Bot):
         except requests.exceptions.Timeout:
             logger.error("[MINIMAX] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MINIMAX] sync response error: {e}")
             import traceback
@@ -684,6 +688,8 @@ class MinimaxBot(Bot):
         except requests.exceptions.Timeout:
             logger.error("[MINIMAX] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MINIMAX] stream response error: {e}")
             import traceback

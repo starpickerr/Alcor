@@ -5,47 +5,23 @@ import pytest
 from common.runtime_identity import identity_scope
 
 
-def test_full_access_still_requires_exact_private_egress_approval():
+def test_full_access_private_egress_needs_no_prompt_and_stays_exact():
     from core.security.service import SecurityService
     from agent.permission.gateway import SecurityGateway
     from core.security.run_policy import resolve_run_policy, save_run_policy
-
     with identity_scope(session_id="private-egress"):
         resolve_run_policy("private-egress")
         save_run_policy("session", "private-egress", {"filesystem_mode": "full-access"})
-        with pytest.raises(PermissionError):
-            SecurityService.authorize_egress(
-                "https://model.invalid/v1/chat",
-                b"PRIVATE_CONTEXT",
-                sources=("private:conversation",),
-                wait=False,
-            )
-        request = next(
-            row for row in SecurityGateway.pending() if row["tool"] == "model_egress"
-        )
-        assert "PRIVATE_CONTEXT" not in str(request)
-        assert SecurityGateway.approve(request["id"])
-        # A different body does not consume approval for the original bytes.
-        with pytest.raises(PermissionError):
-            SecurityService.authorize_egress(
-                "https://model.invalid/v1/chat",
-                b"CHANGED_CONTEXT",
-                sources=("private:conversation",),
-                wait=False,
-            )
-        SecurityService.authorize_egress(
-            "https://model.invalid/v1/chat",
-            b"PRIVATE_CONTEXT",
-            sources=("private:conversation",),
-            wait=False,
-        )
-        with pytest.raises(PermissionError):
-            SecurityService.authorize_egress(
-                "https://model.invalid/v1/chat",
-                b"PRIVATE_CONTEXT",
-                sources=("private:conversation",),
-                wait=False,
-            )
+        before = SecurityGateway.pending()
+        permit = SecurityService.authorize_egress(
+            "https://model.invalid/v1/chat", b"PRIVATE_CONTEXT",
+            sources=("private:conversation",), wait=False)
+        permit.check_request("https://model.invalid/v1/chat", b"PRIVATE_CONTEXT")
+        for url, body in [("https://other.invalid", b"PRIVATE_CONTEXT"),
+                          ("https://model.invalid/v1/chat", b"CHANGED_CONTEXT")]:
+            with pytest.raises(PermissionError):
+                permit.check_request(url, body)
+        assert SecurityGateway.pending() == before
 
 
 @pytest.mark.parametrize(
@@ -93,6 +69,9 @@ def test_egress_receipt_binds_bytes_receiver_and_live_policy_revision():
     from core.security.run_policy import save_run_policy
 
     with identity_scope(session_id="receipt-binding"):
+        from core.security.run_policy import resolve_run_policy
+        resolve_run_policy("receipt-binding")
+        save_run_policy("session", "receipt-binding", {"filesystem_mode": "workspace-write"})
         with pytest.raises(PermissionError):
             SecurityService.authorize_egress(
                 "https://model.invalid/chat",
@@ -128,6 +107,9 @@ def test_pending_egress_and_confirmation_cannot_cross_user_boundary():
     from core.security.service import SecurityService
     from agent.permission.gateway import SecurityGateway
     with identity_scope(user_id='egress-owner', session_id='owner-session'):
+        from core.security.run_policy import resolve_run_policy, save_run_policy
+        resolve_run_policy('owner-session')
+        save_run_policy('session', 'owner-session', {'filesystem_mode': 'workspace-write'})
         with pytest.raises(PermissionError):
             SecurityService.authorize_egress('https://private.invalid', b'PRIVATE', sources=('private:conversation',), wait=False)
         pending = next(row for row in SecurityGateway.pending() if row['session'] == 'owner-session')

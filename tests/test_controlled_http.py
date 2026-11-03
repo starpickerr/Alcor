@@ -6,6 +6,8 @@ import threading
 
 import pytest
 
+from core.security.connections import service_id
+
 
 def test_public_transport_rejects_private_and_mixed_dns_answers(monkeypatch):
     from core.security.http_transport import destination
@@ -124,10 +126,10 @@ def test_redirects_are_not_followed_and_proxy_environment_is_ignored(
 
     url, received, _, _ = local_service
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
-    with open_request("GET", url + "/safe") as result:
+    with open_request("GET", url + "/safe", configured_origin=service_id(url)[1]) as result:
         assert result.read() == b"DATA"
     with pytest.raises(PermissionError, match="redirect|Redirect"):
-        open_request("GET", url + "/redirect")
+        open_request("GET", url + "/redirect", configured_origin=service_id(url)[1])
     assert received == ["/safe", "/redirect"]
 
 
@@ -139,7 +141,7 @@ def test_disabling_connection_interrupts_real_stream_and_old_response_stays_revo
 
     url, _, started, finish = local_service
     identifier, _ = service_id(url)
-    response = open_request("GET", url + "/slow")
+    response = open_request("GET", url + "/slow", configured_origin=service_id(url)[1])
     outcomes = []
 
     def read():
@@ -159,7 +161,7 @@ def test_disabling_connection_interrupts_real_stream_and_old_response_stays_revo
     finish.set()
     with pytest.raises(PermissionError):
         response.read()
-    with open_request("GET", url + "/fresh") as fresh:
+    with open_request("GET", url + "/fresh", configured_origin=service_id(url)[1]) as fresh:
         assert fresh.read() == b"DATA"
 
 
@@ -168,7 +170,7 @@ def test_related_resource_connection_interrupts_a_different_receivers_real_strea
     from core.security.connections import ConnectionControl, service_id
     url, _, started, finish = local_service
     parent, _ = service_id('https://synthetic-parent.example.invalid')
-    response = open_request('GET', url + '/slow', related_services=(parent,))
+    response = open_request('GET', url + '/slow', related_services=(parent,), configured_origin=service_id(url)[1])
     outcomes = []
     def read():
         try:
@@ -291,7 +293,7 @@ def test_disabling_connection_interrupts_a_real_stalled_tls_handshake(monkeypatc
     outcomes = []
     def request():
         try:
-            open_request('GET', url, timeout=3)
+            open_request('GET', url, timeout=3, configured_origin=service_id(url)[1])
         except Exception as error:
             outcomes.append(type(error))
     client = threading.Thread(target=request, daemon=True)
