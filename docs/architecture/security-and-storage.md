@@ -12,6 +12,8 @@
 
 权限模式与平台边界已有 [详细说明](../security-permission-modes.md)。运行时的可信判定点是 `agent/runtime/tool_invocation.py` 和 `agent/permission/gateway.py`；`Application.command` 对定时业务写入再次校验。Web/API 端还需验证认证，不能把前端隐藏按钮当作授权。涉及外部资源的工具要检查路径、URL、重定向与凭证泄露。权限和事务的失败恢复必须有隔离测试。
 
+普通本地 MCP 的历史私有目录由 Owner 在安全中心“执行环境”选择来源并确认后复制。`core/mcp/storage.py` 将确认绑定当前用户、启动实现、配置、开关版本及目录/文件快照；客户端仅传来源 ID，不能指定任意路径。复制拒绝符号链接、硬链接和特殊文件，原目录保留，当前目标通过系统原子排他重命名发布，不覆盖已有数据。确认记录在发布前保存 staging inode，发布后中断仍可恢复；目标或历史根目录被替换后需重新确认。邮箱/eLearning 的固定可信连接器继续使用各自的账号迁移入口。
+
 Email保留独立MCP协议、原账号/游标格式及唯一托管连接；旧邮箱路由跳转到同一能力配置表单。Stella以`--hosted-connector`启动受管Server，Worker不访问账号库、原配置或密码，也不直接联网。每次请求只可回调当前Core已准入操作；方法、参数与资源范围由Core持有，Worker不能改成另一接收方或通用文件/网络调用。原email.db继续保存账号及Keychain引用，SQLite事务提交后才清理旧凭据。原设置支持状态刷新、修复、删除及测试连接，已保存密码不回填；凭据目录直接汇总声明字段状态，不启动Worker或解密。文件工具与Shell的凭据路径清单继续保护Email目录及SQLite附属文件。
 
 邮箱可信连接器明确限定为Core的 `core/services/email_connector.py`、`EmailCredentialStore.connect` 与 `core/security/imap_transport.py`。前者只加载Core固定摘要所覆盖的hosts、imap、schema、service四个邮箱模块及schema.sql，执行与摘要同次读取的字节快照；不导入Server入口或任意扩展代码。认证仅提交到账号绑定的IMAPS主机/端口，复用地址校验、TLS、连接lease和现有资源授权；账号/凭据/授权变更会使相关在途连接失效。旧环境账号仅由local-default采用，删除事实保持，原环境引用丢失不会从进程缓存恢复。当前macOS测试证据及整体验收状态见[阶段记录](../security-managed-runtime-progress.md)。

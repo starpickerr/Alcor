@@ -2,7 +2,7 @@
 
 状态：**现有功能收尾中；最终全量回归和独立审查尚未完成，暂未合并**。更新于 2026-10-29。
 
-当前剩余工作以[10-27 收尾清单](../../.agents/tasks/active/2026-10-27-macos-security-delivery.md)的四项待办为准；下文早期记录供追溯，不自动增加实施范围。
+当前交付状态以[10-27 收尾清单](../../.agents/tasks/completed/2026-10-27-macos-security-delivery.md)及本文 2026-11-03 终态为准；下文早期记录供追溯，不自动增加实施范围。
 
 四个涉及仓库均在 `refactor/security-managed-runtime` 专用分支；Core 基线 `ee9b5d6f`。Stella-Plugins 包含 agent-hub 1.0.5 受控启动适配，两个 MCP 仓库新增 requirements.lock。用户于 2026-10-26 明确要求「及时提交」，现按已验证阶段提交；完整目标完成后的合并条件不变。保留最初无关改动，不推送或发布。
 
@@ -315,7 +315,7 @@ project-pytest-distribution-boundary-final.log：2665 PASS /1 FAIL /22 SKIP，35
 
 ## 2026-10-27 macOS 交付范围与模型凭据迁移
 
-新规格已替代旧计划剩余范围：只交付应用内安全控制和受管执行隔离；Core/Electron 是可信宿主，不再要求 Endpoint Security、系统 guardian、全局文件别名/旧句柄撤销或通用自动浏览器。Linux 保留但未实测，Windows 不允许无隔离的不可信执行。当前执行计划为 `.agents/tasks/active/2026-10-27-macos-security-delivery.md`；旧计划已归档，四份已集成任务移到 completed，未完成事项继续在 27 日计划跟踪。
+新规格已替代旧计划剩余范围：只交付应用内安全控制和受管执行隔离；Core/Electron 是可信宿主，不再要求 Endpoint Security、系统 guardian、全局文件别名/旧句柄撤销或通用自动浏览器。Linux 保留但未实测，Windows 不允许无隔离的不可信执行。执行计划为 `.agents/tasks/completed/2026-10-27-macos-security-delivery.md`（2026-11-03 完成归档）；旧计划已归档，四份已集成任务移到 completed，原未完成事项由 27 日计划跟踪。
 
 模型页、旧 Config API、安全页与启动加载现共用 config.json 中的声明字段和共享 Keychain 事务。固定模型字段按字段名、自定义提供者按稳定 ID 绑定；保存新版本并回读后发布，未改动引用不解密、不改写。保存失败不提前改变运行配置；丢失或锁定清空对应运行值及旧环境导出，合法 JSON 不进入损坏自愈。Owner 可在原模型入口修复/删除，缺失/不可用卡片保留入口；短密钥不再原样返回。凭据目录仍只返回声明条目的状态，不读取原文。首次从旧明文成功保存时迁移；本轮没有替用户运行真实账号迁移。
 
@@ -525,3 +525,39 @@ Core 全量 `core-elearning-stage-full.log` 为 **2952 PASS /6 FAIL /22 SKIP**�
 已有聊天协议、旧聊天/文本补全、图片及嵌入在实际发请求时读取原配置中选中字段的当前 Keychain 引用；延迟启动的流式请求在启动时解析。保持原配置文件、原设置入口和已有客户端刷新方式，单次调用不解密其他提供者。选中的自定义提供者按稳定 ID 查找，删除或缺失后提示重新选择，不回退到另一账号；旧单提供者 custom 配置仍可用。ModelScope 的既有字段纳入同一声明和安全页修复路径。
 
 证据：model-runtime-final.log **135 PASS /58.29 秒**，含真实本地 TLS 请求及 macOS 临时 Keychain 的更换、清空、锁定、条目删除、自定义重排/删除、流式启动、原入口保存失败及重启加载；RED 日志保留。相关 Ruff/空白检查通过。Core 全量和最终审查仍在进行，尚未合并。
+
+## 2026-11-03 Core 收尾交付
+
+本轮在专用分支 `fix/core-finalization-20261103` 从 `51a24a46` 续作，保留尚未集成的安全实现；不更新 develop、不推送或发布。当前精简清单的业务与 macOS 子进程隔离范围是验收依据，历史方案中的 guardian、通用浏览器、多来源自动安装及签名发行不重新纳入。
+
+界面收尾与回归提交 `e9c5b34b`，公开缓存复用补充 `5ed022a0`。
+
+完成内容：
+
+- MCP 历史私有数据在原安全中心执行环境页由 Owner 选择来源、确认并复制。确认绑定当前用户、实际实现、配置与开关版本、目录及文件快照；拒绝任意路径和 Agent/其他用户确认。fd 遍历拒绝链接、FIFO/特殊文件，复制中变化使确认失效；原数据保留，原子排他发布不覆盖目标，发布后中断可恢复。停机只覆盖相同用户和启动配置，保留同名其他服务。提交 `381a93a3`。
+- LinkAI 与现有语音提供者在实际请求时解析当前密钥，撤销、锁定和删除停止旧请求；Minimax 删除初始化缓存。提交 `39907185`。作者复核另外发现 Agent 初始化把内存模型密钥写回 `.env`，有效 RED 后删除唯一调用和两份旧同步方法，保留已有读取入口，不删除用户文件。提交 `fa6f3598`。
+- 简报的间歇“服务忙”通过相同收集顺序与线程栈定位到路由测试遗留的 SchedulerService；修正测试隔离并清理后台服务，未放宽生产锁。顺序前缀 375 PASS /4 SKIP，最终全量也通过。
+- 界面整套回归修复已移除插件仍请求配置的实际缺陷，并修正缺 Router、空凭据草稿、无页签详情、opaque iframe 初始化、CSP 等旧测试契约。真实 eLearning 工具发现继续使用生产受管工厂；测试复用已验证的公开依赖缓存，不放宽网络或 OS 隔离。
+
+最终验证：
+
+| 范围 | 结果 | 证据（Core `.superpowers/sdd/2026-10-27-macos-security-delivery/`） |
+| --- | --- | --- |
+| Core 全量 | **3118 PASS /22 SKIP /0 FAIL**，627.82 秒 | `finalization-core-full.log` |
+| MCP 归属确认 | 19 PASS；关联运行环境/生命周期 71 PASS | `finalization-adoption.log`、`finalization-adoption-related.log` |
+| 凭据/Agent 初始化 | 187 PASS；custom voice 138 PASS；初始化关联 72 PASS | `finalization-credentials.log`、`finalization-custom-voice.log`、`finalization-agent-credential-green.log` |
+| 桌面构建及静态检查 | main/renderer typecheck、build、ESLint、完整 Python Ruff、diff PASS | `finalization-build.log`、`finalization-lint.log`、`finalization-ruff.log` |
+| Node 选定回归 | 20 PASS | `finalization-node.log` |
+| 邮箱/eLearning MCP | 48 PASS；123 PASS +12 subtests | `finalization-email-provider.log`、`finalization-elearning-provider.log` |
+| 受影响插件 | 109 PASS | `finalization-plugins.log` |
+| 原页面浏览器整套 | 20 组 PASS（含桌面/窄窗及真实 eLearning 工具） | `finalization-ui-suite.log` |
+| 公共缓存 helper 回归 | 30 PASS | `finalization-artifact-fixture.log` |
+| 既有冻结启动顺序回归 | 7 PASS | `finalization-frozen-ordered.log` |
+
+全量命令：`/opt/anaconda3/envs/Stella/bin/python scripts/run_isolated.py /opt/anaconda3/envs/Stella/bin/python -m pytest tests -q -o usefixtures=offline_runtime_artifacts`。后续只调整 UI 和公共测试缓存 helper，未改变 Python 生产实现；缓存 helper 拆分后补受管 MCP 定向回归。跨仓库检查使用各自 venv/cwd，仅只读测试，Core 两个 provider pin 与当前 MCP 源码摘要一致。
+
+22 项 SKIP 已单独以 `-rs` 核对：17 项缺少 PyInstaller 的临时冻结构建、3 项 Windows 专项、1 项真实外部 Agent 未显式启用、1 项 Core 内不存在本地开发 Skill 脚本。未降低断言或增加跳过项。8 项 warning 包含 pydub/ffmpeg、第三方依赖及旧 API 的弃用警告；桌面构建保留既有大 chunk 提示。
+
+复核：单独作者复核本轮所有生产改动及凭据、MCP 准入/存储、文件 fd、egress、可信模块快照、简报 peer 和 Electron IPC 的关键边界，重要发现均先复现再修复。记录 `finalization-author-review.md`。本会话不允许主动委派，按 requesting-code-review skill 使用作者复核替代；不宣称整个历史分支经过独立逐行审查或全项目安全审计。
+
+限制：未使用真实个人账号/学校 SSO，Linux/Windows 未实测，未重打本轮冻结后端或 DMG；既有冻结回归只针对磁盘现存产物。Core/Electron 是可信宿主，实际 OS 隔离覆盖受管子进程。原有开发 policy、evals 与两个重复文件改动保留，未包含在本轮提交中。
