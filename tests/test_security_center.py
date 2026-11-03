@@ -20,7 +20,9 @@ def test_chat_mode_switch_keeps_project_peer_policy_independent(tmp_path, monkey
     monkeypatch.setattr(config_module, "conf", lambda: settings)
     monkeypatch.setattr(channel, "conf", lambda: settings)
     monkeypatch.setattr(channel.web, "header", lambda *a, **kw: None)
-    monkeypatch.setattr(channel.web, "data", lambda: b'{"security_policy":{"preset":"full-access"}}')
+    from core.security.control import PermissionControl
+    control = PermissionControl()
+    current = control.read('session', 'chat-a')['policy']
     project_store.set_project_dir("chat-a", str(project))
     project_store.set_project_dir("chat-b", str(project))
     project_store.set_security_policy(str(project), {
@@ -29,10 +31,9 @@ def test_chat_mode_switch_keeps_project_peer_policy_independent(tmp_path, monkey
         "extra_roots": [str(tmp_path / "authorized")],
     })
 
-    result = json.loads(channel.SessionSettingsHandler().POST("chat-a"))
+    result = control.save('session', 'chat-a', {**current, 'filesystem_mode': 'full-access'})
 
-    assert result["status"] == "success", result
-    assert result["permission"]["mode"] == "full-access"
+    assert result['policy']['filesystem_mode'] == 'full-access'
     peer = resolve("read-only", project_dir=str(project), session_id="chat-b", global_value=settings["security_policy"])
     assert effective_mode(peer) == "read-only"
     assert peer["connections"]["email"]["allowed"] is False
@@ -258,7 +259,7 @@ def test_migrate_project_conversations_unify_to_project_effective(tmp_path, monk
 
 def test_four_modes_and_legacy_snapshots_are_stable():
     assert [row["id"] for row in MODE_DEFINITIONS] == [
-        "read-only", "workspace-write", "full-access", "custom"]
+        "read-only", "workspace-write", "full-access"]
     assert default_policy()["preset"] == "workspace-write"
     assert rule({"preset": "read-only"}, "workspace_write") == "deny"
     assert rule({"preset": "workspace-write"}, "workspace_write") == "allow"
@@ -353,33 +354,6 @@ def test_trusted_skill_initializer_requires_dedicated_flow(tmp_path, monkeypatch
                                  scope=Scope(write_roots=(str(project),)), policy=legacy_policy("read-only")).kind is DecisionKind.DENY
 
 
-def test_security_api_persists_real_policy_and_returns_no_secret(tmp_path, monkeypatch):
-    from channel.desktop import desktop_channel as channel
-    import config as config_module
-    from agent.permission import center as security_center
-    state = tmp_path / "state"
-    state.mkdir()
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"agent_permission_mode": "workspace-write", "web_password": "TOPSECRET"}))
-    live = {"agent_permission_mode": "workspace-write", "web_password": "TOPSECRET"}
-    monkeypatch.setattr(config_module, "conf", lambda: live)
-    monkeypatch.setattr(config_module, "get_data_root", lambda: str(tmp_path))
-    monkeypatch.setattr(channel, "_require_auth", lambda: None)
-    monkeypatch.setattr(channel.web, "header", lambda *args: None)
-    monkeypatch.setattr(channel.web, "data", lambda: json.dumps({"target": "global", "policy": {"preset": "read-only", "rules": {}}}).encode())
-    monkeypatch.setattr(channel.web, "input", lambda **defaults: type("Params", (), defaults)())
-    monkeypatch.setattr("common.state_dir.shared_root", lambda: state)
-    monkeypatch.setattr("common.state_dir.mcp_config_file", lambda *args, **kwargs: state / "mcp.json")
-    monkeypatch.setattr(security_center, "_env_path", lambda: tmp_path / "missing.env")
-    saved = json.loads(channel.SecurityPolicyHandler().POST())
-    assert saved["status"] == "error"
-    assert security_center.global_policy()['filesystem_mode'] == 'read-only'
-    assert json.loads(config_file.read_text())['web_password'] == 'TOPSECRET'
-    overview = json.loads(channel.SecurityCenterHandler().GET())
-    assert overview["global_policy"]["preset"] == "read-only"
-    assert rule(overview["global_policy"], "workspace_write") == "deny"
-    assert overview["summary"]["app_password_set"] is True
-    assert "TOPSECRET" not in json.dumps(overview)
 
 
 def test_extra_roots_cannot_name_foreign_private_work(tmp_path, monkeypatch):

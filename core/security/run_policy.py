@@ -74,16 +74,12 @@ def validate_policy(value):
         raise ValueError('invalid filesystem mode')
     permission_mode = value.get('permission_mode')
     if permission_mode is not None:
-        if permission_mode not in (*MODES, 'custom'):
+        if permission_mode not in MODES:
             raise ValueError('invalid permission mode')
         if 'filesystem_mode' not in value or (permission_mode != 'custom' and permission_mode != value['filesystem_mode']):
             raise ValueError('permission mode requires a matching filesystem base')
     if 'rules' in value:
-        if permission_mode != 'custom':
-            raise ValueError('custom rules require an explicit custom mode')
-        result['rules'] = validate_patch({'rules': value['rules']})['rules']
-    if permission_mode == 'custom' and 'rules' not in value:
-        raise ValueError('custom mode requires explicit rules')
+        raise ValueError('Custom permissions are no longer supported')
     capabilities = value.get('capabilities', {})
     if not isinstance(capabilities, dict) or len(capabilities) > 2000:
         raise ValueError('invalid capability authorization')
@@ -101,21 +97,19 @@ def validate_policy(value):
 
 
 def default_template():
-    # The retired 'default' row is migration evidence, never the new default.
-    # A versioned key prevents a retired wide global template from reviving.
-    key = subject_key('template', 'owner-default-v2')
-    store = RunPolicyStore()
-    initial = _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
-    policy = None
-    try:
-        policy = store.ensure(key, initial)
-        checked = _seed({key: value for key, value in policy.items()
-                         if key in {'filesystem_mode', 'permission_mode', 'rules', 'capabilities',
-                                    'connections', 'extra_roots', 'policy_revision'}})
-        return checked
-    except (ValueError, TypeError, KeyError):
-        return {**initial, 'policy_revision': policy['policy_revision'] if policy else 0,
-                'migration_status': 'needs_confirmation'}
+    return _seed({'filesystem_mode': READ_ONLY})
+
+
+def normalize_stored_policy(policy):
+    """Retired custom snapshots stay restrictive without rewriting migration evidence."""
+    if policy.get('permission_mode') != 'custom':
+        return policy
+    from agent.permission.security_policy import effective_rules, PRESETS
+    order = {'deny': 0, 'confirm': 1, 'allow': 2}
+    rules = {name: min((value, PRESETS[READ_ONLY][name]), key=order.get)
+             for name, value in effective_rules(gateway_policy(policy)).items()}
+    return {**{key: value for key, value in policy.items() if key not in {'permission_mode', 'rules'}},
+            'filesystem_mode': READ_ONLY, 'legacy_restrictions': rules}
 
 
 @contextmanager
@@ -183,9 +177,6 @@ def save_run_policy(subject_kind, subject_id, policy, *, agent_id=None, expected
     def change(current):
         base = current or _seed({'filesystem_mode': READ_ONLY, 'capabilities': {}})
         base = deepcopy(base)
-        if (base.get('permission_mode') == 'custom' and 'filesystem_mode' in clean
-                and 'permission_mode' not in clean):
-            raise ValueError('This custom policy requires a custom-aware client')
         if clean.get('permission_mode') != 'custom' and 'filesystem_mode' in clean:
             base.pop('rules', None)
             base.pop('permission_mode', None)

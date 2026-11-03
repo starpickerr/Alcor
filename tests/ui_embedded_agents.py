@@ -50,7 +50,7 @@ def backend(route):
             data.update(stream=True, request_id='long-request')
         else:
             data.update(stream=False, inline_reply='已处理：' + body['message'])
-    elif path == '/api/security/confirmations':
+    elif path == '/api/confirmations':
         data['pending'] = [dict(id='approval-1', tool='AppleTool', session=pending[0],
                                 summary='写入日程', resource='calendar', risk='write', reason='需要确认',
                                 expanded_scope='', effect='添加条目')] if pending[0] else []

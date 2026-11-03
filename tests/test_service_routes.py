@@ -174,3 +174,28 @@ def test_proxy_disable_then_enable_cannot_revive_prepared_route(proxy, monkeypat
         with pytest.raises(PermissionError, match='Proxy connection changed'):
             open_request('POST', url, body=b'INPUT', permit=permit, **route)
     assert received == []
+
+
+def test_configured_models_use_system_proxy_when_stella_proxy_is_empty(proxy, monkeypatch):
+    saved, received = proxy
+    proxy_url = saved['proxy']
+    saved['proxy'] = ''
+    monkeypatch.setattr('urllib.request.getproxies', lambda: {'http': proxy_url, 'https': proxy_url})
+    url = 'https://model.invalid/chat'
+    route = configured_route(url, owner='model:')
+    assert route['proxy'] == proxy_url
+    with caller_origin_scope('desktop'):
+        permit = SecurityService.authorize_egress(url, b'INPUT', sources=('private:model-context',))
+        with open_request('POST', url, body=b'INPUT', permit=permit, **route) as response:
+            assert response.read() == b'OK'
+    assert received[0][:2] == ('CONNECT', 'model.invalid:443')
+    monkeypatch.setattr('urllib.request.getproxies', lambda: {})
+    with pytest.raises(PermissionError, match='Proxy configuration changed'):
+        route['route_check']()
+    assert configured_route(url)['proxy'] == ''
+
+
+def test_system_proxy_never_reroutes_configured_loopback(monkeypatch):
+    monkeypatch.setattr('config.conf', lambda: {'proxy': ''})
+    monkeypatch.setattr('urllib.request.getproxies', lambda: {'http': 'http://127.0.0.1:7897'})
+    assert configured_route('http://localhost:12345', config={'url':'http://localhost:12345'})['proxy'] == ''

@@ -20,4 +20,4 @@ export interface CapabilityDetail extends CapabilityItem {
   tabs: string[]; overview: CapabilityCopy; content?: string; reason?: CapabilityCopy | null
   features: CapabilityFeature[]; runtime: Record<string, string | number | string[]>
 }
-export interface CapabilityInventory { status: string; items: CapabilityItem[]; connectionSettings?: string[]; errors: Partial<Record<CapabilityKind, string>> }
+export interface CapabilityInventory { status: string; items: CapabilityItem[]; errors: Partial<Record<CapabilityKind, string>> }

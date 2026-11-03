@@ -12,8 +12,16 @@ def require_owner():
 
 
 def public_policy(policy):
-    return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'policy_revision',
-        'extra_roots', 'connections', 'permission_mode', 'rules') if key in policy}
+    return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'policy_revision') if key in policy}
+
+
+def mode_patch(patch):
+    from core.security.run_policy import validate_policy
+    if not isinstance(patch, dict) or set(patch) - {'filesystem_mode', 'permission_mode', 'policy_revision'}:
+        raise ValueError('Only the three permission modes can be changed')
+    if 'filesystem_mode' not in patch:
+        raise ValueError('Permission mode is required')
+    return validate_policy(patch)
 
 
 class PermissionControl:
@@ -25,60 +33,41 @@ class PermissionControl:
             raise ValueError('Task service is unavailable')
         return self.task_service(agent)
 
-    def inventory(self):
-        require_owner()
-        from common.runtime_identity import current_identity
-        from core.security.migration import ensure_migrated
-        from core.security.policy_store import RunPolicyStore
-        ensure_migrated()
-        rows = RunPolicyStore().subjects(current_identity().user_id or 'local-default')
-        return {'subjects': [dict(agent=agent, kind=kind, subject=subject, policy=public_policy(policy),
-            source='independent', migration_status=policy.get('migration_status', 'complete'),
-            original_url='/tasks' if kind == 'task' else '/')
-            for agent, kind, subject, policy in rows if not policy.get('revoked')]}
-
     @staticmethod
     def _prepare(kind, subject, agent):
         require_owner()
         from core.security.migration import ensure_migrated
         from core.security.run_policy import subject_key
+        if kind not in {'session', 'task'}:
+            raise ValueError('Invalid policy subject')
         ensure_migrated()
         key = subject_key(kind, subject, agent)
-        if kind != 'template':
-            from agent.registry import get_agent_registry
-            get_agent_registry().get(key[1], require_enabled=False)
+        from agent.registry import get_agent_registry
+        get_agent_registry().get(key[1], require_enabled=False)
         return key
 
     def read(self, kind, subject, agent=None):
         self._prepare(kind, subject, agent)
-        from core.security.run_policy import default_template, resolve_run_policy
-        if kind == 'template':
-            policy = default_template()
-        elif kind == 'session':
+        from core.security.run_policy import resolve_run_policy
+        if kind == 'session':
             policy = resolve_run_policy(subject, agent)
         else:
             task = self._tasks(agent).get(subject)
             if not task:
                 raise ValueError('Task not found')
             policy = task['run_policy']
-        return {'policy': public_policy(policy), 'migration_status': policy.get('migration_status', 'complete'),
-                'compatibility_restrictions': deepcopy(policy.get('legacy_restrictions') or {}),
-                'capabilities': []}
+        return {'policy': public_policy(policy), 'migration_status': policy.get('migration_status', 'complete')}
 
     def save(self, kind, subject, patch, agent=None):
         require_owner()
-        if kind not in {'template', 'session', 'task'}:
+        if kind not in {'session', 'task'}:
             raise ValueError('Invalid policy subject')
-        if kind == 'template' and subject != 'default':
-            raise ValueError('Only the current default template is editable')
         self._prepare(kind, subject, agent)
-        from core.security.run_policy import validate_policy, save_run_policy
-        clean = validate_policy(patch)
+        from core.security.run_policy import save_run_policy
+        clean = mode_patch(patch)
         if type(clean.get('policy_revision')) is not int or clean['policy_revision'] < (0 if kind == 'task' else 1):
             raise ValueError('Current policy revision is required')
-        if kind == 'template':
-            save_run_policy(kind, 'owner-default-v2', clean, expected_revision=clean['policy_revision'])
-        elif kind == 'task':
+        if kind == 'task':
             self._tasks(agent).update(subject, {'run_policy': clean}, agent_id=agent, origin='user')
         else:
             save_run_policy(kind, subject, clean, agent_id=agent, expected_revision=clean['policy_revision'])

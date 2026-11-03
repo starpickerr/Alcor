@@ -22,10 +22,12 @@ def test_invalid_legacy_connection_scope_is_pending_and_can_be_repaired(monkeypa
     ResourceGrantStore().update_owned_connection(user_id='local-default', connection='mcp:email', policy=dict(allowed=True, scopes=['read']), expected_revision=revision)
     from core.security.service import SecurityService
     assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
-    saved = control.save('session', 'legacy-invalid', {**state['policy'], 'filesystem_mode': 'read-only',
-        'capabilities': {'plugin:stella.tasks': {'read': 'allow', 'write': 'allow'}}})
+    with pytest.raises(ValueError, match='three permission modes'):
+        control.save('session', 'legacy-invalid', {**state['policy'], 'capabilities': {}})
+    saved = control.save('session', 'legacy-invalid', state['policy'])
     assert saved['migration_status'] == 'complete'
-    assert saved['compatibility_restrictions'] == {}
+    assert saved['policy']['filesystem_mode'] == 'read-only'
+    assert SecurityService.legacy_connection_restrictions('mcp:email') == [{'allowed': True, 'scopes': ['read']}]
 
 
 def subjects():
