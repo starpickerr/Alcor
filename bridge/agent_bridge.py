@@ -21,7 +21,6 @@ from bridge.context import Context
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
-from common.utils import expand_path
 from config import conf
 from models.openai_compatible_bot import OpenAICompatibleBot
 
@@ -1128,76 +1127,6 @@ class AgentBridge:
         if text_response:
             reply.text_content = text_response
         return reply
-    
-    def _migrate_config_to_env(self, workspace_root: str):
-        """
-        Sync API keys from config.json to .env file.
-        Adds new keys and updates changed values on each startup.
-
-        Args:
-            workspace_root: Workspace directory path (not used, kept for compatibility)
-        """
-        from config import conf
-        import os
-        
-        key_mapping = {
-            "open_ai_api_key": "OPENAI_API_KEY",
-            "open_ai_api_base": "OPENAI_API_BASE",
-            "gemini_api_key": "GEMINI_API_KEY",
-            "claude_api_key": "CLAUDE_API_KEY",
-            "linkai_api_key": "LINKAI_API_KEY",
-        }
-        
-        env_file = expand_path("~/.stella/.env")
-        
-        # Read existing env vars (key -> value)
-        existing_env_vars = {}
-        if os.path.exists(env_file):
-            try:
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, val = line.split('=', 1)
-                            existing_env_vars[key.strip()] = val.strip()
-            except Exception as e:
-                logger.warning(f"[AgentBridge] Failed to read .env file: {e}")
-        
-        # Sync config.json values into .env (add/update/remove)
-        updated = False
-        for config_key, env_key in key_mapping.items():
-            raw = conf().get(config_key, "")
-            value = raw.strip() if raw else ""
-            old_value = existing_env_vars.get(env_key)
-
-            if value:
-                if old_value == value:
-                    continue
-                existing_env_vars[env_key] = value
-                os.environ[env_key] = value
-                updated = True
-            else:
-                if old_value is None:
-                    continue
-                existing_env_vars.pop(env_key, None)
-                os.environ.pop(env_key, None)
-                updated = True
-            updated = True
-
-        if updated:
-            try:
-                env_dir = os.path.dirname(env_file)
-                os.makedirs(env_dir, exist_ok=True)
-
-                with open(env_file, 'w', encoding='utf-8') as f:
-                    f.write('# Environment variables for agent\n')
-                    f.write('# Auto-managed - synced from config.json on startup\n\n')
-                    for key, value in sorted(existing_env_vars.items()):
-                        f.write(f'{key}={value}\n')
-
-                logger.info("[AgentBridge] Synced API keys from config.json to .env")
-            except Exception as e:
-                logger.warning(f"[AgentBridge] Failed to sync API keys: {e}")
     
     def _pre_persist_user_message(
         self,
