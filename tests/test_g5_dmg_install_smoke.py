@@ -1,4 +1,4 @@
-"""G5: fresh DMG attach → copy app → first-boot installs signed catalog with scoped grants.
+"""G5: fresh DMG attach → copy app → first-boot installs signed catalog and permits owner writes.
 
 Mirrors the Finder path without GUI: ``hdiutil attach`` the release DMG, copy
 ``Stella.app`` to a temp Applications-like folder, then run the packaged
@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import os
 import signal
-import sqlite3
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -97,7 +97,7 @@ def dmg_first_boot(installed_app, tmp_path_factory):
         env=env,
         stdout=log.open("w"),
         stderr=subprocess.STDOUT,
-        cwd=str(REPO),
+        cwd=str(home),
     )
     deadline = time.time() + 120
     ready = False
@@ -126,7 +126,10 @@ def dmg_first_boot(installed_app, tmp_path_factory):
             },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            result = json.loads(resp.read().decode("utf-8"))
+        if result.get('status') == 'error':
+            print(log.read_text(errors='replace'), flush=True)
+        return result
 
     try:
         yield {
@@ -152,20 +155,7 @@ def test_dmg_copy_has_core_only_signed_catalog(installed_app):
         assert (installed_app["resources"] / row["url"]).is_file()
 
 
-def test_dmg_first_boot_issues_scoped_grants_and_writes(dmg_first_boot):
-    home = dmg_first_boot["home"]
-    auth = home / "stella" / "plugin-packages" / "management" / "authorization.sqlite"
-    # STELLA_DATA_DIR may own the workspace instead of HOME/stella.
-    if not auth.is_file():
-        data = dmg_first_boot["data"]
-        candidates = list(data.rglob("authorization.sqlite")) + list(home.rglob("authorization.sqlite"))
-        assert candidates, f"no authorization.sqlite under {home} or {data}"
-        auth = candidates[0]
-    con = sqlite3.connect(auth)
-    rows = con.execute("select ref, value from grants").fetchall()
-    assert len(rows) >= 14  # at least interactive+background × required caps across domains
-    write_grants = [ref for ref, _ in rows if "bills.write" in ref]
-    assert write_grants, rows[:5]
+def test_dmg_first_boot_owner_writes_and_reads(dmg_first_boot):
     created = dmg_first_boot["call"](
         "POST",
         "/api/bills/ledger",
@@ -177,5 +167,25 @@ def test_dmg_first_boot_issues_scoped_grants_and_writes(dmg_first_boot):
             "occurred_at": "2026-10-20T02:00:00+08:00",
         },
     )
-    assert created["status"] == "success"
+    assert created["status"] == "success", created
     assert created["entry"]["amount_minor"] == 1200
+    listed = dmg_first_boot["call"]("GET", "/api/bills/ledger?year=2026&month=10")
+    assert listed["status"] == "success", listed
+    assert any(row["id"] == created["entry"]["id"] for row in listed["entries"])
+    todo = dmg_first_boot["call"]("POST", "/api/todos", {"title": "DMG时区验证", "status": "todo"})
+    assert todo["status"] == "success", todo
+    assert todo["todo"]["title"] == "DMG时区验证"
+
+
+def test_dmg_rejects_requests_without_desktop_token(dmg_first_boot):
+    request = urllib.request.Request("http://127.0.0.1:19881/api/bills/ledger")
+    with pytest.raises(urllib.error.HTTPError) as denied:
+        urllib.request.urlopen(request, timeout=10)
+    assert denied.value.code == 403
+
+
+def test_dmg_reads_managed_account_settings_without_source_checkout(dmg_first_boot):
+    for path, field in [('/api/email/accounts', 'settings'), ('/api/briefings/elearning', 'settings')]:
+        result = dmg_first_boot['call']('GET', path)
+        assert result['status'] == 'success', result
+        assert field in result, result

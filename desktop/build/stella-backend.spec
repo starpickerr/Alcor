@@ -118,6 +118,9 @@ hiddenimports += [
 # stops being true — without it every HTTPS call through urllib/websockets fails.
 hiddenimports += ['certifi']
 
+# Core-pinned connector snapshots import these outside static analysis.
+hiddenimports += ['html.parser']
+
 # zoneinfo falls back to the tzdata package when the OS has no IANA database
 # (frozen Windows builds, minimal Linux images). Without these files even UTC
 # fails and Apple calendar import surfaces as "invalid repeat_timezone".
@@ -163,6 +166,8 @@ datas = [
     (rp('config-template.json'), '.'),
     # First-boot plugin bootstrap list (bytes still come from Stella-Plugins catalog).
     (rp('resources', 'default-plugins.json'), 'resources'),
+    (rp('desktop', 'build', 'connector-resources', 'mcp-providers.json'), 'resources'),
+    (rp('desktop', 'build', 'connector-resources', 'trusted-connectors'), 'resources/trusted-connectors'),
     (rp('skills'), 'skills'),
     # Legacy PluginManager.scan_plugins() walks the on-disk ./plugins dir at
     # runtime for chat-command plugins (it doesn't rely solely on imports), so

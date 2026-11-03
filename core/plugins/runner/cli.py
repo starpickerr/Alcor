@@ -13,6 +13,9 @@ def main(argv: list[str] | None = None) -> int:
         if name in sys.modules:
             raise SystemExit(f"stella-plugin-runner refuses polluted process: {name} already imported")
     sys.dont_write_bytecode = True
+    if getattr(sys, 'frozen', False):
+        from zoneinfo import reset_tzpath
+        reset_tzpath(())
     os.environ.setdefault("STELLA_PLUGIN_WORKER", "1")
     from core.plugins.runner.__main__ import main as runner_main
 

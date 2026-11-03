@@ -103,7 +103,10 @@ def frozen_backend_http(tmp_path_factory):
             },
         )
         with urllib.request.urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            result = json.loads(resp.read().decode("utf-8"))
+        if result.get('status') == 'error':
+            print(log.read_text(errors='replace'), flush=True)
+        return result
 
     try:
         yield call
@@ -127,7 +130,7 @@ def test_frozen_desktop_bills_create_and_list(frozen_backend_http):
             "occurred_at": "2026-08-02T12:30:00+08:00",
         },
     )
-    assert created["status"] == "success"
+    assert created["status"] == "success", created
     assert created["entry"]["amount_minor"] == 3200
     listed = frozen_backend_http("GET", "/api/bills/ledger?year=2026&month=8")
     assert listed["status"] == "success"
@@ -136,5 +139,5 @@ def test_frozen_desktop_bills_create_and_list(frozen_backend_http):
 
 def test_frozen_desktop_todos_create(frozen_backend_http):
     created = frozen_backend_http("POST", "/api/todos", {"title": "买菜", "status": "todo"})
-    assert created["status"] == "success"
+    assert created["status"] == "success", created
     assert created["todo"]["title"] == "买菜"

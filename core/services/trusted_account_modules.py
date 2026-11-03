@@ -1,5 +1,7 @@
 """Fixed Core-pinned business modules shared by the two managed account connectors."""
 import sys
+import json
+from pathlib import Path
 import threading
 from types import ModuleType
 
@@ -26,8 +28,14 @@ def load_business(config):
         raise PermissionError('Managed account connector requires the Core-pinned provider')
     _, root = _launch_inputs(config)
     snapshot = {}
+    expected = config.package_digest
+    if getattr(sys, 'frozen', False):
+        resources = Path(sys._MEIPASS) / 'resources'
+        catalog = json.loads((resources / 'mcp-providers.json').read_text())
+        expected = catalog['providers'][domain]['connectorSha256']
+        root = resources / 'trusted-connectors' / domain
     digest = source_digest(root, snapshot=snapshot)
-    if digest != config.package_digest:
+    if digest != expected:
         raise PermissionError('Managed account connector source does not match the Core distribution')
     with _LOCK:
         if digest not in _MODULES:

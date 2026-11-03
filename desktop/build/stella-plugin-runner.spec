@@ -21,6 +21,7 @@ Ship it next to the frozen backend (`stella-backend/`) or point
 STELLA_PLUGIN_RUNNER at the binary; see core.plugins.host.resolve_runner_command.
 """
 import os
+from PyInstaller.utils.hooks import collect_data_files
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, '..', '..'))
 
@@ -47,6 +48,7 @@ hiddenimports = [
     'hashlib',
     'uuid',
     'zoneinfo',
+    'tzdata',
     'sqlite3',
     '_sqlite3',
     'base64',
@@ -116,7 +118,7 @@ a = Analysis(
     [rp('core', 'plugins', 'runner', 'cli.py')],
     pathex=[ROOT],
     binaries=[],
-    datas=[],
+    datas=collect_data_files('tzdata'),
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

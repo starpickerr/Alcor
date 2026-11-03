@@ -561,3 +561,33 @@ Core 全量 `core-elearning-stage-full.log` 为 **2952 PASS /6 FAIL /22 SKIP**�
 复核：单独作者复核本轮所有生产改动及凭据、MCP 准入/存储、文件 fd、egress、可信模块快照、简报 peer 和 Electron IPC 的关键边界，重要发现均先复现再修复。记录 `finalization-author-review.md`。本会话不允许主动委派，按 requesting-code-review skill 使用作者复核替代；不宣称整个历史分支经过独立逐行审查或全项目安全审计。
 
 限制：未使用真实个人账号/学校 SSO，Linux/Windows 未实测，未重打本轮冻结后端或 DMG；既有冻结回归只针对磁盘现存产物。Core/Electron 是可信宿主，实际 OS 隔离覆盖受管子进程。原有开发 policy、evals 与两个重复文件改动保留，未包含在本轮提交中。
+
+## 2026-11-03 macOS 安装包生成与验收
+
+从收尾提交 `a3b4aae8` 建立专用分支 `build/macos-finalization-20261103`，保持版本 0.0.5，生成 Apple Silicon（arm64）安装包。未更新 develop、推送或发布。
+
+交付文件：`desktop/release/20261103/Stella-0.0.5-arm64.dmg`，458,256,634 字节（约 437 MiB）；同目录保存 `.dmg.sha256`，应用位于 `mac-arm64/Stella.app`。安装包 SHA-256：
+
+```text
+6a883c44c28353032f28e504f99a70ba55c2fa39204534f13dfa3766fd43c9b9
+```
+
+实际冻结验收发现并修正三项分发缺口：Core 的可信账号连接器缺少固定来源快照及冻结 MCP 摘要；eLearning 动态模块缺少 `html.parser`；插件运行器缺少独立时区数据，并访问了被隔离拒绝的构建机 Conda 时区路径。构建先验证 MCP 来源 pin，再生成有限模块快照与源/二进制摘要；冻结加载仍先验证提供者身份，再仅执行同次验证的内存快照。运行器携带 tzdata，冻结时不再探测系统 TZPATH。构建脚本同时清理 PyInstaller 缓存，避免增量构建复用旧代码。
+
+DMG 用例改为从临时 HOME 启动，验证脱离源码目录的实际调用；旧插件 grants 表已由当前实现取消，替换为 Owner 实际读写及无桌面令牌拒绝。没有恢复旧授权机制或放宽生产权限。
+
+最终验证（证据位于 `.superpowers/sdd/2026-10-27-macos-security-delivery/`）：
+
+| 范围 | 结果 | 证据 |
+| --- | --- | --- |
+| 邮箱/eLearning MCP、Core 后端及运行器干净构建 | PASS | `macos-package-mcp-build.log`、`macos-package-backend-build.log`、`macos-package-runner-build.log` |
+| Electron/DMG 构建 | PASS，退出 0 | `macos-package-electron-build.log` |
+| 实际 DMG 挂载→复制→临时 HOME 首启 | **6 PASS /0 SKIP**；签名插件目录、8 个插件安装、账单写入/读取、待办时区、两个账号设置及无令牌拒绝 | `macos-package-dmg-smoke.log` |
+| 冻结快照、原账号连接器及运行器用例 | **38 PASS /15 SKIP**；跳过项来自 PyInstaller CLI 未在 PATH 中，随后显式指定 CLI 补跑受影响时区用例 | `macos-package-connectors.log` |
+| 实际冻结运行器 SQLite/时区 | **1 PASS** | `macos-package-runner-test.log` |
+| DMG 完整性、复制后文件 SHA-256、交付应用内两个 MCP 摘要与 Core manifest | PASS | `macos-package-integrity.log`、`macos-package-delivery.json` |
+| 受影响 Python Ruff、构建脚本语法及 diff | PASS | `macos-package-static.log` |
+
+构建目录出现了不属于本次产物的数字后缀副本，曾使复制停滞；一次磁盘映像创建还返回资源暂时不可用。最终四个运行时均在 `/tmp/stella-macos-release.m6AEFP/` 全新构建，临时 Electron 配置排除数字后缀副本，成功生成 DMG 后验收并按 SHA-256 校对复制到交付目录。配置记录为 `macos-package-build-config.json`。未删除或提交原有工作区改动，旧 release 根目录安装包保留。
+
+本轮只补充打包相关验证，未重新运行前节 3118 项 Core 全量或整套 UI。没有使用个人邮箱/学校 SSO；未做 Intel、Linux 或 Windows 构建。应用未进行 Apple Developer 签名或公证，首次打开可能需要在 macOS 隐私与安全性中放行。临时诊断代码已移除。
