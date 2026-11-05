@@ -1,0 +1,3 @@
+- insert:
+    - id: stella-mail
+      name: '@stella/mail'

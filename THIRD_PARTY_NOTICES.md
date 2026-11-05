@@ -33,3 +33,18 @@ Stella retains its Python RPC runtime; no Harness/Cordis source or dependency wa
 Harness uses MIT (Copyright 2026 DeepSeek); its vendored Cordis license is MIT
 (Copyright 2021-present Shigma). Source comparisons and adaptation decisions are
 recorded in [runtime reference integration](docs/architecture/runtime-reference-integration.md).
+
+## DeepSeek Harness product prototype
+
+The isolated Stella/DSH product prototype directly uses the official
+`@deepseek-ai/dsh@0.2.2-alpha.3` distribution and adapts Desktop/Client source from
+`dsh-v0.2.2-alpha.3@05b1cae8db6e674c5685101494d4eec24652424a`.
+This is separate from the earlier Python-runtime design reference above.
+See [source and patch attribution](product/NOTICE.md), the retained
+[MIT license](product/DSH-LICENSE.txt), and [build and limitations](product/README.md).
+
+The optional secretary bundle incorporates Stella first-party business services;
+their origins are listed in [business provenance](packages/stella-secretary/business/README.md).
+It retains the Stella MIT license as `business/STELLA-LICENSE.txt`.
+The independent [Apple sync bundle](packages/stella-apple-sync/README.md) carries
+the adapted sync managers and EventKit bridge with its own retained MIT license.

@@ -2,6 +2,8 @@
 
 # Stella
 
+Current development targets the native DSH bundles in `packages/`. Start with `npm run dev`, test with `npm test`, and follow [the current product guide](product/README.md). The standalone Python/Electron implementation documented below is retained for migration and explicitly scoped legacy maintenance.
+
 [English](README.md) · [中文](docs/zh/README.md) · [繁體中文](docs/zh/README-Hant.md) · [日本語](docs/ja/README.md)
 
 **Stella is a private desktop AI assistant** centered on intelligent chat, bringing tasks, calendars, bills, smart briefings, and automation together in one workspace.

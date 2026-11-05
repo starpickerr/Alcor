@@ -1,0 +1,38 @@
+--- a/apps/desktop/src/main.ts
++++ b/apps/desktop/src/main.ts
+@@ -52,7 +52,6 @@
+ import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './update-schedule.ts'
+ import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
+ import { desktopErrorState } from './startup-error.ts'
+-import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
+ import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
+ import { desktopClientMetadata, desktopClientVersion } from './client-metadata.ts'
+ import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
+@@ -88,7 +87,7 @@
+ 
+ // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
+ // set before ready so the first fatal report already resolves under it.
+-app.setAppLogsPath()
++app.setAppLogsPath(join(app.getPath('userData'), 'logs'))
+ 
+ function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
+   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
+@@ -378,16 +377,8 @@
+     : join(process.resourcesPath, 'runtime', 'primary-runtime')
+   const activeProject = paths.profile
+   const manager = new DesktopProjectManager(paths, resources)
+-  // Dock and Finder launches inherit only launchd's environment; every Host shares one login-shell read.
+-  const loginShellRead = new AbortController()
+-  // The probe runs in its own process group, which outlives Desktop unless the read is aborted.
+-  app.on('will-quit', () => { loginShellRead.abort() })
+-  const loginShell = readDesktopLoginShellEnvironment(process.env, resolveDesktopLoginShellConfig(process.env), {
+-    signal: loginShellRead.signal,
+-  }).then((result) => {
+-    for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
+-    return result.environment
+-  })
++  // Stella receives a curated launcher environment; never execute personal shell startup files.
++  const loginShell = Promise.resolve(process.env)
+   let hostEnvironment: NodeJS.ProcessEnv = process.env
+   const prepareHostEnvironment = async (): Promise<void> => { hostEnvironment = await loginShell }
+   let quitting = false

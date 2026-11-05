@@ -44,6 +44,11 @@ client_config.json
 **/.dev.vars
 local/
 node_modules/
+/.local/
+/packages/*/lib/
+/packages/stella-elearning/server/
+/packages/stella-mail/server/
+/packages/stella-privacy/native/keychain-bridge
 
 # stella cli
 dist/
@@ -70,3 +75,10 @@ desktop/resources/bin/
 
 .wrangler/
 evals/reports/
+# Native build output
+packages/stella-apple-sync/python/apple_sync/StellaCalendarBridge
+packages/stella-apple-sync/python/**/__pycache__/
+packages/stella-secretary/business/**/__pycache__/
+
+# Keep native Apple sync source despite the legacy python-directory ignore.
+!/packages/stella-apple-sync/python/

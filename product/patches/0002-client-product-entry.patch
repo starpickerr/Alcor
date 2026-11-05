@@ -1,0 +1,116 @@
+diff --git a/packages/client/ui-layout/src/client/AppFrame.module.css b/packages/client/ui-layout/src/client/AppFrame.module.css
+index fa1065dc..869e157c 100644
+--- a/packages/client/ui-layout/src/client/AppFrame.module.css
++++ b/packages/client/ui-layout/src/client/AppFrame.module.css
+@@ -386,3 +386,14 @@
+ .overlayLayer > * {
+   pointer-events: auto;
+ }
++
++/* An optional product bar reserves its own space without replacing native chrome. */
++.productTop { position: absolute; inset: 0 0 auto; z-index: 72; background: var(--dsw-specific-sidebar-fill); }
++.frame:has(> .productTop:not(:empty)) { padding-top: 44px; }
++.frame:has(> .productTop:not(:empty)) .leadingSeat { margin-top: 44px; }
++.frame:has(> .productTop:not(:empty)) .handle { top: 44px; }
++:global([data-windows-titlebar]) .frame:has(> .productTop:not(:empty)) { padding-top: calc(var(--dsh-windows-titlebar-height) + 44px); }
++:global([data-windows-titlebar]) .productTop { top: var(--dsh-windows-titlebar-height); }
++
++.frame:has(> .productTop:not(:empty))[data-sidebar-drawer] .sidebarCol,
++.frame:has(> .productTop:not(:empty)) .drawerMask { top: calc(var(--dsh-frame-chrome-top, 0px) + 44px); }
+diff --git a/packages/client/ui-layout/src/client/AppFrame.tsx b/packages/client/ui-layout/src/client/AppFrame.tsx
+index 23e71c9c..0c7a13f6 100644
+--- a/packages/client/ui-layout/src/client/AppFrame.tsx
++++ b/packages/client/ui-layout/src/client/AppFrame.tsx
+@@ -32,7 +32,7 @@ export interface AppFrameInjected {
+ /** Full composed props: runtime, child slots, store, locale, and injected posture. */
+ export type AppFrameProps =
+   & PropsRuntime<'root'>
+-  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.bottom' | 'shell.overlay' | 'shell.leading'>
++  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'shell.top' | 'shell.bottom' | 'shell.overlay' | 'shell.leading'>
+   & PropsStore<ReturnType<typeof createLayoutStore>>
+   & PropsLocale<'common'>
+   & InjectFace<AppFrameInjected>
+@@ -304,6 +304,11 @@ export function AppFrame({
+       data-dragging={dragging || undefined}
+       data-animating={animateTracks || undefined}
+     >
++      <div className={css.productTop}
++        onPointerDownCapture={drawerOpen ? () => { actions.toggleSidebar() } : undefined}
++        onFocusCapture={drawerOpen ? () => { actions.toggleSidebar() } : undefined}>
++        {renderSlot('shell.top', {})}
++      </div>
+       <DocumentTitle
+         productTitle={productTitle}
+         useSessions={useSessions}
+diff --git a/packages/client/ui-layout/src/client/index.ts b/packages/client/ui-layout/src/client/index.ts
+index aec24303..ea23365f 100644
+--- a/packages/client/ui-layout/src/client/index.ts
++++ b/packages/client/ui-layout/src/client/index.ts
+@@ -93,6 +93,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+      * The occupant owns its height, visibility, and controls. It receives no
+      * Session binding and remains mounted across main-panel navigation.
+      */
++    'shell.top': { kind: 'list'; scope: 'root' }
+     'shell.bottom': { kind: 'single'; scope: 'root' }
+     /**
+      * Frame-wide floating layer, above every column and outside their scroll
+@@ -196,6 +197,7 @@ export function apply(ctx: ClientContext): void {
+         'sidebar': { kind: 'single', scope: 'root' },
+         'main': { kind: 'keyed', scope: 'root' },
+         'rightbar': { kind: 'single', scope: 'root' },
++        'shell.top': { kind: 'list', scope: 'root' },
+         'shell.bottom': { kind: 'single', scope: 'root' },
+         'shell.overlay': { kind: 'list', scope: 'root' },
+         'shell.leading': { kind: 'single', scope: 'root' },
+diff --git a/packages/client/ui-workspace/src/client/navigation.ts b/packages/client/ui-workspace/src/client/navigation.ts
+index 42265f1a..289a81b1 100644
+--- a/packages/client/ui-workspace/src/client/navigation.ts
++++ b/packages/client/ui-workspace/src/client/navigation.ts
+@@ -25,7 +25,7 @@ import type { RowToast } from './contract/slots.ts'
+ import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
+ import type { WorkspaceViewStoreActions } from './stores.ts'
+ 
+-interface MainSelection {
++export interface MainSelection {
+   readonly sessionId?: SessionId
+   readonly subagentAddress?: SubagentAddress
+ }
+@@ -38,6 +38,8 @@ export interface StartSessionOptions extends DraftInitializationOptions {
+ 
+ /** Workspace archive and directory operations consumed by Client UI domains. */
+ export interface UiWorkspace {
++  /** Read-only navigation identity; consumers restore via openSession. */
++  readonly selection: Pick<ReturnType<typeof createSnapshotStore<MainSelection>>, 'getSnapshot' | 'subscribe'>
+   /**
+    * Select a Session and show its Conversation as one UI navigation action.
+    * @param target - known Session identity or durable direct-parent subagent address to display.
+@@ -146,6 +148,10 @@ export interface UiWorkspace {
+ }
+ 
+ declare module '@deepseek-ai/cordis' {
++  interface Events {
++    /** Product default for new workspace conversations; never changes an existing Session. */
++    'ui-workspace/default-preset'(): string | undefined | Promise<string | undefined>
++  }
+   interface Context {
+     /** Cross-Controller Workspace navigation and directory UI capability. */
+     uiWorkspace: UiWorkspace
+@@ -170,7 +176,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     readonly attempt: Promise<SessionId>
+   }>()
+   private readonly lifetime = new AbortController()
+-  private readonly selection = createSnapshotStore<MainSelection>(
++  readonly selection = createSnapshotStore<MainSelection>(
+     {}, { persist: { name: 'dsh.sessions.current' } },
+   )
+   private mainReference: SessionReference | undefined
+@@ -216,6 +222,9 @@ class UiWorkspaceService extends Service implements UiWorkspace {
+     workspaceId: WorkspaceId,
+     reuse: Pick<StartSessionOptions, 'agentPreset'>,
+   ): Promise<SessionId> {
++    let defaultPreset = reuse.agentPreset ?? this.ctx.bail('ui-workspace/default-preset')
++    if (defaultPreset instanceof Promise) defaultPreset = await defaultPreset
++    if (defaultPreset !== undefined) reuse = { ...reuse, agentPreset: defaultPreset }
+     const workspace = this.workspaces.list.getSnapshot().items
+       .find(item => item.workspaceId === workspaceId)
+     if (workspace === undefined) {

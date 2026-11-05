@@ -1,0 +1,13 @@
+.stella-source-settings { padding:20px; font:14px/1.6 var(--dsw-font-family); color:var(--dsw-alias-label-primary); }
+.stella-source-settings h2 { font-size:16px; margin:0 0 16px; font-weight:500; }
+.stella-source-settings p,.stella-source-settings summary { font-size:13px; }
+.stella-source-settings details { margin:12px 0; }
+.stella-source-settings summary { cursor:pointer; }
+.stella-source-settings .stella-field { display:flex; flex-direction:column; gap:5px; margin:12px 0; font-size:13px; }
+.stella-source-settings .stella-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.stella-source-settings select { height:32px; max-width:100%; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); padding:0 8px; font:inherit; color:inherit; background:var(--dsw-alias-bg-layer-1); }
+.stella-source-settings [role=alert] { color:var(--dsw-alias-state-error-primary); overflow-wrap:anywhere; }
+.stella-source-account { border-bottom:1px solid var(--dsw-alias-border-l3); padding:16px 0; overflow-wrap:anywhere; }
+.stella-source-account h3 { font-size:14px; margin:0; font-weight:500; }
+.stella-source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+@media(max-width:500px) { .stella-source-grid { grid-template-columns:minmax(0,1fr); } }

@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "branch": "master",
+  "observedMaster": "8bd073392eef6f54e921a093b95076248eb08cbb",
+  "tag": "dsh-v0.2.2-alpha.3",
+  "commit": "05b1cae8db6e674c5685101494d4eec24652424a",
+  "npmVersion": "0.2.2-alpha.3",
+  "patches": [
+    "patches/0001-desktop-private-environment.patch",
+    "patches/0002-client-product-entry.patch",
+    "patches/0003-patched-transitive-dependencies.patch",
+    "patches/0004-workspace-browser-factory.patch",
+    "patches/0005-settings-shell-factory.patch",
+    "patches/0006-schedule-manager-factory.patch"
+  ],
+  "securityOverrides": {
+    "zod": "4.6.7",
+    "undici": "8.12.2",
+    "fflate": "0.8.3",
+    "@modelcontextprotocol/client": "2.3.0"
+  }
+}

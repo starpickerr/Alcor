@@ -1,0 +1,521 @@
+diff --git a/packages/client/ui-schedule/src/client/TaskDetail.tsx b/packages/client/ui-schedule/src/client/TaskDetail.tsx
+index cafd8023..a7611353 100644
+--- a/packages/client/ui-schedule/src/client/TaskDetail.tsx
++++ b/packages/client/ui-schedule/src/client/TaskDetail.tsx
+@@ -13,6 +13,7 @@ import {
+ import { CatalogFeedback } from './CatalogFeedback.tsx'
+ import { DeliveryHistory, type DeliveryHistoryInjected } from './DeliveryHistory.tsx'
+ import type { CatalogDeleteOutcome, CatalogSnapshot } from './catalog-source.ts'
++import type { ManagerTemplate } from './manager-factory.tsx'
+ import { TaskEditorFields, draftTarget, newTaskDraft, projectChoices, reapplyTaskDraft, taskDraft, taskDraftIssue, taskDraftPatch } from './TaskEditorFields.tsx'
+ import type { TaskEditorDraft } from './TaskEditorFields.tsx'
+ import type { TaskEditorStoreProps } from './editor-store.ts'
+@@ -87,6 +88,8 @@ type TaskDetailCommonProps = TaskDetailInjected
+   & Pick<PropsRuntime<'main'>, 'useSessions' | 'useWorkspaces'>
+   & {
+     /** Element id shared by the detail panels and any control that points at them. */
++    readonly draftPrefix?: string | undefined
++    readonly template?: ManagerTemplate | undefined
+     readonly id: string
+     /** Catalog query state; loading disables saved-task actions. */
+     readonly status: 'loading' | 'ready' | 'error'
+@@ -189,7 +192,7 @@ export function useTaskDetail(
+  * @returns The detail region and its deletion confirmation dialog.
+  */
+ export function TaskDetail(props: TaskDetailProps): ReactNode {
+-  return <TaskDetailView key={props.task === undefined ? 'new' : `task:${props.task.id}`} {...props} />
++  return <TaskDetailView key={props.task === undefined ? `new:${props.template?.id ?? ''}` : `task:${props.task.id}`} {...props} />
+ }
+ 
+ function TaskDetailView(props: TaskDetailProps): ReactNode {
+@@ -197,9 +200,9 @@ function TaskDetailView(props: TaskDetailProps): ReactNode {
+     onRetry, onOpenSession, loadHistory, status, deleting, useSessions, useWorkspaces, t, hostActions } = props
+   const sessions = useSessions(snapshot => snapshot)
+   const workspaces = useWorkspaces(snapshot => snapshot)
+-  const key = task === undefined ? 'new' : `task:${task.id}`
++  const key = `${props.draftPrefix ? props.draftPrefix + ':' : ''}${task === undefined ? props.template ? `new:${props.template.id}` : 'new' : `task:${task.id}`}`
+   const stored = props.useStore(state => state.drafts[key])
+-  const [seed] = useState(newTaskDraft)
++  const [seed] = useState(() => ({ ...newTaskDraft(), ...(props.template ? { title: props.template.title, prompt: props.template.prompt, frequency: props.template.frequency, dailyTime: '08:00', weekdays: [1] } : {}) }))
+   const initial = stored?.initial ?? seed
+   const changes = useMemo(() => stored?.base === undefined ? undefined : taskDraftPatch(stored.draft, stored.base),
+     [stored?.draft, stored?.base])
+diff --git a/packages/client/ui-schedule/src/client/TaskManagerPage.tsx b/packages/client/ui-schedule/src/client/TaskManagerPage.tsx
+index 53a53fe9..480e5cd3 100644
+--- a/packages/client/ui-schedule/src/client/TaskManagerPage.tsx
++++ b/packages/client/ui-schedule/src/client/TaskManagerPage.tsx
+@@ -20,6 +20,7 @@ import { formatScheduleFrequency, nextRunParts, taskName, zoneLabel } from './sc
+ import type { FrequencyZone } from './schedule-format.ts'
+ import { ScheduleEmptyIllustration } from './ScheduleEmptyIllustration.tsx'
+ import css from './TaskManagerPage.module.css'
++import type { ManagerOptions, ManagerTemplate } from './manager-factory.tsx'
+ 
+ /** Injected catalog and task actions for the management page. */
+ export interface TaskManagerInjected extends TaskDetailInjected {
+@@ -48,7 +49,7 @@ export interface TaskManagerInjected extends TaskDetailInjected {
+ export type TaskManagerPageProps = PropsRuntime<'main'>
+   & InjectFace<TaskManagerInjected>
+   & TaskEditorStoreProps
+-  & PropsLocale<'schedule.manager'>
++  & PropsLocale<'schedule.manager'> & Pick<ManagerOptions, 'templates' | 'scopeLabel' | 'manualCreation'> & { draftPrefix?: string; header?: import('react').ReactNode }
+ 
+ type StatusFilter = 'all' | ScheduleCatalogEntry['status']
+ 
+@@ -61,6 +62,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
+   const { useCatalog, onNewTask, onClearEnded, onRetry, onCreateTask, t } = props
+   const [createMenuOpen, setCreateMenuOpen] = useState(false)
+   const [manualOpen, setManualOpen] = useState(false)
++  const [template, setTemplate] = useState<ManagerTemplate>()
+   const catalog = useCatalog(snapshot => snapshot)
+   const { records, status } = catalog
+   const [search, setSearch] = useState('')
+@@ -137,6 +139,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
+   }
+   const createManually = (trigger: HTMLButtonElement | null): void => {
+     rowRef.current = trigger
++    setTemplate(undefined)
+     setSelectedId(null); setManualOpen(true); setTab('rule')
+   }
+ 
+@@ -199,18 +202,22 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
+           <div className={css.pageContent}>
+             <div className={css.pageHeading}>
+               <h1 ref={headingRef} tabIndex={-1}>{t('title')}</h1>
++              {props.scopeLabel && <span className={css.metadata}>{props.scopeLabel}</span>}{props.header}
+               <div className={css.creationActions}>
+                 <span className={css.createGroup} role="group" aria-label={t('host.create')}>
+                   <Button variant="primary" size="sm" className={clsx(css.headerAction, css.createPrimary)} icon={<IconPlusOutlineRegular size={13} />}
+-                    onClick={onNewTask}>{t('new.action')}</Button>
++                    onClick={event => { if (props.manualCreation) createManually(event.currentTarget); else onNewTask() }}>{t('new.action')}</Button>
+                   <Menu open={createMenuOpen} onClose={() => { setCreateMenuOpen(false) }} align="end" portal autoFocus
+                     listClassName={css.createMenu}
+                     anchor={<Button ref={createTriggerRef} variant="primary" size="sm" className={css.createMore} aria-label={t('host.createMethod')}
+                       aria-haspopup="menu" aria-expanded={createMenuOpen} onClick={() => { setCreateMenuOpen(value => !value) }}>
+                       <IconChevronDownOutlineRegular size={12} />
+                     </Button>}>
+-                    <MenuItemButton icon={<ReferenceIconRegular kind="session" size={14} />}
+-                      onSelect={() => { setCreateMenuOpen(false); onNewTask() }}>{t('host.chatCreate')}</MenuItemButton>
++                    {!props.manualCreation && <MenuItemButton icon={<ReferenceIconRegular kind="session" size={14} />}
++                      onSelect={() => { setCreateMenuOpen(false); onNewTask() }}>{t('host.chatCreate')}</MenuItemButton>}
++                    {props.templates?.map(item => <MenuItemButton key={item.id} onSelect={() => {
++                      setCreateMenuOpen(false); createManually(createTriggerRef.current); setTemplate(item)
++                    }}>{item.label}</MenuItemButton>)}
+                     <MenuItemButton icon={<IconEditOutlineRegular size={14} />}
+                       onSelect={() => { setCreateMenuOpen(false); createManually(createTriggerRef.current) }}>
+                       {t('host.manualCreate')}
+@@ -313,6 +320,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
+                         <IconClockOutlineRegular className={css.rowGlyph} />
+                         <span className={css.rowContent}>
+                           <span className={css.rowTitle}>{taskName(record)}</span>
++                          {('sourceLabel' in record && typeof record.sourceLabel === 'string') && <span className={css.metadata}>{record.sourceLabel}</span>}
+                           <span className={css.rowSummary} id={`${detailId}-metadata-${record.id}`}>
+                             {record.status !== 'active'
+                               && <span className={css.metadata}>{t(`status.${record.status}`)}</span>}
+@@ -334,11 +342,12 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
+           </div>
+         </div>
+       </div>
+-      {manualOpen ? <TaskDetail {...detail.props} onCreateTask={onCreateTask} onClose={closeDetails} onDeleted={closeDetails}
++      {manualOpen ? <TaskDetail {...detail.props} draftPrefix={props.draftPrefix} template={template} onCreateTask={onCreateTask} onClose={closeDetails} onDeleted={closeDetails}
+         onCreated={(task) => {
+           setManualOpen(false); setSearch(''); setStatusFilter('all'); setSelectedId(task.id); setTab('rule')
+         }} /> : selected !== undefined && <TaskDetail
+         {...detail.props}
++        draftPrefix={props.draftPrefix}
+         task={selected}
+         authoritative={catalogRecord !== undefined}
+         onDeleted={closeDetails}
+diff --git a/packages/client/ui-schedule/src/client/index.ts b/packages/client/ui-schedule/src/client/index.ts
+index 5df35309..f31a5943 100644
+--- a/packages/client/ui-schedule/src/client/index.ts
++++ b/packages/client/ui-schedule/src/client/index.ts
+@@ -28,6 +28,8 @@
+  * source onto the open Session's active tasks.
+  */
+ 
++import { createElement } from 'react'
++import { ScheduleManager, wireManager, type ManagerRemote } from './manager-factory.tsx'
+ import type { Context as ClientContext } from '@deepseek-ai/cordis'
+ import type {} from '@deepseek-ai/dsh-client-locale/client'
+ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+@@ -39,12 +41,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+ import type {} from '@deepseek-ai/dsh-api-remote-access/client'
+ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+-import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
+ import type {} from '@deepseek-ai/dsh-client-connection/client'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+-import type { ScheduleId, ScheduleCatalogEntry, ScheduleDeleteResult } from '@deepseek-ai/dsh-schedule/client'
+-import { createCatalogSource, type CatalogDeleteOutcome } from './catalog-source.ts'
+-import { createClearEnded } from './clear-ended.ts'
++import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
+ import { createDeleteToastSource, ScheduleDeleteToast } from './DeleteToast.tsx'
+ import { SCHEDULE_TASK_ID, SCHEDULE_TASK_KIND, scheduleTaskDefinition } from './definition.ts'
+ import { ScheduleCatalogAction } from './ScheduleCatalogAction.tsx'
+@@ -56,8 +55,6 @@ import { SessionScheduleHover } from './SessionScheduleHover.tsx'
+ import { SessionScheduleMark } from './SessionScheduleMark.tsx'
+ import { TaskTabBindings } from './task-tab-bindings.ts'
+ import { createEditorStore } from './editor-store.ts'
+-import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx'
+-import type { TaskDetailInjected } from './TaskDetail.tsx'
+ import { TaskManagerIcon } from './TaskManagerIcon.tsx'
+ import { sessionLinkState } from './session-link.ts'
+ import { en, ja, es, fr, de, ru, pt, NS, zh, type ScheduleCatalogKey } from './locales.ts'
+@@ -81,22 +78,6 @@ export const inject = [
+   'workspaces', 'sidebarRightTabs', 'sidebarRight', 'remoteAccess',
+ ]
+ 
+-async function settle<T>(call: () => Promise<RemoteResult<T>>): Promise<RemoteResult<T> | undefined> {
+-  try { return await call() }
+-  catch (_error: unknown) {
+-    // A rejected call leaves the outcome unknown, so its caller shows the same localized retry as a Remote failure.
+-    return undefined
+-  }
+-}
+-
+-function inputCorrection(error: RemoteFailure): 'host.notFuture' | 'host.invalidRule' | undefined {
+-  if (error.code !== 'schedule/input-invalid') return undefined
+-  const { code } = error.details
+-  if (code === 'not_future') return 'host.notFuture'
+-  return code === 'invalid_rule' || code === 'frequency_too_high' || code === 'invalid_time_zone' || code === 'time_out_of_range'
+-    ? 'host.invalidRule' : undefined
+-}
+-
+ /**
+  * Register the Host task page, the Session-header reminder catalog, the
+  * right-Sidebar page that shows one task's detail, and the transcript card of
+@@ -123,78 +104,24 @@ export function apply(ctx: ClientContext): void {
+   // renders the card beneath the closing prose.
+   ctx.uiConversation.events.register(scheduleTurnDefinition)
+   ctx.remoteAccess.whenAccess('schedule/catalog', function* () {
+-    const manager = createCatalogSource<ScheduleCatalogEntry>({
+-      list: () => ctx.remote.schedule.catalog(),
+-      remove: async (id): Promise<RemoteResult<ScheduleDeleteResult>> => {
+-        const result = await ctx.remote.schedule.edit({ id, action: 'delete' })
+-        if (!result.ok) return result
+-        return { ok: true, value: 'deleted' in result.value ? { id, deleted: true } : { id, deleted: false, code: 'schedule_not_found' } }
+-      },
+-      subscribeChanged: listener => ctx.remote.$on('schedule/changed', listener),
+-      subscribeReset: listener => ctx.on('connection/reset', listener),
+-    })
+-    // One outcome store behind one `shell.overlay` entry announces every deletion
+-    // this plugin's surfaces settle, so the notice outlives the panel, popover, or
+-    // tab the deletion started in.
+     const deleteToast = createDeleteToastSource()
+-    const reportedDelete = (onDelete: (id: ScheduleId) => Promise<CatalogDeleteOutcome>) =>
+-      async (id: ScheduleId): Promise<CatalogDeleteOutcome> => {
+-        const outcome = await onDelete(id)
+-        deleteToast.report(outcome)
+-        return outcome
+-      }
+     yield ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+       name: 'shell.overlay', id: 'schedule.delete-toast', locale: MANAGER_NS,
+       inject: () => ({ hooks: deleteToast.hooks, dismiss: deleteToast.dismiss }),
+     }, ScheduleDeleteToast))
+-    // The Host answered, so this readback must not join a read that was sent
+-    // before it: naming every request seen so far makes the source issue a new
+-    // one, the way the post-deletion readback supersedes.
+-    const refresh = (): Promise<void> => manager.onRetry(manager.hooks.catalog.getSnapshot().readRequest)
+     const openSession = (id: SessionId): void => {
+-      if (sessionLinkState(id, ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot()) === 'available') {
+-        ctx.uiWorkspace.openSession(id)
+-      }
++      if (sessionLinkState(id, ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot()) === 'available') ctx.uiWorkspace.openSession(id)
+     }
+-    /**
+-     * Remove every ended Host task and read the catalog back.
+-     *
+-     * The readback names every request seen so far, so it supersedes a read sent
+-     * before the removal instead of joining it.
+-     * @returns the settled bulk-removal outcome.
+-     */
+-    const clearEnded = createClearEnded({
+-      removeInactive: () => ctx.remote.schedule.deleteInactive(),
+-      refresh,
+-    })
+-    const detail: TaskDetailInjected & ScheduleTaskCatalogInjected = {
+-      hooks: manager.hooks,
+-      onDelete: reportedDelete(manager.onDelete),
+-      onRetry: manager.onRetry,
+-      loadHistory: request => ctx.remote.schedule.history(request),
+-      onOpenSession: openSession,
+-      hostActions: {
+-        edit: async (request) => {
+-          const result = await settle(() => ctx.remote.schedule.edit(request))
+-          if (result === undefined) return { failed: 'host.saveError' }
+-          if (!result.ok) return { failed: inputCorrection(result.error) ?? 'host.saveError' }
+-          await refresh()
+-          if (!('code' in result.value)) return 'saved'
+-          return { failed: result.value.code === 'schedule_conflict' ? 'host.conflict' : 'detail.missing' }
+-        },
+-        run: async (id) => {
+-          const result = await settle(() => ctx.remote.schedule.run({ id }))
+-          if (result === undefined || !result.ok) return { failed: 'host.runError' }
+-          await refresh()
+-          if (!('code' in result.value)) return 'queued'
+-          return { failed: result.value.code === 'schedule_execution_pending' ? 'host.executionPending' : 'detail.missing' }
+-        },
+-        loadNewSessionInterval: async () => {
+-          const result = await settle(() => ctx.remote.schedule.deliveryLimits())
+-          return result?.ok === true ? result.value.newSessionIntervalSeconds : undefined
+-        },
+-      },
++    const onNewTask = () => { ctx.uiWorkspace.startSession(undefined, { prompt: t('host.createPrompt'), whenDraftExists: 'append' }) }
++    const nativeRemote: ManagerRemote = {
++      catalog: () => ctx.remote.schedule.catalog(), create: request => ctx.remote.schedule.create(request),
++      edit: request => ctx.remote.schedule.edit(request), run: request => ctx.remote.schedule.run(request),
++      history: request => ctx.remote.schedule.history(request), deleteInactive: () => ctx.remote.schedule.deleteInactive(),
++      deliveryLimits: () => ctx.remote.schedule.deliveryLimits(),
+     }
++    const wire = (remote: ManagerRemote = nativeRemote, onNew = onNewTask) => wireManager(ctx, remote, deleteToast.report, deleteToast.reportClear, openSession, onNew)
++    const shared = wire()
++    const { manager, detail } = shared
+     // The Sidebar persists a tab's layout record and not its navigation
+     // parameters, so this page type keeps the task it last showed per Session and
+     // tab id. That Session's committed tab ids bound every write, so a closed tab
+@@ -215,28 +142,12 @@ export function apply(ctx: ClientContext): void {
+       locale: MANAGER_NS,
+       inject: (): ScheduleTaskCatalogInjected & ScheduleTaskBindingInjected => ({ hooks: detail.hooks, taskBindings }),
+     }, ScheduleTaskTabTitle))
+-    yield ctx.slots.inject('main', () => ctx.slots.register({
+-      name: 'main',
+-      key: PANEL_ID,
+-      locale: MANAGER_NS,
+-      store: createEditorStore(),
+-      inject: (): TaskManagerInjected => ({
+-        ...detail,
+-        onNewTask: () => { ctx.uiWorkspace.startSession(undefined, { prompt: t('host.createPrompt'), whenDraftExists: 'append' }) },
+-        onClearEnded: async () => {
+-          const outcome = await clearEnded()
+-          deleteToast.reportClear(outcome)
+-        },
+-        onCreateTask: async (request) => {
+-          const result = await settle(() => ctx.remote.schedule.create(request))
+-          if (result === undefined) return { failed: 'host.createError' }
+-          if (!result.ok) return { failed: inputCorrection(result.error) ?? 'host.createError' }
+-          manager.retainCreated(result.value)
+-          await refresh()
+-          return { created: result.value }
+-        },
+-      }),
+-    }, TaskManagerPage))
++    yield ctx.slots.registerFactory({ name: 'schedule.manager.view', scope: 'root', locale: MANAGER_NS,
++      children: { 'schedule.manager.header': { kind: 'list', scope: 'root' } },
++      store: createEditorStore(), inject: () => ({ wire: (remote, onNew) => remote === undefined && onNew === undefined ? shared : wire(remote, onNew) }),
++    }, ScheduleManager)
++    yield ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID },
++      ({ renderFactorySlot }) => createElement('div', { style: { display: 'contents' } }, renderFactorySlot('schedule.manager.view', {}))))
+     yield ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+       name: 'sidebar.panellist',
+       id: PANEL_ID,
+diff --git a/packages/client/ui-schedule/src/client/manager-factory.tsx b/packages/client/ui-schedule/src/client/manager-factory.tsx
+new file mode 100644
+index 00000000..ef74f554
+--- /dev/null
++++ b/packages/client/ui-schedule/src/client/manager-factory.tsx
+@@ -0,0 +1,117 @@
++/** Shared native manager wiring; product views supply a scoped Remote, never another scheduler. */
++import { useMemo, useSyncExternalStore } from 'react'
++import type { Context } from '@deepseek-ai/cordis'
++import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
++import type { PropsLocale, PropsRuntime, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
++import type { ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteInactiveResult, ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult, ScheduleEditRequest, ScheduleEditResult, ScheduleRunResult } from '@deepseek-ai/dsh-schedule/client'
++import { createCatalogSource } from './catalog-source.ts'
++import { createClearEnded, type ClearEndedOutcome } from './clear-ended.ts'
++import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx'
++import type { TaskEditorStoreProps, createEditorStore } from './editor-store.ts'
++
++export interface ManagerRemote {
++  catalog: () => Promise<RemoteResult<ScheduleCatalogEntry[]>>
++  create: (request: ScheduleCreateRequest) => Promise<RemoteResult<ScheduleCatalogEntry>>
++  edit: (request: ScheduleEditRequest) => Promise<RemoteResult<ScheduleEditResult>>
++  run: (request: { id: ScheduleCatalogEntry['id'] }) => Promise<RemoteResult<ScheduleRunResult>>
++  history: (request: ScheduleDeliveryHistoryRequest) => Promise<RemoteResult<ScheduleDeliveryHistoryResult>>
++  deleteInactive: () => Promise<RemoteResult<ScheduleDeleteInactiveResult>>
++  deliveryLimits: () => Promise<RemoteResult<{ newSessionIntervalSeconds: number }>>
++}
++export interface ManagerTemplate {
++  readonly id: string
++  readonly label: string
++  readonly title: string
++  readonly prompt: string
++  readonly frequency: 'daily' | 'weekly'
++}
++export interface ManagerOptions {
++  readonly remote?: ManagerRemote
++  readonly onNewTask?: () => void
++  readonly templates?: readonly ManagerTemplate[]
++  readonly scopeLabel?: string
++  readonly manualCreation?: boolean
++}
++export function wireManager(ctx: Context, api: ManagerRemote, reportDelete: (outcome: 'deleted' | 'failed' | 'pending') => void,
++  reportClear: (outcome: ClearEndedOutcome) => void,
++  onOpenSession: TaskManagerInjected['onOpenSession'], onNewTask: () => void) {
++  const manager = createCatalogSource<ScheduleCatalogEntry>({
++    list: () => api.catalog(),
++    remove: async id => {
++      const result = await api.edit({ id, action: 'delete' })
++      if (!result.ok) return result
++      return { ok: true, value: 'deleted' in result.value ? { id, deleted: true } : { id, deleted: false, code: 'schedule_not_found' } }
++    },
++    subscribeChanged: listener => ctx.remote.$on('schedule/changed', listener),
++    subscribeReset: listener => ctx.on('connection/reset', listener),
++  })
++  const refresh = () => manager.onRetry(manager.hooks.catalog.getSnapshot().readRequest)
++  const clearEnded = createClearEnded({ removeInactive: () => api.deleteInactive(), refresh })
++  const correction = (result: { error: { code: string; details?: unknown } }): 'host.notFuture' | 'host.invalidRule' | undefined => {
++    if (result.error.code !== 'schedule/input-invalid') return undefined
++    const code = (result.error.details as { code?: string } | undefined)?.code
++    return code === 'not_future' ? 'host.notFuture' : ['invalid_rule', 'frequency_too_high', 'invalid_time_zone', 'time_out_of_range'].includes(code ?? '') ? 'host.invalidRule' : undefined
++  }
++  async function settle<T>(call: () => Promise<RemoteResult<T>>): Promise<RemoteResult<T> | undefined> {
++    try { return await call() } catch { return undefined }
++  }
++  const detail: TaskManagerInjected = {
++    hooks: manager.hooks,
++    onDelete: async id => { const outcome = await manager.onDelete(id); reportDelete(outcome); return outcome },
++    onRetry: manager.onRetry,
++    loadHistory: request => api.history(request),
++    onOpenSession,
++    hostActions: {
++      edit: async request => {
++        const result = await settle(() => api.edit(request))
++        if (!result) return { failed: 'host.saveError' }
++        if (!result.ok) return { failed: correction(result) ?? 'host.saveError' }
++        await refresh()
++        return !('code' in result.value) ? 'saved' : { failed: result.value.code === 'schedule_conflict' ? 'host.conflict' : 'detail.missing' }
++      },
++      run: async id => {
++        const result = await settle(() => api.run({ id }))
++        if (!result?.ok) return { failed: 'host.runError' }
++        await refresh()
++        return !('code' in result.value) ? 'queued' : { failed: result.value.code === 'schedule_execution_pending' ? 'host.executionPending' : 'detail.missing' }
++      },
++      loadNewSessionInterval: async () => { const result = await settle(() => api.deliveryLimits()); return result?.ok ? result.value.newSessionIntervalSeconds : undefined },
++    },
++    onNewTask,
++    onClearEnded: async () => { reportClear(await clearEnded()) },
++    onCreateTask: async request => {
++      const result = await settle(() => api.create(request))
++      if (!result) return { failed: 'host.createError' }
++      if (!result.ok) return { failed: correction(result) ?? 'host.createError' }
++      manager.retainCreated(result.value)
++      await refresh()
++      return { created: result.value }
++    },
++  }
++  return { manager, detail, refresh, clearEnded }
++}
++
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotMap {
++    'schedule.manager.header': { kind: 'list'; scope: 'root'; owner: {} }
++  }
++  interface SlotFactoryMap {
++    'schedule.manager.view': {
++      scope: 'root'
++      props: ManagerOptions
++      children: { 'schedule.manager.header': { kind: 'list'; scope: 'root' } }
++      store: ReturnType<typeof createEditorStore>
++      inject: { wire: (remote?: ManagerRemote, onNewTask?: () => void) => ReturnType<typeof wireManager> }
++      locale: 'schedule.manager'
++    }
++  }
++}
++export function ScheduleManager(props: PropsRuntime<'main'> & PropsRenderSlots<'schedule.manager.header'> & PropsLocale<'schedule.manager'> & TaskEditorStoreProps & ManagerOptions & {
++  wire: (remote?: ManagerRemote, onNewTask?: () => void) => ReturnType<typeof wireManager>
++}) {
++  const { wire, remote, onNewTask } = props
++  const { manager, detail } = useMemo(() => wire(remote, onNewTask), [wire, remote, onNewTask])
++  const useCatalog: TaskManagerPagePropsCatalog = selector => selector(useSyncExternalStore(manager.hooks.catalog.subscribe, manager.hooks.catalog.getSnapshot))
++  return <TaskManagerPage {...props} {...detail} useCatalog={useCatalog} header={props.renderSlot('schedule.manager.header', {})} draftPrefix={remote ? props.scopeLabel ?? 'custom' : ''} />
++}
++type TaskManagerPagePropsCatalog = <T>(selector: (snapshot: ReturnType<ReturnType<typeof wireManager>['manager']['hooks']['catalog']['getSnapshot']>) => T) => T
+diff --git a/packages/client/ui-schedule/tests/browser-plugin.client.spec.ts b/packages/client/ui-schedule/tests/browser-plugin.client.spec.ts
+index 517a0ed0..2d8991df 100644
+--- a/packages/client/ui-schedule/tests/browser-plugin.client.spec.ts
++++ b/packages/client/ui-schedule/tests/browser-plugin.client.spec.ts
+@@ -67,6 +67,12 @@ function injectedFace(entry: StoredEntry, ...args: never[]): object {
+   return face
+ }
+ 
++/** Read the same manager wiring now owned by the reusable Factory. */
++function managerFace(ctx: Context): TaskManagerInjected {
++  const factory = (ctx.slots.registerFactory as Mock).mock.calls.find(([options]) => options.name === 'schedule.manager.view')![0]
++  return (factory.inject!() as { wire: () => { detail: TaskManagerInjected } }).wire().detail
++}
++
+ /**
+  * Build the spies for the two right-Sidebar services `apply` requires.
+  * @returns fresh spies for the tab registry, the navigation face, and one Session's committed tabs.
+@@ -94,6 +100,7 @@ async function baseContext(
+ ): Promise<Context> {
+   const ctx = new Context()
+   await ctx.plugin(SlotRegistry).await()
++  vi.spyOn(ctx.slots, 'registerFactory')
+   new StaticRemoteAccess(ctx, allows)
+   new UiConversation(ctx, { binding: () => undefined } as never)
+   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
+@@ -171,7 +178,7 @@ async function hostPage(schedule: object): Promise<HostPage> {
+   const ctx = await baseContext({ schedule, $on: () => () => {} })
+   ctx.slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } } as never, Empty)
+   await ctx.plugin({ inject: [...inject], apply }).await()
+-  const face = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
++  const face = managerFace(ctx)
+   const dispose = face.hooks.catalog.subscribe(vi.fn())
+   await face.onRetry()
+   return {
+@@ -194,7 +201,7 @@ describe('ui-schedule browser half', () => {
+       const owner = ctx.slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' } } } as never, Empty)
+       try {
+         await ctx.plugin({ inject: [...inject], apply }).await()
+-        const face = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
++        const face = managerFace(ctx)
+         await expect(face.hostActions.loadNewSessionInterval()).resolves.toBe(7200)
+         await expect(face.hostActions.loadNewSessionInterval()).resolves.toBeUndefined()
+         await expect(face.hostActions.loadNewSessionInterval()).resolves.toBeUndefined()
+@@ -425,7 +432,7 @@ describe('ui-schedule browser half', () => {
+       ) as ScheduleTaskCatalogInjected & ScheduleTaskBindingInjected
+       expect(chip.taskBindings).toBe(body.taskBindings)
+       expect(chip.hooks.catalog).toBe(body.hooks.catalog)
+-      const panel = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
++      const panel = managerFace(ctx)
+       expect(Object.keys(managerLocales).sort()).toEqual(['de', 'en', 'es', 'fr', 'ja', 'pt', 'ru', 'zh'])
+       for (const [language, dictionary] of Object.entries(managerLocales)) {
+         expect(dictionary['host.createPrompt']).not.toContain('\n')
+@@ -524,7 +531,7 @@ describe('ui-schedule browser half', () => {
+     expect(resolveSlotLabel(panel.options.label)).toBe('Automation tasks')
+     ctx.locale.setLocale('zh')
+     expect(resolveSlotLabel(panel.options.label)).toBe('自动化任务')
+-    const face = injectedFace(entry, undefined as never) as TaskManagerInjected
++    const face = managerFace(ctx)
+     const dispose = face.hooks.catalog.subscribe(vi.fn())
+     try {
+       await vi.waitFor(() => { expect(face.hooks.catalog.getSnapshot().records).toEqual([record]) })
+@@ -595,7 +602,7 @@ describe('ui-schedule browser half', () => {
+     const fiber = ctx.plugin({ inject: [...inject], apply })
+     await fiber.await()
+     try {
+-      const face = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
++      const face = managerFace(ctx)
+       const toast = injectedFace(ctx.slots.entries('shell.overlay')[0]!) as Omit<DeleteToastSource, 'report' | 'reportClear'>
+       const dispose = face.hooks.catalog.subscribe(vi.fn())
+       try {
+@@ -634,7 +641,7 @@ describe('ui-schedule browser half', () => {
+     await fiber.await()
+     let claimed = false
+     try {
+-      const face = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
++      const face = managerFace(ctx)
+       const toast = injectedFace(ctx.slots.entries('shell.overlay')[0]!) as Omit<DeleteToastSource, 'report' | 'reportClear'>
+       const clearing = face.onClearEnded()
+       // The page panel can unmount while the Host removal is still in flight;
+@@ -676,7 +683,7 @@ describe('ui-schedule browser half', () => {
+       // A root-scope list entry receives no owner values in `inject`. Both row
+       // seats inject the one Host catalog the page reads, and neither creates a
+       // per-Session Remote source, so N visible rows issue one query.
+-      const page = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as SessionCatalogFace
++      const page = managerFace(ctx)
+       for (const entry of [mark, hover]) {
+         const face = injectedFace(entry) as SessionCatalogFace
+         expect(face.hooks.catalog).toBe(page.hooks.catalog)

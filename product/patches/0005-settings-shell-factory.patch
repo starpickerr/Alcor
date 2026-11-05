@@ -1,0 +1,70 @@
+diff --git a/packages/client/ui-settings-general/src/client/index.ts b/packages/client/ui-settings-general/src/client/index.ts
+index 0e6fae5e..72508893 100644
+--- a/packages/client/ui-settings-general/src/client/index.ts
++++ b/packages/client/ui-settings-general/src/client/index.ts
+@@ -8,6 +8,7 @@
+  * Feature-owned rows and sections stay with their features.
+  * Export discipline: packages/client/AGENTS.md.
+  */
++import { createElement } from 'react'
+ import type { Context as ClientContext } from '@deepseek-ai/cordis'
+ // Type-only: pulls the remoteAccess service merge (ctx.remoteAccess).
+ import type {} from '@deepseek-ai/dsh-api-remote-access/client'
+@@ -212,8 +213,9 @@ export function apply(ctx: ClientContext): void {
+         },
+       })
+ 
+-      const disposeSlot = ctx.slots.register({
+-        name: 'sidebar.settings',
++      const disposeFactory = ctx.slots.registerFactory({
++        name: 'settings.shell',
++        scope: 'root',
+         locale: NS,
+         store: shellStore,
+         children: {
+@@ -228,7 +230,10 @@ export function apply(ctx: ClientContext): void {
+         },
+         inject: shellInjected,
+       }, SettingsRoot)
+-      return () => { disposeCommand(); disposeSlot() }
++      const disposeSlot = ctx.slots.register({ name: 'sidebar.settings' },
++        ({ wide, renderFactorySlot }) => createElement('div', { style: { display: 'contents' } },
++          renderFactorySlot('settings.shell', { wide })))
++      return () => { disposeCommand(); disposeSlot(); disposeFactory() }
+     }))
+ 
+   ctx.slots.inject('settings.trigger', () =>
+diff --git a/packages/client/ui-settings-general/src/client/shell-contract.ts b/packages/client/ui-settings-general/src/client/shell-contract.ts
+index a44e6a1e..b2e0128a 100644
+--- a/packages/client/ui-settings-general/src/client/shell-contract.ts
++++ b/packages/client/ui-settings-general/src/client/shell-contract.ts
+@@ -20,6 +20,29 @@ import type { createSettingsShellStore } from './shell-store.ts'
+ import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
+ import type { DesktopUpdateView } from '../types.ts'
+ 
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotFactoryMap {
++    /** Shared native account launcher and settings dialog for product sidebars. */
++    'settings.shell': {
++      scope: 'root'
++      props: { wide: boolean }
++      children: {
++        'settings.launcher': { kind: 'single'; scope: 'root' }
++        'settings.trigger': { kind: 'single'; scope: 'root' }
++        'settings.header': { kind: 'single'; scope: 'root' }
++        'settings.action': { kind: 'list'; scope: 'root' }
++        'settings.close': { kind: 'single'; scope: 'root' }
++        'settings.section': { kind: 'list'; scope: 'root' }
++        'settings.section.icon': { kind: 'list'; scope: 'root'; inline: true }
++        'settings.onboarding': { kind: 'list'; scope: 'root' }
++      }
++      store: ReturnType<typeof createSettingsShellStore>
++      inject: SettingsRootInjected
++      locale: 'settings'
++    }
++  }
++}
++
+ /** One nav row projected from a settings.section registration's options. */
+ export interface SettingsSectionRow {
+   id: string

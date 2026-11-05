@@ -1,0 +1,67 @@
+{
+  "name": "@stella/apple-sync",
+  "version": "0.1.4",
+  "description": "Apple \u540c\u6b65\uff1a\u8fde\u63a5\u7cfb\u7edf\u65e5\u5386\u4e0e\u63d0\u9192\u4e8b\u9879\uff0c\u5171\u7528 Stella \u4e8b\u52a1\u548c\u65e5\u7a0b\u3002",
+  "type": "module",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "lib",
+    "python",
+    "!python/**/__pycache__",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE.txt",
+    "DSH-LICENSE.txt"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "react": "*",
+    "@deepseek-ai/dsh-typert-protocol": "*",
+    "@deepseek-ai/dsh-home-paths": "*",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "*"
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-home-paths": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-workspace-dependencies": {
+      "optional": true
+    }
+  }
+}

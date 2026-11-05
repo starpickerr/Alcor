@@ -1,0 +1,24 @@
+.apple-sync-settings { max-width: 760px; color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); }
+.apple-sync-settings p { line-height: 1.6; }
+.apple-sync-connection { border-top: 1px solid var(--dsw-alias-border-l3); margin-top: 24px; padding-top: 16px; }
+.apple-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.apple-sync-saved { color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.apple-sync-message, .apple-sync-conflict { overflow-wrap: anywhere; }
+
+.apple-sync-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
+.apple-sync-heading h3 { margin: 0; }
+.apple-sync-badge { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 9px; border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.apple-sync-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.apple-sync-badge[data-tone=success] { color: var(--dsw-alias-state-success-primary); }
+.apple-sync-badge[data-tone=warning] { color: var(--dsw-alias-state-warning-primary); }
+.apple-sync-badge[data-tone=error] { color: var(--dsw-alias-state-error-primary); }
+.apple-sync-metadata { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 20px; }
+.apple-sync-authorization { flex: 1 1 140px; overflow-wrap: anywhere; }
+.apple-sync-last { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.apple-sync-last time { color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.apple-sync-message:empty { display: none; }
+@media (max-width: 480px) {
+  .apple-sync-heading { align-items: flex-start; }
+  .apple-sync-metadata { flex-direction: column; gap: 6px; }
+  .apple-sync-authorization { flex: auto; }
+}

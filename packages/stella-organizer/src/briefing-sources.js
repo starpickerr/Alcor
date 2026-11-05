@@ -1,0 +1,87 @@
+import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
+
+const pluginPrefix = /^([A-Za-z0-9_-]{1,64})_briefing_sources$/
+const resourceId = z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/)
+const pluginSources = z.array(z.object({ id: resourceId, account_id: z.string().min(1).max(200), label: z.string().min(1).max(200) })).max(200)
+const pluginPage = z.object({
+  source_id: resourceId, account_id: z.string().min(1).max(200),
+  items: z.array(z.object({ source_id: z.string().min(1).max(500), title: z.string(), occurred_at: z.iso.datetime({ offset: true }), snippet: z.string().optional(), sender: z.string().optional(), url: z.string().optional(), payload: z.record(z.string(), z.json()).optional() })).max(100),
+  next_offset: z.number().int().nonnegative().nullable(), errors: z.array(z.string()).default([]),
+})
+
+async function execute(ctx, name, args, signal) {
+  const batch = await ctx.tools.execute({ signal, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })
+  const result = batch.results[0]?.result
+  if (!result || result.isError) throw new Error(result?.error?.message || '来源插件读取失败，请检查连接后重试。')
+  return result.value?.structuredContent?.value ?? result.value
+}
+
+export async function discoverBriefingSources(ctx) {
+  const sources = [{ source: 'calendar_agenda', accountId: 'local', label: 'Stella 日程' }, { source: 'stella_tasks', accountId: 'local', label: 'Stella 事务' }, { source: 'stella_bills', accountId: 'local', label: 'Stella 账单' }]
+  const errors = []
+  const names = new Set(ctx.tools.definitions().map(tool => tool.name))
+  try {
+    const school = await ctx.get('stellaElearning')?.briefingSource()
+    if (school && names.has(school.tool)) sources.push(school)
+  } catch { errors.push('学校来源暂时不可用，请检查连接。') }
+  for (const name of names) {
+    const native = pluginPrefix.exec(name)
+    if (native && names.has(native[1] + '_briefing_fetch')) {
+      try {
+        const value = await execute(ctx, name, {}, AbortSignal.timeout(15000))
+        const rows = pluginSources.parse(value?.sources)
+        for (const row of rows) sources.push({ source: `plugin:${native[1]}:${row.id}`, accountId: row.account_id, label: row.label, tool: native[1] + '_briefing_fetch', method: 'briefing_fetch', arguments: { source_id: row.id } })
+      } catch { errors.push(`${native[1]} 的简报来源目录不可用，请检查插件。`) }
+      continue
+    }
+    if (!/^mcp__[A-Za-z0-9_-]+__list_sources$/.test(name)) continue
+    const fetch = name.replace(/list_sources$/, 'fetch_messages')
+    if (!names.has(fetch)) continue
+    try {
+      const rows = await execute(ctx, name, {}, AbortSignal.timeout(15000))
+      if (!Array.isArray(rows)) throw new Error('来源目录不可用')
+      for (const row of rows) if (row.source === 'email' && typeof row.account_id === 'string' && typeof row.mailbox_id === 'string') {
+        sources.push({ source: 'email', accountId: row.account_id, label: String(row.name || '邮箱'), tool: fetch, method: 'fetch_messages', arguments: { account_id: row.mailbox_id } })
+      }
+    } catch { errors.push('邮件来源目录暂时不可用，请检查连接后刷新。') }
+  }
+  const connections = []
+  for (const [service, type, name, label] of [
+    ['stellaElearning', 'elearning', '@stella/elearning', 'eLearning'],
+    ['stellaMailConnection', 'email', '@stella/mail', '邮件'],
+  ]) {
+    const connection = ctx.get(service)
+    if (!connection) continue
+    let status = 'unavailable'
+    try {
+      const state = await connection.state()
+      status = !state.configured ? 'unconfigured' : !state.connected ? 'disconnected' : sources.some(source => source.source === type) ? 'ready' : 'unavailable'
+    } catch { /* Keep installed connections visible even when their status cannot be read. */ }
+    connections.push({ package: name, label, status })
+  }
+  return { sources: [...new Map(sources.map(source => [source.source + ':' + source.accountId, source])).values()], connections, errors }
+}
+
+export async function briefingSourceOptions(ctx, source) {
+  if (source.source !== 'elearning') throw new Error('此来源的范围由连接插件管理。')
+  const current = await ctx.get('stellaElearning')?.briefingSource()
+  if (!current || current.accountId !== source.accountId || current.tool !== source.tool) throw new Error('来源账号已变化，请刷新简报来源。')
+  return z.array(z.object({ id: z.string(), name: z.string() })).parse(await execute(ctx, 'mcp__elearning__list_courses', {}, AbortSignal.timeout(185000)))
+}
+
+export async function readBriefingSourcePage(ctx, config, { since, until, offset, cursors, signal }) {
+  if (config.method === 'briefing_fetch') {
+    const prefix = config.tool.slice(0, -'_briefing_fetch'.length)
+    if (!/^[A-Za-z0-9_-]{1,64}_briefing_fetch$/.test(config.tool) || config.source !== `plugin:${prefix}:${config.arguments.source_id}`) throw new Error('插件来源标识无效，请重新选择。')
+    const value = pluginPage.parse(await execute(ctx, config.tool, { source_id: config.arguments.source_id, account_id: config.accountId, since, until, offset, limit: 100 }, signal))
+    if (value.account_id !== config.accountId || value.source_id !== config.arguments.source_id) throw new Error('插件返回了不同账号或范围的数据，已拒绝使用。')
+    return { ...value, source: config.source }
+  }
+  const args = { ...config.arguments, since, until, ...(config.method === 'fetch' ? { offset, limit: 100 } : { cursors }) }
+  const value = await execute(ctx, config.tool, args, signal)
+  if (!value || !Array.isArray(value.items ?? value.source_items)) throw new Error('来源返回格式无效。')
+  if ((value.source && value.source !== config.source) || (value.account_id && value.account_id !== config.accountId)) throw new Error('来源账号与简报配置不一致，请重新选择账号。')
+  if ((value.items ?? value.source_items).some(item => (item.source && item.source !== config.source) || (item.account_id && item.account_id !== config.accountId))) throw new Error('来源账号已变化，请重新选择简报来源。')
+  return value
+}

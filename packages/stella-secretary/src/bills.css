@@ -1,0 +1,101 @@
+.stella-bills { --stella-bill-income:var(--dsw-alias-state-success-primary,#39a96b); --stella-bill-expense:var(--dsw-alias-state-error-primary,#ef4444); }
+.stella-bills-page .stella-app-header { padding:14px 24px; gap:12px; }
+.stella-bills-page .stella-app-header h1 { font-size:18px; line-height:26px; }
+.stella-bills [data-direction=income] { color:var(--stella-bill-income); }
+.stella-bills [data-direction=expense] { color:var(--stella-bill-expense); }
+.stella-bills .stella-bills-content { max-width:1040px; margin:0 auto; padding:16px 24px; }
+.stella-bills .stella-empty { padding:72px 16px; }
+.stella-bill-tabs { display:flex; justify-content:center; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-bills .stella-bill-tabs { padding:8px 24px; }
+.stella-bill-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.stella-bill-toolbar h2 { font-size:15px; font-weight:600; margin:0; }
+.stella-bill-card { padding:16px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); min-width:0; }
+.stella-bill-card h2 { font-size:14px; font-weight:600; margin:0 0 16px; }
+.stella-bill-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:0; }
+.stella-bill-totals > div { min-width:0; }
+.stella-bill-totals dt { color:var(--dsw-alias-label-secondary); font-size:12px; margin-bottom:4px; }
+.stella-bill-totals dd { margin:0; font-size:17px; line-height:1.4; font-weight:500; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.stella-bill-totals-cards { gap:12px; }
+.stella-bill-totals-cards > div { padding:12px 16px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); }
+.stella-bill-day { margin-top:20px; }
+.stella-bill-day > header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px 16px; margin-bottom:8px; }
+.stella-bill-day h2 { font-size:14px; font-weight:600; margin:0; }
+.stella-bill-day > header > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px 12px; font-size:12px; font-variant-numeric:tabular-nums; }
+.stella-bills .stella-ledger-list { margin:0; padding:0; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+.stella-bills .stella-ledger-list > li { display:block; padding:0; border:0; }
+.stella-bills .stella-ledger-list > li + li { border-top:1px solid var(--dsw-alias-border-l3); }
+.stella-bill-row { display:flex; align-items:center; gap:12px; width:100%; min-height:56px; padding:10px 16px; border:0; background:transparent; text-align:left; color:inherit; font:inherit; line-height:20px; cursor:pointer; }
+.stella-bill-row:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-bill-row-copy { min-width:0; flex:1; display:grid; gap:2px; }
+.stella-bill-row-copy > strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.stella-bill-row-copy > span { font-size:12px; color:var(--dsw-alias-label-secondary); }
+.stella-bills .stella-ledger-amount { flex-shrink:0; font-size:14px; font-weight:500; font-variant-numeric:tabular-nums; }
+.stella-bills .stella-ledger-amount[data-inactive] { color:var(--dsw-alias-label-tertiary); }
+.stella-bill-row > svg { flex-shrink:0; color:var(--dsw-alias-label-tertiary); }
+.stella-bill-report { display:grid; gap:12px; }
+.stella-bill-period-list { display:grid; grid-template-columns:minmax(0,1fr); width:100%; max-width:720px; margin:0 auto; gap:10px; align-content:start; }
+.stella-bill-period-list .stella-bill-card { padding:12px; }
+.stella-bill-period-list .stella-bill-period-heading { margin-bottom:8px; gap:8px; }
+.stella-bill-period-list .stella-bill-totals { gap:10px; }
+.stella-bill-period-list .stella-bill-totals dt { font-size:11px; line-height:16px; margin-bottom:2px; }
+.stella-bill-period-list .stella-bill-totals dd { font-size:15px; line-height:20px; }
+.stella-bill-period-list .stella-bill-period-heading h2 { line-height:20px; }
+.stella-bill-period-list .stella-bill-status { padding:2px 7px; line-height:18px; }
+button.stella-bill-card { display:block; width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+button.stella-bill-card:hover { border-color:var(--dsw-alias-label-tertiary); }
+.stella-bill-period-heading { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.stella-bill-period-heading h2 { margin:0; flex:1; }
+.stella-bill-status { display:inline-block; padding:3px 9px; border-radius:var(--dsw-radius-md); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
+.stella-bill-status[data-current] { color:var(--stella-bill-income); background:color-mix(in srgb,var(--stella-bill-income) 10%,transparent); }
+.stella-bill-period-meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; padding-top:12px; margin-top:12px; border-top:1px solid var(--dsw-alias-border-l3); color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-bill-compositions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.stella-bill-composition { min-width:0; padding-right:20px; }
+.stella-bill-composition + .stella-bill-composition { border-left:1px solid var(--dsw-alias-border-l3); padding:0 0 0 20px; }
+.stella-bill-composition h3 { margin:0 0 6px; color:var(--dsw-alias-label-secondary); font-size:13px; font-weight:400; }
+.stella-bill-composition > strong { font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; }
+.stella-bill-donut { display:block; width:132px; height:132px; max-width:100%; margin:12px auto; }
+.stella-bill-ring-track { stroke:var(--dsw-alias-interactive-bg-hover); }
+.stella-bill-legend { padding:0; margin:0; list-style:none; }
+.stella-bill-legend > li { display:grid; grid-template-columns:8px minmax(0,1fr) auto 44px; align-items:baseline; gap:10px; margin:8px 0 0; font-size:12px; }
+.stella-bill-dot { display:inline-block; width:8px; height:8px; border-radius:50%; }
+.stella-bill-legend > li > :nth-child(2) { overflow-wrap:anywhere; }
+.stella-bill-legend > li > :nth-child(n+3) { color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; text-align:right; }
+.stella-bill-chart-empty { display:grid; place-items:center; height:156px; color:var(--dsw-alias-label-tertiary); font-size:13px; }
+.stella-bill-ranking-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.stella-bill-ranking-header h2 { margin:0; }
+.stella-bill-ranking { list-style:none; padding:0; margin:8px 0 0; }
+.stella-bill-ranking > li { display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-bill-ranking > li:last-child { border:0; padding-bottom:0; }
+.stella-bill-ranking > li > span { flex:0 0 18px; color:var(--dsw-alias-label-tertiary); font-size:12px; padding-top:2px; }
+.stella-bill-ranking > li > div { flex:1; min-width:0; }
+.stella-bill-ranking strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.stella-bill-ranking > li > strong { flex-shrink:0; font-variant-numeric:tabular-nums; }
+.stella-bill-ranking p { margin:2px 0 0; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.stella-editor-dialog .stella-bill-editor { padding:20px; }
+.stella-bill-editor .stella-field { margin:12px 0; font-size:13px; gap:4px; }
+.stella-bill-delete { color:var(--dsw-alias-state-error-primary); }
+.stella-bill-delete-confirm { margin-top:18px; padding-top:12px; border-top:1px solid var(--dsw-alias-border-l3); }
+@media(max-width:760px) {
+  .stella-bill-totals { gap:12px; }
+  .stella-bills-page .stella-app-header { padding:12px 16px; }
+  .stella-bills .stella-bills-content { padding:16px; }
+  .stella-bill-totals dd { font-size:16px; }
+  .stella-bill-totals-cards > div { padding:12px; }
+  .stella-bill-compositions { grid-template-columns:minmax(0,1fr); gap:16px; }
+  .stella-bill-composition { padding:0; }
+  .stella-bill-composition + .stella-bill-composition { border-left:0; border-top:1px solid var(--dsw-alias-border-l3); padding:16px 0 0; }
+  .stella-bill-row { gap:10px; padding:10px 12px; }
+  .stella-bill-row > svg { display:none; }
+  .stella-bills .stella-ledger-amount { font-size:14px; }
+}
+@media(max-width:440px) {
+  .stella-bill-totals-cards { gap:8px; }
+  .stella-bill-totals-cards > div { padding:12px 10px; }
+  .stella-bill-totals dd { font-size:15px; }
+  .stella-bill-day > header > div { width:100%; }
+  .stella-bill-ranking > li { gap:10px; flex-wrap:wrap; }
+  .stella-bill-ranking > li > strong { margin-left:28px; max-width:calc(100% - 28px); }
+  .stella-bill-row { flex-wrap:wrap; }
+  .stella-bill-row-copy { flex-basis:50%; }
+  .stella-bills .stella-ledger-amount { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}
