@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "repo": "fudan-elearning-mcp",
+      "module": "elearning_mcp",
+      "package": "stella-elearning",
+      "binary": "elearning-mcp",
+      "version": "1.0.5",
+      "sourceSha256": "45271f9c179763af98b2364c0442861417fb76ac36d20d8d5646b2567f032808",
+      "dependencies": {
+        "mcp": "1.30.0",
+        "PyInstaller": "6.22.3",
+        "playwright": "1.52.0"
+      }
+    },
+    {
+      "repo": "email-mcp",
+      "module": "email_mcp",
+      "package": "stella-mail",
+      "binary": "email-mcp",
+      "version": "1.0.5",
+      "sourceSha256": "33f8a071dfd8855743f0774c8dfa01901b16065df71ffa1eb087a375f27bebe8",
+      "dependencies": {
+        "mcp": "1.30.0",
+        "PyInstaller": "6.22.3"
+      }
+    }
+  ]
+}

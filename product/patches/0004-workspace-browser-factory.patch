@@ -1,0 +1,80 @@
+diff --git a/packages/client/ui-workspace/src/client/contract/slots.ts b/packages/client/ui-workspace/src/client/contract/slots.ts
+index edbce796..53f363dd 100644
+--- a/packages/client/ui-workspace/src/client/contract/slots.ts
++++ b/packages/client/ui-workspace/src/client/contract/slots.ts
+@@ -53,6 +53,26 @@ import type { StartSessionOptions } from '../navigation.ts'
+ import type {} from './toast.ts'
+ import type { createWorkspaceViewStore } from '../stores.ts'
+ 
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotFactoryMap {
++    /** Native workspace browsing for product sidebars, with the same Host data and permissions. */
++    'workspace.browser': {
++      scope: 'root'
++      props: { wide: boolean; expandSidebar: () => void }
++      children: {
++        'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root' }
++        'sidebar.workspaces.session.row.action': { kind: 'list'; scope: 'root' }
++        'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; inline: true }
++        'sidebar.session.row.trailing': { kind: 'list'; scope: 'root'; inline: true }
++        'sidebar.session.row.hover': { kind: 'list'; scope: 'root' }
++      }
++      store: WorkspaceViewStoreHandle
++      inject: WorkspaceBrowserInjected
++      locale: 'workspace'
++    }
++  }
++}
++
+ declare module '@deepseek-ai/dsh-client-ui-context-menu/client' {
+   interface ContextMenuTargetMap {
+     /** Registered Workspace header; path and title belong to the clicked row. */
+diff --git a/packages/client/ui-workspace/src/client/index.ts b/packages/client/ui-workspace/src/client/index.ts
+index ff7890ae..dfc3fe83 100644
+--- a/packages/client/ui-workspace/src/client/index.ts
++++ b/packages/client/ui-workspace/src/client/index.ts
+@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
+  * (`conversation.hero.workspace` — both hero forms). Both read real Host
+  * Workspaces through the global useWorkspaces hook, and each declares its
+  * own `single` directory-flow child hole for the composed picker package's
+- * client half. WorkspaceBrowser additionally declares the two Session row
++ * client half (the browser through its reusable Factory). WorkspaceBrowser additionally declares the two Session row
+  * action lists. Built-in Session menu actions contribute structured data to
+  * ctx.contextMenus, while external React entries retain the legacy Slot. Dialogs and
+  * the row-action notice register in `shell.overlay` (see the contract module doc). It also declares two
+@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
+  * packages/client/AGENTS.md.
+  */
+ import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
++import { createElement } from 'react'
+ import type { Context } from '@deepseek-ai/cordis'
+ import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
+ import type { ISessions, SessionForkError } from '@deepseek-ai/dsh-api-session-controller/client'
+@@ -325,11 +326,11 @@ export function apply(ctx: Context): void {
+     createWorkspace: input => workspaces.create(input),
+     hooks: { directoryFlow: pickerFlowSource },
+   })
+-  // Each registration declares its owned children in the same call; slot
+-  // injection follows both the owner and declaration HMR lifetimes.
+-  ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
++  // The Factory owns the browser's child slots so product sidebars can reuse it.
++  ctx.slots.registerFactory(
+     {
+-      name: 'sidebar.workspaces',
++      name: 'workspace.browser',
++      scope: 'root',
+       children: {
+         'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+         'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
+@@ -342,6 +343,11 @@ export function apply(ctx: Context): void {
+       locale: NS,
+     },
+     WorkspaceBrowser,
++  )
++  ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
++    { name: 'sidebar.workspaces' },
++    ({ wide, expandSidebar, renderFactorySlot }) => createElement('div', { style: { display: 'contents' } },
++      renderFactorySlot('workspace.browser', { wide, expandSidebar })),
+   ))
+   ctx.slots.inject('contextMenu.content', () => ctx.slots.register({
+     name: 'contextMenu.content', key: 'session',

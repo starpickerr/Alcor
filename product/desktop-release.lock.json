@@ -1,0 +1,20 @@
+{
+  "version": "0.2.2-alpha.3",
+  "platform": "darwin",
+  "arch": "arm64",
+  "bundleId": "com.deepseek.dsh",
+  "url": "https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg",
+  "size": 268883910,
+  "sha256": "2a038d6c9b6cbe4d0d1e1ab657a73e14888a4b84350f6868dd72ed61efe7dd4a",
+  "appAsarSha256": "3f05f33bacd23e37a611738033452155f979f229fa0803f8d01951d73fd6bf07",
+  "teamId": "NAN929V4UM",
+  "compatibleReleases": [
+    {
+      "bundleId": "com.deepseek.dsh",
+      "arch": "arm64",
+      "teamId": "NAN929V4UM",
+      "version": "0.2.2-rc.1",
+      "appAsarSha256": "f21d83abfb33d463822a52c439cc9b15c8245dbce4ae4cf9424c90eae8eba94f"
+    }
+  ]
+}

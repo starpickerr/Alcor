@@ -1,0 +1,10 @@
+:is(.stella-school-connection,.stella-mail-connection) { width:100%; max-width:520px; display:grid; gap:16px; }
+:is(.stella-school-connection,.stella-mail-connection) > form { display:grid; gap:16px; }
+:is(.stella-school-connection,.stella-mail-connection) .stella-field { display:grid; gap:6px; margin:0; font-size:13px; }
+:is(.stella-school-connection,.stella-mail-connection) input[type=password]::placeholder { color:var(--dsw-alias-label-secondary); opacity:1; letter-spacing:2px; }
+:is(.stella-school-connection,.stella-mail-connection) .stella-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+:is(.stella-school-account-state,.stella-mail-account-state) { color:var(--dsw-alias-label-secondary); font-size:12px; }
+:is(.stella-school-test,.stella-mail-test) { border-top:1px solid var(--dsw-alias-border-l3); padding-top:16px; }
+:is(.stella-school-connection,.stella-mail-connection) > p,.stella-school-remove p { margin:0; font-size:13px; overflow-wrap:anywhere; }
+.stella-school-remove { display:grid; gap:12px; }
+.stella-mail-connection .stella-source-grid { gap:16px 12px; }
