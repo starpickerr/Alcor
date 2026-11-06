@@ -10,7 +10,7 @@ export function AgentStrip({ kind, quickChat }) {
   const [expanded, setExpanded] = useState(false)
   const [opened, setOpened] = useState(false)
   return <section className="stella-agent-strip">
-    <div className="stella-agent-identity"><BearLogo size={22} /><div><h2>Stella Agent</h2></div></div>
+    <div className="stella-agent-identity"><span className="stella-agent-avatar" aria-hidden="true"><BearLogo size={20} /></span><div><h2>Stella Agent</h2></div></div>
     <div className="stella-actions"><Button variant="ghost" aria-expanded={expanded} onClick={() => { setOpened(true); setExpanded(!expanded) }}><IconChevronDownOutlineRegular size={16} />{expanded ? '收起' : '展开'}</Button></div>
     {opened && <div className="stella-agent-expanded" hidden={!expanded}>{quickChat(kind)}</div>}
   </section>

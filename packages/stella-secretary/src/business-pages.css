@@ -1,18 +1,23 @@
 .stella-desk-application { max-width:none; padding:0; }
-.stella-business { min-width:0; }
-.stella-app-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; padding:24px 32px; border-bottom:0.5px solid var(--dsw-alias-border-l3); }
-.stella-app-header h1 { margin:0; font-size:22px; line-height:30px; font-weight:500; }
+.stella-business { min-width:0; min-height:100%; }
+.stella-app-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; padding:22px 32px; border-bottom:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
+.stella-app-header h1 { margin:0; font-size:23px; line-height:32px; font-weight:600; letter-spacing:-.4px; }
 .stella-app-header p { margin:4px 0 0; font-size:13px; line-height:20px; color:var(--dsw-alias-label-secondary); }
-.stella-page-content { padding:24px 32px; }
+.stella-page-content { padding:28px 32px; }
 .stella-page-feedback:empty { display:none; }
 .stella-page-feedback { padding:0 32px; }
 .stella-page-feedback p { margin:12px 0; }
 .stella-business select { height:32px; max-width:100%; min-width:0; padding:0 10px; font:inherit; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); color:inherit; background:var(--dsw-alias-bg-layer-1); }
 .stella-business select:disabled { opacity:.45; }
 .stella-tasks-page { max-width:1040px; margin:0 auto; padding-top:24px; }
-.stella-task-tabs { width:100%; max-width:none; margin-bottom:24px; }
+.stella-task-tabs { width:100%; max-width:none; margin-bottom:20px; }
 .stella-task-tabs [role=tab] { padding:0 8px; }
-.stella-agent-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border:0; border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-interactive-bg-hover); }
+.stella-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.stella-tab-count { display:inline-grid; place-items:center; min-width:22px; height:20px; padding:0 5px; border-radius:6px; background:var(--dsw-alias-interactive-bg-active); color:var(--dsw-alias-label-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
+.stella-task-tabs [aria-selected=true] { color:var(--stella-brand); }
+.stella-task-tabs [aria-selected=true] .stella-tab-count { color:var(--stella-brand); background:var(--stella-brand-soft); }
+.stella-agent-avatar { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; color:var(--stella-brand); background:var(--dsw-alias-bg-layer-1); }
+.stella-agent-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
 .stella-agent-identity { display:flex; gap:10px; align-items:center; }
 .stella-agent-identity h2 { font-size:14px; line-height:22px; }
 .stella-agent-identity > svg { color:var(--dsw-alias-label-secondary); flex-shrink:0; }
@@ -36,19 +41,27 @@
   .stella-quick-chat-toolbar select { flex:1; max-width:100%; }
   .stella-quick-chat-body { height:480px; min-height:300px; }
 }
-.stella-task-filters { display:grid; grid-template-columns:minmax(180px,2fr) repeat(4,minmax(80px,1fr)); gap:8px; margin:24px 0; }
+.stella-task-filters { display:grid; grid-template-columns:minmax(180px,1fr) repeat(3,minmax(100px,auto)); gap:10px; margin:24px 0; }
 .stella-task-group { margin:24px 0; }
-.stella-task-group > h2 { color:var(--dsw-alias-label-secondary); font-size:13px; margin:0 0 10px; }
+.stella-task-group > h2 { display:flex; align-items:center; gap:8px; color:var(--dsw-alias-label-secondary); font-size:13px; margin:0 0 12px; }
+.stella-task-group > h2::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--dsw-alias-label-tertiary); }
+.stella-task-group[data-group=overdue] > h2::before { background:var(--dsw-alias-state-error-primary); }
+.stella-task-group[data-group=today] > h2::before { background:var(--stella-brand); }
+.stella-task-group[data-group=completed] > h2::before { background:var(--dsw-alias-state-success-primary); }
+.stella-task-group > h2::after { content:''; height:1px; flex:1; background:var(--dsw-alias-border-l3); }
+.stella-task-card[data-priority="1"] { border-left:3px solid var(--dsw-alias-state-error-primary); padding-left:18px; }
+.stella-task-card[data-completed] { background:var(--dsw-alias-bg-layer-2); border-left-color:var(--dsw-alias-border-l3); box-shadow:none; }
+.stella-task-card[data-completed] .stella-task-badge { color:var(--dsw-alias-label-secondary); }
 .stella-task-group small, .stella-briefing-layout h2 small { color:var(--dsw-alias-label-tertiary); margin-left:6px; font-size:12px; font-weight:400; }
 .stella-task-list { display:grid; gap:10px; list-style:none; padding:0; margin:0; }
-.stella-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:center; padding:16px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); }
+.stella-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:center; padding:18px 20px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); box-shadow:0 2px 6px #233d6806; }
 .stella-task-open { position:absolute; inset:0; border:0; border-radius:inherit; background:transparent; cursor:pointer; }
-.stella-task-card:has(.stella-task-open:hover) { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-task-card:has(.stella-task-open:hover) { border-color:var(--dsw-alias-border-l4); box-shadow:var(--stella-shadow); }
 .stella-task-card > .stella-task-check,.stella-task-delete { position:relative; z-index:1; flex-shrink:0; }
 .stella-task-delete { color:var(--dsw-alias-label-tertiary); }
 .stella-task-delete:hover { color:var(--dsw-alias-state-error-primary); }
 .stella-task-check { width:18px; min-width:18px; height:18px; padding:0; margin-top:3px; border:1px solid var(--dsw-alias-label-tertiary); border-radius:50%; }
-.stella-task-check[aria-pressed=true] { color:white; background:var(--dsw-alias-state-error-primary,#e5484d); border-color:transparent; }
+.stella-task-check[aria-pressed=true] { color:var(--dsw-alias-label-primary-inverted); background:var(--dsw-alias-state-success-primary); border-color:transparent; }
 .stella-task-copy { flex:1; min-width:0; pointer-events:none; }
 .stella-task-copy h3 { margin:0; font-size:14px; line-height:24px; font-weight:500; overflow-wrap:anywhere; }
 .stella-task-copy > small { display:block; margin-top:8px; color:var(--dsw-alias-label-secondary); font-size:12px; }
@@ -91,7 +104,7 @@
 .stella-time-head, .stella-time-all-day, .stella-time-body { display:grid; grid-template-columns:64px repeat(var(--stella-day-count),minmax(0,1fr)); }
 .stella-time-head { background:var(--dsw-alias-bg-layer-1); border-bottom:1px solid var(--dsw-alias-border-l3); }
 .stella-time-head > button { display:flex; flex-direction:column; height:auto; gap:4px; padding:12px 4px; border-left:1px solid var(--dsw-alias-border-l3); }
-.stella-time-head > button[data-today] strong { color:var(--dsw-alias-state-error-primary,#e5484d); }
+.stella-time-head > button[data-today] strong { color:var(--stella-brand); }
 .stella-time-head small { color:var(--dsw-alias-label-secondary); font-size:11px; }
 .stella-time-all-day { border-bottom:1px solid var(--dsw-alias-border-l3); min-height:48px; }
 .stella-time-all-day > div { padding:4px; border-left:1px solid var(--dsw-alias-border-l3); min-width:0; }
@@ -110,20 +123,21 @@
 .stella-day-detail > .stella-month-grid { margin-bottom:20px; }
 @media(max-width:600px) { .stella-task-detail-summary { padding:14px; } .stella-task-detail .stella-calendar-period { align-items:flex-start; } .stella-task-detail .stella-calendar-period > span { display:none; } }
 .stella-calendar-page > .stella-page-content:first-child { padding-block:12px; }
-.stella-calendar-page .stella-agent-strip { padding-block:6px; }
-.stella-calendar-toolbar { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:center; padding:14px 32px; border-block:1px solid var(--dsw-alias-border-l3); }
+.stella-calendar-page .stella-agent-strip { padding-block:8px; }
+.stella-calendar-toolbar { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:center; padding:14px 32px; border-block:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
 .stella-calendar-period { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
 .stella-calendar-layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:20px; align-items:start; }
 .stella-calendar-surface { min-width:0; }
+.stella-day-detail { padding:18px; border:1px solid var(--dsw-alias-border-l3); border-radius:16px; background:var(--dsw-alias-bg-layer-1); }
 .stella-month-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
-.stella-weekday { text-align:center; padding:10px 0; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-weekday { background:var(--stella-surface-soft); text-align:center; padding:10px 0; color:var(--dsw-alias-label-secondary); font-size:12px; }
 .stella-month-grid > button { display:flex; flex-direction:column; align-items:stretch; text-align:left; min-width:0; min-height:116px; gap:4px; padding:8px; background:transparent; color:inherit; font:inherit; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-right:1px solid var(--dsw-alias-border-l3); cursor:pointer; }
 .stella-month-grid > button:nth-child(7n) { border-right:0; }
-.stella-month-grid > button[aria-pressed=true] { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-month-grid > button[aria-pressed=true] { background:var(--stella-brand-soft); box-shadow:inset 0 0 0 1px var(--stella-brand); }
 .stella-month-grid > button:hover { background:var(--dsw-alias-interactive-bg-hover); }
 .stella-month-grid > button[data-outside] { color:var(--dsw-alias-label-tertiary); }
 .stella-day-number { display:flex; align-items:center; justify-content:center; width:24px; height:24px; align-self:flex-start; border-radius:50%; font-size:12px; }
-.stella-month-grid > button[data-today] .stella-day-number { color:white; background:var(--dsw-alias-state-error-primary,#e5484d); }
+.stella-month-grid > button[data-today] .stella-day-number { color:var(--dsw-alias-label-primary-inverted); background:var(--stella-brand); }
 .stella-calendar-chip { font-size:11px; line-height:18px; padding:1px 4px; border-radius:var(--dsw-radius-xs); border-left:3px solid var(--stella-event-color); background:color-mix(in srgb,var(--stella-event-color) 16%,var(--dsw-alias-bg-layer-1)); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:color-mix(in srgb,var(--stella-event-color) 40%,var(--dsw-alias-label-primary)); }
 .stella-calendar-chip time { font-variant-numeric:tabular-nums; font-weight:500; }
 .stella-calendar-dots { display:flex; justify-content:center; gap:2px; }
@@ -157,14 +171,14 @@
 .stella-day-agendas li button { width:100%; background:var(--dsw-alias-interactive-bg-hover); margin:8px 0; }
 .stella-day-agendas li time, .stella-day-agendas li strong { display:block; font-size:12px; overflow-wrap:anywhere; }
 .stella-briefing-layout { display:grid; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
-.stella-briefing-history { padding:20px 16px; border-right:1px solid var(--dsw-alias-border-l3); }
+.stella-briefing-history { padding:24px 16px; border-right:1px solid var(--dsw-alias-border-l3); background:var(--stella-surface-soft); }
 .stella-briefing-history h2, .stella-briefing-revisions h2 { font-size:13px; color:var(--dsw-alias-label-secondary); margin-bottom:16px; }
 .stella-briefing-history > button { position:relative; display:flex; flex-direction:column; width:100%; text-align:left; gap:8px; padding:16px 24px 16px 14px; margin:10px 0; color:inherit; background:var(--dsw-alias-bg-layer-1); font:inherit; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); cursor:pointer; }
 .stella-briefing-history strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
 .stella-briefing-history small { font-size:11px; color:var(--dsw-alias-label-secondary); }
 .stella-briefing-history svg { position:absolute; right:8px; top:20px; color:var(--dsw-alias-label-tertiary); }
 .stella-briefing-history [aria-current=true] { border-color:var(--dsw-alias-state-business-primary); background:var(--dsw-alias-interactive-bg-hover); }
-.stella-briefing-detail { padding:24px; min-width:0; }
+.stella-briefing-detail { padding:28px; min-width:0; background:var(--dsw-alias-bg-layer-1); }
 .stella-source-summary { padding:14px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); margin:20px 0 28px; }
 .stella-source-summary summary { cursor:pointer; color:var(--dsw-alias-label-secondary); }
 .stella-report { padding:18px; }
@@ -175,7 +189,7 @@
 .stella-briefing-source p { margin:6px 0; white-space:pre-wrap; }
 .stella-briefing-source span, .stella-briefing-source small { font-size:12px; color:var(--dsw-alias-label-secondary); }
 .stella-briefing-revisions { margin:24px 0; padding:0 16px; border-left:1px solid var(--dsw-alias-border-l3); }
-.stella-empty-icon { margin-bottom:14px; color:var(--dsw-alias-label-tertiary); }
+.stella-empty-icon { display:grid; place-items:center; width:56px; height:56px; margin:0 auto 18px; border-radius:18px; color:var(--stella-brand); background:var(--stella-brand-soft); }
 .stella-empty p { margin:6px 0 0; font-size:13px; }
 .stella-editor-dialog { width:min(560px,calc(100vw - 32px)); max-height:100%; overflow:auto; font-family:var(--dsw-font-family); font-size:14px; line-height:22px; }
 .stella-editor-dialog .stella-editor { border:0; margin:0; padding:24px; background:transparent; }
@@ -210,7 +224,7 @@
   .stella-year-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .stella-briefing-layout { grid-template-columns:190px minmax(0,1fr); }
   .stella-briefing-revisions { grid-column:2; margin:0 24px 24px; padding:16px 0 0; border-left:0; border-top:1px solid var(--dsw-alias-border-l3); }
-  .stella-task-filters { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .stella-task-filters { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .stella-task-filters > :first-child { grid-column:1 / -1; }
 }
 @media(max-width:760px) {
@@ -304,7 +318,7 @@
 .stella-repeat-weekdays { display:flex; flex-wrap:wrap; gap:10px 16px; }
 
  .stella-briefing-settings { max-width:1160px; margin:0 auto; display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); align-items:start; gap:24px; }
-.stella-briefing-settings > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); }
+.stella-briefing-settings > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:18px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--stella-shadow); }
 .stella-briefing-settings h2 { margin:0; font-size:16px; line-height:24px; font-weight:500; }
 .stella-briefing-settings .stella-briefing-source-option { padding:12px 0; }
 .stella-rule-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:0; }

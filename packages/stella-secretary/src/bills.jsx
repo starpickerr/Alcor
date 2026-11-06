@@ -5,8 +5,8 @@ import { Field, Empty } from './business-pages.jsx'
 import { localDate, periodBills, ledgerCsv } from './presentation.js'
 import { money, periodRange, periodTitle, periodStatus, shareText, billValues, billPayload } from './bill-view.js'
 
-const palette = ['#ef4444', '#f59e0b', '#f97316', '#a855f7', '#3b82f6', '#64748b', '#ec4899', '#14b8a6']
-const incomePalette = ['#48bb78', '#14b8a6', '#3b82f6', '#a855f7', '#f59e0b', '#64748b']
+const palette = ['#4c78b6', '#7a9dc9', '#7886ab', '#a58a68', '#b99562', '#9f7d98', '#677c93', '#9aabbe']
+const incomePalette = ['#8b7bb6', '#6689bd', '#b29270', '#a27d94', '#8e9dbd', '#7b8da4']
 
 function Totals({ total, cards = false }) {
   return <dl className={`stella-bill-totals${cards ? ' stella-bill-totals-cards' : ''}`}>
