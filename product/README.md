@@ -6,7 +6,7 @@
 
 ## 桌面用户安装
 
-当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.29.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
+当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.32.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
 
 界面扩展保存在 Stella 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -32,16 +32,16 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-开发产物为 `.local/artifacts/stella-secretary-0.1.29.tgz` 与可选的 `stella-apple-sync-0.1.8.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
+开发产物为 `.local/artifacts/stella-secretary-0.1.32.tgz` 与可选的 `stella-apple-sync-0.1.8.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
 
 ```sh
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.29.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.32.tgz --ignore-scripts
 dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.8.tgz --ignore-scripts
 ```
 
-通过顶部模式菜单进入 Stella；设置中的“打开 Stella”保留为辅助入口。事务与日程展开 Stella Agent 即可在原页对话；新会话由侧栏提供，连接与对话权限在设置中管理。它直接使用已有模型路由；New Session 在 Stella 模式使用秘书 Preset，切回 DSH 后使用用户原有默认 Preset。安装不改写宿主的模型、凭据 provider、默认 Agent 或执行策略，不会自动读取个人来源；设置中的身份导入需显式预览和选择。停用/卸载使用原生管理器，Stella 安装记录与设置默认保留；其他插件、会话和凭据由宿主管理。
+通过顶部模式菜单进入 Stella；事务与日程展开 Stella Agent 即可在原页对话；新会话由侧栏提供，Stella 设置只保留助手名称；工具权限使用 DSH 当前会话策略。它直接使用已有模型路由；New Session 在 Stella 模式使用秘书 Preset，切回 DSH 后使用用户原有默认 Preset。安装不改写宿主的模型、凭据 provider、默认 Agent 或执行策略，不会自动读取个人来源；旧客户端使用显式离线迁移。停用/卸载使用原生管理器，Stella 安装记录与设置默认保留；其他插件、会话和凭据由宿主管理。
 
-`0.1.0` 开发版侧栏上方为六项业务应用和“插件”入口，下方复用 DSH 原生工作区与会话列表，支持搜索、筛选、新建工作区和会话菜单；“新对话”使用 Stella 身份及当前共享文件工作区，默认打开事务；旧“今天”、秘书对话和待确认位置引用兼容转向事务，底部复用 DSH 原生账号入口，设置统一进入原生窗口的 Stella 分区。统一线条图标与紧凑间距，支持折叠导航、窄窗抽屉及键盘焦点。Agent 协作为任务／交流／详情三栏，提供本标签页草稿、独立执行、取消、结果及历史，窄窗按区域切换。来源、系统与安全位于设置中，顶部菜单切回 DSH 并恢复原生导航。MCP 查询可在来源页显式授权，eLearning 连接与旧账号限制见 [MCP 接入](mcp-connections.md)。后端高级接口与尚未完成的页面、旧业务数据迁移和真实外部验收见 [feature-parity.md](feature-parity.md)，不生成示例业务数据。
+`0.1.0` 开发版侧栏上方为六项业务应用和“插件”入口，下方复用 DSH 原生工作区与会话列表，支持搜索、筛选、新建工作区和会话菜单；“新对话”使用 Stella 身份及当前共享文件工作区，默认打开事务；旧“今天”、秘书对话和待确认位置引用兼容转向事务，底部复用 DSH 原生账号入口，设置统一进入原生窗口的 Stella 分区。统一线条图标与紧凑间距，支持折叠导航、窄窗抽屉及键盘焦点。Agent 协作为任务／交流／详情三栏，提供本标签页草稿、独立执行、取消、结果及历史，窄窗按区域切换。来源范围位于简报页，访问与安全使用宿主设施，顶部菜单切回 DSH 并恢复原生导航。MCP 查询继承 DSH 当前会话策略，eLearning 连接与旧账号限制见 [MCP 接入](mcp-connections.md)。后端高级接口与尚未完成的页面、旧业务数据迁移和真实外部验收见 [feature-parity.md](feature-parity.md)，不生成示例业务数据。
 
 事务与日程的 Stella Agent 展开后直接显示原生嵌入式会话，支持历史、新会话、工作区与模型选择；快捷会话与主会话独立，发送不跳转。浏览器仅保存各页面的 Session ID 引用，消息与草稿仍由 DSH 管理。首次展开不调用模型；业务工具和页面共用服务。Apple 连接统一由“插件 → @stella/apple-sync”的配置页管理：日历和提醒事项各提供“同步”“暂停同步”，自动纳入全部来源并保留同名分类；日历覆盖全部历史到未来两年，见 [插件说明](../packages/stella-apple-sync/README.md)。
 
@@ -71,7 +71,7 @@ make test-desktop-upgrade
 
 ## 简报来源与插件适配
 
-侧栏不再提供独立「数据」页，来源选择位于「简报 → 信息来源」；旧页面位置自动恢复到简报。来源配置、历史简报和业务库保留，原数据页的存储展示接口已删除。连接与对话工具授权回到 Stella 设置，DSH 插件管理器管理插件生命周期；既有学校连接入口保留兼容。
+侧栏不再提供独立「数据」页，来源选择位于「简报 → 信息来源」；旧页面位置自动恢复到简报。来源配置、历史简报和业务库保留，原数据页的存储展示接口已删除。账号配置和插件生命周期统一使用 DSH 原生插件页，Stella 不再提供连接、逐工具授权或旧工作区表单。
 
 适配层统一发现来源元数据、读取已选范围、校验返回身份和转换简报材料。兼容现有邮件／学校 MCP，并支持提供明确简报契约的 DSH 原生插件；不会扫描或执行全部插件工具。选择来源不等于开放对话工具或外部后台任务。插件接入协议和验证边界见 [简报插件适配](briefing-plugin-adapters.md)。
 
@@ -254,4 +254,4 @@ Stella 侧栏“自动化”与 DSH 自动化共用原生列表、完整编辑�
 
 ## 学校与邮件插件
 
-可选安装 `stella-elearning-0.1.1.tgz` 与 `stella-mail-0.1.1.tgz`，在 DSH 插件页分别打开并登录／添加邮箱。两包包含所需 MCP 运行环境，不使用开发目录。保存账号后点击检查；简报在信息来源选择范围，对话工具在 Stella 设置单独授权。账号与来源安装不自动触发读取。生命周期、凭据及验证边界见 [MCP 连接](mcp-connections.md)。
+可选安装 `stella-elearning-0.1.2.tgz` 与 `stella-mail-0.1.2.tgz`，在 DSH 插件页分别打开并登录／添加邮箱。两包包含所需 MCP 运行环境，不使用开发目录。保存账号后点击检查；简报在信息来源选择范围，对话工具继承 DSH 当前会话策略。账号与来源安装不自动触发读取。生命周期、凭据及验证边界见 [MCP 连接](mcp-connections.md)。

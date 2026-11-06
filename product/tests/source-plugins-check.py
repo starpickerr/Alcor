@@ -8,7 +8,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 import official_desktop_check as desktop
 from plugin_check import ROOT, PACK
-from web_check import open_secretary
+from web_check import open_secretary, settings
 
 SOURCES = []
 for name in ('elearning', 'mail'):
@@ -43,10 +43,27 @@ def check(page, home, profile, artifacts):
     call = lambda endpoint, args={}: desktop.rpc(page, endpoint, args)
     school = lambda: call('stellaSchool/elearningAccount', {'request': {}})
     mail = lambda: call('stellaMail/state', {'request': {}})
-    grants = lambda: call('stellaSecretary/mcpState', {'request': {}})
     assert school()['installed'] and not school()['configured']
     assert mail()['installed'] and not mail()['configured']
-    assert not grants()['allowedTools']
+    open_secretary(page)
+    settings(page)
+    dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
+    expect(dialog.get_by_label('助手名称', exact=True)).to_be_visible()
+    expect(dialog.get_by_text('连接', exact=True)).to_have_count(0)
+    expect(dialog.get_by_text('权限与安全', exact=True)).to_have_count(0)
+    expect(dialog.get_by_text('旧版身份导入', exact=True)).to_have_count(0)
+    expect(dialog.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
+    expect(dialog.get_by_label('学工号', exact=True)).to_have_count(0)
+    expect(dialog.get_by_label('DSH 文件工作区', exact=True)).to_have_count(0)
+    expect(dialog.get_by_label('旧应用数据目录', exact=True)).to_have_count(0)
+    page.screenshot(path=str(artifacts / 'stella-settings-desktop.png'), animations='disabled')
+    page.set_viewport_size({'width':390,'height':844})
+    expect(dialog.get_by_label('助手名称', exact=True)).to_be_in_viewport()
+    assert page.locator('.stella-settings-content').bounding_box()['width'] >= 250
+    assert dialog.evaluate('element => element.scrollWidth <= element.clientWidth')
+    page.screenshot(path=str(artifacts / 'stella-settings-mobile.png'), animations='disabled')
+    page.set_viewport_size({'width':1440,'height':1000})
+    dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
     dialog = open_sources(page)
     for package in ('@stella/elearning', '@stella/mail'):
         row = dialog.locator(f'[data-source-connection="{package}"]')
@@ -150,6 +167,7 @@ def check(page, home, profile, artifacts):
             'user': f'synthetic{index}@example.com', 'password': 'synthetic-only-pass', 'host': 'imap.example.com',
             'port': 993, 'folder': 'INBOX', 'enabled': False}}})
         extra_ids.append(next(r['id'] for r in result['accounts'] if r['user'] == f'synthetic{index}@example.com'))
+    config(page, '@stella/mail')
     page.get_by_role('button', name='刷新状态', exact=True).click()
     expect(page.get_by_role('button', name='添加邮箱', exact=True)).to_be_disabled()
     expect(page.locator('.stella-mail-connection:visible')).to_have_count(1)
@@ -172,10 +190,6 @@ def check(page, home, profile, artifacts):
     for identity in extra_ids:
         call('stellaMail/removeAccount', {'request': {'id': identity, 'expectedRevision': mail()['revision']}})
     page.get_by_role('button', name='刷新状态', exact=True).click()
-    names = set(grants()['availableTools'])
-    assert {'mcp__elearning__fetch', 'mcp__elearning__list_courses', 'mcp__email__fetch_messages', 'mcp__email__list_sources'} <= names
-    assert not any(name.endswith(('__save_account', '__delete_account', '__save_settings')) for name in names)
-    assert not grants()['allowedTools']
     credential_file = home / 'dsh/.credentials.yaml'
     assert credential_file.stat().st_mode & 0o777 == 0o600
     assert 'synthetic-mail-secret' not in (profile / 'cordis.patch.yml').read_text()
@@ -198,9 +212,6 @@ def check(page, home, profile, artifacts):
     assert not dialog.get_by_label('email (synthetic@example.com)', exact=True).is_checked()
     page.screenshot(path=str(artifacts / 'source-discovery.png'), animations='disabled')
     dialog.get_by_role('button', name='关闭', exact=True).click()
-    # Granting a conversation tool does not change briefing source selection.
-    saved = call('stellaSecretary/setMcpTools', {'request': {'expectedRevision': grants()['revision'], 'allowedTools': ['mcp__email__list_sources']}})
-    assert saved['allowedTools'] == ['mcp__email__list_sources']
     chosen = call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
     assert not any(row['source'] in ('email', 'elearning') for row in chosen)
 
@@ -229,8 +240,6 @@ def main():
             assert not state['installed']
             catalog = desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'discover_sources'}})
             assert not catalog['connections']
-            grants = desktop.rpc(page, 'stellaSecretary/mcpState', {'request': {}})
-            assert not grants['availableTools'] and grants['allowedTools'] == ['mcp__email__list_sources']
             for name in ('@stella/elearning', '@stella/mail'):
                 desktop.rpc(page, 'pluginManager/setBundleEnabled', {'name': name, 'enabled': True})
             assert not errors, errors
@@ -258,7 +267,9 @@ def main():
         desktop.native_cli(home, 'sources-uninstall', 'remove', '@stella/elearning', '@stella/mail')
         assert 'synthetic-school-secret' in (home / 'dsh/.credentials.yaml').read_text()
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
-    print('PASS: official Desktop source bundles, installed frozen protocols, configuration UI, native credentials, discovery without content reads, separate grants, disable/restart/restore/removal and config preservation')
+        assert not (home / 'dsh/storages/stella_mcp.json').exists()
+        assert not (home / 'dsh/storages/stella_workspace.json').exists()
+    print('PASS: official Desktop source bundles, installed frozen protocols, configuration UI, native credentials, discovery without content reads, DSH-owned permissions, disable/restart/restore/removal and config preservation')
 
 
 if __name__ == '__main__': main()

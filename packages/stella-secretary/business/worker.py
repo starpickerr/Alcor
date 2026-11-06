@@ -7,7 +7,7 @@ import sqlite3
 import sys
 import traceback
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -144,7 +144,12 @@ class Business:
             zone = ZoneInfo(row.get('repeat_timezone') or 'UTC')
             start, end = row['start_at'], row['end_at']
             if row['all_day']:
-                start, end = (datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(zone).date().isoformat() for value in (start, end))
+                local_start, local_end = (datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(zone) for value in (start, end))
+                end_day = local_end.date()
+                # Apple birthdays can end at 23:59:59; date records use an exclusive end.
+                if local_end.time() != time.min:
+                    end_day += timedelta(days=1)
+                start, end = local_start.date().isoformat(), end_day.isoformat()
             else:
                 start, end = (datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc).isoformat().replace('+00:00', 'Z') for value in (start, end))
             records.append(self._metadata({'kind': 'event', 'id': row['id'], 'title': row['title'], 'details': row['description'],

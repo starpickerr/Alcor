@@ -1,4 +1,4 @@
-"""Full DSH model/tool round trip and persisted MCP grants, synthetic data only."""
+"""Full DSH model/tool round trip and DSH-owned tool policy, synthetic data only."""
 import json
 import os
 from pathlib import Path
@@ -24,7 +24,7 @@ class McpProvider(BaseHTTPRequestHandler):
         delta, reason = {'content': 'Synthetic title'}, 'stop'
         if 'stella_overview' in names:
             self.observed.append(payload)
-            assert names == {'stella_overview', 'stella_business', 'stella_generate_briefing', 'stella_review_tasks', 'stella_import_bills', 'stella_import_dates', 'stella_export_bills', 'mcp__elearning__list_courses'}, names
+            assert {'stella_overview', 'stella_business', 'stella_generate_briefing', 'stella_review_tasks', 'stella_import_bills', 'stella_import_dates', 'stella_export_bills', 'mcp__elearning__list_courses'} <= names, names
             completed = any(message['role'] == 'tool' for message in payload['messages'])
             if completed:
                 assert 'synthetic-course' in json.dumps(payload)
@@ -86,23 +86,22 @@ def main():
             credentials = home / '.credentials.yaml'
             credentials.write_text('version: 1\nrefs:\n  STELLA_SYNTHETIC_KEY: synthetic-test-key\n')
             credentials.chmod(0o600)
+            legacy_grants = home / 'storages/stella_mcp.json'
+            legacy_grants.parent.mkdir()
+            legacy_grants.write_text(json.dumps({'unit': {'name':'stella_mcp','version':1},'global':None,'tables':{'grants':{'current':{'revision':3,'allowedTools':[]}}}}))
+            legacy_before = legacy_grants.read_bytes()
             browser = playwright.chromium.launch(headless=True)
             context = browser.new_context(viewport={'width': 1280, 'height': 850})
             with (home / 'web.log').open('w') as log:
                 process, url = start(home, log)
                 try:
                     page, errors = open_page(context, url)
-                    state = rpc(page, url, 'stellaSecretary/mcpState', {'request': {}})
-                    assert state['allowedTools'] == []
-                    assert set(state['availableTools']) == {'mcp__elearning__list_courses', 'mcp__elearning__save_settings', 'mcp__elearning__fetch'}
                     assert rpc(page, url, 'stellaSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
                     open_secretary(page)
                     settings(page)
-                    page.get_by_text('Stella 对话工具', exact=True).click()
                     dialog = page.get_by_role('dialog', name='Settings', exact=True)
-                    dialog.get_by_role('checkbox', name='elearning · 查看课程列表', exact=True).check()
-                    dialog.get_by_role('button', name='保存对话权限', exact=True).click()
-                    expect(dialog.locator('.stella-connection-settings [role=status]')).to_have_text('对话权限已保存。')
+                    expect(dialog.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
+                    expect(dialog.get_by_text('权限与安全', exact=True)).to_have_count(0)
                     dialog.get_by_role('button', name='Close', exact=True).click()
                     page.locator('.stella-sidebar-chat').click()
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
@@ -110,8 +109,7 @@ def main():
                     composer.press('Enter')
                     page.get_by_text('Stella MCP round trip passed.', exact=True).wait_for(timeout=25000)
                     assert len(McpProvider.observed) >= 2
-                    saved = rpc(page, url, 'stellaSecretary/mcpState', {'request': {}})
-                    assert saved['allowedTools'] == ['mcp__elearning__list_courses']
+                    assert legacy_grants.read_bytes() == legacy_before
                     assert not errors, errors
                     page.close()
                 finally:
@@ -120,14 +118,13 @@ def main():
                 process, url = start(home, log)
                 try:
                     page, errors = open_page(context, url)
-                    assert rpc(page, url, 'stellaSecretary/mcpState', {'request': {}}) == saved
-                    revoked = rpc(page, url, 'stellaSecretary/setMcpTools', {'request': {'expectedRevision': saved['revision'], 'allowedTools': []}})
-                    assert revoked == {'revision': saved['revision'] + 1, 'allowedTools': []}
+                    assert rpc(page, url, 'stellaSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
+                    assert legacy_grants.read_bytes() == legacy_before
                     assert not errors, errors
                 finally:
                     stop(process)
             browser.close()
-        print('PASS: native DSH model → MCP → model round trip, exact tool catalog, direct UI check, explicit authorization, restart persistence and revocation; synthetic data only')
+        print('PASS: native DSH model → MCP → model round trip, inherited native tools, compact settings, legacy-grant preservation and restart; synthetic data only')
     finally:
         server.shutdown()
 

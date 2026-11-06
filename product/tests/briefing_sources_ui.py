@@ -6,7 +6,6 @@ def check_briefing_sources(page, call, artifacts):
     page.emulate_media(reduced_motion='reduce')
     business = lambda method, args={}: call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
     original = business('list_sources')
-    grants = call('stellaSecretary/mcpState', {'request': {}})
     expect(page.get_by_role('button', name='数据', exact=True)).to_have_count(0)
     page.get_by_role('button', name='简报', exact=True).click()
     page.get_by_role('button', name='信息来源', exact=True).click()
@@ -18,7 +17,6 @@ def check_briefing_sources(page, call, artifacts):
     page.reload()
     page.get_by_role('button', name='信息来源', exact=True).click()
     expect(dialog.get_by_label('Stella 事务', exact=True)).to_be_checked()
-    assert call('stellaSecretary/mcpState', {'request': {}}) == grants
     business('configure_sources', {'sources': original})
     dialog.get_by_label('Stella 账单', exact=True).check()
     dialog.get_by_role('button', name='保存来源', exact=True).click()
@@ -44,4 +42,4 @@ def check_briefing_sources(page, call, artifacts):
     dialog.get_by_role('button', name='管理 DSH 插件', exact=True).click()
     expect(page.get_by_role('heading', name='Plugins', exact=True).or_(page.get_by_role('heading', name='插件', exact=True))).to_be_visible()
     page.get_by_role('button', name='简报', exact=True).click()
-    print('PASS: no data page, briefing source selection, persistence, conflict protection, independent grants, native plugin navigation and narrow themes', flush=True)
+    print('PASS: no data page, briefing source selection, persistence, conflict protection, DSH-owned tool policy, native plugin navigation and narrow themes', flush=True)

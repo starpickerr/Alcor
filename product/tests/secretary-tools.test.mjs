@@ -48,111 +48,80 @@ test('trusted business tools write durable page objects and retain retry receipt
   assert.equal((await call({ domain: 'briefing', method: 'configure_sources', arguments: { sources: [] } })).isError, true)
 })
 
-test('secretary masks inherited tools, including later registrations and descendant calls, without changing DSH', async context => {
+test('Stella inherits native tool visibility and host denials, including later tools', async context => {
   const ctx = new Context()
   context.after(() => ctx.fiber.dispose())
-  await ctx.plugin(SystemPrompt, {})
-  await ctx.plugin(Tools)
-  await ctx.plugin(NativeExecutor)
+  await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(NativeExecutor)
   ctx.provide('stellaSecretary', { mcpAllowed: () => false })
   let invocations = 0
-  function register(name) {
-    ctx.tools.register({
-      name, description: 'Synthetic executor probe', parameters: {},
-      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
-      execute: async () => { invocations++; return 'synthetic-execution' },
-    })
-  }
-  register('working_directory')
-  register('bash')
-  const secretary = { id: 'secretary-agent' }
-  const preset = {}
-  const parent = bindScopeParent(secretary, preset)
-  let presetScope
-  let scope
-  await ctx.plugin(Object.assign(inner => { presetScope = createScope(inner, preset); apply(presetScope.ctx) }, { inject: ['tools', 'systemPrompt'] }))
-  await ctx.plugin(Object.assign(inner => { scope = createScope(inner, secretary) }, { inject: ['tools'] }))
-  const dsh = { id: 'dsh-agent' }
-  assert.deepEqual(ctx.tools.schemas(secretary).map(tool => tool.name), ['stella_overview'])
-  assert.deepEqual(ctx.tools.schemas(dsh).map(tool => tool.name).sort(), ['bash', 'working_directory'])
+  const register = name => ctx.tools.register({ name, description: 'Synthetic host tool', parameters: {},
+    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+    execute: async () => { invocations++; return 'host-result' } })
+  register('bash'); register('working_directory')
+  const secretary = { session: { header: {} } }; const preset = {}
+  bindScopeParent(secretary, preset)
+  await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt'] }))
+  const names = agent => ctx.tools.schemas(agent).map(tool => tool.name).sort()
+  assert.deepEqual(names(secretary), ['bash', 'stella_overview', 'working_directory'])
   register('later_installed_executor')
-  assert.deepEqual(ctx.tools.schemas(secretary).map(tool => tool.name), ['stella_overview'])
-  const child = { id: 'secretary-child' }
-  let childScope
-  await ctx.plugin(Object.assign(inner => { childScope = createScope(inner, child, { parent: secretary }) }, { inject: ['tools'] }))
-  for (const agent of [secretary, child]) {
-    for (const name of ['working_directory', 'bash', 'later_installed_executor', 'run_code']) {
-      assert.equal(ctx.tools.executable(name, agent), undefined)
-      const batch = await ctx.tools.execute({
-        agent, signal: new AbortController().signal,
-        calls: [{ type: 'tool-call', id: 'synthetic-forged-call', name, arguments: '{"mode":"dsh","userId":"owner"}' }],
-      })
-      assert.equal(batch.results[0].result.isError, true)
-    }
-  }
-  assert.equal(invocations, 0)
-  const batch = await ctx.tools.execute({ agent: dsh, signal: new AbortController().signal,
-    calls: [{ type: 'tool-call', id: 'synthetic-dsh-call', name: 'bash', arguments: '{}' }] })
-  assert.equal(batch.results[0].result.isError, false)
+  assert(names(secretary).includes('later_installed_executor'))
+  const call = (agent, name) => ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'host-probe', name, arguments: '{}' }] })
+  assert.equal((await call(secretary, 'bash')).results[0].result.isError, false)
+  let hostScope
+  await ctx.plugin(Object.assign(inner => { hostScope = createScope(inner, secretary) }, { inject: ['tools'] }))
+  context.after(() => hostScope.dispose())
+  const restriction = hostScope.ctx.tools.restrict({ deny: ['bash'] })
+  assert(!names(secretary).includes('bash')); assert(names({}).includes('bash'))
+  assert.equal((await call(secretary, 'bash')).results[0].result.isError, true)
   assert.equal(invocations, 1)
-  await childScope.dispose()
-  parent.rebind({})
-  assert.deepEqual(ctx.tools.schemas(secretary).map(tool => tool.name).sort(), ['bash', 'later_installed_executor', 'working_directory'])
-  await scope.dispose()
-  await presetScope.dispose()
-  assert.equal(ctx.tools.executable('stella_overview', secretary), undefined)
+  restriction()
+  assert(names(secretary).includes('bash'))
+  const guard = ctx.tools.guard(execution => execution.name === 'later_installed_executor' ? 'DSH host denied' : undefined)
+  const rejected = (await call(secretary, 'later_installed_executor')).results[0].result
+  assert.equal(rejected.isError, true); assert(JSON.stringify(rejected).includes('DSH host denied'))
+  assert.equal(invocations, 1); guard()
 })
 
-test('native MCP is opt-in, executes only in active personal turns, and revokes without changing DSH', async context => {
+test('native MCP uses DSH policy directly while preserving personal turn and disconnect boundaries', async context => {
   const ctx = new Context()
   context.after(() => ctx.fiber.dispose())
-  await ctx.plugin(SystemPrompt, {})
-  await ctx.plugin(Tools)
-  await ctx.plugin(NativeExecutor)
-  const allowed = new Set()
-  ctx.provide('stellaSecretary', { mcpAllowed: name => allowed.has(name) })
-  const preset = {}
-  const secretary = { session: { header: {} } }
+  await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(NativeExecutor)
+  ctx.provide('stellaSecretary', { mcpAllowed: () => false })
+  const preset = {}; const secretary = { session: { header: {} } }
   bindScopeParent(secretary, preset)
-  await ctx.plugin(Object.assign(inner => { apply(createScope(inner, preset).ctx) }, { inject: ['tools', 'systemPrompt', 'stellaSecretary'] }))
+  await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt', 'stellaSecretary'] }))
   const fixture = fileURLToPath(new URL('./fixtures/mcp-server.mjs', import.meta.url))
   const connection = await ctx.plugin(McpClient, { transport: 'stdio', serverName: 'elearning', command: process.execPath, args: [fixture], failOnStartupError: true })
   const name = 'mcp__elearning__list_courses'
-  const write = 'mcp__elearning__save_settings'
-  const call = async (agent, name, signal = new AbortController().signal) => (await ctx.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'probe', name, arguments: '{}' }] })).results[0].result
+  const call = async (agent, signal = AbortSignal.timeout(5000)) => (await ctx.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'probe', name, arguments: '{}' }] })).results[0].result
   const turn = (agent, kind) => ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [{ source: { kind } }] }, async () => {})
-  assert.deepEqual(ctx.tools.schemas(secretary).map(tool => tool.name), ['stella_overview'])
-  assert.equal((await call(secretary, name)).isError, true)
-  allowed.add(name); ctx.emit('stella/mcp-change')
   assert(ctx.tools.schemas(secretary).some(tool => tool.name === name))
-  assert.equal((await call(secretary, name)).isError, true)
+  assert.equal((await call(secretary)).isError, true)
   await turn(secretary, 'user')
-  const result = await call(secretary, name)
-  assert.equal(result.isError, false)
-  assert(JSON.stringify(result).includes('synthetic-course'))
-  assert.equal((await call(secretary, write)).isError, true)
+  const result = await call(secretary)
+  assert.equal(result.isError, false); assert(JSON.stringify(result).includes('synthetic-course'))
   const child = { session: { header: { origin: 'subagent', parentSession: 'owner' } } }
-  bindScopeParent(child, secretary)
-  await turn(child, 'user')
-  assert.equal((await call(child, name)).isError, true)
-  await turn(secretary, 'schedule')
-  assert.equal((await call(secretary, name)).isError, true)
+  bindScopeParent(child, secretary); await turn(child, 'user')
+  assert.equal((await call(child)).isError, true)
+  await turn(secretary, 'schedule'); assert.equal((await call(secretary)).isError, true)
   await turn(secretary, 'user')
   const cancelled = new AbortController(); cancelled.abort()
-  assert.equal((await call(secretary, name, cancelled.signal)).isError, true)
-  // Revocation is rechecked after an asynchronous approval boundary.
-  const stopGate = ctx.on('tools/pre-execute', async (execution, next) => {
-    if (execution.agent === secretary) { allowed.clear(); ctx.emit('stella/mcp-change') }
-    return next()
+  assert.equal((await call(secretary, cancelled.signal)).isError, true)
+  const stopGate = ctx.on('tools/pre-execute', async (_execution, next) => {
+    const decision = await next()
+    return { kind: 'deny', reason: 'DSH host revoked permission' }
   })
-  assert.equal((await call(secretary, name)).isError, true)
-  stopGate()
+  assert.equal((await call(secretary)).isError, true); stopGate()
+  let hostScope
+  await ctx.plugin(Object.assign(inner => { hostScope = createScope(inner, secretary) }, { inject: ['tools'] }))
+  context.after(() => hostScope.dispose())
+  const denied = hostScope.ctx.tools.restrict({ deny: [name] })
   assert.equal(ctx.tools.executable(name, secretary), undefined)
-  assert.equal((await call({}, write)).isError, false)
-  allowed.add(name); ctx.emit('stella/mcp-change')
+  assert.equal((await call(secretary)).isError, true); denied()
+  assert.equal((await call(secretary)).isError, false)
   await connection.dispose()
   assert.equal(ctx.tools.executable(name, secretary), undefined)
-  assert.equal((await call(secretary, name)).isError, true)
+  assert.equal((await call(secretary)).isError, true)
 })
 
 test('local automation tools deny delegated/unknown turns and reuse a daily briefing identity', async context => {
