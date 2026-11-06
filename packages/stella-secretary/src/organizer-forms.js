@@ -33,7 +33,7 @@ export function eventLanes(events) {
     if (start >= groupEnd) { flush(); group = []; ends = [] }
     let lane = ends.findIndex(end => end <= start)
     if (lane < 0) lane = ends.length
-    ends[lane] = Date.parse(event.end)
+    ends[lane] = Math.max(Date.parse(event.end), start + 1)
     group.push({ id: event.id, lane }); groupEnd = Math.max(...ends)
   }
   flush()

@@ -22,6 +22,10 @@ test('briefing uses half-open event days in the saved timezone and source revisi
   assert.deepEqual(report.sources, [{ id: due.id, revision: 3 }])
   assert.ok(report.body.includes('Untrusted <script>material</script>'))
   assert.equal(buildBriefing([event, allDay], '2026-11-03', '', base().createdAt).sources.length, 2)
-  assert.throws(() => recordSchema.parse({ ...event, end: event.start }))
+  const point = { ...event, start: '2026-11-03T16:00:00.000Z', end: '2026-11-03T16:00:00.000Z' }
+  assert.equal(recordSchema.parse(point).start, point.end)
+  assert.equal(buildBriefing([point], '2026-11-04', '', base().createdAt).sources.length, 1)
+  assert.equal(buildBriefing([point], '2026-11-03', '', base().createdAt).sources.length, 0)
+  assert.throws(() => recordSchema.parse({ ...allDay, end: allDay.start }))
   assert.throws(() => recordSchema.parse({ ...event, timeZone: 'Unknown/Zone' }))
 })

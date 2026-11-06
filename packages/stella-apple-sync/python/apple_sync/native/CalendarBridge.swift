@@ -173,9 +173,11 @@ func recurrenceRule(_ payload: [String: Any]) throws -> EKRecurrenceRule? {
     case "yearly": frequency = .yearly
     default: throw BridgeFailure("Unsupported recurrence")
     }
+    let interval = payload["repeat_interval"] as? Int ?? 1
+    guard (1...99).contains(interval) else { throw BridgeFailure("Invalid repeat interval") }
     var end: EKRecurrenceEnd? = nil
     if let until = text(payload, "repeat_until"), !until.isEmpty {
-        let zone = TimeZone(identifier: text(payload, "repeat_timezone") ?? "UTC") ?? .gmt
+        let zone = TimeZone(identifier: text(payload, "repeat_timezone") ?? text(payload, "timezone") ?? "UTC") ?? .gmt
         var parts = DateComponents()
         let numbers = until.split(separator: "-").compactMap { Int($0) }
         if numbers.count == 3 {
@@ -186,11 +188,11 @@ func recurrenceRule(_ payload: [String: Any]) throws -> EKRecurrenceRule? {
     }
     if frequency == .weekly, let days = payload["repeat_days"] as? [Int], !days.isEmpty {
         let ekDays = days.compactMap { EKWeekday(rawValue: (($0 + 1) % 7) + 1) }.map { EKRecurrenceDayOfWeek($0) }
-        return EKRecurrenceRule(recurrenceWith: frequency, interval: 1,
+        return EKRecurrenceRule(recurrenceWith: frequency, interval: interval,
             daysOfTheWeek: ekDays, daysOfTheMonth: nil, monthsOfTheYear: nil,
             weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: end)
     }
-    return EKRecurrenceRule(recurrenceWith: frequency, interval: 1, end: end)
+    return EKRecurrenceRule(recurrenceWith: frequency, interval: interval, end: end)
 }
 
 func run(_ request: [String: Any]) throws -> [String: Any] {
@@ -203,12 +205,14 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
     if op == "request_access" {
         let semaphore = DispatchSemaphore(value: 0)
         var granted = false
+        var accessError: Error?
         if #available(macOS 14.0, *) {
-            store.requestFullAccessToEvents { result, _ in granted = result; semaphore.signal() }
+            store.requestFullAccessToEvents { result, error in granted = result; accessError = error; semaphore.signal() }
         } else {
-            store.requestAccess(to: .event) { result, _ in granted = result; semaphore.signal() }
+            store.requestAccess(to: .event) { result, error in granted = result; accessError = error; semaphore.signal() }
         }
         guard semaphore.wait(timeout: .now() + 120) == .success else { throw BridgeFailure("Calendar permission request timed out") }
+        if let accessError { throw BridgeFailure(accessError.localizedDescription) }
         store.reset()
         return ["authorization": auth(), "granted": granted]
     }
@@ -236,7 +240,8 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
         }
         let event = existing ?? EKEvent(eventStore: store)
         event.calendar = calendar
-        guard let start = date(text(request, "start_at")), let end = date(text(request, "end_at")), end > start else {
+        guard let start = date(text(request, "start_at")), let end = date(text(request, "end_at")), end >= start,
+              ((request["all_day"] as? Bool) != true || end > start) else {
             throw BridgeFailure("Invalid event time")
         }
         event.title = try required(request, "title")
@@ -272,6 +277,11 @@ func run(_ request: [String: Any]) throws -> [String: Any] {
         return ["deleted": true]
     }
     throw BridgeFailure("Unknown operation")
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--pid-file"), index + 1 < CommandLine.arguments.count {
+    do { try String(getpid()).write(toFile: CommandLine.arguments[index + 1], atomically: true, encoding: .utf8) }
+    catch { exit(1) }
 }
 
 guard let line = readLine(), let data = line.data(using: .utf8),

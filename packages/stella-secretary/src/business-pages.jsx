@@ -18,12 +18,12 @@ export function AgentStrip({ kind, quickChat }) {
 
 
 const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-export function MonthGrid({ day, selected, records, select, compact = false }) {
+export function MonthGrid({ day, selected, records, select, compact = false, categories = {} }) {
   const month = day.slice(0, 7)
   return <div className={`stella-month-grid${compact ? ' stella-month-compact' : ''}`}>
     {weekdayNames.map(label => <div className="stella-weekday" key={label}>{compact ? label.slice(1) : label}</div>)}
     {monthDays(day).map(date => { const events = records.filter(item => eventOnDay(item, date)); return <button type="button" key={date} aria-label={date} aria-pressed={date === selected} data-outside={date.slice(0, 7) !== month || undefined} data-today={date === localDate() || undefined} onClick={() => select(date)}>
-      <span className="stella-day-number">{Number(date.slice(-2))}</span>{!compact && events.slice(0, 2).map(event => <span className="stella-calendar-chip" key={event.id}>{event.title}</span>)}{events.length > (compact ? 0 : 2) && <small>{compact ? '•' : `+${events.length - 2}`}</small>}
+      <span className="stella-day-number">{Number(date.slice(-2))}</span>{!compact && events.slice(0, 3).map(event => <span className="stella-calendar-chip" key={event.id} style={{ '--stella-event-color': categories[event.business?.category_id]?.color ?? 'var(--dsw-alias-label-secondary)' }} title={event.title}>{!event.allDay && <time>{new Date(event.start).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} </time>}{event.title}</span>)}{compact ? !!events.length && <span className="stella-calendar-dots" aria-label={`${events.length} 项日程`}>{[...new Set(events.map(event => categories[event.business?.category_id]?.color ?? 'var(--dsw-alias-label-secondary)'))].slice(0, 3).map(color => <i key={color} style={{ background: color }} />)}</span> : events.length > 3 && <small>+{events.length - 3}</small>}
     </button> })}
   </div>
 }

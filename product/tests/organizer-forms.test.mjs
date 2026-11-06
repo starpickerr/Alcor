@@ -21,3 +21,12 @@ test('overlapping calendar events remain separate clickable columns', () => {
   assert.deepEqual(lanes.get('c'), { left: 0, width: 50 })
   assert.deepEqual(lanes.get('d'), { left: 0, width: 100 })
 })
+
+test('simultaneous point events occupy separate lanes without changing their times', () => {
+  const start = '2026-11-05T09:00:00Z'
+  const points = [{ id: 'a', start, end: start }, { id: 'b', start, end: start }]
+  const lanes = eventLanes(points)
+  assert.deepEqual(lanes.get('a'), { left: 0, width: 50 })
+  assert.deepEqual(lanes.get('b'), { left: 50, width: 50 })
+  assert.equal(points[0].end, start)
+})

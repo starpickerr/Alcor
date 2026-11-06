@@ -1,6 +1,6 @@
 {
   "name": "@stella/secretary",
-  "version": "0.1.23",
+  "version": "0.1.29",
   "type": "module",
   "license": "MIT",
   "files": [
@@ -8,6 +8,7 @@
     "business",
     "!business/apple",
     "!business/**/__pycache__",
+    "!**/* 2.*",
     "cordis.patch.yml",
     "DSH-LICENSE.txt",
     "README.md",

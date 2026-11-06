@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import tempfile
+import time
 import select
 import subprocess
 import sys
@@ -16,7 +20,7 @@ class BridgeError(RuntimeError):
 
 def _default_helper():
     import os
-    return Path(os.environ.get('STELLA_EVENTKIT_HELPER') or Path(__file__).with_name('StellaCalendarBridge'))
+    return Path(os.environ.get('STELLA_EVENTKIT_HELPER') or Path(__file__).with_name('Stella Apple Sync.app'))
 
 class AppleCalendarBridge:
     def __init__(self, helper_path=None, platform=None, timeout=30):
@@ -27,16 +31,46 @@ class AppleCalendarBridge:
         self._processes = set()
         self._closed = False
 
-    def _start(self, **kwargs):
+    def _start(self, command=None, app_files=None, **kwargs):
         with self._lock:
             if self._closed:
                 raise BridgeError('Apple sync is stopped')
-            process = subprocess.Popen([str(self.helper_path)], **kwargs)
+            process = subprocess.Popen(command or [str(self.helper_path)], **kwargs)
+            process.stella_app_files = app_files
             self._processes.add(process)
             return process
 
+    def _start_app(self, request):
+        temporary = tempfile.TemporaryDirectory(prefix='stella-eventkit-')
+        root = Path(temporary.name)
+        incoming, outgoing, errors, pid = [root / name for name in ('request.json', 'response.json', 'stderr', 'pid')]
+        incoming.write_text(json.dumps(request, ensure_ascii=False))
+        outgoing.touch(mode=0o600)
+        errors.touch(mode=0o600)
+        command = ['/usr/bin/open', '-W', '-n', '-g', '--stdin', str(incoming),
+                   '--stdout', str(outgoing), '--stderr', str(errors), str(self.helper_path),
+                   '--args', '--pid-file', str(pid)]
+        try:
+            return self._start(command, app_files=(temporary, outgoing, pid),
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except Exception:
+            temporary.cleanup()
+            raise
+
     def _finish(self, process):
+        app_files = getattr(process, 'stella_app_files', None)
         if process.poll() is None:
+            if app_files:
+                # Launch Services owns the app process; terminating `open` alone leaves it running.
+                deadline = time.monotonic() + 2
+                while not app_files[2].exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                try:
+                    pid = int(app_files[2].read_text())
+                    if pid > 1:
+                        os.kill(pid, signal.SIGTERM)
+                except (OSError, ValueError):
+                    pass
             process.terminate()
             try:
                 process.wait(timeout=1)
@@ -45,6 +79,8 @@ class AppleCalendarBridge:
                 process.wait()
         with self._lock:
             self._processes.discard(process)
+        if app_files:
+            app_files[0].cleanup()
 
     def close(self):
         with self._lock:
@@ -58,7 +94,9 @@ class AppleCalendarBridge:
             if op in ("status", "reminder_status"):
                 return {"supported": False, "authorization": "unsupported"}
             raise BridgeError("EventKit is not supported on this platform")
-        if not self.helper_path.is_file():
+        bundled = self.helper_path.suffix == '.app'
+        executable = self.helper_path / 'Contents/MacOS/StellaCalendarBridge' if bundled else self.helper_path
+        if not executable.is_file():
             if op in ("status", "reminder_status"):
                 return {"supported": False, "authorization": "helper_missing"}
             raise BridgeError("EventKit helper is not installed")
@@ -68,10 +106,15 @@ class AppleCalendarBridge:
             raise BridgeError("unknown EventKit operation")
         request = json.dumps({"op": op, **payload}, ensure_ascii=False) + "\n"
         try:
-            process = self._start(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            process = (self._start_app({"op": op, **payload}) if bundled else
+                       self._start(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
             try:
-                stdout, _ = process.communicate(request, timeout=max(self.timeout, 150) if op in (
-                    "request_access", "reminder_request_access") else self.timeout)
+                timeout = max(self.timeout, 150) if op in ("request_access", "reminder_request_access") else self.timeout
+                if bundled:
+                    process.communicate(timeout=timeout)
+                    stdout = process.stella_app_files[1].read_text()
+                else:
+                    stdout, _ = process.communicate(request, timeout=timeout)
             finally:
                 self._finish(process)
         except subprocess.TimeoutExpired as exc:
@@ -90,7 +133,29 @@ class AppleCalendarBridge:
 
     def watch(self, on_change, stop_event=None, kind="calendar"):
         """Block until stopped, forwarding EKEventStoreChanged notifications."""
-        if self.platform != "darwin" or not self.helper_path.is_file():
+        if self.platform != "darwin":
+            return
+        if self.helper_path.suffix == '.app':
+            process = self._start_app({"op": "reminder_watch" if kind == "reminder" else "watch"})
+            try:
+                with process.stella_app_files[1].open() as output:
+                    while process.poll() is None and (stop_event is None or not stop_event.is_set()):
+                        line = output.readline()
+                        if not line:
+                            if stop_event is not None:
+                                stop_event.wait(0.2)
+                            else:
+                                time.sleep(0.2)
+                            continue
+                        try:
+                            if json.loads(line).get("changed") is True:
+                                on_change()
+                        except (ValueError, AttributeError):
+                            continue
+            finally:
+                self._finish(process)
+            return
+        if not self.helper_path.is_file():
             return
         process = self._start(stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,

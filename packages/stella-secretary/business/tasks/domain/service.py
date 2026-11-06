@@ -353,7 +353,7 @@ class TodoService:
             raise ValueError("todo must be an object")
         row = dict(existing or {})
         for key in ("title", "notes", "due_on", "due_time", "timezone", "priority",
-                    "repeat_frequency", "repeat_days", "repeat_until", "planned_on",
+                    "repeat_frequency", "repeat_days", "repeat_until", "repeat_interval", "planned_on",
                     "list_name", "tags", "flagged", "checklist", "remind_at"):
             if key in payload:
                 row[key] = payload[key]
@@ -393,6 +393,10 @@ class TodoService:
         if frequency not in ("none", "daily", "weekly", "monthly", "yearly") or (frequency != "none" and not due_on):
             raise ValueError("repeat_frequency requires a due date")
         row["repeat_frequency"] = frequency
+        interval = row.get("repeat_interval", 1)
+        if type(interval) is not int or not 1 <= interval <= 99:
+            raise ValueError("repeat_interval must be an integer from 1 to 99")
+        row["repeat_interval"] = interval if frequency != "none" else 1
         days = row.get("repeat_days") or []
         if isinstance(days, str):
             try:
@@ -547,7 +551,7 @@ class TodoService:
         source_type = "briefing" if _briefing_key else "apple_reminder" if _external_source_key else None
         source_key = _briefing_key or _external_source_key
         status = self._status(payload.get("status", "todo"))
-        if row["repeat_frequency"] != "none" and status != "todo":
+        if row["repeat_frequency"] != "none" and status != "todo" and not _external_source_key:
             raise ValueError("recurring task status is set per occurrence")
         parent_id = payload.get("parent_id")
         todo_id, now = str(payload.get('id') or uuid.uuid4()), _now()
@@ -564,12 +568,12 @@ class TodoService:
             order = self._next_order(db, parent_id)
             db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
-                 repeat_days,repeat_until,source_type,source_key,source_url,user_modified,created_at,updated_at,
+                 repeat_days,repeat_until,repeat_interval,source_type,source_key,source_url,user_modified,created_at,updated_at,
                  planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at,reminder_delivery)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], now if status == "completed" else None,
-                 row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
+                 row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_interval"],
                  source_type, source_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"],
                  row["reminder_delivery"]))
@@ -592,7 +596,7 @@ class TodoService:
         old = self.get_todo(todo_id)
         row = self._validate_todo(payload, old)
         with self._connect() as db:
-            if row["repeat_frequency"] != "none" and old["status"] != "todo":
+            if row["repeat_frequency"] != "none" and old["status"] != "todo" and old["source_type"] != "apple_reminder":
                 raise ValueError("recurring task status is set per occurrence")
             if row["repeat_frequency"] != old["repeat_frequency"] and old["parent_id"]:
                 raise ValueError("subtasks cannot repeat")
@@ -613,10 +617,10 @@ class TodoService:
                     JOIN reminder_occurrences o ON o.occurrence_id=d.occurrence_id
                     WHERE o.todo_id=? AND o.state='cancelled')""", (old["id"],))
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
-                priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, user_modified=1, updated_at=?
+                priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, repeat_interval=?, user_modified=1, updated_at=?
                 , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=?, reminder_delivery=? WHERE id=?""",
                 (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
-                row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], _now(),
+                row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_interval"], _now(),
                 row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
                 row["remind_at"], row["reminder_delivery"], old["id"]))
             self._queue_scheduler_link(db, old["id"], None if self._apple_native_reminder({
@@ -634,7 +638,7 @@ class TodoService:
         if type(completed) is not bool:
             raise ValueError("completed must be true or false")
         allowed = ("title", "notes", "due_on", "due_time", "timezone", "planned_on", "remind_at",
-                   "priority", "repeat_frequency", "repeat_days", "repeat_until")
+                   "priority", "repeat_frequency", "repeat_days", "repeat_until", "repeat_interval")
         fields = {key: payload[key] for key in allowed if key in payload}
         with self._connect() as db:
             row = db.execute("SELECT id FROM todos WHERE source_type='apple_reminder' AND source_key=?",
@@ -655,7 +659,7 @@ class TodoService:
             updated = self.create_todo({**fields, "status": "completed" if completed else "todo"},
                                        _external_source_key=source_key)
         status = updated["status"]
-        if status != "cancelled" and updated["repeat_frequency"] == "none":
+        if status != "cancelled":
             status = "completed" if completed else "todo" if status == "completed" else status
         completion_at = (payload.get("completed_at") or _now()) if status == "completed" else None
         if completion_at is not None:
@@ -834,7 +838,7 @@ class TodoService:
         if type(force) is not bool:
             raise ValueError("force must be true or false")
         old = self.get_todo(todo_id)
-        if status == "completed" and old["repeat_frequency"] != "none":
+        if status == "completed" and old["repeat_frequency"] != "none" and old["source_type"] != "apple_reminder":
             return self.complete_todo(todo_id, True, force=force)
         if "@" in todo_id:
             raise ValueError("recurring occurrence only supports completion")
@@ -916,6 +920,10 @@ class TodoService:
             raise ValueError("completed must be true or false")
         old = self.get_todo(todo_id)
         occurrence = todo_id.split("@", 1)[1] if "@" in todo_id else None
+        if old["source_type"] == "apple_reminder":
+            if occurrence:
+                raise ValueError("Apple reminder completion requires the source item, not a projected date")
+            return self.change_todo_status(todo_id, "completed" if completed else "todo", force=force)
         if old["repeat_frequency"] != "none":
             if not occurrence:
                 raise ValueError("recurring todo requires an occurrence date")
@@ -1281,10 +1289,15 @@ class TodoService:
             return False
         frequency = row["repeat_frequency"]
         weekdays = json.loads(row["repeat_days"] or "[]") or [first.weekday()]
-        return (frequency == "daily" or
-                frequency == "weekly" and candidate.weekday() in weekdays or
-                frequency == "monthly" and candidate.day == first.day or
-                frequency == "yearly" and (candidate.month, candidate.day) == (first.month, first.day))
+        interval = row["repeat_interval"] if "repeat_interval" in row.keys() else 1
+        elapsed = (candidate - first).days
+        week = (elapsed + first.weekday()) // 7
+        month = (candidate.year - first.year) * 12 + candidate.month - first.month
+        return (frequency == "daily" and elapsed % interval == 0 or
+                frequency == "weekly" and week % interval == 0 and candidate.weekday() in weekdays or
+                frequency == "monthly" and month % interval == 0 and candidate.day == first.day or
+                frequency == "yearly" and (candidate.year - first.year) % interval == 0 and
+                (candidate.month, candidate.day) == (first.month, first.day))
 
     def _ensure_migrations(self):
         if not self._migration_deferred:
@@ -1383,13 +1396,15 @@ class TodoService:
 
         result = []
         for row in templates:
-            if row["repeat_frequency"] == "none":
+            if row["repeat_frequency"] == "none" or row["source_type"] == "apple_reminder" or row["status"] in TERMINAL_STATUSES:
                 result.append(row)
                 continue
+            if today is None:
+                anchor = datetime.now(ZoneInfo(row["timezone"])).date()
             first = date.fromisoformat(row["due_on"])
             # Leap-day yearly series can have an eight-year gap around a
             # non-leap century (e.g. 2096 -> 2104).
-            search_days = 3000 if row["repeat_frequency"] == "yearly" else 371
+            search_days = (3000 if row["repeat_frequency"] == "yearly" else 371) * row.get("repeat_interval", 1)
             latest = None
             for offset in range(search_days):
                 candidate = anchor - timedelta(days=offset)

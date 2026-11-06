@@ -1,3 +1,4 @@
+import { taskCompletion } from './task-focus.js'
 import React, { useEffect, useState } from 'react'
 import { Button, Modal, IconUsersOutlineRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AgentHub } from './agent-hub.jsx'
@@ -91,7 +92,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       {primary && <Button variant="primary" icon={<IconPlusOutlineRegular size={16} />} onClick={newItem}>{primary}</Button>}
     </div></header>
     <div className="stella-page-feedback">{loading && <p role="status">正在读取已保存记录…</p>}{error && <p role="alert" className="stella-error">{error}</p>}{notice && <p role="status">{notice}</p>}</div>
-    {kind === 'task' && <TasksPage records={records} edit={edit} mutate={(method, args) => mutate('tasks', method, args, method === 'delete_todo' ? '已删除' : '已保存')} api={api} reloadKey={reloadKey} busy={busy} loading={loading} quickChat={quickChat} toggle={record => mutate('tasks', 'complete_todo', { todo_id: record.business?.repeat_frequency !== 'none' ? `${record.id}@${record.due}` : record.id, completed: record.status !== 'done' }, '事务状态已更新')} />}
+    {kind === 'task' && <TasksPage records={records} edit={edit} mutate={(method, args) => mutate('tasks', method, args, method === 'delete_todo' ? '已删除' : '已保存')} api={api} reloadKey={reloadKey} busy={busy} loading={loading} quickChat={quickChat} toggle={record => mutate('tasks', 'complete_todo', taskCompletion(record), '事务状态已更新')} />}
     {kind === 'event' && <CalendarPage archive={toggleArchive} archived={false} templates={data.records.filter(item => item.kind === 'event')} edit={record => setEditor(record)} create={create} busy={busy} loading={loading} quickChat={quickChat} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
     {kind === 'bill' && <BillsPage records={data.records.filter(item => item.kind === 'bill')} api={api} reloadKey={reloadKey} edit={edit} create={() => create()} archive={toggleArchive} download={download} busy={busy} loading={loading} icon={<BillIcon size={32} />} />}
     <Modal open={editor !== null} headless title={`${editor?.id ? '编辑' : '新增'}${titles[kind] ?? ''}`} onClose={() => { if (!busy) setEditor(null) }} className="stella-editor-dialog">

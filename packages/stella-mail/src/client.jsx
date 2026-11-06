@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Checkbox, Input, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Checkbox, Input, Modal, IconPlusOutlineRegular, IconSearchOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { remote } from './remote.js'
 import style from '../../stella-elearning/src/settings.css'
+import mailStyle from './style.css'
 import connectionStyle from '../../stella-secretary/src/connection-settings.css'
 import { Field } from '../../stella-secretary/src/business-pages.jsx'
 
 const empty = () => ({ host: '', user: '', password: '', port: 993, folder: 'INBOX', enabled: true })
 
-function MailAccount({ account, revision, writable, busy, connected, onSave, onCheck, onRemove, onCancel }) {
+function MailAccount({ account, revision, writable, busy, connected, onSave, onCheck, onRemove, onCancel, active, checkState }) {
   const [draft, setDraft] = useState({ ...account, password: '' })
   const [expectedRevision, setExpectedRevision] = useState(revision)
   const [edited, setEdited] = useState(false)
@@ -16,9 +17,8 @@ function MailAccount({ account, revision, writable, busy, connected, onSave, onC
   useEffect(() => { if (!edited) { setDraft({ ...account, password: '' }); setExpectedRevision(revision) } }, [account, revision, edited])
   const set = (key, value) => { setEdited(true); setDraft(previous => ({ ...previous, [key]: value })) }
   const disabled = busy || !writable
-  return <section className="stella-source-account stella-mail-connection" data-mail-account={account.id || 'new'} aria-label={account.id ? `邮箱：${account.user}` : '添加邮箱'}>
-    <h3>{account.id ? account.user : '添加邮箱'}</h3>
-    {account.id && <span className="stella-mail-account-state">账号已保存</span>}
+  return <section hidden={!active} className="stella-source-account stella-mail-connection" data-mail-account={account.id || 'new'} aria-label={account.id ? `邮箱：${account.user}` : '添加邮箱'}>
+    <header className="stella-mail-editor-heading"><h3>{account.id ? account.user : '添加邮箱'}</h3>{account.id && <span className="stella-mail-state" data-state={checkState}>{!account.enabled ? '已停用' : checkState === 'ready' ? '连接正常' : checkState === 'query_failed' ? '连接失败' : '未验证'}</span>}</header>
     <form autoComplete="off" onSubmit={async event => { event.preventDefault(); if (await onSave(draft, expectedRevision)) { setDraft(previous => ({ ...previous, password: '' })); setEdited(false) } }}>
       <Field label="邮箱账号"><Input required type="email" autoComplete="off" maxLength={320} disabled={disabled} value={draft.user} onChange={event => set('user', event.target.value)} /></Field>
       <Field label="邮箱授权码"><Input required={!account.id} type="password" autoComplete="new-password" maxLength={4096} disabled={disabled} placeholder={account.id ? '********' : ''} aria-description={account.id ? '授权码已保存，留空保留，输入新授权码以替换。' : undefined} value={draft.password} onChange={event => set('password', event.target.value)} /></Field>
@@ -35,29 +35,42 @@ function Settings({ api, view }) {
   const [state, setState] = useState(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [query, setQuery] = useState('')
+  const [checks, setChecks] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const unwrap = async result => { const value = await result; if (!value.ok) throw new Error(value.error?.message || '操作未完成。'); return value.value }
-  async function load() { const next = await unwrap(api.state({})); setState(next); return next }
+  async function load() { const next = await unwrap(api.state({})); setState(next); setSelected(current => current === 'new' || next.accounts.some(row => row.id === current) ? current : next.accounts[0]?.id ?? 'new'); return next }
   async function run(work) { setBusy(true); setError(''); setNotice(''); try { return await work() } catch (failure) { setError(failure.message) } finally { setBusy(false) } }
   useEffect(() => { if (view !== 'summary') void run(load) }, [api, view])
   if (view === 'summary') return '连接 IMAP 邮箱，供对话和简报按授权读取。'
-  const save = (account, expectedRevision) => run(async () => { const next = await unwrap(api.save({ account, expectedRevision })); setState(next); setAdding(false); setNotice('账号已保存。'); return next })
+  const save = (account, expectedRevision) => run(async () => { const next = await unwrap(api.save({ account, expectedRevision })); setState(next); setAdding(false); setSelected(account.id ?? next.accounts.find(row => row.user === account.user && row.host === account.host && row.folder === account.folder)?.id ?? next.accounts[0]?.id); setNotice('已保存'); return next })
   const props = { revision: state?.revision, writable: state?.writable, busy, connected: state?.connected, onSave: save }
-  return <section className="stella-source-settings"><h2>邮件</h2>
-    {!state && <p>正在读取…</p>}{state?.configured && !state.connected && <p>连接未就绪，请检查账号设置。</p>}
-    <div className="stella-actions">{!!state?.accounts.length && <Button variant="primary" disabled={busy || !state.writable || adding || state.accounts.length >= 20} onClick={() => { setAdding(true); setError(''); setNotice('') }}>添加邮箱</Button>}<Button variant="outline" aria-label="刷新状态" title="刷新状态" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button></div>
-    {state?.accounts.map(row => <MailAccount key={row.id} account={row} {...props} onRemove={() => setRemoving(row)} onCheck={() => run(async () => { const result = await unwrap(api.check({ id: row.id })); setNotice(result.status === 'ready' ? '连接有效，文件夹可读。' : '测试未通过，请核对授权码、IMAP 权限和网络。') })} />)}
-    {state && (adding || !state.accounts.length) && <MailAccount account={empty()} {...props} onCancel={state.accounts.length ? () => setAdding(false) : undefined} />}
-    {removing && <div role="alert"><p>移除后停止访问此邮箱，已生成的简报保留。</p><div className="stella-actions"><Button variant="outline" disabled={busy} onClick={() => run(async () => { await unwrap(api.removeAccount({ id: removing.id, expectedRevision: state.revision })); await load(); setRemoving(null); setNotice('邮箱已移除。') })}>确认移除邮箱</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(null)}>取消移除</Button></div></div>}
-    {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+  const checkState = row => !row.enabled ? 'disabled' : checks[row.id]?.revision === state?.revision ? checks[row.id].status : 'unchecked'
+  const check = row => run(async () => {
+    const result = await unwrap(api.check({ id: row.id }))
+    setChecks(previous => ({ ...previous, [row.id]: { revision: state.revision, status: result.status } }))
+    if (result.status !== 'ready') setError('连接失败，请检查授权码、IMAP 设置和网络。')
+  })
+  const accounts = state?.accounts ?? []
+  const visible = accounts.filter(row => `${row.user} ${row.host} ${row.folder}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  return <section className="stella-source-settings stella-mail-settings"><header className="stella-mail-header"><h2>邮箱 <small>{accounts.length || ''}</small></h2><div className="stella-actions"><Button variant="outline" aria-label="刷新状态" title="刷新状态" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button><Button variant="primary" disabled={busy || !state?.writable || adding || accounts.length >= 20} title={accounts.length >= 20 ? '最多添加 20 个邮箱' : undefined} onClick={() => { setAdding(true); setSelected('new'); setError(''); setNotice('') }}><IconPlusOutlineRegular size={16} />添加邮箱</Button></div></header>
+    {!state ? <p role="status">正在读取…</p> : <div className="stella-mail-layout"><aside className="stella-mail-sidebar" aria-label="邮箱列表"><Input aria-label="搜索邮箱" icon={<IconSearchOutlineRegular size={16} />} placeholder="搜索邮箱" value={query} onChange={event => setQuery(event.target.value)} /><div className="stella-mail-accounts">{visible.map(row => <button key={row.id} type="button" className="stella-mail-account-row" aria-label={`选择邮箱：${row.user}`} aria-current={selected === row.id ? 'true' : undefined} disabled={busy} onClick={() => { setSelected(row.id); setError(''); setNotice('') }}><span><strong>{row.user}</strong><small>{row.host}</small></span><span className="stella-mail-state-dot" data-state={checkState(row)} title={!row.enabled ? '已停用' : checkState(row) === 'ready' ? '连接正常' : checkState(row) === 'query_failed' ? '连接失败' : '未验证'} /></button>)}{(adding || !accounts.length) && <button type="button" className="stella-mail-account-row" aria-current={selected === 'new' ? 'true' : undefined} onClick={() => setSelected('new')}>新邮箱</button>}{!!accounts.length && !visible.length && <p className="stella-mail-empty">未找到邮箱</p>}</div></aside>
+      <div className="stella-mail-editor">{accounts.map(row => <MailAccount key={row.id} account={row} active={selected === row.id} checkState={checkState(row)} {...props} onRemove={() => setRemoving(row)} onCheck={() => check(row)} />)}
+      {(adding || !accounts.length) && <MailAccount account={empty()} active={selected === 'new'} {...props} onCancel={accounts.length ? () => { setAdding(false); setSelected(accounts[0].id) } : undefined} />}
+      {state.configured && !state.connected && <p role="alert">邮件服务未就绪，请刷新后重试。</p>}
+      {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}</div>
+    </div>}
+    <Modal open={!!removing} title="移除邮箱" onClose={() => { if (!busy) setRemoving(null) }}><p>移除 {removing?.user}？已生成的简报保留。</p><div className="stella-actions"><Button variant="outline" disabled={busy} onClick={() => setRemoving(null)}>取消移除</Button><Button variant="primary" disabled={busy} onClick={() => run(async () => { await unwrap(api.removeAccount({ id: removing.id, expectedRevision: state.revision })); await load(); setRemoving(null); setNotice('邮箱已移除') })}>确认移除邮箱</Button></div></Modal>
   </section>
+
 }
 export const inject = ['slots', 'remote']
 export async function apply(ctx) {
   try {
-    ctx.effect(() => { const element = document.createElement('style'); element.textContent = style + connectionStyle; document.head.append(element); return () => element.remove() })
+    ctx.effect(() => { const element = document.createElement('style'); element.textContent = style + connectionStyle + mailStyle; document.head.append(element); return () => element.remove() })
     await ctx.remote.$mount(remote)
     ctx.inject(['remote.stellaMail'], inner => inner.slots.inject('plugins.bundle.config', () => inner.slots.register({ name: 'plugins.bundle.config', key: '@stella/mail', inject: () => ({ api: inner.remote.stellaMail }) }, Settings)))
   } catch (failure) { console.error('邮件插件界面加载失败：', failure); throw failure }

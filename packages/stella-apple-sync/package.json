@@ -1,6 +1,6 @@
 {
   "name": "@stella/apple-sync",
-  "version": "0.1.4",
+  "version": "0.1.8",
   "description": "Apple \u540c\u6b65\uff1a\u8fde\u63a5\u7cfb\u7edf\u65e5\u5386\u4e0e\u63d0\u9192\u4e8b\u9879\uff0c\u5171\u7528 Stella \u4e8b\u52a1\u548c\u65e5\u7a0b\u3002",
   "type": "module",
   "license": "MIT",
@@ -11,6 +11,7 @@
     "lib",
     "python",
     "!python/**/__pycache__",
+    "!python/apple_sync/StellaCalendarBridge",
     "cordis.patch.yml",
     "README.md",
     "LICENSE.txt",

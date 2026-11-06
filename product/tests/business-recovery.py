@@ -249,6 +249,111 @@ class Recovery(unittest.TestCase):
                 sync.disconnect()
                 self.assertEqual(sync.sync()['status'], 'disconnected')
 
+    def test_apple_point_event_preserves_time_and_remains_visible_at_midnight(self):
+        class PointBridge(Bridge):
+            def call(self, op, **payload):
+                if op == 'upsert':
+                    self.rows[0].update(payload)
+                    return {'event': copy.deepcopy(self.rows[0])}
+                return super().call(op, **payload)
+        bridge = PointBridge('calendar')
+        bridge.rows[0].update(start_at='2026-11-05T00:00:00Z', end_at='2026-11-05T00:00:00Z')
+        service = self.business.calendar
+        sync = AppleCalendarSync(bridge=bridge, db_path=self.root / 'point.sqlite3', calendar_port=service)
+        sync.start_auto = lambda: None
+        self.assertEqual(sync.start_sync()['result']['imported'], 1)
+        rows = service.list_events('2026-11-05T00:00:00Z', '2026-11-06T00:00:00Z')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['start_at'], rows[0]['end_at'])
+        self.assertEqual(service.list_events('2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z'), [])
+        service.update_event(rows[0]['id'], {'title': 'Updated point'})
+        self.assertEqual(sync.sync()['exported'], 1)
+        self.assertEqual(bridge.rows[0]['start_at'], bridge.rows[0]['end_at'])
+        with self.assertRaises(ValueError):
+            service.create_event({'title': 'Reversed', 'start_at': '2026-11-05T01:00:00Z', 'end_at': '2026-11-05T00:00:00Z'})
+        with self.assertRaises(ValueError):
+            service.create_event({'title': 'Invalid all day', 'all_day': True, 'start_at': '2026-11-05T00:00:00Z', 'end_at': '2026-11-05T00:00:00Z'})
+
+    def test_repeating_task_focus_and_apple_completion_have_one_owner(self):
+        service = self.business.tasks
+        local = service.create_todo({'title': 'Local daily', 'due_on': '2026-08-19', 'repeat_frequency': 'daily'})
+        focused = [r for r in service.list_todos_focus(today='2026-11-06') if r.get('series_id') == local['id']]
+        self.assertEqual([r['due_on'] for r in focused], ['2026-11-06'])
+        service.complete_todo(focused[0]['id'], True)
+        focused = [r for r in service.list_todos_focus(today='2026-11-06') if r.get('series_id') == local['id']]
+        self.assertEqual([(r['due_on'], r['status']) for r in focused], [('2026-11-07', 'todo'), ('2026-11-06', 'completed')])
+
+        service.change_todo_status(local['id'], 'cancelled')
+        cancelled = next(r for r in service.list_todos_focus(today='2026-11-06') if r['id'] == local['id'])
+        self.assertEqual(cancelled['status'], 'cancelled')
+        self.assertNotIn('series_id', cancelled)
+
+        class RepeatingBridge(Bridge):
+            def call(self, op, **payload):
+                if op == 'reminder_upsert':
+                    self.completed = payload['completed']
+                    self.rows[0].update(due_on='2026-08-20', completed=False, completed_at=None)
+                    return {'reminder': copy.deepcopy(self.rows[0])}
+                return super().call(op, **payload)
+        bridge = RepeatingBridge('reminders')
+        bridge.rows[0].update(due_on='2026-08-19', recurrence={'frequency': 'daily'})
+        sync = AppleReminderSync(bridge=bridge, db_path=self.root / 'repeat-owner.sqlite3', todo_port=service)
+        sync.start_auto = lambda: None
+        sync.start_sync()
+        apple = next(r for r in service.list_todos_focus(today='2026-11-06') if r['source_type'] == 'apple_reminder')
+        self.assertEqual(apple['due_on'], '2026-08-19')
+        service.complete_todo(apple['id'], True)
+        self.assertEqual(sync.sync()['exported'], 1)
+        self.assertTrue(bridge.completed)
+        refreshed = service.get_todo(apple['id'])
+        self.assertEqual((refreshed['due_on'], refreshed['status']), ('2026-08-20', 'todo'))
+        self.assertEqual(sync.sync()['exported'], 0)
+        self.assertEqual(len([r for r in service.list_todos() if r['source_type'] == 'apple_reminder']), 1)
+
+    def test_custom_repeat_intervals_survive_edits_and_restart(self):
+        service = self.business.tasks
+        cases = [('daily', 3, [], ['2026-11-02','2026-11-05','2026-11-08']),
+                 ('weekly', 2, [0,2], ['2026-11-02','2026-11-04','2026-11-16','2026-11-18']),
+                 ('monthly', 2, [], ['2026-11-02','2027-01-02']),
+                 ('yearly', 2, [], ['2026-11-02'])]
+        for frequency, interval, days, expected in cases:
+            item = service.create_todo({'title': frequency, 'due_on': '2026-11-02', 'repeat_frequency': frequency,
+                'repeat_interval': interval, 'repeat_days': days, 'repeat_until': '2027-01-03'})
+            self.assertEqual(service.get_todo(item['id'])['repeat_interval'], interval)
+            rows = [r['due_on'] for r in service.list_todos('2026-11-02', '2027-01-04') if r.get('series_id') == item['id']]
+            if frequency == 'daily':
+                self.assertEqual(rows[:3], expected)
+            elif frequency == 'weekly':
+                self.assertEqual(rows[:4], expected)
+            else:
+                self.assertEqual(rows, expected)
+            service.update_todo(item['id'], {'title': 'Renamed'})
+            self.assertEqual(service.get_todo(item['id'])['repeat_interval'], interval)
+        for interval in [0, -1, 1.5, True, 100]:
+            with self.assertRaises(ValueError):
+                service.create_todo({'title': 'Bad interval', 'due_on': '2026-11-02', 'repeat_frequency': 'daily', 'repeat_interval': interval})
+
+    def test_apple_custom_interval_is_imported_and_written_back(self):
+        class CustomBridge(Bridge):
+            def call(self, op, **payload):
+                if op == 'reminder_upsert':
+                    self.rows[0].update(payload)
+                    self.rows[0]['recurrence'] = {'frequency': payload['repeat_frequency'], 'days': payload['repeat_days'], 'interval': payload['repeat_interval']}
+                    return {'reminder': copy.deepcopy(self.rows[0])}
+                return super().call(op, **payload)
+        bridge = CustomBridge('reminders')
+        bridge.rows[0].update(due_on='2026-11-02', recurrence={'frequency': 'weekly', 'days': [0,2], 'interval': 2})
+        sync = AppleReminderSync(bridge=bridge, db_path=self.root / 'custom-apple.sqlite3', todo_port=self.business.tasks)
+        sync.start_auto = lambda: None
+        result = sync.start_sync()
+        self.assertEqual(result['result']['imported'], 1)
+        item = self.business.tasks.list_todos()[0]
+        self.assertEqual(item['repeat_interval'], 2)
+        self.business.tasks.update_todo(item['id'], {'repeat_interval': 3})
+        self.assertEqual(sync.sync()['exported'], 1)
+        self.assertEqual(bridge.rows[0]['recurrence']['interval'], 3)
+        self.assertEqual(sync.sync()['exported'], 0)
+
     def test_sync_category_selection_uses_distinct_names_and_validates_before_creation(self):
         sources = [{'id': 'a', 'title': 'Work', 'writable': True}, {'id': 'b', 'title': 'Work', 'writable': True}]
         categories = [{'id': 'existing', 'name': 'Work'}]
