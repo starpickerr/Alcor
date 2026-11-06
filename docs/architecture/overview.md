@@ -1,5 +1,7 @@
 # Stella 开发者架构导航
 
+当前默认产品为 `packages/` 中的 DSH 原生 Stella，开发、构建与安装入口见 [product/README.md](../../product/README.md) 和仓库根 [AGENTS.md](../../AGENTS.md)。本页描述保留的旧 Python／独立桌面运行路径，不能用于定位新版同名功能或作为新版验收入口。
+
 本文记录当前代码，产品使用方式见[使用指南](../guide.md)。目录名与入口均以仓库当前实现为准；未来设想不在此标为已实现。
 
 ```mermaid

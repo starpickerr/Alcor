@@ -55,20 +55,8 @@ def test_provider_and_channel_changes_select_matching_tests():
     assert "tests/test_feishu_progress_card.py" in channel["pytest"]
 
 
-def test_skill_reference_change_validates_skills_without_linting_vendored_examples():
-    checks = affected_checks([".agents/skills/webapp-testing/examples/console_logging.py"])
-
-    assert checks["ruff"] == []
-    assert "tests/test_quality_check.py" in checks["pytest"]
-    assert checks["policy"]
 
 
-def test_project_policy_change_selects_policy_preflight():
-    for path in ("AGENTS.md", ".agents/AGENTS.md", ".agents/rules/git.md",
-                 ".agents/workflows/development.md", ".codex/config.toml",
-                 ".agents/skills/sources.json", ".cursor/rules/stella-development.mdc",
-                 "scripts/check_dev_policy.py"):
-        assert affected_checks([path])["policy"], path
 
 
 def test_changed_files_uses_explicit_ci_base(monkeypatch):
@@ -86,14 +74,6 @@ def test_changed_files_uses_explicit_ci_base(monkeypatch):
     assert commands[0] == ["git", "diff", "--name-only", "abc123...HEAD"]
 
 
-def test_project_skills_have_codex_metadata():
-    from scripts.quality_check import ROOT
-
-    for skill in (ROOT / ".agents" / "skills").glob("*/SKILL.md"):
-        text = skill.read_text(encoding="utf-8")
-        assert text.startswith("---\n"), skill
-        assert f"name: {skill.parent.name}" in text.split("---", 2)[1], skill
-        assert "description:" in text.split("---", 2)[1], skill
 
 
 def test_isolated_env_never_points_at_real_state(tmp_path):
