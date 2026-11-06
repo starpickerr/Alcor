@@ -47,4 +47,4 @@ Stella 将来源保存为 `plugin:<prefix>:<id>`、原账号和工具名，并�
 
 ## 验证
 
-`briefing-adapter.test.mjs` 覆盖目录只读调用边界、无关工具不执行、格式／账号／资源校验、分页撤销与断开。`briefing-ui-check.py` 实际安装独立合成 DSH 原生插件，验证只枚举不采集、只读勾选来源、分页进入简报、修订和行动；定时模板不继承外部授权。`credentials_check.py` 验证学校凭据、课程选择和移除，`mcp_check.py` 验证独立对话授权。全部使用合成数据，真实服务需另行验收。
+`briefing-adapter.test.mjs` 覆盖目录只读调用边界、无关工具不执行、格式／账号／资源校验、分页撤销与断开。`briefing-ui-check.py` 实际安装独立合成 DSH 原生插件，验证只枚举不采集、只读勾选来源、分页进入简报、修订和行动；定时模板不继承外部授权。`source-plugins-check.py` 验证原生插件中的学校凭据、课程选择和移除，`mcp_check.py` 验证继承 DSH 工具策略的对话调用。全部使用合成数据，真实服务需另行验收。

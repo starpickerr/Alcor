@@ -218,7 +218,7 @@ def check_settings(page):
     page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单|More|更多)$')).last.click()
     page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
     page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$')).get_by_role('button', name='Stella', exact=True).click()
-    page.get_by_label('称呼', exact=True).wait_for()
+    page.get_by_label('助手名称', exact=True).wait_for()
     page.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
 
 

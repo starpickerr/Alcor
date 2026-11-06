@@ -1,3 +1,4 @@
+import { secretaryPersona } from './persona.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDateFile, writeBillCsv } from './page-files.js'
 import { readBillFiles } from './bill-files.js'
@@ -14,26 +15,7 @@ export function apply(ctx) {
     }
     return next()
   })
-  ctx.systemPrompt.variable('stella_identity', context => ctx.stellaSecretary.identityPrompt(context.agent?.session?.header, !!context.agent && personalTurns.get(context.agent) === true))
-  let signature
-  let release
-  let updating = false
-  const maskGlobals = () => {
-    if (updating) return
-    const names = ctx.tools.definitions().map(tool => tool.name).filter(name => !ctx.stellaSecretary.mcpAllowed(name)).sort()
-    const nextSignature = JSON.stringify(names)
-    if (signature === nextSignature) return
-    updating = true
-    try {
-      const next = ctx.tools.restrict({ deny: names })
-      signature = nextSignature
-      release?.()
-      release = next
-    } finally { updating = false }
-  }
-  maskGlobals()
-  ctx.on('tools/change', maskGlobals)
-  ctx.on('stella/mcp-change', maskGlobals)
+  ctx.systemPrompt.variable('stella_identity', () => secretaryPersona)
   ctx.tools.guard(execution => {
     if (['stella_import_bills', 'stella_import_dates', 'stella_export_bills'].includes(execution.name)) {
       const header = execution.agent?.session?.header
@@ -46,7 +28,6 @@ export function apply(ctx) {
     if (!execution.name.startsWith('mcp__')) return
     const agent = execution.agent
     const header = agent?.session?.header
-    if (!ctx.stellaSecretary.mcpAllowed(execution.name)) return 'Stella 尚未获准使用这个 MCP 工具。'
     if (!header || header.origin === 'subagent' || header.parentSession || personalTurns.get(agent) !== true) return '私人 MCP 仅限用户主动发起的 Stella 主会话。'
   })
   ctx.tools.register(defineTool({

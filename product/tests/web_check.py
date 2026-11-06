@@ -30,7 +30,8 @@ class Provider(BaseHTTPRequestHandler):
         if tools:
             names = [tool["function"]["name"] for tool in tools]
             if "stella_overview" in names:
-                assert set(names) == {"stella_overview", "stella_business", "stella_generate_briefing", "stella_review_tasks", "stella_import_bills", "stella_import_dates", "stella_export_bills"}, names
+                assert {"stella_overview", "stella_business", "stella_generate_briefing", "stella_review_tasks", "stella_import_bills", "stella_import_dates", "stella_export_bills"} <= set(names), names
+                assert self.shared_tools <= set(names), names
             else:
                 assert self.shared_tools <= set(names), names
                 assert set(names) - self.shared_tools == {"todo_write", "ask_user_question"}, names
@@ -111,7 +112,7 @@ def wait_secretary(page):
     if mode.count() and mode.get_attribute('aria-label').endswith('Stella'):
         page.locator('.stella-sidebar').wait_for()
     settings(page)
-    page.get_by_label('称呼', exact=True).wait_for()
+    page.get_by_label('助手名称', exact=True).wait_for()
     page.get_by_role('button', name='Close', exact=True).click()
 
 
@@ -121,9 +122,9 @@ def start_secretary_chat(page):
 
 
 def settings(page):
-    page.get_by_role("button", name="Account menu", exact=True).click()
-    page.get_by_role("menuitem", name="Settings", exact=False).click()
-    page.get_by_label("Settings", exact=True).get_by_role("button", name="Stella", exact=True).click()
+    page.get_by_role("button", name=re.compile(r"^(Account menu|账号菜单|More|更多)$")).last.click()
+    page.get_by_role("menuitem", name=re.compile(r"^(Settings|设置)")).click()
+    page.get_by_role("dialog", name=re.compile(r"^(Settings|设置)$")).get_by_role("button", name="Stella", exact=True).click()
 
 
 def rpc(page, url, endpoint, args=None):
@@ -178,7 +179,7 @@ def main():
                 page.get_by_role("heading", name="事务", exact=True).wait_for()
                 assert page.request.post(url.split("/?")[0] + "/api/stellaSecretary/overview", data={}).ok
                 settings(page)
-                page.get_by_label("称呼", exact=True).fill("Stella regression")
+                page.get_by_label("助手名称", exact=True).fill("Stella regression")
                 page.get_by_role("button", name="保存", exact=True).click()
                 page.get_by_text("已保存", exact=True).wait_for()
                 assert rpc(page, url, 'stellaSecretary/overview')['displayName'] == 'Stella regression'

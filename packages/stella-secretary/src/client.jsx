@@ -3,13 +3,11 @@ import React, { useEffect, useState } from 'react'
 import { remote } from './remote.js'
 import { createModeController, startSecretarySession } from './mode.js'
 import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
-import { WorkspaceSettings } from './workspace-settings.jsx'
 import { AutomationPage } from './automation.jsx'
 import { QuickChat, QuickConversation } from './quick-chat.jsx'
 import deskBaseStyle from './desk.css'
 import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
-import { ConnectionSettings } from './connection-settings.jsx'
 import agentHubStyle from './agent-hub.css'
 import connectionStyle from './connection-settings.css'
 const deskStyle = deskBaseStyle + businessStyle + agentHubStyle + billStyle + connectionStyle
@@ -74,7 +72,7 @@ function Preferences({ describe, update }) {
       setDescriptor(result.value); setStatus('已保存')
     } catch { setStatus('连接中断，请重新打开以确认保存结果。') }
   }
-  return <form className="stella-preference-form" onSubmit={save}><h2>Stella</h2><label htmlFor="stella-display-name">称呼</label>
+  return <form className="stella-preference-form" onSubmit={save}><h2>Stella</h2><label htmlFor="stella-display-name">助手名称</label>
     <Input id="stella-display-name" value={name} maxLength={80} required disabled={!descriptor} onChange={e => setName(e.target.value)} />
     <Button type="submit" variant="outline" disabled={!descriptor || !name.trim()}>保存</Button><p role="status">{status}</p></form>
 }
@@ -112,7 +110,7 @@ export async function apply(ctx) {
       const reference = ctx.sessions.retain(id, { source: 'stellaBriefing' })
       try { await reference.ready; return await work(id) } finally { reference.release() }
     }
-    const preferences = ({ close } = {}) => <>{!modeController && <Button variant="outline" onClick={() => { close?.(); navigate('stella-tasks') }}>打开 Stella</Button>}<div className="stella-settings-content"><Preferences describe={describe} update={update} /><WorkspaceSettings api={ctx.remote.stellaSecretary} workspaces={ctx.workspaces} sessionSource={ctx.uiSession.adapter.current} openWorkspace={openWorkspace} startSession={startSession} /><ConnectionSettings api={ctx.remote.stellaSecretary} openPlugins={() => { close?.(); navigate('plugins') }} /><details><summary>权限与安全</summary><p>业务数据保存在本机。同账号的其他插件与工具可能访问，不提供系统级隔离。</p><p>协作发送任务内容，自动化执行已保存指令并可读取本机业务记录。MCP 需单独授权，提醒需客户端运行。Apple 同步在插件中设置。</p><p>沿用 DSH 权限与凭据策略；旧版安全设置未迁移。</p></details></div></>
+    const preferences = () => <div className="stella-settings-content"><Preferences describe={describe} update={update} /></div>
     const navigate = panel => { modeController?.switchMode('stella'); ctx.layout.selectPanel(panel) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of ['stella', 'stella-history', 'stella-attention', ...deskViews.filter(view => view.id !== 'stella-schedules').map(view => view.id)]) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({

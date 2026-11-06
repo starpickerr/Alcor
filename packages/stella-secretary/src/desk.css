@@ -101,3 +101,13 @@ html[data-platform='darwin'] .stella-sidebar { background:transparent; }
   .stella-editor { padding:18px; }
   .stella-business-toolbar .stella-checkbox { margin-left:0; }
 }
+
+@media(max-width:767px) {
+  [data-shortcut-modal=settings]:has(.stella-settings-content) { grid-template-areas:"stella-title stella-header" "stella-nav stella-nav" "stella-options stella-options"; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto minmax(0,1fr); }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > :first-child { grid-area:stella-title; padding:20px 0 8px 16px; }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > nav { grid-area:stella-nav; padding:0; }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > nav > div { flex-direction:row; overflow-x:auto; padding:8px 16px 12px; }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > nav button { flex:0 0 auto; }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > :nth-last-child(2) { grid-area:stella-header; height:auto; padding:18px 12px 8px; }
+  [data-shortcut-modal=settings]:has(.stella-settings-content) > :last-child { grid-area:stella-options; padding:0 16px 24px; }
+}
