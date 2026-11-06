@@ -7,7 +7,7 @@ const base = { id: z.uuid(), revision: z.number().int().positive(), createdAt: i
 const task = z.object({ ...base, kind: z.literal('task'), title: text, details: z.string(), due: date.nullable(), status: z.enum(['open', 'done']) }).strict()
 const event = z.object({ ...base, kind: z.literal('event'), title: text, details: z.string(), start: z.string(), end: z.string(), allDay: z.boolean(), timeZone: z.string().max(100) }).strict().superRefine((value, ctx) => {
   const format = value.allDay ? date : instant
-  if (!format.safeParse(value.start).success || !format.safeParse(value.end).success || value.end <= value.start) ctx.addIssue({ code: 'custom', message: '结束时间必须晚于开始时间；全天日程结束日期不包含当天。' })
+  if (!format.safeParse(value.start).success || !format.safeParse(value.end).success || (value.end < value.start || value.allDay && value.end === value.start)) ctx.addIssue({ code: 'custom', message: '结束时间不能早于开始时间；全天日程结束日期不包含当天。' })
   try { new Intl.DateTimeFormat('zh-CN', { timeZone: value.timeZone }) } catch { ctx.addIssue({ code: 'custom', message: '时区无效。' }) }
 })
 export const currencies = { CNY: 2, USD: 2, EUR: 2, HKD: 2, GBP: 2, JPY: 0 }
@@ -46,7 +46,7 @@ export function buildBriefing(records, reportDate, notes, now) {
       const parts = new Intl.DateTimeFormat('en', { timeZone: item.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(instant))
       return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type).value).join('-')
     }
-    return localDay(item.start) <= reportDate && localDay(Date.parse(item.end) - 1) >= reportDate
+    return localDay(item.start) <= reportDate && localDay(Math.max(Date.parse(item.start), Date.parse(item.end) - 1)) >= reportDate
   })
   const bills = active.filter(item => item.kind === 'bill' && item.status === 'planned' && item.date <= reportDate)
   const selected = [...tasks, ...events, ...bills]

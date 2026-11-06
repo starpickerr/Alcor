@@ -65,7 +65,7 @@ def check(page, home, profile, artifacts):
     page.get_by_label('学工号', exact=True).fill('synthetic-source-user')
     page.get_by_label('eLearning 密码', exact=True).fill('synthetic-school-secret')
     page.get_by_role('button', name='保存账号', exact=True).click()
-    expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text('账号已保存')
+    expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text('已保存')
     expect(page.get_by_label('eLearning 密码', exact=True)).to_have_value('')
     expect(page.get_by_label('eLearning 密码', exact=True)).to_have_attribute('placeholder', '********')
     expect(page.get_by_role('button', name='保存账号', exact=True)).to_be_disabled()
@@ -93,7 +93,7 @@ def check(page, home, profile, artifacts):
     page.get_by_label('邮箱授权码', exact=True).fill('synthetic-mail-secret')
     page.get_by_label('IMAP 服务器', exact=True).fill('imap.example.com')
     page.get_by_role('button', name='保存邮箱', exact=True).click()
-    expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text('账号已保存')
+    expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text('已保存')
     assert mail()['configured'] and mail()['connected']
     assert not any('password' in row for row in mail()['accounts'])
     first_id = mail()['accounts'][0]['id']
@@ -114,6 +114,7 @@ def check(page, home, profile, artifacts):
     second.get_by_role('button', name='保存邮箱', exact=True).click()
     expect(second).to_have_count(0)
     assert len(mail()['accounts']) == 2
+    page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
     expect(first.get_by_label('邮件文件夹', exact=True)).to_have_value('Archive')
     first.get_by_role('button', name='保存邮箱', exact=True).click()
     expect(page.locator('[data-plugin-config]').get_by_role('alert')).to_contain_text('已变化')
@@ -122,6 +123,7 @@ def check(page, home, profile, artifacts):
     expect(first.get_by_label('邮件文件夹', exact=True)).to_have_value('INBOX')
     second_id = next(row['id'] for row in mail()['accounts'] if row['id'] != first_id)
     second = page.locator(f'[data-mail-account="{second_id}"]')
+    page.get_by_role('button', name='选择邮箱：second@example.com', exact=True).click()
     second.get_by_role('button', name='移除邮箱', exact=True).click()
     page.get_by_role('button', name='确认移除邮箱', exact=True).click()
     expect(second).to_have_count(0)
@@ -133,6 +135,7 @@ def check(page, home, profile, artifacts):
         assert mail()['accounts'][0]['folder'] == folder
     assert 'synthetic-mail-secret' in (home / 'dsh/.credentials.yaml').read_text()
     assert 'second-synthetic-mail-secret' not in (home / 'dsh/.credentials.yaml').read_text()
+    page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
     first.get_by_label('邮箱授权码', exact=True).fill('updated-mail-password')
     first.get_by_role('button', name='保存邮箱', exact=True).click()
     expect(first.get_by_label('邮箱授权码', exact=True)).to_have_value('')
@@ -140,6 +143,35 @@ def check(page, home, profile, artifacts):
     assert 'updated-mail-password' in (home / 'dsh/.credentials.yaml').read_text()
     assert 'synthetic-mail-secret' not in (home / 'dsh/.credentials.yaml').read_text()
     assert 'updated-mail-password' not in json.dumps(mail())
+    # Exercise the supported 20-mailbox limit without connecting to any external mailbox.
+    extra_ids = []
+    for index in range(19):
+        result = call('stellaMail/save', {'request': {'expectedRevision': mail()['revision'], 'account': {
+            'user': f'synthetic{index}@example.com', 'password': 'synthetic-only-pass', 'host': 'imap.example.com',
+            'port': 993, 'folder': 'INBOX', 'enabled': False}}})
+        extra_ids.append(next(r['id'] for r in result['accounts'] if r['user'] == f'synthetic{index}@example.com'))
+    page.get_by_role('button', name='刷新状态', exact=True).click()
+    expect(page.get_by_role('button', name='添加邮箱', exact=True)).to_be_disabled()
+    expect(page.locator('.stella-mail-connection:visible')).to_have_count(1)
+    page.get_by_label('搜索邮箱', exact=True).fill('synthetic18@')
+    expect(page.locator('.stella-mail-account-row')).to_have_count(1)
+    page.get_by_role('button', name='选择邮箱：synthetic18@example.com', exact=True).click()
+    expect(page.locator('.stella-mail-connection:visible').get_by_label('邮箱账号', exact=True)).to_have_value('synthetic18@example.com')
+    page.get_by_label('搜索邮箱', exact=True).fill('')
+    page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
+    first.get_by_label('邮件文件夹', exact=True).fill('Draft kept locally')
+    page.get_by_role('button', name='选择邮箱：synthetic18@example.com', exact=True).click()
+    page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
+    expect(first.get_by_label('邮件文件夹', exact=True)).to_have_value('Draft kept locally')
+    first.get_by_role('button', name='撤销修改', exact=True).click()
+    page.locator('.stella-mail-settings').screenshot(path=str(artifacts / 'mail-multi-desktop.png'), animations='disabled')
+    page.set_viewport_size({'width': 390, 'height': 844})
+    page.locator('.stella-mail-settings').screenshot(path=str(artifacts / 'mail-multi-mobile.png'), animations='disabled')
+    assert page.locator('.stella-mail-settings').evaluate('element => element.scrollWidth <= element.clientWidth')
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    for identity in extra_ids:
+        call('stellaMail/removeAccount', {'request': {'id': identity, 'expectedRevision': mail()['revision']}})
+    page.get_by_role('button', name='刷新状态', exact=True).click()
     names = set(grants()['availableTools'])
     assert {'mcp__elearning__fetch', 'mcp__elearning__list_courses', 'mcp__email__fetch_messages', 'mcp__email__list_sources'} <= names
     assert not any(name.endswith(('__save_account', '__delete_account', '__save_settings')) for name in names)

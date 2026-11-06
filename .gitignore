@@ -82,3 +82,5 @@ packages/stella-secretary/business/**/__pycache__/
 
 # Keep native Apple sync source despite the legacy python-directory ignore.
 !/packages/stella-apple-sync/python/
+
+/packages/stella-apple-sync/python/apple_sync/Stella Apple Sync.app/

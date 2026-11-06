@@ -67,14 +67,17 @@ def main():
                             expect(region.get_by_role('button')).to_have_count(2)
                             expect(region.get_by_role('checkbox')).to_have_count(0)
                             expect(region.get_by_text('未开启', exact=True)).to_be_visible()
-                            expect(region.get_by_text('尚无成功同步记录', exact=True)).to_be_visible()
+                            expect(region.locator('.apple-sync-metadata')).to_have_count(0)
+                            expect(region.get_by_text('尚未授权', exact=True)).to_have_count(0)
+                            expect(region.get_by_text('同步全部', exact=False)).to_have_count(0)
                             expect(region.get_by_role('button', name='暂停同步', exact=True)).to_be_disabled()
                             expect(region.get_by_label('同步方向', exact=True)).to_have_count(0)
                             expect(region.get_by_role('button', name='保存连接', exact=True)).to_have_count(0)
                             expect(region.get_by_role('button', name='预览同步', exact=True)).to_have_count(0)
                             region.get_by_role('button', name='同步', exact=True).click()
-                            region.get_by_text('同步结果：', exact=False).wait_for()
-                            region.get_by_text('分类：Synthetic source', exact=True).wait_for()
+                            expect(region.get_by_role('button', name='暂停同步', exact=True)).to_be_enabled()
+                            expect(region.get_by_text('同步结果：', exact=False)).to_have_count(0)
+                            expect(region.get_by_text('分类：Synthetic source', exact=True)).to_have_count(0)
                             state = call('status', {'kind': kind})
                             assert state['direction'] == 'bidirectional' and state['auto_enabled']
                             assert state['links'][0]['enabled'] and state['links'][0]['direction'] == 'bidirectional'
@@ -96,7 +99,7 @@ def main():
                         page.get_by_text('@stella/apple-sync', exact=True).click()
                         for region in (calendar, reminders):
                             expect(region.get_by_role('button', name='暂停同步', exact=True)).to_be_enabled()
-                            expect(region.get_by_text('分类：Synthetic source', exact=True)).to_be_visible()
+                            expect(region.get_by_text('分类：Synthetic source', exact=True)).to_have_count(0)
                         page.screenshot(path=str(artifacts / 'apple-desktop.png'), full_page=True, animations='disabled')
                         page.locator('.apple-sync-settings').screenshot(path=str(artifacts / 'apple-config-desktop.png'), animations='disabled')
                         mobile(page)
@@ -177,7 +180,7 @@ def check_tasks(page, business, artifacts):
     open_secretary(page)
     page.get_by_role('button', name='新建事务', exact=True).click()
     form = page.get_by_role('form', name='新增事务', exact=True)
-    assert form.locator('.stella-field > span:first-child').all_text_contents() == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签']
+    assert form.locator('.stella-field > span:first-child').all_text_contents() == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签', '频率']
     for label in ['事务时区', '计划日期', '提醒时间', '清单', '重复频率', '标记为重要']:
         expect(form.get_by_label(label, exact=True)).to_have_count(0)
     expect(form.get_by_text('提醒时间使用本机时区', exact=False)).to_have_count(0)
@@ -199,7 +202,7 @@ def check_tasks(page, business, artifacts):
     page.get_by_role('button', name='刷新', exact=True).click()
     card = page.locator(f'[data-task-id="{saved["id"]}"]')
     expect(card.get_by_role('button', name='编辑事务', exact=True)).to_have_count(0)
-    trash = card.get_by_role('button', name='删除事务：Project parent', exact=True)
+    trash = card.get_by_role('button', name='更多操作：Project parent', exact=True)
     assert not trash.inner_text().strip() and trash.locator('svg').count() == 1
     assert card.evaluate('e => getComputedStyle(e).borderTopStyle !== "none" && getComputedStyle(e).borderRadius !== "0px"')
     assert page.locator('.stella-task-tabs').evaluate('e => Math.abs(e.getBoundingClientRect().right - document.querySelector(".stella-agent-strip").getBoundingClientRect().right) < 2')
@@ -257,20 +260,77 @@ def check_tasks(page, business, artifacts):
     page.get_by_role('button', name='返回事务树', exact=True).click()
     mobile(page)
     assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
-    card.get_by_role('button', name='删除事务：Project parent', exact=True).click(trial=True)
+    card.get_by_role('button', name='更多操作：Project parent', exact=True).click(trial=True)
     page.screenshot(path=str(artifacts / 'tasks-list-mobile.png'), full_page=True, animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     trash.click()
+    page.get_by_role('menuitem', name='删除事务', exact=True).click()
     dialog = page.get_by_role('dialog', name='删除事务', exact=True)
     expect(dialog).to_contain_text('子事务')
     dialog.get_by_role('button', name='取消', exact=True).click()
     expect(card).to_be_visible()
     expect(page.locator('.stella-task-detail')).to_have_count(0)
     trash.click()
+    page.get_by_role('menuitem', name='删除事务', exact=True).click()
     dialog.get_by_role('button', name='确认删除', exact=True).click()
     expect(dialog).not_to_be_visible()
     expect(card).to_have_count(0)
     assert not any(row['title'] in ('Project parent', 'First step') for row in business('tasks', 'list_todos'))
+    page.get_by_role('button', name='新建事务', exact=True).click()
+    repeat_form = page.get_by_role('form', name='新增事务', exact=True)
+    repeat_form.get_by_label('标题', exact=True).fill('Custom weekly study')
+    repeat_form.get_by_label('截止日期', exact=True).fill('2026-11-02')
+    repeat_form.get_by_label('频率', exact=True).select_option('custom')
+    repeat_form.get_by_label('重复间隔', exact=True).fill('2')
+    repeat_form.get_by_label('重复单位', exact=True).select_option('weekly')
+    repeat_form.get_by_label('周一', exact=True).check()
+    repeat_form.get_by_label('周三', exact=True).check()
+    repeat_form.get_by_label('结束日期', exact=True).fill('2027-12-31')
+    page.screenshot(path=str(artifacts / 'task-frequency-desktop.png'), full_page=True, animations='disabled')
+    repeat_form.get_by_role('button', name='保存事务', exact=True).click()
+    expect(repeat_form).not_to_be_visible()
+    custom = next(r for r in business('tasks','list_todos') if r['title'] == 'Custom weekly study')
+    assert custom['repeat_interval'] == 2 and json.loads(custom['repeat_days']) == [0,2]
+    page.get_by_role('button', name='Custom weekly study', exact=True).click()
+    expect(page.get_by_label('当前事务状态', exact=True)).to_have_count(0)
+    expect(page.get_by_label('状态筛选', exact=True)).to_have_count(0)
+    page.get_by_role('button', name='编辑详情', exact=True).click()
+    repeat_form = page.get_by_role('form', name='编辑事务', exact=True)
+    expect(repeat_form.get_by_label('频率', exact=True)).to_have_value('custom')
+    expect(repeat_form.get_by_label('重复间隔', exact=True)).to_have_value('2')
+    mobile(page)
+    page.screenshot(path=str(artifacts / 'task-frequency-mobile.png'), full_page=True, animations='disabled')
+    repeat_form.get_by_role('button', name='取消编辑', exact=True).click()
+    page.get_by_role('button', name='返回事务树', exact=True).click()
+    business('tasks', 'delete_todo', {'todo_id': custom['id']})
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    page.get_by_role('button', name='刷新', exact=True).click()
+    # All tasks show active and completed history immediately without disclosure controls.
+    today = page.evaluate("new Date().toISOString().slice(0, 10)")
+    tomorrow = page.evaluate("new Date(Date.now() + 86400000).toISOString().slice(0, 10)")
+    daily = business('tasks', 'create_todo', {'payload': {'title': 'Daily study', 'due_on': today, 'repeat_frequency': 'daily', 'timezone': 'UTC'}})
+    past = [business('tasks', 'create_todo', {'payload': {'title': 'Daily study', 'status': 'completed', 'due_on': day}}) for day in ('2026-04-17', '2026-05-13')]
+    page.get_by_role('button', name='刷新', exact=True).click()
+    expect(page.get_by_role('tab', name=re.compile(r'^全部事务'))).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('button', name='Daily study', exact=True)).to_have_count(3)
+    expect(page.locator('.stella-task-history')).to_have_count(0)
+    expect(page.locator('.stella-tasks-page details')).to_have_count(0)
+    daily_id = daily['id']
+    daily_card = page.locator(f'[data-task-id="{daily_id}"]:visible').filter(has=page.get_by_role('button', name='完成本次', exact=True))
+    daily_card.get_by_role('button', name='完成本次', exact=True).click()
+    expect(daily_card.get_by_role('button', name='完成本次', exact=True)).to_be_visible()
+    expect(daily_card.locator('time')).to_have_text(tomorrow)
+    assert next(row for row in business('tasks', 'list_todos', {'start': today, 'end': tomorrow}) if row.get('series_id') == daily['id'])['status'] == 'completed'
+    expect(page.get_by_role('button', name='Daily study', exact=True)).to_have_count(4)
+    expect(page.get_by_role('tab', name=re.compile(r'^全部事务'))).to_have_attribute('aria-selected', 'true')
+    page.screenshot(path=str(artifacts / 'tasks-repeat-desktop.png'), full_page=True, animations='disabled')
+    mobile(page)
+    assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
+    page.screenshot(path=str(artifacts / 'tasks-repeat-mobile.png'), full_page=True, animations='disabled')
+    for item in [daily, *past]:
+        business('tasks', 'delete_todo', {'todo_id': item['id']})
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+
 
 
 
@@ -280,6 +340,7 @@ def check_calendar(page, business, artifacts):
     page.get_by_role('button', name='分类管理', exact=True).click()
     dialog = page.get_by_role('dialog', name='分类管理', exact=True)
     dialog.get_by_label('新分类名称', exact=True).fill('UI calendar')
+    dialog.get_by_label('新分类颜色', exact=True).fill('#00aacc')
     dialog.get_by_role('button', name='添加分类', exact=True).click()
     dialog.get_by_label('UI calendar名称', exact=True).wait_for()
     page.keyboard.press('Escape')
@@ -287,7 +348,7 @@ def check_calendar(page, business, artifacts):
     form = page.get_by_role('form', name='新增日程', exact=True)
     form.get_by_label('标题', exact=True).fill('Repeated lesson')
     form.get_by_label('开始', exact=True).fill('2026-11-05T09:00')
-    form.get_by_label('结束', exact=True).fill('2026-11-05T10:00')
+    form.get_by_label('结束', exact=True).fill('2026-11-05T12:30')
     form.get_by_label('日程分类', exact=True).select_option(label='UI calendar')
     form.get_by_label('地点', exact=True).fill('Room 101')
     form.get_by_label('重复频率', exact=True).select_option('daily')
@@ -320,11 +381,42 @@ def check_calendar(page, business, artifacts):
         page.get_by_role('tab', name=label, exact=True).click()
         page.locator(f'#calendar-view-{slug}-panel').wait_for()
         expect(page.get_by_text('正在读取日程…', exact=True)).to_have_count(0)
+        page.get_by_role('button', name={'day': '今天', 'week': '本周', 'month': '本月', 'year': '今年', 'list': '今年'}[slug], exact=True).wait_for()
+        expect(page.locator('.stella-day-detail')).to_have_count(1 if slug == 'day' else 0)
+        if slug in ('day', 'week'):
+            viewport = page.locator('.stella-time-viewport')
+            expect(viewport).to_be_visible()
+            assert viewport.evaluate('element => element.scrollTop') > 0
+            lesson = page.locator('.stella-time-column .stella-timed-event').filter(has_text='Repeated lesson').first
+            assert lesson.evaluate("element => element.querySelector('strong').getBoundingClientRect().top - element.getBoundingClientRect().top") < 12
+            assert lesson.evaluate("element => getComputedStyle(element).borderLeftColor") == 'rgb(0, 170, 204)'
+            assert lesson.evaluate("element => getComputedStyle(element).backgroundColor") != 'rgb(255, 255, 255)'
+            viewport.evaluate('element => element.scrollTop = 0')
+            assert page.get_by_role('button', name='2026-11-06 00:00 新建日程', exact=True).is_visible()
+            page.get_by_role('button', name='UI calendar', exact=True).click()
+            assert viewport.evaluate('element => element.scrollTop') > 0
+            page.get_by_role('button', name='全部', exact=True).click()
+        if slug == 'month':
+            chip = page.locator('.stella-calendar-chip').filter(has_text='Repeated lesson').first
+            assert chip.evaluate("element => getComputedStyle(element).borderLeftColor") == 'rgb(0, 170, 204)'
         page.screenshot(path=str(artifacts / f'calendar-{slug}-desktop.png'), full_page=True, animations='disabled')
+    page.get_by_role('tab', name='月', exact=True).click()
+    page.get_by_role('button', name='2026-11-06', exact=True).click()
+    expect(page.get_by_role('tab', name='日', exact=True)).to_have_attribute('aria-selected', 'true')
     page.get_by_role('tab', name='周', exact=True).click()
+    page.set_viewport_size({'width': 1028, 'height': 900})
+    expect(page.locator('.stella-time-scroll')).to_have_js_property('scrollLeft', 0)
     mobile(page)
     assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
+    assert page.locator('.stella-time-scroll').evaluate('element => element.scrollLeft') > 0
+    page.locator('.stella-time-head > button').first.click()
+    expect(page.locator('.stella-time-scroll')).to_have_js_property('scrollLeft', 0)
+    page.locator('.stella-time-head > button').nth(5).click()
+    assert page.locator('.stella-time-scroll').evaluate('element => element.scrollLeft') > 0
     page.screenshot(path=str(artifacts / 'calendar-week-mobile.png'), full_page=True, animations='disabled')
+    page.get_by_role('tab', name='月', exact=True).click()
+    assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
+    page.screenshot(path=str(artifacts / 'calendar-month-mobile.png'), full_page=True, animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     categories = business('calendar', 'categories')
     category = next(row for row in categories if row['name'] == 'UI calendar')

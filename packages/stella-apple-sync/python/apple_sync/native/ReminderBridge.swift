@@ -130,14 +130,16 @@ func runReminder(_ request: [String: Any]) throws -> [String: Any] {
     if op == "reminder_request_access" {
         let semaphore = DispatchSemaphore(value: 0)
         var granted = false
+        var accessError: Error?
         if #available(macOS 14.0, *) {
-            store.requestFullAccessToReminders { result, _ in granted = result; semaphore.signal() }
+            store.requestFullAccessToReminders { result, error in granted = result; accessError = error; semaphore.signal() }
         } else {
-            store.requestAccess(to: .reminder) { result, _ in granted = result; semaphore.signal() }
+            store.requestAccess(to: .reminder) { result, error in granted = result; accessError = error; semaphore.signal() }
         }
         guard semaphore.wait(timeout: .now() + 120) == .success else {
             throw BridgeFailure("Reminders permission request timed out")
         }
+        if let accessError { throw BridgeFailure(accessError.localizedDescription) }
         store.reset()
         return ["authorization": reminderAuth(), "granted": granted]
     }

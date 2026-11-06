@@ -84,3 +84,10 @@ test('independent Apple worker shares business records over reverse RPC and stop
   await apple.close()
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
 })
+
+// App transport has its own isolated launch, cleanup and permission-denial cases.
+test('Apple app helper uses Launch Services without borrowing the host authorization identity', async () => {
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  await promisify(execFile)(process.env.STELLA_BUSINESS_PYTHON || 'python3', [fileURLToPath(new URL('./apple-app-bridge.py', import.meta.url))])
+})

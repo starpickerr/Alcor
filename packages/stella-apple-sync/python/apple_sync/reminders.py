@@ -39,6 +39,7 @@ def _payload(remote):
             "remind_at": remote.get("remind_at"), "priority": _priority(remote.get("priority"), remote=True),
             "repeat_frequency": rule.get("frequency") or "none", "repeat_days": rule.get("days") or [],
             "repeat_until": (rule.get("until") or "")[:10] or None,
+            "repeat_interval": rule.get("interval", 1),
             "completed": bool(remote.get("completed")), "completed_at": remote.get("completed_at")}
 
 
@@ -58,8 +59,12 @@ def _compatible(row, *, remote=False):
 
 
 def _hash(row, *, remote=False):
-    return hashlib.sha256(json.dumps(_compatible(row, remote=remote), sort_keys=True,
-                                     ensure_ascii=False).encode()).hexdigest()
+    content = _compatible(row, remote=remote)
+    interval = (row.get("recurrence") or {}).get("interval", 1) if remote else row.get("repeat_interval", 1)
+    # Keep existing interval-1 mappings valid across this additive upgrade.
+    if interval != 1:
+        content["repeat_interval"] = interval
+    return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def _source_key(remote):
@@ -73,7 +78,7 @@ def _supported(remote):
             (not remote.get("alarm_count") or remote.get("remind_at") is not None) and
             rule.get("rule_count", 0) <= 1 and
             rule.get("frequency", "none") in ("none", "daily", "weekly", "monthly", "yearly") and
-            rule.get("interval", 1) == 1 and not rule.get("count") and
+            type(rule.get("interval", 1)) is int and 1 <= rule.get("interval", 1) <= 99 and not rule.get("count") and
             (rule.get("frequency") == "weekly" or not rule.get("days")) and
             not any(rule.get(key) for key in ("month_days", "months", "week_numbers",
                                               "year_days", "set_positions")))
@@ -446,7 +451,8 @@ class AppleReminderSync:
                 "remind_at": local["remind_at"], "priority": _priority(local["priority"]),
                 "completed": local["status"] == "completed", "completed_at": local["completed_at"],
                 "repeat_frequency": local["repeat_frequency"],
-                "repeat_days": json.loads(local["repeat_days"]), "repeat_until": local["repeat_until"]}
+                "repeat_days": json.loads(local["repeat_days"]), "repeat_until": local["repeat_until"],
+                "repeat_interval": local.get("repeat_interval", 1)}
         if mapping:
             data.update(reminder_id=mapping["reminder_id"], external_id=mapping["external_id"])
         else:
@@ -500,6 +506,8 @@ class AppleReminderSync:
                 counts["conflicts"] += 1
                 return
             remote = self.bridge.call("reminder_upsert", **self._write_payload(local, mapping))["reminder"]
+            if local["source_type"] == "apple_reminder":
+                local = self._place_todo(self._apply_remote(mapping, local, remote), category_id, direction)
             counts["exported"] += 1
         else:
             local = self._place_todo(local, category_id, direction)

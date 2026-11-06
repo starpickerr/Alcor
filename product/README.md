@@ -6,7 +6,7 @@
 
 ## 桌面用户安装
 
-当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.23.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
+当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.29.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
 
 界面扩展保存在 Stella 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -32,11 +32,11 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-开发产物为 `.local/artifacts/stella-secretary-0.1.23.tgz` 与可选的 `stella-apple-sync-0.1.4.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
+开发产物为 `.local/artifacts/stella-secretary-0.1.29.tgz` 与可选的 `stella-apple-sync-0.1.8.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
 
 ```sh
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.23.tgz --ignore-scripts
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.4.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.29.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.8.tgz --ignore-scripts
 ```
 
 通过顶部模式菜单进入 Stella；设置中的“打开 Stella”保留为辅助入口。事务与日程展开 Stella Agent 即可在原页对话；新会话由侧栏提供，连接与对话权限在设置中管理。它直接使用已有模型路由；New Session 在 Stella 模式使用秘书 Preset，切回 DSH 后使用用户原有默认 Preset。安装不改写宿主的模型、凭据 provider、默认 Agent 或执行策略，不会自动读取个人来源；设置中的身份导入需显式预览和选择。停用/卸载使用原生管理器，Stella 安装记录与设置默认保留；其他插件、会话和凭据由宿主管理。

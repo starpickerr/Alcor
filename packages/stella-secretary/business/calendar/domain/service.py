@@ -191,8 +191,9 @@ class CalendarService:
         row["title"] = _text(row.get("title"), "title")
         row["start_at"] = _instant(row.get("start_at"), "start_at")
         row["end_at"] = _instant(row.get("end_at"), "end_at")
-        if datetime.fromisoformat(row["end_at"]) <= datetime.fromisoformat(row["start_at"]):
-            raise ValueError("end_at must be after start_at")
+        if (datetime.fromisoformat(row["end_at"]) < datetime.fromisoformat(row["start_at"]) or
+                row.get("all_day") and row["end_at"] == row["start_at"]):
+            raise ValueError("end_at must not precede start_at; all-day events require a positive duration")
         for field in ("description", "location"):
             value = row.get(field, "")
             if not isinstance(value, str):
@@ -245,11 +246,11 @@ class CalendarService:
             raise ValueError("end must be after start")
         clauses, args = [], []
         if start_at and end_at:
-            clauses.append("(repeat_frequency != 'none' OR (end_at > ? AND start_at < ?))")
-            args.extend((start_at.isoformat(), end_at.isoformat()))
+            clauses.append("(repeat_frequency != 'none' OR ((end_at > ? OR (end_at = start_at AND start_at >= ?)) AND start_at < ?))")
+            args.extend((start_at.isoformat(), start_at.isoformat(), end_at.isoformat()))
         elif start_at:
-            clauses.append("end_at > ?")
-            args.append(start_at.isoformat())
+            clauses.append("(end_at > ? OR (end_at = start_at AND start_at >= ?))")
+            args.extend((start_at.isoformat(), start_at.isoformat()))
         elif end_at:
             clauses.append("start_at < ?")
             args.append(end_at.isoformat())
@@ -268,7 +269,9 @@ class CalendarService:
         results = []
         for row in templates:
             if row["repeat_frequency"] == "none":
-                if datetime.fromisoformat(row["end_at"]) > start_at and datetime.fromisoformat(row["start_at"]) < end_at:
+                if ((datetime.fromisoformat(row["end_at"]) > start_at or
+                     row["end_at"] == row["start_at"] and datetime.fromisoformat(row["start_at"]) >= start_at) and
+                        datetime.fromisoformat(row["start_at"]) < end_at):
                     results.append(row)
             else:
                 results.extend(instance for instance in self._occurrences(row, start_at, end_at)
@@ -309,7 +312,7 @@ class CalendarService:
             if elapsed >= 0 and matches:
                 occurrence_start = datetime.combine(candidate, original.timetz().replace(tzinfo=None), zone).astimezone(timezone.utc)
                 occurrence_end = (datetime.combine(candidate, original.timetz().replace(tzinfo=None)) + wall_duration).replace(tzinfo=zone).astimezone(timezone.utc)
-                if occurrence_end > start and occurrence_start < end:
+                if (occurrence_end > start or occurrence_end == occurrence_start and occurrence_start >= start) and occurrence_start < end:
                     instance = dict(row)
                     instance["series_id"] = row["id"]
                     instance["id"] = f"{row['id']}@{candidate.isoformat()}"

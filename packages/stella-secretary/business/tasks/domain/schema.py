@@ -9,6 +9,7 @@ _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 # Columns added after the first release; existing databases receive them via ALTER.
 _LATE_COLUMNS = (
+    ("repeat_interval", "INTEGER NOT NULL DEFAULT 1"),
     ("planned_on", "TEXT"), ("list_name", "TEXT NOT NULL DEFAULT ''"),
     ("tags", "TEXT NOT NULL DEFAULT '[]'"), ("flagged", "INTEGER NOT NULL DEFAULT 0"),
     ("checklist", "TEXT NOT NULL DEFAULT '[]'"),

@@ -36,3 +36,21 @@ test('ledger periods keep year and month boundaries, CSV preserves money and neu
   assert.ok(csv.includes('"2026-11-04T12:30:17+08:00"'))
   assert.ok(csv.includes('"a,""b""\nnext"'))
 })
+
+test('a point event at midnight belongs to its own day', () => {
+  const point = { allDay: false, start: new Date('2026-11-05T00:00').toISOString(), end: new Date('2026-11-05T00:00').toISOString() }
+  assert.equal(eventOnDay(point, '2026-11-05'), true)
+  assert.equal(eventOnDay(point, '2026-11-04'), false)
+  assert.equal(eventOnDay(point, '2026-11-06'), false)
+})
+
+test('calendar initially reveals the first timed event without hiding earlier hours', async () => {
+  const { calendarFocusMinute } = await import('../../packages/stella-secretary/src/presentation.js')
+  const event = (start, end, allDay = false) => ({ start, end, allDay })
+  assert.equal(calendarFocusMinute([event('2026-11-06T13:30', '2026-11-06T15:00')], ['2026-11-06']), 780)
+  assert.equal(calendarFocusMinute([event('2026-11-05T23:00', '2026-11-06T02:00')], ['2026-11-06']), 0)
+  assert.equal(calendarFocusMinute([event('2026-11-06', '2026-11-07', true)], ['2026-11-06']), 480)
+  assert.equal(calendarFocusMinute([], ['2026-11-06']), 480)
+  assert.equal(calendarFocusMinute([event('2026-11-06T18:30', '2026-11-06T21:00'), event('2026-11-07T09:55', '2026-11-07T12:30')], ['2026-11-06', '2026-11-07']), 565)
+  assert.equal(calendarFocusMinute([event('2026-11-06T00:00', '2026-11-06T00:00')], ['2026-11-06']), 0)
+})
