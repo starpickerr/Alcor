@@ -6,7 +6,7 @@
 
 ## 桌面用户安装
 
-当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.32.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
+当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.43.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
 
 界面扩展保存在 Stella 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -32,11 +32,11 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-开发产物为 `.local/artifacts/stella-secretary-0.1.32.tgz` 与可选的 `stella-apple-sync-0.1.8.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
+开发产物为 `.local/artifacts/stella-secretary-0.1.43.tgz` 与可选的 `stella-apple-sync-0.1.9.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
 
 ```sh
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.32.tgz --ignore-scripts
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.8.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.43.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.9.tgz --ignore-scripts
 ```
 
 通过顶部模式菜单进入 Stella；事务与日程展开 Stella Agent 即可在原页对话；新会话由侧栏提供，Stella 设置只保留助手名称；工具权限使用 DSH 当前会话策略。它直接使用已有模型路由；New Session 在 Stella 模式使用秘书 Preset，切回 DSH 后使用用户原有默认 Preset。安装不改写宿主的模型、凭据 provider、默认 Agent 或执行策略，不会自动读取个人来源；旧客户端使用显式离线迁移。停用/卸载使用原生管理器，Stella 安装记录与设置默认保留；其他插件、会话和凭据由宿主管理。
@@ -71,7 +71,7 @@ make test-desktop-upgrade
 
 ## 简报来源与插件适配
 
-侧栏不再提供独立「数据」页，来源选择位于「简报 → 信息来源」；旧页面位置自动恢复到简报。来源配置、历史简报和业务库保留，原数据页的存储展示接口已删除。账号配置和插件生命周期统一使用 DSH 原生插件页，Stella 不再提供连接、逐工具授权或旧工作区表单。
+侧栏不再提供独立「数据」页，来源卡片位于「简报 → 设置」，开关和范围位于对应插件详情的「简报来源」；旧页面位置自动恢复到简报。来源配置、历史简报和业务库保留，原数据页的存储展示接口已删除。账号配置和插件生命周期统一使用 DSH 原生插件页，Stella 不再提供连接、逐工具授权或旧工作区表单。
 
 适配层统一发现来源元数据、读取已选范围、校验返回身份和转换简报材料。兼容现有邮件／学校 MCP，并支持提供明确简报契约的 DSH 原生插件；不会扫描或执行全部插件工具。选择来源不等于开放对话工具或外部后台任务。插件接入协议和验证边界见 [简报插件适配](briefing-plugin-adapters.md)。
 
@@ -254,4 +254,22 @@ Stella 侧栏“自动化”与 DSH 自动化共用原生列表、完整编辑�
 
 ## 学校与邮件插件
 
-可选安装 `stella-elearning-0.1.2.tgz` 与 `stella-mail-0.1.2.tgz`，在 DSH 插件页分别打开并登录／添加邮箱。两包包含所需 MCP 运行环境，不使用开发目录。保存账号后点击检查；简报在信息来源选择范围，对话工具继承 DSH 当前会话策略。账号与来源安装不自动触发读取。生命周期、凭据及验证边界见 [MCP 连接](mcp-connections.md)。
+可选安装 `stella-elearning-0.1.4.tgz` 与 `stella-mail-0.1.7.tgz`，在 DSH 插件页分别打开并登录／添加邮箱。两包包含所需 MCP 运行环境，不使用开发目录。保存账号后点击检查；简报来源范围在对应插件中选择，对话工具继承 DSH 当前会话策略。账号与来源安装不自动触发读取。生命周期、凭据及验证边界见 [MCP 连接](mcp-connections.md)。
+
+## 插件附带业务指南
+
+秘书随包提供事务、日程、账单、简报、自动化和协作六项 Skill，仅挂载到 Stella preset；eLearning、邮件与 Apple 同步插件分别提供自己的 Skill。复用 DSH 原生 skills registry 和 bundled filesystem provider；Stella preset 显式挂载 DSH 原生 skill 工具，先展示简短目录，正文按需读取，停用/卸载按所属插件撤销，不复制到用户全局 Skill 目录。已有用户 Skill 和宿主工具策略保留。
+
+未知业务方法可查询 `stella_business(domain=..., method="catalog", arguments={"method":"目标方法"})`，只返回该方法；不传 method 保持原目录兼容。按需指南示例由 `product/tests/bundled-skills.test.mjs` 执行验证，打包后用原生宿主检验发现、加载与持久化。
+
+简报 `0.1.39` 使用独立 DSH 执行会话和仅允许结构化提交的 `stella-briefing` Preset。页面、聊天及原生定时入口共用运行记录；聊天手动调用返回任务，定时调用等待实际保存结果。运行固定模型、来源/窗口和规则，完成的来源与模型批次保存在 Profile 私有业务存储；刷新和切页不取消，重启后显式继续。失败/取消不推进游标，旧结果已提交时按操作 ID 对账。中断期间若结果或来源游标已更新，旧运行不能继续覆盖新结果。未完成来源可能重采，尚未收到并保存的模型批次可能再次调用。专项验收：`product/tests/briefing-runs.test.mjs`、`product/tests/briefing-runs-check.py`。
+
+简报 `0.1.40`：工具栏以单一齿轮图标进入完整设置页，合并信息来源与筛选/写作规则；返回简报保留当前报告与版本选择。来源授权、保存冲突保护和规则接口保持原有契约。
+
+简报 `0.1.41`：规则用摘要卡片展示，点击以宿主 Markdown 组件查看全文，可编辑、启停和确认删除；桌面设置采用来源与规则双栏，窄窗自动单栏。
+
+简报 `0.1.42`：来源页只读聚合卡片，Email 多账号合并一张。Email 使用插件内账号开启/停用按钮统一控制全部读取入口，已开启邮箱自动成为简报来源，不再维护第二份订阅名单；学校账号随原生插件启停。通过官方 plugins.detail.section 在 eLearning 和 Stella 插件详情管理课程/本机范围。既有账号、范围及游标保留。通用适配器尚无包归属元数据的来源由 Stella 的简报适配层管理。
+
+邮件 `0.1.6` 在宿主统一调用入口复核账号开关，覆盖邮件正文、目录、游标和连接测试；停用/移除立即撤销后续调用。邮箱与学校实时来源取自已启用插件目录，旧邮箱订阅记录仅保留作兼容，不再授予或阻止访问。原有 DSH 调用权限与定时任务的明确本机范围保持有效。
+
+简报 `0.1.43`：按用户最终确认采用双层开关。插件/账号可用性与简报来源启停独立，两层均有效才采集；来源关闭不写插件/邮箱配置，课程范围与游标保留。来源与规则卡片、规则详情/编辑统一使用灰色滑块；两侧工具栏及首张卡片对齐，规则刷新仅读取规则列表。来源开关单独存储并保持并发冲突保护，Agent 不能自行开启。

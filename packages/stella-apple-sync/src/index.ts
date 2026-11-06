@@ -1,3 +1,4 @@
+import { registerBundledSkills } from '../../stella-organizer/src/skills.js'
 import { Service } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -12,6 +13,7 @@ export default class AppleSync extends TypertRemoteService {
   constructor(ctx) { super(ctx, 'stellaAppleSync', { namespace: 'stellaAppleSync' }) }
 
   async [Service.init]() {
+    registerBundledSkills(this.ctx, 'stella-apple-sync', new URL('../skills/', import.meta.url))
     const profile = this.ctx.get('profileContext')?.dir ?? dshHomePath('profiles', 'default')
     this.worker = new BusinessWorker(join(profile, 'stella', 'apple-sync'), {
       worker: new URL('../python/worker.py', import.meta.url),

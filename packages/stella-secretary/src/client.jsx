@@ -1,3 +1,4 @@
+import { PluginBriefingSources } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useState } from 'react'
 import { remote } from './remote.js'
@@ -97,19 +98,12 @@ export async function apply(ctx) {
     const update = (displayName, revision) => ctx.remote.settings.update('stella-secretary', { displayName }, revision)
     const startSession = prompt => { modeController?.switchMode('stella'); return startSecretarySession(ctx, prompt) }
     const openWorkspace = workspaceId => { modeController?.switchMode('stella'); return ctx.uiWorkspace.openWorkspace(workspaceId, undefined, { agentPreset: 'stella' }) }
-    let briefingSession
-    const withBriefingSession = async work => {
+    const briefingContext = () => {
       const current = ctx.uiSession.adapter.current.getSnapshot().props.sessionId
-      const catalog = ctx.sessions.list.getSnapshot()
-      let id = catalog.byId[current]?.projectionValues?.agentPreset === 'stella' ? current : briefingSession
-      if (!id || !catalog.byId[id]) {
-        const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(current)) || ctx.workspaces.list.getSnapshot().items[0]
-        if (!workspace) throw new Error('请先添加一个 DSH 工作区，再生成简报。')
-        id = briefingSession = await ctx.sessions.create({ workspaceId: workspace.workspaceId, agentPreset: 'stella' })
-      }
-      const reference = ctx.sessions.retain(id, { source: 'stellaBriefing' })
-      try { await reference.ready; return await work(id) } finally { reference.release() }
+      const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(current)) || ctx.workspaces.list.getSnapshot().items[0]
+      return workspace ? { workspaceId: workspace.workspaceId } : {}
     }
+    ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({ name: 'plugins.detail.section', id: 'stella-briefing-sources', inject: () => ({ api: ctx.remote.stellaOrganizer }) }, PluginBriefingSources))
     const preferences = () => <div className="stella-settings-content"><Preferences describe={describe} update={update} /></div>
     const navigate = panel => { modeController?.switchMode('stella'); ctx.layout.selectPanel(panel) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
@@ -118,7 +112,7 @@ export async function apply(ctx) {
       openSession: id => ctx.uiWorkspace.openSession(id),
       view: ['stella', 'stella-history', 'stella-attention'].includes(panel) ? 'stella-tasks' : panel,
       business: ctx.remote.stellaOrganizer,
-      withBriefingSession,
+      briefingContext,
       openPlugins: name => { modeController?.switchMode('stella'); const navigation = ctx.get('pluginNavigation'); if (name && navigation) navigation.openBundle(name); else navigate('plugins') },
       currentSession: () => ctx.uiSession.adapter.current.getSnapshot().props.sessionId,
       hasModeSwitch: !!modeController,

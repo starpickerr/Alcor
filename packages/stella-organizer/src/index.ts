@@ -12,7 +12,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { join } from 'node:path'
 import { ReminderDelivery } from './reminders.js'
 import { BriefingGenerator } from './briefing.js'
-import { discoverBriefingSources, briefingSourceOptions } from './briefing-sources.js'
+import { discoverBriefingSources, briefingSourceOptions, effectiveBriefingSources } from './briefing-sources.js'
 
 const spec = defineDomain({ name: 'stella_organizer', version: 1, tables: {
   records: domainTable(recordSchema), jobs: domainTable(jobSchema),
@@ -86,17 +86,25 @@ export default class Organizer extends TypertRemoteService {
       if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
       return apple.invoke({ method: input.method, arguments: input.arguments })
     }
-    if (input.domain === 'briefing' && input.method === 'generate') return this.generateBriefing({ ...input.arguments, ...(input.requestId ? { requestId: input.requestId } : {}) })
+    if (input.domain === 'briefing' && input.method === 'generate') return this.startBriefing({ ...input.arguments, ...(input.requestId ? { requestId: input.requestId } : {}) })
     if (input.domain === 'briefing' && input.method === 'configure_sources') {
       const sources = schemas.briefingSources.parse(input.arguments.sources)
       const expected = input.arguments.expectedSources === undefined ? undefined : schemas.briefingSources.parse(input.arguments.expectedSources)
       return this.serialize(() => this.businessWorker.call('source_settings', { sources, ...(expected === undefined ? {} : { expected_sources: expected }) }))
     }
+    if (input.domain === 'briefing' && input.method === 'source_groups') return this.businessWorker.call('source_group_settings')
+    if (input.domain === 'briefing' && input.method === 'configure_source_groups') {
+      const groups = schemas.sourceGroups.parse(input.arguments.groups)
+      const expected = schemas.sourceGroups.parse(input.arguments.expectedGroups)
+      return this.serialize(() => this.businessWorker.call('source_group_settings', { groups, expected_groups: expected }))
+    }
     if (input.domain === 'briefing' && input.method === 'source_options') return briefingSourceOptions(this.ctx, schemas.briefingSources.parse([input.arguments.source])[0])
     if (input.domain === 'briefing' && input.method === 'generation_status') return this.briefingGenerator.status()
-    if (input.domain === 'briefing' && input.method === 'cancel_generation') return this.briefingGenerator.cancel()
+    if (input.domain === 'briefing' && input.method === 'cancel_generation') return this.briefingGenerator.cancel(input.arguments.requestId)
+    if (input.domain === 'briefing' && input.method === 'resume_generation') return this.resumeBriefing(input.arguments)
     if (input.domain === 'briefing' && input.method === 'discover_sources') return discoverBriefingSources(this.ctx)
-    if (input.domain === 'briefing' && input.method === 'list_sources') return this.businessWorker.call('source_settings')
+    if (input.domain === 'briefing' && input.method === 'source_preferences') return this.businessWorker.call('source_settings')
+    if (input.domain === 'briefing' && input.method === 'list_sources') return this.effectiveSources()
     if (input.domain === 'briefing' && input.method === 'available_sources') return this.ctx.tools.definitions().map(tool => tool.name).filter(name => /^(mcp__[A-Za-z0-9_-]+__(fetch_messages|fetch_source|fetch)|[A-Za-z0-9_-]{1,64}_briefing_fetch)$/.test(name))
     if (input.domain === 'agent_hub' && input.method === 'run_workflow') return this.serialize(() => this.hub.start(input.arguments))
     if (input.domain === 'agent_hub' && input.method === 'cancel_task') return this.serialize(() => this.hub.cancel(input.arguments.task_id))
@@ -153,27 +161,51 @@ export default class Organizer extends TypertRemoteService {
         return existing
       }
       const now = new Date().toISOString()
-      const record = buildBriefing(await this.businessRecords(), input.date, input.notes, now)
+      const record = buildBriefing([], input.date, input.notes, now)
       return this.businessWorker.call('local_briefing', { record, request_id: input.requestId })
     })
+  }
+
+  private async effectiveSources() {
+    const [preferences, catalog, groups] = await Promise.all([this.businessWorker.call('source_settings'), discoverBriefingSources(this.ctx), this.businessWorker.call('source_group_settings')])
+    return effectiveBriefingSources(preferences, catalog.sources, groups)
+  }
+
+  private briefingAuthorization(sources) {
+    return async () => {
+      this.assertActive()
+      const allowed = await this.effectiveSources()
+      for (const source of sources) if (!allowed.some(saved => saved.source === source.source && saved.accountId === source.accountId && saved.tool === source.tool && saved.method === source.method && JSON.stringify(saved.arguments) === JSON.stringify(source.arguments))) throw new Error('来源已关闭、账号或范围已变化，请检查简报来源开关与插件设置。')
+    }
+  }
+
+  @Remote
+  async startBriefing(request) {
+    const input = schemas.startBriefing[0].parse(request)
+    this.assertActive()
+    let parent
+    if (input.parentSessionId) {
+      const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
+      if ('error' in found) throw new Error('发起会话无法读取，请刷新后重试。')
+      parent = found.agent
+    }
+    const sources = input.sources ?? await this.effectiveSources()
+    return this.briefingGenerator.start({ record: buildBriefing([], input.date, input.notes, new Date().toISOString()), requestId: input.requestId,
+      parent, workspaceId: input.workspaceId, sources, authorize: this.briefingAuthorization(sources) })
   }
 
   @Remote
   async generateBriefing(request) {
     const input = schemas.generateBriefing[0].parse(request)
-    const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
-    if ('error' in found) throw new Error('请先开始一个 Stella 对话并选择模型。')
-    this.assertActive()
-    const record = buildBriefing([], input.date, input.notes, new Date().toISOString())
-    const configured = await this.businessWorker.call('source_settings')
-    const sources = input.sources ?? configured
-    const authorize = async () => {
-      this.assertActive()
-      const allowed = await this.businessWorker.call('source_settings')
-      for (const source of sources) if (!['calendar_agenda', 'stella_tasks', 'stella_bills'].includes(source.source) && !allowed.some(saved => saved.source === source.source && saved.accountId === source.accountId && saved.tool === source.tool && saved.method === source.method && JSON.stringify(saved.arguments) === JSON.stringify(source.arguments))) throw new Error('来源未获简报授权或授权已撤销，请在简报的信息来源中重新选择。')
-    }
-    await authorize()
-    return this.briefingGenerator.generate({ record, requestId: input.requestId, parent: found.agent, sources, authorize })
+    await this.startBriefing(input)
+    return this.briefingGenerator.wait(input.requestId)
+  }
+
+  @Remote
+  async resumeBriefing(request) {
+    const { requestId } = schemas.resumeBriefing[0].parse(request)
+    const run = await this.businessWorker.call('briefing_run', { method: 'get', request_id: requestId })
+    return this.briefingGenerator.resume(requestId, this.briefingAuthorization(run.sources))
   }
 
   @Remote

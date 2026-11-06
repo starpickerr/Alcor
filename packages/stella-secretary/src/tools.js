@@ -1,3 +1,4 @@
+import { registerBundledSkills } from '../../stella-organizer/src/skills.js'
 import { secretaryPersona } from './persona.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDateFile, writeBillCsv } from './page-files.js'
@@ -6,6 +7,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const inject = ['tools', 'stellaSecretary', 'systemPrompt']
 export function apply(ctx) {
+  registerBundledSkills(ctx, 'stella-secretary', new URL('../skills/', import.meta.url))
   const personalTurns = new WeakMap()
   const businessTurns = new WeakMap()
   ctx.on('agent/pre-step', ({ agent, messages }, next) => {
@@ -85,7 +87,7 @@ export function apply(ctx) {
 
     ctx.tools.register(defineTool({
       name: 'stella_business',
-      description: 'Read or change Stella local business data through the same services as the pages. Domains: tasks (hierarchy, dependencies, six statuses, recurrence, checklist, categories, reminders); calendar (events, categories, recurrence, date imports); bills (ledger, reversal, statements, CSV/XLSX export); briefing (generation, revisions, item actions, rules; uses already authorized sources); agent_hub (start_job/list_jobs/cancel_job for the collaboration page, plus workflow); automation (catalog/list/create/edit/run/history/deleteInactive, for the Automation page). Call catalog to inspect method names and accepted parameter names before calling a method. Use these tools to carry out user instructions directly; pages show the same saved objects. Do not ask the user to switch pages to do supported operations. For collaboration, starting a job is not completion: read list_jobs for its status/output. For automation, query catalog for timing and edit examples. Report success only after receiving the result.',
+      description: 'Read or change Stella local business data through the same services as the pages. Domains: tasks (hierarchy, dependencies, completion, recurrence, checklist, categories, reminders); calendar (events, categories, recurrence, date imports); bills (ledger, reversal, statements, CSV/XLSX export); briefing (generation, revisions, item actions, rules; uses already authorized sources); agent_hub (start_job/list_jobs/cancel_job for the collaboration page, plus workflow); automation (catalog/list/create/edit/run/history/deleteInactive, for the Automation page). Load the matching Stella skill for workflows and argument examples. If a method is unfamiliar, call catalog; tasks/calendar/bills/briefing/agent_hub accept arguments.method to return only that method. Do not guess payload/patch fields. Use these tools to carry out user instructions directly; pages show the same saved objects. Do not ask the user to switch pages to do supported operations. For collaboration, starting a job is not completion: read list_jobs for its status/output. For automation, query catalog for timing and edit examples. Report success only after receiving the result.',
       parameters: {
         domain: { type: 'string', enum: ['tasks', 'calendar', 'bills', 'briefing', 'agent_hub', 'apple', 'automation'], required: true },
         method: { type: 'string', required: true },
@@ -107,25 +109,30 @@ export function apply(ctx) {
           const hash = createHash('sha256').update(requestId ?? execution.callId ?? randomUUID()).digest('hex')
           args = { ...args, parentSessionId: execution.agent.session.id, id: `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}` }
         }
-        if (domain === 'briefing' && ['configure_sources', 'discover_sources', 'source_options'].includes(method)) throw new Error('请在简报的信息来源中管理授权。')
-        if (domain === 'briefing' && method === 'generate') {
+        if (domain === 'briefing' && ['configure_sources', 'configure_source_groups', 'discover_sources', 'source_options'].includes(method)) throw new Error('请在简报设置中管理来源开关，账号和范围在对应插件中管理。')
+        if (domain === 'briefing' && ['generate', 'resume_generation', 'cancel_generation'].includes(method)) {
           const header = execution.agent?.session?.header
           if (!header || header.origin === 'subagent' || header.parentSession || personalTurns.get(execution.agent) !== true) throw new Error('外部来源简报仅供用户主动发起，请使用已授权的手动简报入口。')
-          const hash = createHash('sha256').update(requestId ?? execution.callId ?? randomUUID()).digest('hex')
-          args = { notes: '', ...args, parentSessionId: execution.agent?.session?.id, requestId: `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}` }
+          if (method === 'generate') {
+            const hash = createHash('sha256').update(requestId ?? execution.callId ?? randomUUID()).digest('hex')
+            args = { notes: '', ...args, parentSessionId: execution.agent?.session?.id, requestId: `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}` }
+          }
         }
         return { result: await ctx.stellaOrganizer.business({ domain, method, arguments: args, requestId: domain === 'briefing' && method === 'generate' ? args.requestId : requestId ?? execution.callId }) }
       },
     }))
     for (const [name, description, execute] of [
-      ['stella_generate_briefing', 'Generate or update today’s briefing using the configured sources and model. User turns may use saved briefing sources. Scheduled turns use only local tasks, upcoming calendar and bills; external sources require separate manual authorization.', async (_args, execution) => {
+      ['stella_generate_briefing', 'Start an independent briefing task using the configured sources and a fixed model. Return its run identity and execution session; starting does not mean the briefing is finished. User turns may use saved briefing sources. Scheduled turns use only selected local sources; external sources require separate manual authorization.', async (_args, execution) => {
         const now = new Date()
         const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
         // Schedule delivery can repeat after a crash; one saved daily briefing must keep one identity.
         const scheduled = personalTurns.get(execution.agent) !== true
         const hash = createHash('sha256').update(scheduled ? `stella-daily-briefing:${date}` : execution.callId || randomUUID()).digest('hex')
         const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`
-        const record = await ctx.stellaOrganizer.generateBriefing({ date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { sources: ['calendar_agenda', 'stella_tasks', 'stella_bills'].map(source => ({ source, accountId: 'local' })) } : {}) })
+        const sources = scheduled ? (await ctx.stellaOrganizer.business({ domain: 'briefing', method: 'list_sources', arguments: {} })).filter(source => ['calendar_agenda', 'stella_tasks', 'stella_bills'].includes(source.source)) : undefined
+        const input = { date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { sources } : {}) }
+        if (!scheduled) return ctx.stellaOrganizer.startBriefing(input)
+        const record = await ctx.stellaOrganizer.generateBriefing(input)
         return { id: record.id, date: record.date, body: record.body, saved: true }
       }],
       ['stella_review_tasks', 'Read local unarchived tasks for a user-requested or scheduled task review. Does not modify tasks or access MCP.', () => ctx.stellaOrganizer.taskReview()],

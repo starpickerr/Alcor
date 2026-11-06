@@ -30,8 +30,8 @@ def open_sources(page):
     page.get_by_role('button', name='简报', exact=True).click()
     refresh = page.get_by_role('button', name='刷新简报', exact=True)
     assert not refresh.inner_text().strip() and refresh.locator('svg').count() == 1
-    page.get_by_role('button', name='信息来源', exact=True).click()
-    dialog = page.get_by_role('dialog', name='简报信息来源', exact=True)
+    page.get_by_role('button', name='简报设置', exact=True).click()
+    dialog = page.locator('[data-briefing-settings]')
     refresh = dialog.get_by_role('button', name='刷新来源', exact=True)
     refresh.click()
     expect(refresh).to_be_enabled()
@@ -66,16 +66,16 @@ def check(page, home, profile, artifacts):
     dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
     dialog = open_sources(page)
     for package in ('@stella/elearning', '@stella/mail'):
-        row = dialog.locator(f'[data-source-connection="{package}"]')
-        expect(row).to_contain_text('未配置账号')
-        expect(row.get_by_role('button', name='设置账号', exact=True)).to_be_enabled()
+        row = dialog.locator('[data-source-card="'+('elearning' if package.endswith('elearning') else 'email')+'"]')
+        expect(row).to_contain_text('待配置')
+        expect(row).to_be_enabled()
         expect(row.get_by_role('checkbox')).to_have_count(0)
     page.screenshot(path=str(artifacts / 'source-setup-desktop.png'), animations='disabled')
     page.set_viewport_size({'width': 390, 'height': 844})
     assert page.locator('body').evaluate('node => node.scrollWidth <= node.clientWidth')
     page.screenshot(path=str(artifacts / 'source-setup-narrow.png'), animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    dialog.locator('[data-source-connection="@stella/elearning"]').get_by_role('button', name='设置账号', exact=True).click()
+    dialog.get_by_role('button', name='管理来源：eLearning', exact=True).click()
     page.locator('[data-plugin-detail="@stella/elearning"] [data-plugin-config]').wait_for()
     expect(page.locator('[data-plugin-config] details')).to_have_count(0)
     expect(page.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
@@ -100,9 +100,9 @@ def check(page, home, profile, artifacts):
     page.screenshot(path=str(artifacts / 'school-narrow.png'), animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     dialog = open_sources(page)
-    expect(dialog.get_by_label('复旦 eLearning', exact=True)).to_be_visible()
+    expect(dialog.locator('[data-source-card="elearning"]')).to_be_visible()
     expect(dialog.locator('[data-source-connection="@stella/elearning"]')).to_have_count(0)
-    dialog.locator('[data-source-connection="@stella/mail"]').get_by_role('button', name='设置账号', exact=True).click()
+    dialog.get_by_role('button', name='管理来源：Email', exact=True).click()
     page.locator('[data-plugin-detail="@stella/mail"] [data-plugin-config]').wait_for()
     expect(page.locator('[data-plugin-config] details')).to_have_count(0)
     expect(page.locator('[data-mail-account="new"]')).to_be_visible()
@@ -121,6 +121,29 @@ def check(page, home, profile, artifacts):
     expect(first.get_by_role('button', name='保存邮箱', exact=True)).to_be_disabled()
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
     assert first.get_by_role('button', name='测试连接', exact=True).bounding_box()['y'] > first.get_by_role('button', name='保存邮箱', exact=True).bounding_box()['y']
+    chosen = lambda: call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
+    assert any(row['source'] == 'email' for row in chosen()), 'An enabled mailbox must not require a second briefing subscription'
+    expect(page.locator('[data-plugin-briefing="@stella/mail"]')).to_have_count(0)
+    first.get_by_role('button', name='停用邮箱', exact=True).click()
+    expect(first.get_by_role('button', name='开启邮箱', exact=True)).to_be_enabled()
+    expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
+    assert not any(row['source'] == 'email' for row in chosen())
+    first.get_by_role('button', name='开启邮箱', exact=True).click()
+    expect(first.get_by_role('button', name='停用邮箱', exact=True)).to_be_enabled()
+    assert any(row['source'] == 'email' for row in chosen())
+    first.get_by_role('button', name='测试连接', exact=True).click()
+    checking = first.get_by_role('button', name='正在测试…', exact=True)
+    expect(checking).to_be_disabled()
+    expect(checking).to_have_attribute('aria-busy', 'true')
+    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_contain_text('邮箱服务器拒绝登录')
+    expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
+    first.get_by_role('button', name='测试连接', exact=True).click()
+    expect(first.get_by_role('button', name='正在测试…', exact=True)).to_be_disabled()
+    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_contain_text('测试连接超时')
+    first.get_by_role('button', name='测试连接', exact=True).click()
+    expect(first.get_by_role('button', name='正在测试…', exact=True)).to_be_disabled()
+    expect(first.get_by_text('连接正常', exact=True)).to_be_visible()
+    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_have_count(0)
     first.get_by_label('邮件文件夹', exact=True).fill('Archive')
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
     page.get_by_role('button', name='添加邮箱', exact=True).click()
@@ -206,14 +229,24 @@ def check(page, home, profile, artifacts):
     page.set_viewport_size({'width': 1440, 'height': 1000})
     dialog = open_sources(page)
     expect(dialog.locator('[data-source-connection]')).to_have_count(0)
-    expect(dialog.get_by_label('复旦 eLearning', exact=True)).to_be_visible()
-    expect(dialog.get_by_label('email (synthetic@example.com)', exact=True)).to_be_visible()
-    assert not dialog.get_by_label('复旦 eLearning', exact=True).is_checked()
-    assert not dialog.get_by_label('email (synthetic@example.com)', exact=True).is_checked()
+    expect(dialog.locator('[data-source-card="elearning"]')).to_be_visible()
+    expect(dialog.locator('[data-source-card="email"]')).to_have_count(1)
+    expect(dialog.get_by_role('checkbox')).to_have_count(0)
+    expect(dialog.locator('[data-source-card="email"]')).to_contain_text('已开启')
+    email_switch = dialog.get_by_role('switch', name='启用来源：Email', exact=True)
+    account_flags = [(row['id'], row['enabled']) for row in mail()['accounts']]
+    revision_before = mail()['revision']
+    email_switch.click()
+    expect(email_switch).to_have_attribute('aria-checked', 'false')
+    assert not any(row['source'] == 'email' for row in call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}}))
+    assert [(row['id'], row['enabled']) for row in mail()['accounts']] == account_flags
+    assert mail()['revision'] == revision_before, 'Briefing switch must not rewrite plugin credentials'
+    email_switch.click()
+    expect(email_switch).to_have_attribute('aria-checked', 'true')
     page.screenshot(path=str(artifacts / 'source-discovery.png'), animations='disabled')
-    dialog.get_by_role('button', name='关闭', exact=True).click()
+    dialog.get_by_role('button', name='返回简报', exact=True).click()
     chosen = call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
-    assert not any(row['source'] in ('email', 'elearning') for row in chosen)
+    assert {row['source'] for row in chosen} >= {'email', 'elearning'}
 
 
 def main():
@@ -224,7 +257,18 @@ def main():
         profile = home / 'dsh/profiles/desktop'; profile.mkdir(parents=True)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'source-bundle-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
-        (profile / 'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
+        fixture = home / 'mail-check-fixture.mjs'
+        fixture.write_text("""export const inject=['stellaMailConnection'];
+export function apply(ctx) {
+  const prototype=Object.getPrototypeOf(ctx.stellaMailConnection);
+  const original=prototype.check;
+  const results=[{status:'query_failed',code:'auth_failed'},{status:'query_failed',code:'timeout'},{status:'ready'}];
+  let count=0;
+  prototype.check=async function(){await new Promise(resolve=>setTimeout(resolve,500));return results[Math.min(count++,results.length-1)]};
+  ctx.effect(()=>()=>{prototype.check=original});
+}
+""")
+        (profile / 'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n- insert:\n    - id: synthetic-mail-check\n      name: {json.dumps(str(fixture))}\n')
         baseline = (profile / 'cordis.patch.yml').read_bytes()
         desktop.native_cli(home, 'sources-install', 'add', str(PACK), *map(str, SOURCES), '--ignore-scripts')
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline

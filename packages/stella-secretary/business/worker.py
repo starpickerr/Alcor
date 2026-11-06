@@ -59,6 +59,8 @@ class Business:
         self.meta.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, document TEXT NOT NULL)')
         self.meta.execute('CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, document TEXT)')
         self.meta.commit()
+        from business.briefing.runs import BriefingRuns
+        self.briefing_runs = BriefingRuns(self, jsonable)
 
         with self.agent_hub.store._connect() as db:
             tasks = [json.loads(row[0]) for row in db.execute('SELECT document_json FROM hub_tasks')]
@@ -100,7 +102,14 @@ class Business:
         entry = self.entries[domain]
         if method == 'catalog':
             from business.contracts import catalog
-            return catalog(domain, entry, getattr(self, domain))
+            methods = catalog(domain, entry, getattr(self, domain))
+            name = (arguments or {}).get('method')
+            if name is None:
+                return methods
+            found = [row for row in methods if row['name'] == name]
+            if not found:
+                raise ValueError('Unknown business operation')
+            return found
         allowed = {method['name'] for descriptor in entry.SERVICE_DESCRIPTORS for method in descriptor['methods']}
         if method not in allowed:
             raise ValueError('Unknown business operation')
@@ -171,23 +180,23 @@ class Business:
                 raise ValueError('同一操作标识不能用于不同简报。')
             return json.loads(previous['document'])
         stamp = now()
-        source_records = [item for item in self.records() if item['kind'] != 'briefing' and not item['archived']]
-        items = [{'source_id': item['id'], 'title': item['title'], 'snippet': item['details'],
-                  'occurred_at': stamp, 'payload': {'body': item['details'], 'record': item}}
-                 for item in source_records]
+        sources = [self.calendar_agenda(stamp) if row['source'] == 'calendar_agenda' else self.local_source(row['source'], stamp)
+                   for row in self.source_settings() if row['source'] in ('calendar_agenda', 'stella_tasks', 'stella_bills')]
         if record['notes']:
-            items.append({'source_id': record['date'] + ':notes', 'title': '补充材料', 'snippet': record['notes'], 'occurred_at': stamp})
-        result = self.briefing.run_pipeline(briefing_date=record['date'], sources=[{'source': 'local', 'items': items, 'cursors': {'updated': stamp}}], run_at=stamp)
+            sources.append({'source': 'local', 'items': [{'source_id': record['date'] + ':notes', 'title': '补充材料',
+                           'snippet': record['notes'], 'occurred_at': stamp}], 'cursors': {'until': stamp}})
+        if not sources:
+            raise ValueError('请选择简报来源，或填写补充材料。')
+        result = self.briefing.run_pipeline(briefing_date=record['date'], sources=sources, run_at=stamp)
         snapshot = jsonable(result)
-        document = {**record, 'id': request_id, 'revision': 1, 'archived': False, 'createdAt': stamp, 'updatedAt': stamp,
+        document = {**record, 'body': snapshot['briefing']['body'], 'title': snapshot['briefing']['title'], 'id': request_id, 'revision': 1, 'archived': False, 'createdAt': stamp, 'updatedAt': stamp,
                     'business': {'briefingId': snapshot['briefing']['id'], 'revision': snapshot['revisions'][0]['number'] if snapshot['revisions'] else 1}}
         self.meta.execute('INSERT INTO reports VALUES (?,?,?)', (request_id, fingerprint, json.dumps(document, ensure_ascii=False)))
         self.meta.commit()
         return document
 
-    def generated_briefing(self, record, request_id, sources, submissions=None, run_at=None):
-        from business.briefing.domain.generator import AgentBriefingGenerator, NeedModel
-        from business.briefing.domain.pipeline import window_start
+    def generated_briefing(self, record, request_id, sources, submissions=None, run_at=None, configurations=None, rules_snapshot=None, baseline=None):
+        from business.briefing.domain.generator import AgentBriefingGenerator, NeedModel, rules_document
         from uuid import uuid5, NAMESPACE_URL
         stamp = run_at or now()
         previous = self.meta.execute('SELECT * FROM reports WHERE id=?', (request_id,)).fetchone()
@@ -196,8 +205,15 @@ class Business:
             if previous['fingerprint'] != fingerprint:
                 raise ValueError('同一操作标识不能用于不同简报。')
             return {'record': json.loads(previous['document'])}
-        start = window_start(self.briefing, record['date'], stamp, datetime.fromisoformat(stamp.replace('Z', '+00:00')).astimezone())
+        start = min((row.get('window_start') for row in sources if row.get('window_start')), default=self.source_windows(record['date'], stamp, [{'source': 'local', 'accountId': 'default'}])[0])
         selected = list(sources)
+        configurations = configurations or [{'source': row['source'], 'accountId': row.get('account_id') or 'default'} for row in selected]
+        current = self.briefing.briefing_for_date(record['date'])
+        detail = baseline if baseline is not None else (jsonable(self.briefing.get_briefing(current.id)) if current else {})
+        from business.briefing.domain.models import FilterRule
+        rules = [FilterRule(**rule) for rule in rules_snapshot] if rules_snapshot is not None else self.briefing.list_rules(enabled_only=True)
+        rule_text = rules_document(rules)
+        preserved, unchanged = {}, set()
         local_items = []
         if record['notes']:
             local_items.append({'source_id': record['date'] + ':notes', 'title': '补充材料', 'snippet': record['notes'], 'occurred_at': stamp})
@@ -207,8 +223,21 @@ class Business:
             raise ValueError('请选择简报来源，或填写补充材料。')
         rows = {}
         normalized = []
-        for source in selected:
+        for index, source in enumerate(selected):
             account = source.get('account_id') or 'default'
+            configuration = configurations[index] if index < len(configurations) else {'source': source['source'], 'accountId': account}
+            scope = self.briefing_scope(configuration)
+            source = {**source, 'scope': scope, 'cursors': {**source.get('cursors', {}), '_briefing_scope': scope}} if 'cursors' in source else {**source, 'scope': scope}
+            key = source['source'] + ':' + account
+            previous_window = (detail.get('briefing', {}).get('source_windows') or {}).get(key, {})
+            prior = {row['id']: row for row in detail.get('mail', []) if row['source'] == source['source'] and row['account_id'] == account} if previous_window.get('scope') == scope else {}
+            def content(row):
+                fields = ('source', 'account_id', 'source_id', 'thread_id', 'sender', 'sender_email', 'list_id', 'title', 'snippet', 'url', 'body', 'metadata')
+                return {field: row.get(field, '') for field in fields}
+            for row in prior.values():
+                candidate = self.briefing.build_source_item({**row, 'payload': {**row.get('metadata', {}), 'body': row.get('body', '')}})
+                rows[candidate[0].id] = candidate
+                unchanged.add(candidate[0].id)
             prepared = []
             for item in source.get('items') or []:
                 identity = json.dumps([source['source'], account, item['source_id']], ensure_ascii=False)
@@ -217,18 +246,44 @@ class Business:
                 prepared.append({**payload, 'id': candidate[0].id})
             normalized.append({**source, 'items': prepared})
             source_start = source.get('window_start') or start
-            for candidate in self.briefing.store.window_candidates(source_start, stamp, [(source['source'], account)]):
-                rows[candidate[0].id] = candidate
             for payload in prepared:
-                if datetime.fromisoformat(source_start.replace('Z', '+00:00')) <= datetime.fromisoformat(payload['occurred_at'].replace('Z', '+00:00')) <= datetime.fromisoformat(stamp.replace('Z', '+00:00')):
-                    candidate = self.briefing.build_source_item(payload)
-                    rows[candidate[0].id] = candidate
+                candidate = self.briefing.build_source_item(payload)
+                item, email = candidate
+                entry = {**jsonable(item), 'metadata': {k: v for k, v in item.payload.items() if k != 'body'},
+                         'body': str(item.payload.get('body') or item.snippet),
+                         'sender_email': email.sender_email if email else '', 'list_id': email.list_id if email else ''}
+                old = prior.get(item.id)
+                same = old and content(entry) == content(old)
+                if same:
+                    continue
+                unchanged.discard(item.id)
+                # Incremental sources also return changed resources whose creation date is old.
+                occurred = datetime.fromisoformat(item.occurred_at.replace('Z', '+00:00'))
+                if occurred <= datetime.fromisoformat(stamp.replace('Z', '+00:00')) and (old or datetime.fromisoformat(source_start.replace('Z', '+00:00')) <= occurred):
+                    rows[item.id] = candidate
+            if source['source'] in ('calendar_agenda', 'stella_tasks', 'stella_bills') and not source.get('errors'):
+                present = {item['id'] for item in prepared}
+                for identity in set(prior) - present:
+                    rows.pop(identity, None)
+                    unchanged.discard(identity)
+            if detail.get('briefing', {}).get('rule_text') == rule_text:
+                preserved.update({identity: row['decision'] for identity, row in prior.items() if identity in unchanged})
+        reports = {}
+        for card in detail.get('items', []):
+            thread = (card['source'], card['account_id'], card['thread_id'] or card['source_id'])
+            new_ids = {identity for identity, (item, _) in rows.items() if (item.source, item.account_id, item.thread_id or item.source_id) == thread}
+            old_thread_ids = {row['id'] for row in detail.get('mail', []) if (row['source'], row['account_id'], row['thread_id'] or row['source_id']) == thread}
+            if old_thread_ids == new_ids and old_thread_ids <= preserved.keys() and card.get('payload', {}).get('_briefing_report'):
+                reports[card['source_item_id']] = card['payload']['_briefing_report']
         try:
-            draft = AgentBriefingGenerator(submissions or []).generate(list(rows.values()), self.briefing.list_rules(enabled_only=True), briefing_date=record['date'], window_start=start, window_end=stamp)
+            draft = AgentBriefingGenerator(submissions or []).generate(list(rows.values()), rules, briefing_date=record['date'], window_start=start, window_end=stamp, preserved_decisions=preserved, preserved_reports=reports)
         except NeedModel as pending:
             return {'model': pending.request, 'runAt': stamp}
+        same_scopes = {key: value.get('scope') for key, value in detail.get('briefing', {}).get('source_windows', {}).items()} == {row['source'] + ':' + (row.get('account_id') or 'default'): row['scope'] for row in normalized}
+        if same_scopes and set(rows) == set(preserved) == {row['id'] for row in detail.get('mail', [])} and len(reports) == len(draft['items']) and detail.get('briefing', {}).get('body'):
+            draft['body'] = detail['briefing']['body']
         result = jsonable(self.briefing.run_pipeline(briefing_date=record['date'], sources=normalized, draft=draft, run_at=stamp))
-        document = {**record, 'id': request_id, 'body': draft['body'], 'title': draft['title'], 'revision': 1, 'archived': False, 'createdAt': stamp, 'updatedAt': stamp,
+        document = {**record, 'id': request_id, 'body': result['briefing']['body'], 'title': result['briefing']['title'], 'revision': 1, 'archived': False, 'createdAt': stamp, 'updatedAt': stamp,
                     'business': {'briefingId': result['briefing']['id'], 'revision': result['revisions'][0]['number'], 'snapshot': result}}
         self.meta.execute('INSERT INTO reports VALUES (?,?,?)', (request_id, fingerprint, json.dumps(document, ensure_ascii=False)))
         self.meta.commit()
@@ -330,7 +385,7 @@ class Business:
             {'source_id': event['id'], 'title': event['title'], 'sender': 'Stella 日程',
              'snippet': event['start_at'] + ' · ' + (event.get('location') or ''), 'occurred_at': run_at,
              'payload': {'body': event.get('description', ''), 'information_type': 'calendar_event',
-                         'stella_calendar_event_id': event['id']}}
+                         'stella_calendar_event_id': event['id'], 'start_at': event['start_at'], 'end_at': event['end_at'], 'all_day': event['all_day']}}
             for event in events], 'cursors': {'until': run_at}, 'errors': []}
 
     def source_settings(self, sources=None, expected_sources=None):
@@ -340,27 +395,34 @@ class Business:
             self.meta.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('sources', json.dumps(sources, ensure_ascii=False)))
             self.meta.commit()
         row = self.meta.execute('SELECT document FROM settings WHERE key=?', ('sources',)).fetchone()
-        return json.loads(row[0]) if row else [{'source': 'calendar_agenda', 'accountId': 'local', 'label': 'Stella 日程'}]
+        return json.loads(row[0]) if row else []
+
+    def source_group_settings(self, groups=None, expected_groups=None):
+        row = self.meta.execute('SELECT document FROM settings WHERE key=?', ('source_groups',)).fetchone()
+        current = json.loads(row[0]) if row else {}
+        if expected_groups is not None and current != expected_groups:
+            raise ValueError('来源开关已在其他页面变化，请刷新后重试。')
+        if groups is not None:
+            self.meta.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('source_groups', json.dumps(groups, ensure_ascii=False)))
+            self.meta.commit()
+            return groups
+        return current
+
+    @staticmethod
+    def briefing_scope(configuration):
+        return json.dumps({key: configuration.get(key) for key in ('source', 'accountId', 'tool', 'method', 'arguments')}, sort_keys=True, ensure_ascii=False)
 
     def source_windows(self, date, run_at, sources):
-        from business.briefing.domain.pipeline import window_start
-        from business.briefing.domain.sources import source_key
         finish = datetime.fromisoformat(run_at.replace('Z', '+00:00')).astimezone()
-        start = window_start(self.briefing, date, run_at, finish)
-        existing = self.briefing.briefing_for_date(date)
-        windows = existing.source_windows if existing else {}
-        previous = sorted((row for row in self.briefing.list_briefings() if row.id[4:14] < date), key=lambda row: row.id, reverse=True)
-        result = []
-        for source in sources:
-            key = source_key({'source': source['source'], 'account_id': source['accountId']})
-            prior = next((row.source_windows[key]['end'] for row in previous if row.source_windows.get(key, {}).get('end')), None)
-            result.append(windows.get(key, {}).get('start') or prior or start)
-        return result
+        initial = datetime.combine(datetime.fromisoformat(date).date() - timedelta(days=1), time(20), tzinfo=finish.tzinfo)
+        return [self.source_cursors(source['source'], source['accountId'], source).get('until') or initial.isoformat() for source in sources]
 
-    def source_cursors(self, source, account_id):
+    def source_cursors(self, source, account_id, configuration=None):
         with self.briefing.store._conn() as db:
-            return {row['cursor_key']: row['cursor_value'] for row in db.execute(
+            cursors = {row['cursor_key']: row['cursor_value'] for row in db.execute(
                 'SELECT cursor_key,cursor_value FROM sync_state WHERE source=? AND account_id=?', (source, account_id))}
+        scope = cursors.pop('_briefing_scope', None)
+        return {} if configuration is not None and scope != self.briefing_scope(configuration) else cursors
 
     def apple_peer(self, domain, method, args=None, kwargs=None):
         if domain not in ('tasks', 'calendar'):
@@ -377,9 +439,11 @@ def main():
         request = json.loads(line)
         try:
             action = request['action']
-            if action == 'invoke':
+            if action == 'briefing_run':
+                value = business.briefing_runs.invoke(**request['input'])
+            elif action == 'invoke':
                 value = business.invoke(**request['input'])
-            elif action in ('records', 'write', 'archive', 'migrate', 'local_briefing', 'generated_briefing', 'due_reminders', 'source_settings', 'source_windows', 'source_cursors', 'calendar_agenda', 'local_source', 'apple_peer'):
+            elif action in ('records', 'write', 'archive', 'migrate', 'local_briefing', 'generated_briefing', 'due_reminders', 'source_settings', 'source_group_settings', 'source_windows', 'source_cursors', 'calendar_agenda', 'local_source', 'apple_peer'):
                 value = getattr(business, action)(**request.get('input', {}))
             else:
                 raise ValueError('Unknown business action')

@@ -1,3 +1,4 @@
+import { briefingSourceGroup, briefingGroupEnabled } from './source-groups.js'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
@@ -56,7 +57,7 @@ export async function discoverBriefingSources(ctx) {
     let status = 'unavailable'
     try {
       const state = await connection.state()
-      status = !state.configured ? 'unconfigured' : !state.connected ? 'disconnected' : sources.some(source => source.source === type) ? 'ready' : 'unavailable'
+      status = !state.configured ? 'unconfigured' : !state.connected ? 'disconnected' : type === 'email' && state.accounts?.length && !state.accounts.some(account => account.enabled) ? 'disabled' : sources.some(source => source.source === type) ? 'ready' : 'unavailable'
     } catch { /* Keep installed connections visible even when their status cannot be read. */ }
     connections.push({ package: name, label, status })
   }
@@ -78,10 +79,26 @@ export async function readBriefingSourcePage(ctx, config, { since, until, offset
     if (value.account_id !== config.accountId || value.source_id !== config.arguments.source_id) throw new Error('插件返回了不同账号或范围的数据，已拒绝使用。')
     return { ...value, source: config.source }
   }
-  const args = { ...config.arguments, since, until, ...(config.method === 'fetch' ? { offset, limit: 100 } : { cursors }) }
+  const schema = config.method === 'fetch' && config.source === 'elearning' ? ctx.tools.schemas?.().find(row => row.name === config.tool) : undefined
+  if (schema && !schema.parameters.properties?.cursors) throw new Error('请更新 eLearning 插件后生成简报，当前版本不支持增量读取。')
+  const args = { ...config.arguments, since, until, ...(config.method === 'fetch' ? { offset, limit: 50, cursors } : { cursors }) }
   const value = await execute(ctx, config.tool, args, signal)
   if (!value || !Array.isArray(value.items ?? value.source_items)) throw new Error('来源返回格式无效。')
   if ((value.source && value.source !== config.source) || (value.account_id && value.account_id !== config.accountId)) throw new Error('来源账号与简报配置不一致，请重新选择账号。')
   if ((value.items ?? value.source_items).some(item => (item.source && item.source !== config.source) || (item.account_id && item.account_id !== config.accountId))) throw new Error('来源账号已变化，请重新选择简报来源。')
   return value
+}
+
+// A briefing source needs both plugin/account availability and its independent source switch.
+export function effectiveBriefingSources(preferences, available, groups = {}) {
+  const key = source => JSON.stringify([source.source, source.accountId, source.tool])
+  return available.filter(source => {
+    const group = briefingSourceGroup(source)
+    if (!briefingGroupEnabled(group, preferences, groups)) return false
+    const scoped = preferences.filter(item => briefingSourceGroup(item) === group)
+    return !group.startsWith('plugin:') || !scoped.length || scoped.some(item => key(item) === key(source))
+  }).map(source => {
+    const saved = preferences.find(item => key(item) === key(source))
+    return source.source !== 'email' && saved ? { ...source, ...(saved.arguments ? { arguments: saved.arguments } : {}) } : source
+  })
 }

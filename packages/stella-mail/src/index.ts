@@ -1,3 +1,4 @@
+import { registerBundledSkills } from '../../stella-organizer/src/skills.js'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
@@ -17,6 +18,7 @@ class MailRemote extends TypertRemoteService {
 }
 export const inject = ['credentials', 'authorization', 'tools', 'typert']
 export async function apply(ctx) {
+  registerBundledSkills(ctx, 'stella-mail', new URL('../skills/', import.meta.url))
   const directory = fileURLToPath(new URL('../server/', import.meta.url))
   const profile = ctx.get('profileContext')?.dir ?? dshHomePath('profiles', 'default')
   await ctx.plugin(MailConnection, { command: join(directory, 'email-mcp'), cwd: directory, dataDir: join(profile, 'stella', 'email') }).await()

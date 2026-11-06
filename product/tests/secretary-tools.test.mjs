@@ -133,7 +133,9 @@ test('local automation tools deny delegated/unknown turns and reuse a daily brie
   const saved = []
   ctx.provide('stellaSecretary', { mcpAllowed: () => false })
   ctx.provide('stellaOrganizer', {
+    business: async () => [{ source: 'stella_tasks', accountId: 'local' }, { source: 'elearning', accountId: 'school' }],
     generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing' } },
+    startBriefing: async input => ({ requestId: input.requestId, phase: 'starting', sessionId: 'independent-root' }),
     taskReview: async () => ({ open: [{ title: 'Synthetic task' }], completed: 0 }),
   })
   const preset = {}
@@ -148,7 +150,7 @@ test('local automation tools deny delegated/unknown turns and reuse a daily brie
   assert.equal((await call(agent, 'stella_generate_briefing')).isError, false)
   assert.equal(saved.length, 2)
   assert.equal(saved[0].requestId, saved[1].requestId)
-  assert.deepEqual(saved[0].sources.map(source => source.source), ['calendar_agenda', 'stella_tasks', 'stella_bills'])
+  assert.deepEqual(saved[0].sources.map(source => source.source), ['stella_tasks'])
   const child = { session: { header: { origin: 'subagent', parentSession: 'parent' } } }
   bindScopeParent(child, agent)
   await turn(child, 'user')
@@ -157,6 +159,11 @@ test('local automation tools deny delegated/unknown turns and reuse a daily brie
   await turn(agent, 'unknown')
   assert.equal((await call(agent, 'stella_review_tasks')).isError, true)
   await turn(agent, 'user')
+  const started = await call(agent, 'stella_generate_briefing')
+  assert.equal(started.isError, false)
+  assert(JSON.stringify(started).includes('independent-root'))
+  assert(!JSON.stringify(started).includes('\"saved\":true'))
+  assert.equal(saved.length, 2, 'Manual chat starts a task; only scheduled calls wait for business completion')
   const result = await call(agent, 'stella_review_tasks')
   assert.equal(result.isError, false)
   assert(JSON.stringify(result).includes('Synthetic task'))

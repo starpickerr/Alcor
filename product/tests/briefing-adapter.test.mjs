@@ -74,7 +74,7 @@ test('native page conversion validates resource, account and timestamps before a
 test('native pagination rechecks authorization and handles disabled providers as a failure', async () => {
   let pages = 0
   const ctx = { tools: { execute: async () => { pages++; return output({ source_id: 'inbox', account_id: 'account-1', items: [], next_offset: 1 }) } } }
-  const generator = new BriefingGenerator(ctx, {})
+  const generator = new BriefingGenerator(ctx, { call: async () => ({}) })
   const result = await generator.collect(source, options.since, options.until, options.signal, async () => { if (pages) throw new Error('revoked') })
   assert.equal(pages, 1)
   assert.deepEqual(result.errors, ['revoked'])
@@ -87,4 +87,69 @@ test('course metadata refuses a changed account before calling its plugin', asyn
   const ctx = { get: () => ({ briefingSource: async () => ({ accountId: 'new-account', tool: 'mcp__elearning__fetch' }) }), tools: { execute: async () => { calls++ } } }
   await assert.rejects(briefingSourceOptions(ctx, { source: 'elearning', accountId: 'old-account', tool: 'mcp__elearning__fetch' }), /账号已变化/)
   assert.equal(calls, 0)
+})
+
+test('eLearning briefing respects its 50-row limit and collects every subsequent page', async () => {
+  const school = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', method: 'fetch', arguments: { course_ids: ['synthetic-course'] } }
+  const records = Array.from({length:105}, (_,index) => ({source:'elearning',account_id:'school',source_id:'item-'+index}))
+  const offsets = []
+  const ctx = { tools: { execute: async ({calls:[call]}) => {
+    assert.equal(call.name,school.tool)
+    const args=JSON.parse(call.arguments)
+    if (args.limit > 50) throw new Error('limit must be between 1 and 50')
+    assert.deepEqual(args.course_ids,['synthetic-course'])
+    assert.equal(args.since,options.since)
+    assert.equal(args.until,options.until)
+    offsets.push(args.offset)
+    const page=records.slice(args.offset,args.offset+args.limit)
+    return output({structuredContent:{value:{source_items:page,next_offset:args.offset+page.length<records.length?args.offset+page.length:null,errors:[]}}})
+  } } }
+  const result=await new BriefingGenerator(ctx,{call:async()=>({})}).collect(school,options.since,options.until,options.signal)
+  assert.deepEqual(result.errors,[])
+  assert.deepEqual(result.items,records)
+  assert.deepEqual(offsets,[0,50,100])
+})
+
+
+test('old eLearning adapters fail clearly instead of silently reading without incremental state', async () => {
+  const config={source:'elearning',accountId:'school',tool:'mcp__elearning__fetch',method:'fetch',arguments:{}}
+  const ctx={tools:{schemas:()=>[{name:config.tool,parameters:{properties:{since:{type:'string'}}}}],execute:async()=>assert.fail('Old full fetch must not run')}}
+  await assert.rejects(readBriefingSourcePage(ctx,config,options),/不支持增量读取/)
+})
+
+
+test('no selected sources cannot return a previous implicitly local daily report', async () => {
+  const generator=new BriefingGenerator({}, {call:async()=>assert.fail('Empty selection must not load or reuse a previous report')})
+  await assert.rejects(generator.generate({record:{date:'2026-11-06',notes:''},requestId:'same-scheduled-id',parent:{},sources:[]}),/请选择简报来源/)
+})
+
+
+test('plugin account availability replaces external briefing subscriptions while preserving saved course scope', async () => {
+  const { effectiveBriefingSources } = await import('../../packages/stella-organizer/src/briefing-sources.js')
+  const mail = id => ({ source: 'email', accountId: id, tool: 'mcp__email__fetch_messages', arguments: { account_id: id } })
+  const school = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', arguments: {} }
+  const local = { source: 'stella_tasks', accountId: 'local' }
+  const preferences = [mail('disabled'), { ...school, arguments: { course_ids: ['chosen'] } }]
+  const available = [mail('enabled-1'), mail('enabled-2'), school, local]
+  const effective = effectiveBriefingSources(preferences, available)
+  assert.deepEqual(effective.filter(row => row.source === 'email').map(row => row.accountId), ['enabled-1', 'enabled-2'])
+  assert.deepEqual(effective.find(row => row.source === 'elearning').arguments, { course_ids: ['chosen'] })
+  assert(!effective.some(row => row.source === 'stella_tasks'), 'No implicit local sources')
+  assert.deepEqual(effectiveBriefingSources(preferences, []), [], 'Disabled integration cannot retain access through an old preference')
+  assert.deepEqual(effectiveBriefingSources([], available).find(row => row.source === 'elearning').arguments, {})
+})
+
+
+test('briefing group switches cannot bypass disabled plugins and preserve independent plugin availability', async () => {
+  const { effectiveBriefingSources } = await import('../../packages/stella-organizer/src/briefing-sources.js')
+  const mail = { source: 'email', accountId: 'enabled', tool: 'mcp__email__fetch_messages', arguments: { account_id: 'enabled' } }
+  const local = { source: 'stella_tasks', accountId: 'local' }
+  assert.deepEqual(effectiveBriefingSources([], [mail], { email: false }), [])
+  assert.deepEqual(effectiveBriefingSources([], [], { email: true }), [])
+  assert.deepEqual(effectiveBriefingSources([], [mail], { email: true }), [mail])
+  assert.deepEqual(effectiveBriefingSources([], [local], { stella_tasks: true }), [local])
+  assert.deepEqual(effectiveBriefingSources([local], [local], { stella_tasks: false }), [])
+  const one = { source: 'plugin:notes:one', accountId: 'notes', tool: 'notes_briefing_fetch' }
+  const two = { ...one, source: 'plugin:notes:two' }
+  assert.deepEqual(effectiveBriefingSources([one], [one, two], { 'plugin:notes': true }), [one])
 })
