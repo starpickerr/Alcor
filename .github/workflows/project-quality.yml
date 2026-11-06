@@ -1,4 +1,4 @@
-name: Project quality
+name: Legacy runtime quality
 
 on:
   pull_request:
@@ -53,7 +53,7 @@ jobs:
           if [[ "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
             python scripts/quality_check.py full
           else
-            make check
+            make check-legacy
           fi
       - name: Run Stella product agent evals
         run: make eval

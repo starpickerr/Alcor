@@ -6,7 +6,7 @@ import { BriefingWorkspace } from './briefing.jsx'
 
 export const deskViews = applicationViews
 
-export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view = 'stella-tasks', business, currentSession, withBriefingSession, openPlugins, renderFactorySlot }) {
+export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view = 'stella-tasks', business, currentSession, briefingContext, openPlugins, renderFactorySlot }) {
   const [startError, setStartError] = useState('')
   async function begin(prompt) {
     setStartError('')
@@ -21,7 +21,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
       </div>
       <Button variant="outline" className="stella-heading-chat" onClick={() => begin()}><IconNewChatOutlineRegular size={16} />开始 Stella 对话</Button></div></>}
     {startError && <p role="alert" className="stella-error">{startError}</p>}
-    {view === 'stella-briefing' && <BriefingWorkspace api={business} withBriefingSession={withBriefingSession} openPlugins={openPlugins} />}
+    {view === 'stella-briefing' && <BriefingWorkspace api={business} briefingContext={briefingContext} openSession={openSession} openPlugins={openPlugins} />}
     {application && view !== 'stella-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} quickChat={kind => renderFactorySlot('stella.quick-chat', { kind })} />}
     {!hasModeSwitch && <p role="status" className="stella-muted">当前版本暂不支持模式切换。</p>}
   </section>

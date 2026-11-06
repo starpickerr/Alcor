@@ -1,6 +1,8 @@
+import { BriefingToggle } from './briefing-toggle.jsx'
+import { briefingSourceGroup, briefingGroupEnabled } from '../../stella-organizer/src/source-groups.js'
 import React, { useEffect, useState } from 'react'
-import { Button, Checkbox, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { sourceKey, sourceName, briefingScope, mergeSources, selectCourseScope } from './briefing-source-selection.js'
+import { Button, Checkbox, IconRefreshOutlineRegular, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { sourceKey, sourceName, briefingScope, mergeSources, selectCourseScope, sourceOwner, briefingSourceCards } from './briefing-source-selection.js'
 
 const call = async (api, method, args = {}) => {
   const result = await api.business({ domain: 'briefing', method, arguments: args })
@@ -8,7 +10,7 @@ const call = async (api, method, args = {}) => {
   return result.value
 }
 
-export function BriefingSources({ api, onSaved, openPlugins }) {
+export function BriefingSourceControls({ api, owner, disabled = false }) {
   const [catalog, setCatalog] = useState(null)
   const [saved, setSaved] = useState([])
   const [selected, setSelected] = useState([])
@@ -18,38 +20,74 @@ export function BriefingSources({ api, onSaved, openPlugins }) {
   const [notice, setNotice] = useState('')
   async function run(work) { setBusy(true); setError(''); setNotice(''); try { await work() } catch (error) { setError(error.message) } finally { setBusy(false) } }
   async function load() {
-    const [value, sources] = await Promise.all([call(api, 'discover_sources'), call(api, 'list_sources')])
+    const [value, sources] = await Promise.all([call(api, 'discover_sources'), call(api, 'source_preferences')])
     setCatalog(value); setSaved(sources); setSelected(sources); setScope(null)
   }
   useEffect(() => { void run(load) }, [api])
-  const rows = mergeSources([...saved, ...selected], catalog?.sources || [])
+  const rows = mergeSources([...saved, ...selected], catalog?.sources || []).filter(source => sourceOwner(source) === owner)
   const available = new Set((catalog?.sources || []).map(sourceKey))
   async function editScope(source) {
     await run(async () => { const options = await call(api, 'source_options', { source }); setScope({ key: sourceKey(source), items: options, all: !source.arguments?.course_ids?.length, ids: source.arguments?.course_ids || [] }) })
   }
   async function save() {
-    const next = selected.map(source => scope?.key === sourceKey(source) ? selectCourseScope(source, scope.all, scope.ids) : source)
+    const scoped = rows.find(source => scope?.key === sourceKey(source))
+    const base = scoped && !selected.some(source => sourceKey(source) === sourceKey(scoped)) ? [...selected, scoped] : selected
+    const next = base.map(source => scope?.key === sourceKey(source) ? selectCourseScope(source, scope.all, scope.ids) : source)
     const value = await call(api, 'configure_sources', { sources: next, expectedSources: saved })
-    setSaved(value); setSelected(value); setScope(null); onSaved(value); setNotice('简报来源已保存。')
+    setSaved(value); setSelected(value); setScope(null); setNotice(owner === '@stella/elearning' ? '课程范围已保存。' : '简报来源已保存。')
   }
-  return <section className="stella-briefing-source-settings">
+  return <section className="stella-briefing-source-settings" data-briefing-source-controls={owner}><fieldset disabled={disabled} className="stella-source-control-fields">
     <p className="stella-muted">所选内容将在生成简报时发送给模型。</p>
-    <div className="stella-actions"><Button variant="outline" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button><Button variant="ghost" onClick={() => openPlugins()}>管理 DSH 插件</Button></div>
+    <div className="stella-actions"><Button variant="outline" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button></div>
     {!catalog && !error && <p role="status">正在发现来源…</p>}
     {catalog?.errors.map(message => <p role="status" key={message}>{message}</p>)}
-    {catalog?.connections?.filter(connection => connection.status !== 'ready').map(connection => <div className="stella-briefing-source-option" data-source-connection={connection.package} key={connection.package}>
-      <div className="stella-briefing-source-choice"><strong>{connection.label}</strong><span className="stella-muted">{({ unconfigured: '未配置账号', disconnected: '连接未就绪', unavailable: '暂无可用来源' })[connection.status]}</span></div>
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => openPlugins(connection.package)}>{connection.status === 'unconfigured' ? '设置账号' : '检查设置'}</Button>
-    </div>)}
     {catalog && rows.map(source => {
-      const key = sourceKey(source); const included = selected.some(item => sourceKey(item) === key)
-      return <div className="stella-briefing-source-option" key={key}><div className="stella-briefing-source-choice"><Checkbox label={sourceName(source)} checked={included} disabled={busy || (!available.has(key) && !included)} onChange={enabled => { setSelected(current => enabled ? [...current, source] : current.filter(item => sourceKey(item) !== key)); if (!enabled && scope?.key === key) setScope(null) }} /><span className="stella-muted">{available.has(key) ? briefingScope(source) : '插件或账号不可用，可取消选择'}</span></div>
+      const key = sourceKey(source); const included = source.source === 'elearning' || selected.some(item => sourceKey(item) === key)
+      return <div className="stella-briefing-source-option" key={key}><div className="stella-briefing-source-choice">{source.source === 'elearning' ? <strong>{sourceName(source)}</strong> : <Checkbox label={sourceName(source)} checked={included} disabled={busy || (!available.has(key) && !included)} onChange={enabled => { setSelected(current => enabled ? [...current, source] : current.filter(item => sourceKey(item) !== key)); if (!enabled && scope?.key === key) setScope(null) }} />}<span className="stella-muted">{available.has(key) ? briefingScope(source) : '插件或账号不可用，可取消选择'}</span></div>
         {source.source === 'elearning' && <Button variant="ghost" size="sm" disabled={busy || !included || !available.has(key)} onClick={() => editScope(source)}>选择课程</Button>}
         {scope?.key === key && <fieldset className="stella-briefing-course-scope"><legend>课程范围</legend><Checkbox label="全部可访问课程" checked={scope.all} disabled={busy} onChange={all => setScope({ ...scope, all })} />{scope.items.map(course => <Checkbox key={course.id} label={course.name} checked={scope.all || scope.ids.includes(course.id)} disabled={busy || scope.all} onChange={checked => setScope({ ...scope, ids: checked ? [...scope.ids, course.id] : scope.ids.filter(id => id !== course.id) })} />)}{!scope.items.length && <p>当前没有可选课程。</p>}</fieldset>}
       </div>
     })}
-    <p className="stella-muted">定时简报仅使用本机来源。</p>
-    <Button variant="primary" disabled={busy || !catalog} onClick={() => run(save)}>保存来源</Button>
+    {owner === '@stella/secretary' && <p className="stella-muted">定时简报仅使用所选本机来源。</p>}
+    <Button variant="primary" disabled={busy || !catalog} onClick={() => run(save)}>{owner === '@stella/elearning' ? '保存范围' : '保存来源'}</Button>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
-  </section>
+  </fieldset></section>
+}
+
+
+export function PluginBriefingSources({ api, subject }) {
+  if (subject.kind !== 'bundle' || subject.pkg.name !== '@stella/elearning') return null
+  return <section className="stella-plugin-briefing" data-plugin-briefing={subject.pkg.name}><h2>{subject.pkg.name === '@stella/elearning' ? '课程范围' : '简报来源'}</h2><BriefingSourceControls api={api} owner={subject.pkg.name} disabled={!subject.pkg.enabled} /></section>
+}
+
+export function BriefingSources({ api, openPlugins }) {
+  const [value, setValue] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function load() {
+    setBusy(true); setError('')
+    try {
+      const [catalog, saved, retained, groups] = await Promise.all([call(api, 'discover_sources'), call(api, 'list_sources'), call(api, 'source_preferences'), call(api, 'source_groups')])
+      setValue({ catalog, saved, retained, groups })
+    } catch (error) { setError(error.message) } finally { setBusy(false) }
+  }
+  async function toggle(card, enabled) {
+    setBusy(true); setError('')
+    try { await call(api, 'configure_source_groups', { groups: { ...value.groups, [card.key]: enabled }, expectedGroups: value.groups }); await load() }
+    catch (error) { setError(error.message); setBusy(false) }
+  }
+  useEffect(() => { void load() }, [api])
+  return <div className="stella-source-overview">
+    <div className="stella-source-overview-toolbar"><Button variant="ghost" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={load}><IconRefreshOutlineRegular size={16} /></Button><Button variant="ghost" size="sm" onClick={() => openPlugins()}>管理插件</Button></div>
+    {!value && busy && <p role="status">正在读取来源…</p>}
+    {value && <div className="stella-source-cards">{briefingSourceCards(value.saved, value.catalog, value.retained).map(card => {
+      const state = ['unconfigured', 'disconnected', 'unavailable'].includes(card.connection) ? 'unavailable' : card.unavailable ? 'unavailable' : card.selected ? 'selected' : 'idle'
+      const label = card.connection === 'disabled' ? '已停用' : card.connection === 'unconfigured' ? '待配置' : state === 'unavailable' ? '需检查' : card.selected ? '已开启' : '未开启'
+      const checked = briefingGroupEnabled(card.key, value.retained, value.groups)
+      const activeCount = value.catalog.sources.filter(source => briefingSourceGroup(source) === card.key).length
+      const description = card.key === 'email' ? `${activeCount} 个邮箱已开启` : card.key === 'elearning' ? '课程、作业与公告' : card.key === 'calendar_agenda' ? '未来 24 小时日程' : card.key === 'stella_tasks' ? '未归档事务' : card.key === 'stella_bills' ? '未归档账单' : `${card.count} 个来源`
+      return <div className="stella-source-card" key={card.key} data-source-card={card.key}><button type="button" className="stella-source-card-open" aria-label={`管理来源：${card.title}`} onClick={() => openPlugins(card.package)}><div><strong>{card.title}</strong></div><p>{description}</p>{state === 'unavailable' && <small>{label}</small>}<IconChevronRightOutlineRegular size={16} /></button><BriefingToggle label={`启用来源：${card.title}`} checked={checked} disabled={busy} onChange={enabled => toggle(card, enabled)} /></div>
+    })}</div>}
+    {error && <p role="alert">{error}</p>}
+  </div>
 }

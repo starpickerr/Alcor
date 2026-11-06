@@ -302,3 +302,60 @@
 .stella-repeat-interval { display:flex; align-items:center; gap:8px; }
 .stella-repeat-interval input { max-width:90px; }
 .stella-repeat-weekdays { display:flex; flex-wrap:wrap; gap:10px 16px; }
+
+ .stella-briefing-settings { max-width:1160px; margin:0 auto; display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); align-items:start; gap:24px; }
+.stella-briefing-settings > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); }
+.stella-briefing-settings h2 { margin:0; font-size:16px; line-height:24px; font-weight:500; }
+.stella-briefing-settings .stella-briefing-source-option { padding:12px 0; }
+.stella-rule-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:0; }
+.stella-rule-cards { display:grid; gap:12px; }
+.stella-rule-card { position:relative; display:block; width:100%; padding:18px 38px 18px 18px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.stella-rule-card:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-rule-card-top { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+.stella-rule-card strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.stella-rule-card-top > span { flex-shrink:0; padding:2px 7px; border-radius:var(--dsw-radius-md); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:11px; }
+.stella-rule-card-top > [data-enabled=true] { color:var(--dsw-alias-state-success-primary,#24824b); }
+.stella-rule-card p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin:8px 0 0; font-size:12px; line-height:20px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.stella-rule-chevron { position:absolute; right:14px; top:calc(50% - 8px); color:var(--dsw-alias-label-tertiary); }
+.stella-rule-empty { padding:28px 12px; text-align:center; color:var(--dsw-alias-label-secondary); font-size:13px; }
+.stella-rule-dialog { width:min(720px,calc(100vw - 32px)); }
+.stella-rule-detail { padding:24px; }
+.stella-rule-detail form { display:grid; gap:20px; }
+.stella-rule-detail .stella-field { margin:0; }
+.stella-rule-detail textarea { font-family:var(--dsw-font-family); }
+.stella-rule-detail-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.stella-rule-preview { padding:24px 0; overflow-wrap:anywhere; }
+.stella-rule-preview pre { max-width:100%; overflow:auto; }
+.stella-rule-delete { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:16px; border-top:1px solid var(--dsw-alias-border-l3); }
+@media(max-width:860px) { .stella-briefing-settings { grid-template-columns:minmax(0,1fr); } .stella-briefing-settings > section { padding:18px; } }
+
+.stella-source-overview-toolbar { display:flex; align-items:center; justify-content:space-between; margin:12px 0; }
+.stella-source-cards { display:grid; gap:12px; }
+.stella-source-card { position:relative; width:100%; padding:16px 36px 16px 16px; text-align:left; color:inherit; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); font:inherit; cursor:pointer; }
+.stella-source-card:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-source-card > div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.stella-source-card strong { font-weight:500; font-size:14px; }
+.stella-source-card span { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.stella-source-card [data-state=selected] { color:var(--dsw-alias-state-success-primary,#24824b); }
+.stella-source-card p { margin:8px 0 0; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.stella-source-card > svg { position:absolute; right:12px; top:calc(50% - 8px); color:var(--dsw-alias-label-tertiary); }
+.stella-plugin-briefing { padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); font:14px/1.6 var(--dsw-font-family); color:var(--dsw-alias-label-primary); }
+.stella-plugin-briefing h2 { font-size:16px; font-weight:500; margin:0; }
+.stella-source-control-fields { margin:0; padding:0; min-width:0; border:0; }
+
+.stella-source-overview-toolbar, .stella-rule-toolbar { display:flex; justify-content:space-between; align-items:center; min-height:32px; margin:12px 0; }
+.stella-source-card, .stella-rule-card { min-height:108px; box-sizing:border-box; }
+.stella-rule-card strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; overflow:hidden; }
+
+.stella-source-card, .stella-rule-card { padding:0; cursor:default; }
+.stella-source-card-open, .stella-rule-card-open { display:block; width:100%; min-height:106px; box-sizing:border-box; padding:18px 76px 18px 18px; background:transparent; border:0; border-radius:inherit; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.stella-source-card-open > svg { position:absolute; right:16px; bottom:16px; color:var(--dsw-alias-label-tertiary); }
+.stella-source-card-open small { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.stella-source-card .stella-briefing-toggle, .stella-rule-card .stella-briefing-toggle { position:absolute; right:16px; top:16px; }
+.stella-briefing-toggle { display:inline-flex; align-items:center; width:36px; height:22px; padding:3px; flex-shrink:0; border:0; border-radius:999px; corner-shape:round; background:var(--dsw-alias-border-l3,#dedede); cursor:pointer; }
+.stella-briefing-toggle > span { display:block; width:16px; height:16px; border-radius:50%; corner-shape:round; background:#fff; box-shadow:0 1px 2px #0001; }
+.stella-briefing-toggle[aria-checked=true] { background:var(--dsw-alias-label-secondary,#737373); }
+.stella-briefing-toggle[aria-checked=true] > span { transform:translateX(14px); }
+.stella-briefing-toggle:disabled { opacity:.5; cursor:default; }
+
+.stella-rule-enabled { display:flex; align-items:center; gap:12px; font-size:13px; }

@@ -180,6 +180,12 @@ def _batches(entries):
         yield batch
 
 
+def rules_document(rules):
+    documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]
+    rule_text = DEFAULT_RULE_TEXT + ("\n\n## 用户规则文稿（优先于默认原则）\n\n" + "\n\n---\n\n".join(documents) if documents else "")
+    return rule_text
+
+
 class AgentBriefingGenerator:
     def __init__(self, submissions):
         self.submissions = iter(submissions)
@@ -196,10 +202,9 @@ class AgentBriefingGenerator:
         tool.validate(result)
         return result
 
-    def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None):
+    def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None, preserved_reports=None):
         self._check_cancelled()
-        documents = [f"来源：{rule.source}\n{rule_document(rule)}" for rule in rules if rule.enabled]
-        rule_text = DEFAULT_RULE_TEXT + ("\n\n## 用户规则文稿（优先于默认原则）\n\n" + "\n\n---\n\n".join(documents) if documents else "")
+        rule_text = rules_document(rules)
         entries, by_id = [], {}
         for item, email in rows:
             by_id[item.id] = item
@@ -268,26 +273,30 @@ class AgentBriefingGenerator:
                                                                    row.item.thread_id or row.item.source_id)]],
                       "metadata": {key: value for key, value in row.item.payload.items() if key != "body"}}
                      for row in ranked]
-        parts, reports = [], {}
-        for number, batch in enumerate(list(_batches(summaries)) or [[]], 1):
+        reports = dict(preserved_reports or {})
+        parts = []
+        for number, batch in enumerate(_batches([row for row in summaries if row["id"] not in reports]), 1):
             if self.progress:
                 self.progress(f"Agent 正在撰写第 {number} 批简报内容")
             ids = [row["id"] for row in batch]
+            result_id = {"type": "string", **({"enum": ids} if ids else {})}
+            member_ids = {member["id"] for row in batch for member in row["members"]}
             tool = ResultTool("briefing_body_result", {"type": "object", "properties": {
                 "body": {"type": "string", "description": "按规则文稿撰写的 Markdown 正文，覆盖本批所有事项"},
-                "source_item_ids": {"type": "array", "items": {"type": "string"}},
+                "source_item_ids": {"type": "array", "items": result_id},
                 "reports": {"type": "array", "items": {"type": "object", "properties": {
-                    "id": {"type": "string"}, "content": {"type": "string", "description": "该条目的完整 AI 报告，包含事实、变化、截止时间和建议"},
+                    "id": result_id, "content": {"type": "string", "description": "该条目的完整 AI 报告，包含事实、变化、截止时间和建议"},
                 }, "required": ["id", "content"]}},
             }, "required": ["body", "source_item_ids", "reports"]}, lambda payload, expected=ids: validate_body(payload, expected))
             result = self._run_agent("依据规则撰写完整报告，调用 briefing_body_result；不要重复每日大标题。"
                 "覆盖本批每项精选信息，按主题组织来源事实、关键变化、时间与截止要求、用户需要决定或执行的事项，并明确区分事实和判断。"
+                "source_item_ids 和 reports 的 id 仅使用本批 expected_ids，每个恰好一次；成员 ID 仅作原文参考，不单独输出。"
                 "同时为每个条目提交 reports：逐条写出完整内容，合并线程须覆盖所有精选成员；不要只复制来源正文或一句摘要。"
                 "不要机械复制来源全文；材料不足时使用 read_briefing_source 查看原文，不得编造缺失信息。"
                 "不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
-                    "date": briefing_date, "window_start": window_start, "window_end": window_end, "items": batch,
+                    "date": briefing_date, "window_start": window_start, "window_end": window_end, "expected_ids": ids, "items": batch,
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
-                }, ensure_ascii=False), rule_text, tool, read_entries=entries)
+                }, ensure_ascii=False), rule_text, tool, read_entries=[row for row in entries if row["id"] in member_ids])
             parts.append(result["body"].strip())
             reports.update({row["id"]: row["content"].strip() for row in result["reports"]})
             if self.progress:
@@ -296,5 +305,5 @@ class AgentBriefingGenerator:
         for card in cards:
             card["payload"]["_briefing_report"] = reports[card["source_item_id"]]
         return {"title": briefing_title(briefing_date),
-                "body": "\n\n".join(parts),
+                "body": ("\n\n".join(parts) if not preserved_reports else "\n\n".join(reports[row.item.id] for row in ranked)) or "本时间窗口内没有新的精选信息。",
                 "items": cards, "mail": mail, "rule_text": rule_text}

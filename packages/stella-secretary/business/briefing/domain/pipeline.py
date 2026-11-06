@@ -115,7 +115,9 @@ class BriefingPipeline:
         existing = self.service.briefing_for_date(day)
         start = window_start(self.service, day, finish, local_now)
         briefing = self.service.start_briefing(briefing_date=day)
-        source_windows = {k: dict(v) for k, v in briefing.source_windows.items()}
+        selected_keys = {source_key({'source': row['source'], 'account_id': row.get('account_id') or 'default'}) for row in sources}
+        scopes = {source_key({'source': row['source'], 'account_id': row.get('account_id') or 'default'}): row.get('scope') for row in sources}
+        source_windows = {k: dict(v) for k, v in briefing.source_windows.items() if k in selected_keys and (not scopes[k] or v.get('scope') == scopes[k])}
         run_id = f"run-{day}-{uuid4().hex}"
         errors: list[str] = []
         cursor_updates: list[tuple] = []
@@ -140,11 +142,11 @@ class BriefingPipeline:
                 else:
                     fully.add(key)
                     source_windows[key] = {"source": name, "account_id": account, "name": label,
-                                           "start": src_start, "end": finish}
+                                           "start": src_start, "end": finish, **({"scope": source["scope"]} if "scope" in source else {})}
                     cursor_updates.extend((name, account, k, str(v)) for k, v in (source.get("cursors") or {}).items())
                 refreshed.append({"name": name, "account": account, "key": key, "start": src_start})
             catalog_rows = []
-            for row in refreshed:
+            for row in ([] if isinstance(draft, dict) else refreshed):
                 catalog_rows.extend(store.staged_window_candidates(run_id, row["start"], finish,
                                                                    [(row["name"], row["account"])]))
             # A FetchResult with per-item errors is partial; only hard misses (no cursors) are failed.
@@ -164,7 +166,7 @@ class BriefingPipeline:
                 "trigger": trigger,
                 "title": (briefing.title or briefing_title(day)) if status == "failed" else drafted.get("title") or briefing_title(day),
                 "body": briefing.body if status == "failed" else drafted.get("body", ""),
-                "fetched_count": briefing.fetched_count if status == "failed" else len(catalog_rows),
+                "fetched_count": briefing.fetched_count if status == "failed" else len(mail),
                 "kept_count": briefing.kept_count if status == "failed" else len(mail) - filtered,
                 "filtered_count": briefing.filtered_count if status == "failed" else filtered,
                 "error_message": "; ".join(errors),

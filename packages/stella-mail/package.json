@@ -1,6 +1,6 @@
 {
   "name": "@stella/mail",
-  "version": "0.1.2",
+  "version": "0.1.7",
   "description": "邮件连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",
@@ -12,6 +12,7 @@
   ],
   "files": [
     "lib",
+    "skills",
     "server",
     "cordis.patch.yml",
     "README.md",
@@ -45,7 +46,8 @@
     "@deepseek-ai/dsh-mcp-client": "*",
     "@deepseek-ai/dsh-credentials": "*",
     "@deepseek-ai/dsh-authorization": "*",
-    "@deepseek-ai/schemastery": "*"
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-skill-filesystem": "*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -70,6 +72,9 @@
       "optional": true
     },
     "@deepseek-ai/schemastery": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
       "optional": true
     }
   },

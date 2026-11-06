@@ -5,8 +5,8 @@
       "module": "elearning_mcp",
       "package": "stella-elearning",
       "binary": "elearning-mcp",
-      "version": "1.0.5",
-      "sourceSha256": "45271f9c179763af98b2364c0442861417fb76ac36d20d8d5646b2567f032808",
+      "version": "1.0.6",
+      "sourceSha256": "6f84afee79f0a6e1024d93bffac8f0e616456a5979a37871d0bbb498726d921f",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",
@@ -18,8 +18,8 @@
       "module": "email_mcp",
       "package": "stella-mail",
       "binary": "email-mcp",
-      "version": "1.0.5",
-      "sourceSha256": "33f8a071dfd8855743f0774c8dfa01901b16065df71ffa1eb087a375f27bebe8",
+      "version": "1.0.6",
+      "sourceSha256": "fcbd088cf71b3a99f37d98df5570ea0fce17743fb891e0c3d887c22bf07af38b",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3"

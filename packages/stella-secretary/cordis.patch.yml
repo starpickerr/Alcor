@@ -45,3 +45,21 @@
               includeRuntimeContext: false
           - id: stella-tools
             name: '@stella/secretary/tools'
+          - id: stella-skill-reader
+            name: '@deepseek-ai/dsh-tool-skill'
+    - id: preset-stella-briefing
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: stella-briefing
+        name: 简报执行
+        description: Stella 简报任务的专用执行会话。
+        order: 100
+        plugins:
+          - id: briefing-agent
+            name: '@stella/secretary/briefing-agent'
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: '{{briefing_identity}}'
+              complete: true
+              includeRuntimeContext: false

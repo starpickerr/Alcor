@@ -1,6 +1,8 @@
 """Probe installed frozen servers without fetching personal or network data."""
 import asyncio
 import json
+import re
+from jsonschema import validate
 import sys
 import tempfile
 from pathlib import Path
@@ -21,10 +23,18 @@ async def main():
             async with stdio_client(parameters) as (read, write):
                 async with ClientSession(read, write) as session:
                     result = await asyncio.wait_for(session.initialize(), 20)
-                    assert result.serverInfo.version == '1.0.5'
+                    assert result.serverInfo.version == json.loads((root / 'source.json').read_text())['version']
                     tools = await session.list_tools()
                     assert {row.name for row in tools.tools} == names
                     assert all(row.annotations.readOnlyHint for row in tools.tools)
+                    if package == 'elearning':
+                        assert 'cursors' in next(row for row in tools.tools if row.name == 'fetch').inputSchema['properties']
+                    skill = root.parent / 'skills' / ('stella-' + package) / 'SKILL.md'
+                    examples = [json.loads(raw) for raw in re.findall(r'```json\n([\s\S]*?)\n```', skill.read_text())]
+                    method_names = ['fetch', 'list_files'] if package == 'elearning' else ['fetch_messages']
+                    assert len(examples) == len(method_names)
+                    for method, example in zip(method_names, examples):
+                        validate(example, next(row for row in tools.tools if row.name == method).inputSchema)
                     if package == 'mail':
                         sources = await session.call_tool('list_sources', {})
                         assert sources.structuredContent['value'][0]['mailbox_id'] == 'synthetic'
