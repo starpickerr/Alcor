@@ -11,7 +11,8 @@ import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import agentHubStyle from './agent-hub.css'
 import connectionStyle from './connection-settings.css'
-const deskStyle = deskBaseStyle + businessStyle + agentHubStyle + billStyle + connectionStyle
+import themeStyle from './theme.css'
+const deskStyle = deskBaseStyle + businessStyle + agentHubStyle + billStyle + connectionStyle + themeStyle
 import { remote as organizerRemote } from '../../stella-organizer/src/remote.js'
 import { Button, Input, Menu, MenuItemButton, FishLogo, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 

@@ -1,6 +1,6 @@
 .stella-agenthub { display:grid; grid-template-columns:190px minmax(0,1fr) 260px; height:calc(100dvh - 44px); min-height:520px; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); font-size:14px; line-height:22px; }
 .stella-hub-tasks, .stella-hub-inspector { padding:20px 16px; min-height:0; overflow:auto; background:var(--dsw-alias-bg-layer-1); }
-.stella-hub-tasks { display:flex; flex-direction:column; border-right:1px solid var(--dsw-alias-border-l3); }
+.stella-hub-tasks { background:var(--stella-surface-soft); display:flex; flex-direction:column; border-right:1px solid var(--dsw-alias-border-l3); }
 .stella-hub-tasks > header { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:20px; }
 .stella-hub-tasks h1 { font-size:17px; line-height:26px; font-weight:600; margin:0; }
 .stella-hub-tasks > header button { flex-shrink:0; padding:0; width:32px; height:32px; }
@@ -11,26 +11,26 @@
 .stella-hub-task-list strong, .stella-hub-history strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
 .stella-hub-task-list small, .stella-hub-history small { font-size:11px; color:var(--dsw-alias-label-secondary); }
 .stella-hub-tasks footer { display:grid; gap:8px; margin-top:auto; padding-top:24px; }
-.stella-hub-conversation { min-width:0; min-height:0; display:flex; flex-direction:column; }
-.stella-hub-conversation > header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:20px 24px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-hub-conversation { background:var(--stella-canvas); min-width:0; min-height:0; display:flex; flex-direction:column; }
+.stella-hub-conversation > header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:20px 24px; border-bottom:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
 .stella-hub-conversation > header > div:first-child { min-width:0; }
 .stella-hub-conversation > header h2 { font-size:16px; line-height:24px; font-weight:500; margin:0; overflow-wrap:anywhere; }
 .stella-hub-conversation > header p { font-size:12px; margin:6px 0 0; }
 .stella-hub-conversation > header .stella-actions { gap:6px; }
 .stella-hub-messages { flex:1; min-height:140px; overflow:auto; padding:24px; display:flex; flex-direction:column; gap:24px; }
 .stella-hub-welcome { margin:auto; padding:30px 0; max-width:440px; text-align:center; }
-.stella-hub-welcome > svg { color:var(--dsw-alias-label-tertiary); margin-bottom:16px; }
+.stella-hub-welcome > svg { box-sizing:content-box; padding:18px; border-radius:22px; background:var(--stella-brand-soft); color:var(--stella-brand); margin-bottom:20px; }
 .stella-hub-welcome h2 { margin:0; font-size:20px; line-height:30px; font-weight:600; }
 .stella-hub-welcome p { margin:12px 0; color:var(--dsw-alias-label-secondary); }
 .stella-hub-welcome p:last-child { font-size:12px; }
 .stella-hub-message { min-width:0; }
 .stella-hub-message small { font-size:12px; color:var(--dsw-alias-label-secondary); }
 .stella-hub-message p, .stella-hub-message pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; line-height:1.75; margin:8px 0 0; }
-.stella-hub-user { padding:14px 18px; margin-left:24px; background:var(--dsw-alias-interactive-bg-hover); border-radius:var(--dsw-radius-lg); }
+.stella-hub-user { padding:14px 18px; margin-left:24px; background:var(--dsw-alias-bg-layer-2); border-radius:16px 16px 4px 16px; }
 .stella-hub-feedback { padding:0 24px; }
 .stella-hub-feedback:empty { display:none; }
 .stella-hub-feedback p { margin:0 0 12px; font-size:12px; }
-.stella-hub-composer { padding:16px 24px 20px; border-top:1px solid var(--dsw-alias-border-l3); }
+.stella-hub-composer { margin:0 20px 20px; padding:16px; border:1px solid var(--dsw-alias-border-l3); border-radius:18px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--stella-shadow); }
 .stella-hub-composer .stella-field { margin:12px 0; }
 .stella-hub-compose-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .stella-hub-composer select { font:inherit; font-size:13px; padding:6px 8px; color:var(--dsw-alias-label-secondary); background:var(--dsw-alias-interactive-bg-hover); border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); opacity:.65; }

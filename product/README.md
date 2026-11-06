@@ -6,7 +6,7 @@
 
 ## 桌面用户安装
 
-当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.43.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
+当前支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon。两个版本使用明确的兼容边界；未验证的新版本由宿主停用不兼容的 Stella，原生 DSH 应继续正常工作。请从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH，在原生“插件 / Plugins”页安装本项目打包的 `stella-secretary-0.1.44.tgz`，退出并重新打开 DSH，再用顶部切换按钮进入 Stella。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
 
 界面扩展保存在 Stella 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -32,10 +32,10 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-开发产物为 `.local/artifacts/stella-secretary-0.1.43.tgz` 与可选的 `stella-apple-sync-0.1.9.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
+开发产物为 `.local/artifacts/stella-secretary-0.1.44.tgz` 与可选的 `stella-apple-sync-0.1.9.tgz`。以下命令安装到指定 Profile，保持其原有模型与凭据。Desktop 须遵循其插件管理入口和重启提示，不并发改写运行中的 Profile。
 
 ```sh
-dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.43.tgz --ignore-scripts
+dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-secretary-0.1.44.tgz --ignore-scripts
 dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync-0.1.9.tgz --ignore-scripts
 ```
 
@@ -45,7 +45,7 @@ dsh plugin --profile <目标测试 Profile> add /absolute/path/stella-apple-sync
 
 事务与日程的 Stella Agent 展开后直接显示原生嵌入式会话，支持历史、新会话、工作区与模型选择；快捷会话与主会话独立，发送不跳转。浏览器仅保存各页面的 Session ID 引用，消息与草稿仍由 DSH 管理。首次展开不调用模型；业务工具和页面共用服务。Apple 连接统一由“插件 → @stella/apple-sync”的配置页管理：日历和提醒事项各提供“同步”“暂停同步”，自动纳入全部来源并保留同名分类；日历覆盖全部历史到未来两年，见 [插件说明](../packages/stella-apple-sync/README.md)。
 
-视觉统一 DSH，功能与操作逻辑按原 Stella 设计迁移。当前页面复用宿主 `Button`、`Input`、`Checkbox`；侧栏、编辑区、列表、设置与顶部模式菜单使用 DSH 的语义主题变量，跟随宿主明暗主题和字体。不恢复旧 Stella 的独立配色，也不将视觉统一计为六项业务功能完成。
+界面复用宿主 `Button`、`Input`、`Checkbox`、系统字体和明暗偏好。Stella 模式使用白色／浅灰与炭灰表面、蓝色主要操作及选中态，小熊图标使用暖棕／沙金色；事务分组、日程网格、简报时间轴及账单图表保留各自的信息结构。主题通过现有语义变量限定在 Stella 模式内，切回 DSH 或停用插件恢复宿主样式，不改业务数据或核心交互。
 
 ## 官方 Desktop 验证
 

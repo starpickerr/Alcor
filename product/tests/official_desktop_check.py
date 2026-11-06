@@ -254,8 +254,9 @@ def check_modes(page):
     sidebar = page.get_by_role('complementary', name='Stella 秘书导航', exact=True)
     assert sidebar.evaluate('''sidebar => {
       const style = getComputedStyle(sidebar);
-      return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
-    }'''), 'Stella must not cover the native macOS sidebar gradient and vibrancy'
+      return style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none'
+        && getComputedStyle(document.body).getPropertyValue('--stella-sidebar').trim() !== '';
+    }'''), 'Stella must render its scoped sidebar palette without a decorative gradient'
     for title in ('Agent 协作', '事务', '日程', '简报', '账单'):
         sidebar.get_by_role('button', name=title, exact=True).click()
         page.get_by_role('heading', name='尚无协作任务' if title == 'Agent 协作' else title, exact=True).wait_for()
