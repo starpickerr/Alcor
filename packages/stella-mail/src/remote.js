@@ -1,3 +1,4 @@
+import { checkMessages } from './check-status.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 
@@ -11,7 +12,7 @@ export const schemas = {
   state: [z.object({}).strict(), stateSchema],
   save: [z.object({ expectedRevision: revision, account: account.omit({ id: true }).extend({ id: account.shape.id.optional(), password: z.string().max(4096).regex(/^[^\r\n\0]*$/) }) }).strict(), stateSchema],
   removeAccount: [z.object({ id: account.shape.id, expectedRevision: revision }).strict(), stateSchema],
-  check: [z.object({ id: account.shape.id }).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'query_failed']) }).strict()],
+  check: [z.object({ id: account.shape.id }).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'query_failed']), code: z.enum(Object.keys(checkMessages)).optional() }).strict()],
 }
 export const remote = createTypertRemoteInfo({ package: '@stella/mail', methods: Object.fromEntries(Object.entries(schemas).map(([name, [request, result]]) => [`stellaMail/${name}`, {
   service: 'stellaMail', invocation: { kind: 'direct' },
