@@ -25,23 +25,42 @@ class Provider(NativeProvider):
         raw = self.rfile.read(int(self.headers['Content-Length']))
         payload = json.loads(raw)
         tools = payload.get('tools', [])
-        structured = next((tool['function'] for tool in tools if tool['function']['name'] == 'structured_output'), None)
-        if structured:
-            try:
-                names = {tool['function']['name'] for tool in tools}
-                assert names == {'structured_output'}, 'Briefing must not receive global tools: ' + ','.join(sorted(names))
-                kind = 'screen' if 'decisions' in structured['parameters']['properties'] else 'body'
-                Provider.batches.append(kind)
-                if kind == 'body' and Provider.hold:
-                    Provider.waiting.set()
-                    Provider.release.wait(55)
-            except Exception as error:
-                Provider.failure = str(error)
-        self.rfile = io.BytesIO(raw)
+        submit = next((tool['function'] for tool in tools if tool['function']['name'] == 'briefing_submit'), None)
+        if not submit:
+            self.rfile = io.BytesIO(raw)
+            return super().do_POST()
         try:
-            super().do_POST()
+            names = {tool['function']['name'] for tool in tools}
+            assert names == {'briefing_submit', 'briefing_read'}, 'Unexpected briefing tools: ' + ','.join(sorted(names))
+            text = lambda content: content if isinstance(content, str) else '\n'.join(part.get('text', '') for part in content or [])
+            prompt = next(text(m['content']) for m in reversed(payload['messages']) if '可阅读的原文数据：' in text(m.get('content')))
+            entries = json.loads(prompt.split('可阅读的原文数据：\n')[1])
+            schema = submit['parameters']['properties']
+            kind = 'global' if 'decisions' in schema and 'reports' in schema else 'screen' if 'decisions' in schema else 'body'
+            Provider.batches.append(kind)
+            if Provider.hold:
+                Provider.waiting.set()
+                Provider.release.wait(55)
+            decisions = [{'id': row['id'], 'selected': True, 'reason': 'Synthetic validation', 'section': 'action', 'score': 80, 'summary': row['title']} for row in entries]
+            if kind == 'screen': value = {'decisions': decisions}
+            else:
+                ids = [row['id'] for row in entries] if kind == 'global' else schema['source_item_ids']['items']['enum']
+                value = {'body': 'Synthetic structured briefing saved through DSH.', 'source_item_ids': ids,
+                         'reports': [{'id': identity, 'content': 'Synthetic source report'} for identity in ids]}
+                if kind == 'global': value['decisions'] = decisions
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.end_headers()
+            delta = {'tool_calls': [{'index': 0, 'id': 'briefing-call', 'type': 'function', 'function': {'name': 'briefing_submit', 'arguments': json.dumps(value)}}]}
+            for choice in [{'delta': {'role': 'assistant'}, 'finish_reason': None}, {'delta': delta, 'finish_reason': None}, {'delta': {}, 'finish_reason': 'tool_calls'}]:
+                data = {'id': 'briefing-synthetic', 'object': 'chat.completion.chunk', 'created': 1, 'model': 'stella-mock', 'choices': [{'index': 0, **choice}]}
+                self.wfile.write(('data: ' + json.dumps(data) + '\n\n').encode())
+            self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as error:
+            Provider.failure = str(error)
+            raise
 
 
 def business(page, method, arguments=None):
@@ -94,9 +113,9 @@ def main():
                 while not Provider.waiting.is_set() and time.monotonic() < deadline and not Provider.failure:
                     page.wait_for_timeout(100)
                 assert not Provider.failure, Provider.failure
-                assert Provider.waiting.is_set(), 'Briefing did not reach body generation'
+                assert Provider.waiting.is_set(), 'Briefing did not reach model generation'
                 run = business(page, 'generation_status')
-                assert run['phase'] == 'model' and run['completedBatches'] == 1
+                assert run['phase'] == 'model' and run['completedBatches'] == 0
                 assert run['sessionId'] and 'sources' not in run and 'submissions' not in run
                 assert len(reads()) == 2
                 page.get_by_role('button', name='事务', exact=True).click()
@@ -115,14 +134,14 @@ def main():
                 page.get_by_role('button', name='简报', exact=True).click()
                 expect(page.get_by_role('button', name='继续生成', exact=True)).to_be_visible(timeout=15000)
                 restored = business(page, 'generation_status')
-                assert restored['phase'] == 'interrupted' and restored['completedBatches'] == 1
-                assert Provider.batches == ['screen', 'body'], 'Restart must not replay requests'
+                assert restored['phase'] == 'interrupted' and restored['completedBatches'] == 0
+                assert Provider.batches == ['global'], 'Restart must not replay requests'
                 page.get_by_role('button', name='继续生成', exact=True).click()
                 expect(page.get_by_role('button', name='查看条目：Plugin item 0', exact=True)).to_be_visible(timeout=35000)
                 finished = business(page, 'generation_status')
                 assert finished['phase'] == 'completed' and finished['sessionId'] == run['sessionId']
-                assert finished['completedBatches'] == 2
-                assert Provider.batches == ['screen', 'body', 'body']
+                assert finished['completedBatches'] == 1
+                assert Provider.batches == ['global', 'global']
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed.png'))
                 # Schedule receipt is distinct from completion: use the real DSH scheduler and wait for the saved report.
@@ -145,7 +164,7 @@ def main():
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
                 assert not errors, errors
             assert not Provider.failure, Provider.failure
-        print('PASS: signed official Desktop runs an isolated briefing session with only structured output; navigation/reload preserve work; restart waits for explicit resume and reuses source/batch checkpoints')
+        print('PASS: signed official Desktop runs an isolated briefing session with only scoped read/submit tools; navigation/reload preserve work; restart resumes the same session and reuses source checkpoints')
     finally:
         Provider.release.set()
         server.shutdown()

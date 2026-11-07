@@ -200,8 +200,9 @@ def rules_document(rules):
 
 
 class AgentBriefingGenerator:
-    def __init__(self, submissions):
+    def __init__(self, submissions, *, global_mode=False):
         self.submissions = iter(submissions)
+        self.global_mode = global_mode
         self.progress = None
 
     def _check_cancelled(self):
@@ -232,6 +233,29 @@ class AgentBriefingGenerator:
                 "body_available": "body" in item.payload})
         entries_by_id = {row["id"]: row for row in entries}
         decisions = dict(preserved_decisions or {})
+        global_result = None
+        # A small fresh window can be reviewed and written in one pass. Larger or
+        # incremental windows retain bounded, durable checkpoints in the same Agent.
+        if (self.global_mode and entries and not decisions and not preserved_reports
+                and len(entries) <= 20 and len(json.dumps(entries, ensure_ascii=False)) <= 24000):
+            schema = decision_schema()
+            schema['properties'].update({
+                'body': {'type': 'string'},
+                'source_item_ids': {'type': 'array', 'items': {'type': 'string'}},
+                'reports': {'type': 'array', 'items': {'type': 'object', 'properties': {
+                    'id': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['id', 'content']}},
+            })
+            schema['required'] += ['body', 'source_item_ids', 'reports']
+            ids = [row['id'] for row in entries]
+            tool = ResultTool('briefing_global_result', schema,
+                lambda payload: validate_decisions(payload, ids))
+            task = (decision_task(entries, window_start, window_end)
+                + '\n同一份结果还须写 body 与 reports。按 source、account_id、thread_id（无 thread_id 时 source_id）合并精选成员；'
+                '每个线程以 action 优先、score 较高、时间较新、source_id 字典序较小的成员 ID 为卡片 ID。'
+                'source_item_ids 和 reports 恰好覆盖每张精选卡片 ID，报告须覆盖线程全部精选成员；'
+                '按同样顺序排列，写具体事实、变化与截止时间，不要重复每日大标题，不得编造或声称已执行操作。无精选时正文写状态，列表留空。')
+            global_result = self._run_agent(task, rule_text, tool, entries)
+            decisions.update({row['id']: row for row in global_result['decisions']})
         previews = [{**row, "body": row["body"][:2000], "body_length": len(row["body"])} for row in entries if row["id"] not in decisions]
         for number, batch in enumerate(_batches(previews), 1):
             if self.progress:
@@ -288,6 +312,10 @@ class AgentBriefingGenerator:
                      for row in ranked]
         reports = dict(preserved_reports or {})
         parts = []
+        if global_result is not None:
+            validate_body(global_result, [row.item.id for row in ranked])
+            reports.update({row['id']: row['content'].strip() for row in global_result['reports']})
+            parts.append(global_result['body'].strip())
         for number, batch in enumerate(_batches([row for row in summaries if row["id"] not in reports]), 1):
             if self.progress:
                 self.progress(f"Agent 正在撰写第 {number} 批简报内容")

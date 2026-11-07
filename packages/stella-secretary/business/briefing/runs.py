@@ -48,6 +48,14 @@ class BriefingRuns:
             self.db.execute('INSERT OR REPLACE INTO briefing_runs VALUES (?,?,?)', (run['requestId'], run['phase'], json.dumps(run, ensure_ascii=False)))
         return run
 
+    def assert_current(self, run):
+        current = self.business.briefing.briefing_for_date(run['date'])
+        generated_at = current.generated_at if current else None
+        baseline_at = run['baseline'].get('briefing', {}).get('generated_at')
+        states = [self.business.source_cursors(source['source'], source['accountId'], source) for source in run['sources']]
+        if generated_at != baseline_at or states != run['sourceStates']:
+            raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
+
     def invoke(self, method, request_id=None, **args):
         if method == 'status':
             row = self.db.execute("SELECT document FROM briefing_runs ORDER BY (phase IN ('starting','collecting','model')) DESC, rowid DESC LIMIT 1").fetchone()
@@ -59,6 +67,14 @@ class BriefingRuns:
             return self.get(request_id)
         if method == 'save':
             return self.save(self.get(request_id), args['patch'])
+        if method == 'stop':
+            run = self.get(request_id)
+            saved = self.invoke('result', request_id)
+            if saved:
+                return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
+            phase = 'interrupted' if args.get('interrupted') else 'cancelled'
+            message = '生成已中断，可继续未完成的部分。' if phase == 'interrupted' else '简报生成已取消。'
+            return self.save(run, {'phase': phase, 'message': message})
         if method != 'prepare':
             raise ValueError('Unknown briefing run operation')
         record, sources = args['record'], args['sources']
@@ -72,17 +88,14 @@ class BriefingRuns:
             saved = self.invoke('result', request_id)
             if saved:
                 return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
-            current = self.business.briefing.briefing_for_date(run['date'])
-            generated_at = current.generated_at if current else None
-            baseline_at = run['baseline'].get('briefing', {}).get('generated_at')
-            states = [self.business.source_cursors(source['source'], source['accountId'], source) for source in sources]
-            if generated_at != baseline_at or states != run['sourceStates']:
-                raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
+            if run.get('protocol') != 'single-agent-v1':
+                raise ValueError('旧版简报任务无法继续，请新建简报任务；原记录和来源游标未更改。')
+            self.assert_current(run)
             return run
         if self.active():
             raise ValueError('简报正在生成，请等待完成或取消。')
         current = self.business.briefing.briefing_for_date(record['date'])
-        run = {'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
+        run = {'protocol': 'single-agent-v1', 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
                'context': args.get('context', {}), 'phase': 'starting', 'message': '正在准备简报…',
                'createdAt': stamp(), 'runAt': stamp(), 'collected': [], 'submissions': [],
                'rules': self.serialize(self.business.briefing.list_rules(enabled_only=True)),
