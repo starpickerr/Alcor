@@ -72,6 +72,21 @@
 .stella-task-list { display:grid; gap:0; list-style:none; padding:0; margin:0; }
 .stella-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:flex-start; padding:14px 2px; border:0; border-bottom:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; box-shadow:none; }
 .stella-task-card:last-child { border-bottom-color:transparent; }
+.stella-task-node { min-width:0; }
+.stella-task-node > .stella-task-card { gap:8px; padding:12px 2px 12px calc(2px + var(--task-indent,0px)); border-bottom-color:var(--dsw-alias-border-l3); }
+.stella-task-node:last-child > .stella-task-card { border-bottom-color:transparent; }
+.stella-task-branch .stella-task-card { padding-top:8px; padding-bottom:8px; }
+.stella-task-disclosure { position:relative; z-index:1; display:flex; flex:none; width:20px; height:24px; }
+.stella-task-disclosure > button { width:20px; min-width:20px; height:24px; padding:0; }
+.stella-task-disclosure [aria-expanded=false] svg { transform:rotate(-90deg); }
+.stella-task-card[data-context-only] .stella-task-copy h3 { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-task-urgency { display:flex; flex-wrap:wrap; gap:4px 12px; }
+.stella-task-urgency:empty { display:none; }
+.stella-task-urgency > button { position:relative; z-index:1; pointer-events:auto; height:auto; min-height:24px; padding:0; font-size:11px; color:var(--stella-brand); }
+.stella-task-urgency > button[data-urgency=overdue] { color:var(--dsw-alias-state-error-primary); }
+.stella-task-completed-children { padding-left:28px; }
+.stella-task-completed-children > summary { width:fit-content; padding:8px 0; font-size:12px; color:var(--dsw-alias-label-secondary); cursor:pointer; }
+.stella-task-add-entry { margin-top:12px; }
 .stella-task-open { position:absolute; inset:0 -8px; border:0; border-radius:8px; background:transparent; cursor:pointer; }
 .stella-task-card:has(.stella-task-open:hover) { background:var(--dsw-alias-interactive-bg-hover); }
 .stella-task-card > .stella-task-check,.stella-task-more { position:relative; z-index:1; flex-shrink:0; }
@@ -81,8 +96,6 @@
 .stella-task-card > .stella-task-check[aria-pressed=true] { color:var(--dsw-alias-label-primary-foreground); background:var(--stella-brand); border-color:var(--stella-brand); }
 .stella-task-copy { flex:1; min-width:0; pointer-events:none; }
 .stella-task-copy h3 { margin:0; font-size:14px; line-height:24px; font-weight:500; overflow-wrap:anywhere; }
-.stella-task-note { margin:2px 0 0; font-size:12px; line-height:19px; color:var(--dsw-alias-label-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.stella-task-note:empty { display:none; }
 .stella-task-copy > small { display:block; margin-top:5px; color:var(--dsw-alias-label-secondary); font-size:11px; }
 .stella-completed { text-decoration:line-through; color:var(--dsw-alias-label-secondary); }
 .stella-task-metadata { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; min-width:0; }
@@ -93,8 +106,8 @@
 .stella-task-badge[data-priority="2"] { color:var(--dsw-alias-state-warn-primary); }
 .stella-task-card[data-completed] .stella-task-badge { color:var(--dsw-alias-label-tertiary); }
 .stella-task-detail { max-width:960px; margin:0 auto; }
-.stella-task-breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:24px; color:var(--dsw-alias-label-secondary); font-size:12px; }
-.stella-task-breadcrumbs > :last-child { overflow-wrap:anywhere; }
+.stella-task-breadcrumbs { display:flex; flex-wrap:nowrap; align-items:center; gap:4px; margin-bottom:12px; max-width:100%; overflow-x:auto; scrollbar-width:thin; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-task-breadcrumbs > button,.stella-task-breadcrumbs > [aria-current] { display:block; flex:none; max-width:140px; min-height:26px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .stella-task-detail > .stella-calendar-period h2 { font-size:26px; line-height:1.4; overflow-wrap:anywhere; }
 .stella-task-detail-summary { display:grid; gap:20px; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
 .stella-task-detail-toolbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
@@ -624,7 +637,7 @@
 .stella-task-workspace { min-width:0; container-type:inline-size; container-name:stella-tasks; }
 .stella-task-workspace [data-record-selected] { background:var(--stella-brand-soft); box-shadow:inset 3px 0 var(--stella-brand); }
 .stella-calendar-record-panel .stella-task-detail { width:100%; min-width:0; margin:0; }
-.stella-calendar-record-panel .stella-task-breadcrumbs { gap:4px; margin-bottom:16px; }
+.stella-calendar-record-panel .stella-task-breadcrumbs { gap:4px; margin-bottom:12px; }
 .stella-calendar-record-panel .stella-task-breadcrumbs > button { padding:3px 6px; font-size:12px; }
 .stella-calendar-record-panel .stella-task-detail .stella-task-group { margin-top:18px; }
 .stella-calendar-record-panel .stella-task-progress progress { display:block; width:100%; margin-top:8px; accent-color:var(--stella-brand); }

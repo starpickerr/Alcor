@@ -237,6 +237,7 @@ def check_tasks(page, business, artifacts):
     assert updated['due_on'] == '2026-12-25' and updated['due_time'] == '14:00'
     assert json.loads(updated['tags']) == ['python', 'homework']
 
+    page.get_by_role('region', name='事务详情', exact=True).get_by_role('button', name='添加子事务', exact=True).click()
     page.get_by_label('子事务标题', exact=True).fill('First step')
     page.get_by_role('button', name='添加子事务', exact=True).click()
     page.get_by_role('button', name='First step', exact=True).click()
