@@ -4,19 +4,29 @@ import z from '@deepseek-ai/schemastery'
 import { z as schema } from 'zod'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
+import { checkMessages } from './elearning-status.js'
 
 export const accountKey = credentialKey('stella-elearning', 'account')
 export const accountSchema = schema.object({ username: schema.string().trim().min(1).max(160), password: schema.string().min(1).max(4096) }).strict()
 
 export async function checkConnection(ctx) {
   if (!ctx.tools.executable('mcp__elearning__list_courses')) return { status: 'disconnected' }
+  const signal = AbortSignal.timeout(185000)
   try {
-    const batch = await ctx.tools.execute({ signal: AbortSignal.timeout(185000), calls: [{ type: 'tool-call', id: 'stella-elearning-check', name: 'mcp__elearning__list_courses', arguments: '{}' }] })
-    const result = batch.results[0].result
-    if (result.isError) return { status: /Login|login|登录|账号/.test(JSON.stringify(result)) ? 'login_required' : 'query_failed' }
-    const courses = result.value?.structuredContent?.value
+    const batch = await ctx.tools.execute({ signal, calls: [{ type: 'tool-call', id: 'stella-elearning-check', name: 'mcp__elearning__list_courses', arguments: '{}' }] })
+    if (signal.aborted) return { status: 'query_failed', code: 'timeout' }
+    const result = batch.results[0]?.result
+    if (result?.isError) {
+      let code = 'query_failed'
+      try {
+        const detail = JSON.parse(result.error?.message)
+        if (Object.hasOwn(checkMessages, detail?.error_code)) code = detail.error_code
+      } catch {}
+      return { status: code === 'login_required' ? 'login_required' : 'query_failed', code }
+    }
+    const courses = result?.value?.structuredContent?.value
     return Array.isArray(courses) ? { status: 'ready', courseCount: courses.length } : { status: 'query_failed' }
-  } catch { return { status: 'query_failed' } }
+  } catch (error) { return { status: 'query_failed', code: signal.aborted || error?.name === 'TimeoutError' ? 'timeout' : 'query_failed' } }
 }
 
 export default class Elearning extends Service {

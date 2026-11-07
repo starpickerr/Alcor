@@ -13,7 +13,7 @@ from web_check import open_secretary, settings
 SOURCES = []
 for name in ('elearning', 'mail'):
     version = json.loads((ROOT / 'packages' / f'stella-{name}' / 'package.json').read_text())['version']
-    SOURCES.append(ROOT / f'.local/artifacts/stella-{name}-{version}.tgz')
+    SOURCES.append(ROOT / '.local/artifacts' / f'stella-{name}-{version}.tgz')
 
 
 def config(page, package):
@@ -96,6 +96,11 @@ def check(page, home, profile, artifacts):
     page.screenshot(path=str(artifacts / 'school-settings.png'), animations='disabled')
     page.set_viewport_size({'width': 390, 'height': 844})
     page.get_by_role('button', name='测试连接', exact=True).click(trial=True)
+    for message in ('无法启动登录浏览器', '无法连接学校服务', '学校登录未完成'):
+        page.get_by_role('button', name='测试连接', exact=True).click()
+        expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text(message)
+        expect(page.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
+    page.screenshot(path=str(artifacts / 'school-check-error.png'), animations='disabled')
     assert page.locator('body').evaluate('node => node.scrollWidth <= node.clientWidth')
     page.screenshot(path=str(artifacts / 'school-narrow.png'), animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
@@ -258,8 +263,18 @@ def main():
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'source-bundle-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         fixture = home / 'mail-check-fixture.mjs'
-        fixture.write_text("""export const inject=['stellaMailConnection'];
+        fixture.write_text("""export const inject=['stellaMailConnection','tools'];
 export function apply(ctx) {
+  const execute=ctx.tools.execute;
+  let schoolCount=0;
+  ctx.tools.execute=async function(request){
+    if(request.calls?.[0]?.id==='stella-elearning-check') {
+      const code=['browser_unavailable','network_error','login_timeout'][Math.min(schoolCount++,2)];
+      return {results:[{result:{isError:true,error:{message:JSON.stringify({error_code:code})}}}]};
+    }
+    return execute.call(this,request);
+  };
+  ctx.effect(()=>()=>{ctx.tools.execute=execute});
   const prototype=Object.getPrototypeOf(ctx.stellaMailConnection);
   const original=prototype.check;
   const results=[{status:'query_failed',code:'auth_failed'},{status:'query_failed',code:'timeout'},{status:'ready'}];

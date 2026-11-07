@@ -10,7 +10,36 @@ from plugin_check import ROOT, CLI, PACK
 from web_check import open_secretary
 import official_desktop_check as desktop
 
+
 surface = runpy.run_path(str(ROOT / 'product/tests/bill-import-chat-check.py'))['surface']
+
+
+def check_composition(page, name, category, amount, share):
+    composition = page.get_by_role('region', name=name, exact=True)
+    segment = composition.locator('.stella-bill-segment[data-category="' + category + '"]')
+    segment.scroll_into_view_if_needed()
+    point = segment.evaluate('path => { const p = path.getPointAtLength(path.getTotalLength() / 2); const screen = new DOMPoint(p.x, p.y).matrixTransform(path.getScreenCTM()); return {x:screen.x,y:screen.y}; }')
+    page.mouse.move(point['x'], point['y'])
+    tooltip = composition.get_by_role('tooltip')
+    expect(tooltip).to_contain_text(category)
+    expect(tooltip).to_contain_text(amount)
+    expect(tooltip).to_contain_text('占比 ' + share)
+    expect(segment).to_have_attribute('data-active', 'true')
+    page.wait_for_function('element => new DOMMatrix(getComputedStyle(element).transform).a > 1.06', arg=segment.element_handle())
+    composition.get_by_role('heading').hover()
+    expect(tooltip).to_have_count(0)
+    button = composition.get_by_role('button', name=category + '，', exact=False)
+    button.focus()
+    expect(tooltip).to_contain_text(amount)
+    expect(segment).to_have_attribute('data-active', 'true')
+    page.keyboard.press('Escape')
+    expect(tooltip).to_have_count(0)
+
+
+def check_amount_colors(page):
+    for direction, dominant in [('income', 1), ('expense', 0)]:
+        values = page.locator('.stella-bills [data-direction="' + direction + '"]').evaluate_all('elements => elements.map(e => getComputedStyle(e).color.match(/[0-9.]+/g).slice(0,3).map(Number))')
+        assert values and all(color[dominant] > max(color[index] for index in range(3) if index != dominant) for color in values), (direction, values)
 
 
 def check(page, query, artifacts, native):
@@ -39,6 +68,7 @@ def check(page, query, artifacts, native):
     expect(page.locator('.stella-bill-day').last).to_contain_text('餐饮 · 17:46')
     row_height = page.locator('.stella-bill-row').first.bounding_box()['height']
     assert 56 <= row_height <= 64, row_height
+    check_amount_colors(page)
     page.screenshot(path=str(artifacts / 'bills-ledger-desktop.png'))
     page.get_by_label('账单币种').select_option('JPY')
     expect(totals).to_contain_text('JP¥300'); expect(page.locator('.stella-ledger-list > li')).to_have_count(1)
@@ -55,6 +85,12 @@ def check(page, query, artifacts, native):
     expect(page.locator('.stella-bill-legend').first).to_contain_text('¥13.00')
     expect(page.locator('.stella-bill-ranking')).to_contain_text('2 笔 · 86.7%')
     expect(page.locator('.stella-bill-ranking')).not_to_contain_text('Synthetic Pending')
+    check_composition(page, '支出构成', '餐饮', '¥13.00', '86.7%')
+    check_composition(page, '支出构成', '交通', '¥2.00', '13.3%')
+    check_composition(page, '收入构成', '工资', '¥300.00', '100%')
+    page.get_by_role('region', name='支出构成', exact=True).get_by_role('button', name='餐饮，', exact=False).focus()
+    page.screenshot(path=str(artifacts / 'bills-chart-focus-desktop.png'))
+    page.keyboard.press('Escape')
     page.get_by_role('tab', name='收入', exact=True).click()
     expect(page.locator('.stella-bill-ranking')).to_contain_text('Synthetic Salary')
     page.get_by_role('tab', name='支出', exact=True).click()
@@ -66,7 +102,14 @@ def check(page, query, artifacts, native):
         page.keyboard.press('Escape')
         expect(page.locator('[data-sidebar-drawer]')).to_have_attribute('data-sidebar-collapsed', 'true')
         assert page.locator('body').evaluate('node => node.scrollWidth <= node.clientWidth'), theme
+        check_amount_colors(page)
+        check_composition(page, '支出构成', '交通', '¥2.00', '13.3%')
+        composition = page.get_by_role('region', name='支出构成', exact=True)
+        composition.get_by_role('button', name='交通，', exact=False).focus()
+        tooltip = composition.get_by_role('tooltip').bounding_box()
+        assert tooltip['x'] >= 0 and tooltip['x'] + tooltip['width'] <= 390, tooltip
         page.screenshot(path=str(artifacts / f'bills-report-{theme}-narrow.png'), full_page=True, animations='disabled')
+        page.keyboard.press('Escape')
         page.locator('.stella-bill-ranking').scroll_into_view_if_needed()
         assert page.locator('body').evaluate('node => node.scrollWidth <= node.clientWidth'), theme
         page.screenshot(path=str(artifacts / f'bills-ranking-{theme}-narrow.png'), animations='disabled')

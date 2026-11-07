@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Field } from './business-pages.jsx'
+import { checkMessage } from './elearning-status.js'
 
 const unwrap = async promise => { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作失败，请重试。'); return result.value }
 
@@ -25,7 +26,7 @@ export function SchoolConnection({ api }) {
       <div className="stella-actions"><Button type="submit" variant="primary" disabled={busy || !account?.writable || !username.trim() || !password}>保存账号</Button>{account?.configured && <Button type="button" variant="ghost" disabled={busy} onClick={() => setRemoving(true)}>移除账号</Button>}</div>
     </form>
     {removing && <div className="stella-school-remove"><p>移除账号会停止后续访问，历史记录保留。</p><div className="stella-actions"><Button variant="outline" disabled={busy} onClick={() => run(async () => { await unwrap(api.removeElearningAccount({})); setPassword(''); await load(); setRemoving(false); setNotice('账号已移除，历史记录已保留。') })}>确认移除账号</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(false)}>取消</Button></div></div>}
-    <div className="stella-school-test"><Button variant="outline" disabled={busy || !savedPassword || !!password} onClick={() => run(async () => { const result = await unwrap(api.checkElearning({})); setNotice(result.status === 'ready' ? `连接有效，可访问 ${result.courseCount} 门课程。` : '测试未通过，请核对账号和网络。') })}>测试连接</Button></div>
+    <div className="stella-school-test"><Button variant="outline" disabled={busy || !savedPassword || !!password} onClick={() => run(async () => { const result = await unwrap(api.checkElearning({})); setNotice(result.status === 'ready' ? `连接有效，可访问 ${result.courseCount} 门课程。` : checkMessage(result)) })}>测试连接</Button></div>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
   </section>
 }
