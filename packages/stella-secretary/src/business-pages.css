@@ -598,7 +598,7 @@
 .stella-calendar-split { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; container-type:inline-size; container-name:calendar-desk; }
 .stella-calendar-split[data-panel-open] { position:relative; z-index:16; grid-template-columns:minmax(0,1fr) min(42%,460px); }
 .stella-calendar-page { min-width:0; container-type:inline-size; container-name:stella-calendar; }
-.stella-calendar-record-panel { position:sticky; top:0; display:flex; flex-direction:column; min-width:0; width:100%; height:calc(100dvh - var(--stella-sidebar-offset) + 24px); min-height:420px; max-height:none; padding:0; overflow:hidden; border-left:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); font:14px/1.55 var(--dsw-font-family); }
+.stella-calendar-record-panel { position:sticky; top:12px; display:flex; flex-direction:column; min-width:0; width:100%; height:var(--stella-panel-height,calc(100dvh - var(--stella-sidebar-offset) + 12px)); min-height:0; max-height:none; padding:0; overflow:hidden; border:1px solid var(--dsw-alias-border-l3); border-radius:16px; background:var(--dsw-alias-bg-layer-1); font:14px/1.55 var(--dsw-font-family); }
 .stella-calendar-panel-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex:none; padding:15px 24px; border-bottom:1px solid var(--dsw-alias-border-l3); }
 .stella-calendar-panel-header h2 { margin:0; font-size:14px; font-weight:500; }
 .stella-calendar-panel-header > button { width:30px; height:30px; padding:5px; color:var(--dsw-alias-label-secondary); }
@@ -621,10 +621,10 @@
 .stella-calendar-page [data-record-selected] { box-shadow:inset 0 0 0 1.5px var(--stella-event-color); background:color-mix(in srgb,var(--stella-event-color) 20%,var(--dsw-alias-bg-layer-1)); }
 @container calendar-desk (max-width:850px) {
   .stella-calendar-split > .stella-calendar-record-panel { grid-column:1 / -1; }
-  .stella-calendar-record-panel { position:fixed; inset:44px 0 0 auto; z-index:5; width:min(100%,520px); height:calc(100dvh - 44px); min-height:0; border-left:1px solid var(--dsw-alias-border-l3); }
+  .stella-calendar-record-panel { position:fixed; inset:52px 8px 8px auto; z-index:5; width:min(calc(100% - 16px),520px); height:auto; min-height:0; }
 }
 @media(max-width:600px) {
-  .stella-calendar-record-panel { width:100%; }
+  .stella-calendar-record-panel { width:calc(100% - 16px); }
   .stella-calendar-panel-header { padding:12px 20px; }
   .stella-calendar-record-panel .stella-inspector-body { padding:24px 20px; }
   .stella-calendar-record-panel .stella-inspector-actions { padding:16px 20px; }

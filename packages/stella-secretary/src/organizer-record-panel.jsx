@@ -1,8 +1,29 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { Button, IconCloseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export function OrganizerRecordPanel({ title, focusKey, busy, close, trigger, editing, children }) {
   const panel = useRef(null)
+  useLayoutEffect(() => {
+    const element = panel.current
+    const desk = element?.closest('.stella-desk')
+    if (!desk) return
+    let frame = 0
+    const update = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (getComputedStyle(element).position !== 'sticky') { element.style.removeProperty('--stella-panel-height'); return }
+        const bottom = Math.min(window.innerHeight, desk.getBoundingClientRect().bottom)
+        element.style.setProperty('--stella-panel-height', `${Math.max(0, bottom - element.getBoundingClientRect().top - 12)}px`)
+      })
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(desk)
+    element.closest('.stella-business')?.querySelectorAll(':scope > .stella-app-header, :scope > .stella-page-feedback').forEach(item => observer.observe(item))
+    desk.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    update()
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); desk.removeEventListener('scroll', update); window.removeEventListener('resize', update) }
+  }, [])
   useEffect(() => {
     return () => { const opener=trigger.current; if (opener?.isConnected) opener.focus({preventScroll:true}) }
   }, [])
