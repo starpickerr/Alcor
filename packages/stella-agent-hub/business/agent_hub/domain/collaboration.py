@@ -111,7 +111,7 @@ class Collaboration:
             agent_id, display = provider['agentId'], provider['displayName']
         else:
             text(native_id, 'nativeAgentId', 64)
-            agent_id, display = 'stella', 'Stella'
+            agent_id, display = ('dsh', '开发助手') if native_id == 'dsh' else ('stella', 'Stella')
         result = dict(participantId='part-' + uuid.uuid4().hex, agentId=agent_id,
                       providerConfigId=config_id, nativeAgentId=native_id,
                       displayName=text(raw.get('displayName') or display, 'displayName', 80),
@@ -198,7 +198,7 @@ class Collaboration:
 
     def post_message(self, task_id, body, recipient_ids, intent, expected_revision, request_id):
         body = text(body, 'body', 16000)
-        if intent not in {'message', 'persona'} or not isinstance(recipient_ids, list) or len(recipient_ids) > 12:
+        if intent not in {'message', 'persona', 'task'} or not isinstance(recipient_ids, list) or len(recipient_ids) > 12 or len(set(recipient_ids)) != len(recipient_ids):
             raise ValueError('invalid message intent or recipients')
         def change(task):
             people = [participant(task, pid) for pid in recipient_ids]
@@ -207,7 +207,21 @@ class Collaboration:
                     raise ValueError('persona requires exactly one participant')
                 self._patch_participant(people[0], {'persona': body})
                 people[0]['revision'] += 1
+                self._message(task, body, 'user', recipients=recipient_ids)
                 self._message(task, f"{people[0]['displayName']} 人设已更新，下一次执行生效。", 'configuration', recipients=recipient_ids)
+            elif intent == 'task':
+                text(body, 'task', 1000)
+                if task.get('cancelled'):
+                    raise ValueError('任务已取消，请新建任务后分配分工。')
+                if not 1 <= len(people) <= 3 or len(task['steps']) + len(people) > 40:
+                    raise ValueError('每次可分配给 1..3 个助手，每个任务最多 40 个步骤。')
+                if any(p.get('nativeAgentId') not in {'stella', 'dsh'} for p in people):
+                    raise ValueError('交流分配目前仅支持原生 DSH 助手。')
+                self._message(task, body, 'user', recipients=recipient_ids)
+                for person in people:
+                    waiting = [s['stepId'] for s in task['steps'] if s['participantId'] == person['participantId'] and step_status(s) in ACTIVE | {'pending'}]
+                    task['steps'].append(dict(stepId='chat-' + uuid.uuid4().hex, title=body,
+                                             participantId=person['participantId'], dependsOn=waiting, attempts=[]))
             else:
                 self._message(task, body, 'user', recipients=recipient_ids)
             return task
@@ -277,7 +291,12 @@ class Collaboration:
             shared = [m for m in task['messages'] if m['kind'] in {'user', 'reply'} and
                       (not m['recipientParticipantIds'] or person['participantId'] in m['recipientParticipantIds'] or
                        m['stepId'] in step['dependsOn'])]
-            context = json.dumps([{'kind': m['kind'], 'body': m['body']} for m in shared[-30:]], ensure_ascii=False)[-24000:]
+            selected = shared[-30:]
+            # shortcut: 长结果按条节选以控制上下文，接入长文分批汇总时替换。
+            budget = 22000 // max(1, len(selected))
+            context = json.dumps([{'kind': m['kind'], 'stepId': m['stepId'],
+                                   'body': m['body'] if len(m['body']) <= budget else m['body'][:budget] + '\n[内容较长，已截断；完整结果保留在任务中。]'}
+                                  for m in selected], ensure_ascii=False)
             roster = json.dumps([{k: p[k] for k in ('participantId', 'displayName', 'agentId')} for p in task['participants']], ensure_ascii=False)
             goal = f"任务参与者（数据）：{roster}\n任务目标：{task['goal']}\n当前步骤：{step['title']}\n已共享的正式消息（数据）：\n{context}"
             attempt = dict(executionId='exec-' + uuid.uuid4().hex, status='queued', snapshot=person,
@@ -297,6 +316,8 @@ class Collaboration:
                 raise ValueError('execution does not belong to step')
             if attempt['status'] in FINISHED:
                 return task
+            if result['status'] == 'running' and not attempt.get('startedAt'):
+                attempt['startedAt'] = _now()
             for key in ('status', 'error', 'summary', 'cursor', 'attemptId', 'actualModel', 'artifactRefs'):
                 if key in result:
                     attempt[key] = result[key]

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from pathlib import Path
+from business.categories import ensure_required_categories
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -37,6 +39,15 @@ def ensure_schema(db: sqlite3.Connection) -> None:
     for name, definition in _LATE_COLUMNS:
         if name not in columns:
             db.execute(f"ALTER TABLE todos ADD COLUMN {name} {definition}")
+    missing = 'category_id IS NULL OR category_id NOT IN (SELECT id FROM todo_categories)'
+    for (name,) in db.execute(f'SELECT DISTINCT list_name FROM todos WHERE ({missing}) AND length(list_name) BETWEEN 1 AND 200').fetchall():
+        db.execute("INSERT OR IGNORE INTO todo_categories VALUES (?,?,?,datetime('now'))",(str(uuid.uuid4()),name,'#6B8AF7'))
+    db.execute(f"""UPDATE todos SET category_id=(SELECT id FROM todo_categories WHERE name=todos.list_name)
+        WHERE ({missing}) AND length(list_name) BETWEEN 1 AND 200""")
+    db.execute("INSERT OR IGNORE INTO todo_migrations VALUES ('stable-task-categories')")
+    ensure_required_categories(db, 'todo_categories', 'todos', '提醒事项')
+    db.execute("""UPDATE todos SET list_name=(SELECT name FROM todo_categories WHERE id=todos.category_id)
+        WHERE list_name!=(SELECT name FROM todo_categories WHERE id=todos.category_id)""")
     db.execute("CREATE INDEX IF NOT EXISTS todos_parent_order ON todos(parent_id,sort_order,created_at)")
     if "status" not in columns:
         db.execute("UPDATE todos SET status='completed' WHERE completed_at IS NOT NULL")

@@ -1,0 +1,15 @@
+.agent-hub-developer { height:100%; min-height:0; box-sizing:border-box; padding-top:var(--dsh-frame-top-clearance,0px); --stella-canvas:var(--dsw-alias-bg-base); --stella-surface-soft:var(--dsw-alias-bg-layer-2); --stella-brand:var(--dsw-alias-state-business-primary); --stella-brand-soft:color-mix(in srgb,var(--dsw-alias-state-business-primary) 9%,var(--dsw-alias-bg-layer-1)); --stella-shadow:0 4px 16px #0000000a; }
+.agent-hub-developer *, .agent-hub-developer *::before,.agent-hub-developer *::after { box-sizing:border-box; }
+.agent-hub-developer .stella-agenthub { height:100%; min-height:0; }
+.agent-hub-developer .stella-field { display:flex; flex-direction:column; gap:6px; min-width:0; font-size:13px; margin:16px 0; }
+.agent-hub-developer .stella-field textarea { box-sizing:border-box; width:100%; min-width:0; padding:9px 10px; background:var(--dsw-alias-bg-layer-1); color:inherit; border:1px solid var(--dsw-alias-border-l3); border-radius:8px; font:inherit; resize:vertical; }
+.agent-hub-developer .stella-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.agent-hub-developer .stella-muted { color:var(--dsw-alias-label-secondary); }
+.stella-editor-dialog:has(.stella-hub-step) .stella-actions { display:flex; gap:8px; margin-top:16px; }
+
+.agent-hub-dialog { width:min(640px,calc(100vw - 32px)); }
+.agent-hub-dialog .stella-field { display:flex; flex-direction:column; gap:6px; margin:16px 0; font-size:13px; }
+.agent-hub-dialog .stella-field textarea { width:100%; padding:10px; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:8px; }
+.agent-hub-dialog .stella-actions { display:flex; gap:10px; margin-top:16px; }
+
+.agent-hub-developer :is(.stella-hub-draft,.stella-hub-agent-editor) .stella-field { margin:0; }

@@ -23,6 +23,7 @@ from business.bills.domain.export import build_ledger_xlsx
 class Bridge:
     def __init__(self, kind):
         self.kind = kind
+        self.sources = [{"id": "a", "title": "Synthetic", "source": "test", "writable": True}]
         self.rows = [dict(calendar_id='a', event_id='event', external_id='external', occurrence_date='2026-11-05T01:00:00Z',
                           stella_id='', title='Remote event', description='', location='',
                           start_at='2026-11-05T01:00:00Z', end_at='2026-11-05T02:00:00Z',
@@ -37,11 +38,24 @@ class Bridge:
         if op in ('status', 'reminder_status'):
             return {'supported': True, 'authorization': 'full_access'}
         if op in ('calendars', 'reminder_lists'):
-            return {'calendars' if op == 'calendars' else 'lists': [{'id': 'a', 'title': 'Synthetic', 'source': 'test', 'writable': True}]}
+            return {'calendars' if op == 'calendars' else 'lists': copy.deepcopy(self.sources)}
+        if op in ('create_calendar', 'reminder_list_create'):
+            row = {'id': 'created-' + payload['title'], 'title': payload['title'], 'color': payload['color'], 'writable': True}
+            self.sources.append(row)
+            return {'calendar' if op == 'create_calendar' else 'list': copy.deepcopy(row)}
+        if op in ('rename', 'reminder_rename'):
+            identity = payload['calendar_id' if op == 'rename' else 'list_id']
+            row = next(row for row in self.sources if row['id'] == identity)
+            row.update({key: payload[key] for key in ('title', 'color') if key in payload})
+            return {'calendar' if op == 'rename' else 'list': copy.deepcopy(row)}
+        if op in ('delete_calendar', 'reminder_list_delete'):
+            identity = payload['calendar_id' if op == 'delete_calendar' else 'list_id']
+            self.sources = [row for row in self.sources if row['id'] != identity]
+            return {'deleted': True}
         if op == 'events':
-            return {'events': copy.deepcopy(self.rows), 'successful_calendar_ids': ['a'], 'failed_calendar_ids': []}
+            return {'events': copy.deepcopy(self.rows), 'successful_calendar_ids': [row['id'] for row in self.sources], 'failed_calendar_ids': []}
         if op == 'reminders':
-            return {'reminders': copy.deepcopy(self.rows), 'successful_list_ids': ['a'], 'failed_list_ids': []}
+            return {'reminders': copy.deepcopy(self.rows), 'successful_list_ids': [row['id'] for row in self.sources], 'failed_list_ids': []}
         if op in ('lookup', 'reminder_lookup'):
             return {'event' if op == 'lookup' else 'reminder': copy.deepcopy(self.rows[0])}
         raise AssertionError(f'Unexpected system write: {op}')
@@ -56,6 +70,186 @@ class Recovery(unittest.TestCase):
     def tearDown(self):
         self.business.meta.close()
         self.temporary.cleanup()
+
+    def test_unavailable_apple_account_does_not_delete_categories(self):
+        class AccountBridge(Bridge):
+            account_online = True
+            def call(self, op, **payload):
+                if op in ('calendars', 'reminder_lists'):
+                    return {'calendars' if op == 'calendars' else 'lists':
+                        [{**row, 'source_id': 'account'} for row in self.sources] if self.account_online else [],
+                        'source_ids': ['account'] if self.account_online else []}
+                return super().call(op, **payload)
+        for kind, cls, service, port in (
+            ('calendar', AppleCalendarSync, self.business.calendar, 'calendar_port'),
+            ('reminders', AppleReminderSync, self.business.tasks, 'todo_port'),
+        ):
+            with self.subTest(kind=kind):
+                bridge = AccountBridge(kind)
+                sync = cls(bridge=bridge, db_path=self.root / f'account-{kind}.sqlite3', **{port: service})
+                sync.start_auto = lambda: None
+                sync.start_sync()
+                before = service.categories()
+                bridge.account_online = False
+                self.assertIn(sync.sync()['status'], ('error','partial'))
+                self.assertEqual(service.categories(), before)
+                self.assertIn(sync.sync()['status'], ('error','partial'))
+                self.assertEqual(service.categories(), before)
+                bridge.account_online = True
+                self.assertEqual(sync.sync()['status'], 'success')
+
+    def test_reassigning_category_moves_existing_apple_record_without_duplication(self):
+        class MovingBridge(Bridge):
+            def call(self, op, **payload):
+                if op in ('upsert', 'reminder_upsert'):
+                    self.rows[0].update({key: value for key, value in payload.items() if not key.startswith('lookup_')})
+                    return {'event' if op == 'upsert' else 'reminder': copy.deepcopy(self.rows[0])}
+                return super().call(op, **payload)
+        for kind, cls, service, port in (
+            ('calendar', AppleCalendarSync, self.business.calendar, 'calendar_port'),
+            ('reminders', AppleReminderSync, self.business.tasks, 'todo_port'),
+        ):
+            with self.subTest(kind=kind):
+                bridge = MovingBridge(kind)
+                sync = cls(bridge=bridge, db_path=self.root / f'move-{kind}.sqlite3', **{port: service})
+                sync.start_auto = lambda: None
+                sync.start_sync()
+                target = service.create_category({'name': 'Target'})
+                sync.sync()
+                original = sync._maps()[0]
+                local_id = original['todo_id' if kind == 'reminders' else 'stella_id']
+                if kind == 'calendar':
+                    service.set_event_category(local_id, target['id'])
+                else:
+                    service.set_todo_category(local_id, target['id'])
+                result = sync.sync()
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(result['exported'], 1)
+                self.assertEqual(len(sync._maps()), 1)
+                self.assertEqual(len(bridge.rows), 1)
+                group_key = 'list_id' if kind == 'reminders' else 'calendar_id'
+                expected = next(row['apple_id'] for row in sync._stored_links() if row['stella_id'] == target['id'])
+                self.assertEqual(bridge.rows[0][group_key], expected)
+                read = service.get_todo if kind == 'reminders' else service.get_event
+                self.assertEqual(read(local_id)['category_id'], target['id'])
+
+    def test_categories_converge_in_both_directions_and_survive_restart(self):
+        for kind, cls, service, port in (
+            ('calendar', AppleCalendarSync, self.business.calendar, 'calendar_port'),
+            ('reminders', AppleReminderSync, self.business.tasks, 'todo_port'),
+        ):
+            with self.subTest(kind=kind):
+                bridge = Bridge(kind)
+                now = ['2026-11-07T00:00:00Z']
+                path = self.root / f'category-parity-{kind}.sqlite3'
+                sync = cls(bridge=bridge, db_path=path, clock=lambda: now[0], **{port: service})
+                sync.start_auto = lambda: None
+                sync.start_sync()
+                local = service.create_category({'name': 'planA', 'color': '#112233'})
+                self.assertEqual(sync.sync()['status'], 'success')
+                linked = next(row for row in sync._stored_links() if row['stella_id'] == local['id'])
+                apple = next(row for row in bridge.sources if row['id'] == linked['apple_id'])
+                self.assertEqual(apple['title'], 'planA')
+                self.assertEqual(apple['color'], '#112233')
+                sync = cls(bridge=bridge, db_path=path, clock=lambda: now[0], **{port: service})
+                sync.start_auto = lambda: None
+                service.update_category(local['id'], {'name': 'Local rename', 'color': '#334455'})
+                self.assertEqual(sync.sync()['status'], 'success')
+                self.assertEqual(apple['title'], 'Local rename')
+                self.assertEqual(apple['color'], '#334455')
+                apple.update(title='Apple rename', color='#556677')
+                self.assertEqual(sync.sync()['status'], 'success')
+                self.assertEqual(service.get_category(local['id'])['name'], 'Apple rename')
+                self.assertEqual(service.get_category(local['id'])['color'], '#556677')
+                bridge.sources = [row for row in bridge.sources if row['id'] != apple['id']]
+                sync.sync()
+                self.assertEqual(service.get_category(local['id'])['name'], 'Apple rename')
+                now[0] = '2026-11-07T00:02:00Z'
+                self.assertEqual(sync.sync()['status'], 'partial')
+                self.assertTrue(service.get_category(local['id']))
+                sync.resolve_category_conflict(apple['id'],'keep_apple')
+                with self.assertRaises(KeyError):
+                    service.get_category(local['id'])
+                service.create_category({'name': 'Delete locally'})
+                sync.sync()
+                local = next(row for row in service.categories() if row['name'] == 'Delete locally')
+                service.delete_category(local['id'])
+                self.assertEqual(sync.sync()['status'], 'success')
+                self.assertFalse(any(row['title'] == 'Delete locally' for row in bridge.sources))
+                self.assertEqual({row['stella_id'] for row in sync._stored_links()},
+                                 {row['id'] for row in service.categories()})
+                self.assertEqual(len(bridge.sources), len(sync._stored_links()))
+
+    def test_legacy_category_backfill_preserves_identity_and_does_not_restore_deleted_lists(self):
+        from business.tasks.domain.service import TodoService
+        tasks = self.business.tasks
+        row = tasks.create_todo({'title': 'Old task', 'list_name': 'Legacy plan', 'due_on': '2026-11-07', 'due_time': '04:00', 'timezone': 'Asia/Shanghai'})
+        with tasks._connect() as db:
+            db.execute('DROP TRIGGER todos_required_category_update')
+            db.execute('UPDATE todos SET category_id=NULL WHERE id=?', (row['id'],))
+            db.execute("DELETE FROM todo_migrations WHERE name='stable-task-categories'")
+        reopened = TodoService(tasks.db_path)
+        migrated = reopened.get_todo(row['id'])
+        self.assertEqual(migrated['category_id'], row['category_id'])
+        self.assertEqual(migrated['due_time'], '04:00')
+        self.assertEqual(migrated['timezone'], 'Asia/Shanghai')
+        reopened.delete_category(row['category_id'])
+        again = TodoService(tasks.db_path)
+        with self.assertRaises(KeyError):
+            again.get_todo(row['id'])
+        self.assertFalse(any(item['name'] == 'Legacy plan' for item in again.categories()))
+
+    def test_full_sync_exports_unclassified_and_briefing_records(self):
+        class ExportBridge(Bridge):
+            def call(self, op, **payload):
+                if op in ('upsert', 'reminder_upsert'):
+                    row = copy.deepcopy(self.rows[0])
+                    row.update(payload)
+                    row['event_id' if op == 'upsert' else 'reminder_id'] = payload['stella_id']
+                    row['external_id'] = payload['stella_id']
+                    row['recurrence'] = {'frequency': payload['repeat_frequency']}
+                    self.rows.append(row)
+                    return {'event' if op == 'upsert' else 'reminder': row}
+                return super().call(op, **payload)
+        for kind, cls, service, port in (
+            ('calendar', AppleCalendarSync, self.business.calendar, 'calendar_port'),
+            ('reminders', AppleReminderSync, self.business.tasks, 'todo_port'),
+        ):
+            with self.subTest(kind=kind):
+                payload = {'title': 'Briefing item'}
+                if kind == 'calendar':
+                    payload.update(start_at='2026-11-07T01:00:00Z', end_at='2026-11-07T02:00:00Z')
+                    first = service.create_event(payload, _briefing_key='briefing-synthetic')
+                    second = service.create_event({**payload, 'title': 'Unclassified item'})
+                else:
+                    first = service.create_todo(payload, _briefing_key='briefing-synthetic')
+                    second = service.create_todo({**payload, 'title': 'Unclassified item'})
+                bridge = ExportBridge(kind)
+                sync = cls(bridge=bridge, db_path=self.root / f'export-all-{kind}.sqlite3', **{port: service})
+                sync.start_auto = lambda: None
+                result = sync.start_sync()['result']
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(result['exported'], 2)
+                self.assertEqual({row['stella_id'] for row in bridge.rows if row['stella_id']}, {first['id'], second['id']})
+
+    def test_task_categories_are_stable_across_edits_legacy_names_and_deletion(self):
+        tasks = self.business.tasks
+        group = tasks.create_category({'name': 'planA'})
+        row = tasks.create_todo({'title': 'Categorized task', 'category_id': group['id'], 'tags': ['keep']})
+        self.assertEqual(row['category_id'], group['id'])
+        self.assertEqual(row['list_name'], 'planA')
+        row = tasks.update_todo(row['id'], {'notes': 'Edited elsewhere'})
+        self.assertEqual(row['category_id'], group['id'])
+        self.assertEqual(json.loads(row['tags']), ['keep'])
+        legacy = tasks.create_todo({'title': 'Legacy name', 'list_name': 'planB'})
+        self.assertEqual(tasks.get_category(legacy['category_id'])['name'], 'planB')
+        tasks.update_category(group['id'], {'name': 'Renamed'})
+        self.assertEqual(tasks.get_todo(row['id'])['list_name'], 'Renamed')
+        with self.assertRaises(KeyError):
+            tasks.update_todo(row['id'], {'category_id': 'missing'})
+        tasks.delete_category(group['id'])
+        with self.assertRaises(KeyError):
+            tasks.get_todo(row['id'])
 
     def test_one_click_bidirectional_sync_preserves_categories_lists_and_exports_existing_items(self):
         class WritableBridge(Bridge):
@@ -128,6 +322,66 @@ class Recovery(unittest.TestCase):
                 reopened.disconnect()
                 self.assertEqual(len(reopened.status()['links']), 1)
 
+    def test_deleted_calendar_category_deletes_apple_calendar_without_recreation(self):
+        class DeletingBridge(Bridge):
+            writable = True
+            fail_delete = False
+            deleted = False
+            calls = 0
+
+            def call(self, op, **payload):
+                if op == 'calendars':
+                    return {'calendars': [] if self.deleted else [
+                        {'id': 'a', 'title': 'Synthetic', 'writable': self.writable}]}
+                if op == 'delete_calendar':
+                    self.calls += 1
+                    if self.fail_delete:
+                        raise RuntimeError('Synthetic deletion failed')
+                    self.assert_payload = payload
+                    self.deleted = True
+                    self.rows = []
+                    return {'deleted': True}
+                return super().call(op, **payload)
+
+        for manual in (False, True):
+            with self.subTest(manual=manual):
+                for category in self.business.calendar.categories():
+                    self.business.calendar.delete_category(category['id'])
+                bridge = DeletingBridge('calendar')
+                sync = AppleCalendarSync(bridge=bridge, db_path=self.root / f'delete-category-{manual}.sqlite3',
+                                         calendar_port=self.business.calendar)
+                sync.start_auto = lambda: None
+                started = sync.start_sync([{'apple_id': 'a'}])
+                sync._set('sync_all', True)
+                category_id = started['state']['links'][0]['stella_id']
+                local_id = sync._maps()[0]['stella_id']
+                self.business.calendar.delete_category(category_id)
+                bridge.writable = False
+                result = sync.start_sync()['result'] if manual else sync.sync()
+                self.assertIn(result['status'],('partial','error'))
+                self.assertEqual(bridge.calls,0)
+                self.assertTrue(self.business.calendar.get_event(local_id))
+                bridge.writable = True
+                bridge.fail_delete = True
+                result = sync.start_sync()['result'] if manual else sync.sync()
+                self.assertIn(result['status'],('partial','error'))
+                self.assertTrue(self.business.calendar.get_event(local_id))
+                self.assertEqual(len(sync._stored_links()), 1)
+                bridge.fail_delete = False
+                result = sync.start_sync()['result'] if manual else sync.sync()
+                self.assertEqual(result['status'], 'success')
+                self.assertTrue(bridge.deleted)
+                self.assertEqual(bridge.assert_payload, {'calendar_id': 'a'})
+                self.assertEqual(sync._stored_links(), [])
+                self.assertFalse(any(row['id'] == category_id or row['name'] == 'Synthetic'
+                                     for row in self.business.calendar.categories()))
+                with self.assertRaises(KeyError):
+                    self.business.calendar.get_event(local_id)
+                self.assertTrue(all(row['state'] == 'deleted' for row in sync._maps()))
+                calls=bridge.calls
+                sync.sync()
+                self.assertEqual(bridge.calls,calls)
+
     def test_sync_all_sources_updates_deletes_and_pause(self):
         class AllBridge(Bridge):
             def __init__(self, kind):
@@ -180,7 +434,7 @@ class Recovery(unittest.TestCase):
                     original_call = bridge.call
                     def check_window(op, **payload):
                         if op == 'events':
-                            self.assertEqual(payload['start'], '0001-01-01T00:00:00+00:00')
+                            self.assertTrue(payload['start'].startswith('2025-11-06T00:'))
                             self.assertTrue(payload['end'].startswith('2028-11-06T00:'))
                         return original_call(op, **payload)
                     bridge.call = check_window
@@ -207,7 +461,7 @@ class Recovery(unittest.TestCase):
                 # A new source joins without another click.
                 bridge.sources.append({'id': 'c', 'title': 'New source', 'writable': True})
                 self.assertEqual(sync.sync()['status'], 'success')
-                self.assertEqual(len(sync.status()['links']), 3)
+                self.assertEqual(len(sync.status()['links']), len(service.categories()))
                 if kind == 'calendar':
                     local = service.create_event({'title': 'Local new', 'category_id': link['stella_id'],
                         'start_at': '2026-11-06T01:00:00Z', 'end_at': '2026-11-06T02:00:00Z'})
@@ -291,7 +545,7 @@ class Recovery(unittest.TestCase):
 
         class RepeatingBridge(Bridge):
             def call(self, op, **payload):
-                if op == 'reminder_upsert':
+                if op == 'reminder_complete':
                     self.completed = payload['completed']
                     self.rows[0].update(due_on='2026-08-20', completed=False, completed_at=None)
                     return {'reminder': copy.deepcopy(self.rows[0])}

@@ -37,6 +37,29 @@ class AppBridge(unittest.TestCase):
             self.assertIn(str(app), seen[0])
             self.assertFalse(Path(seen[0][seen[0].index('--stdin') + 1]).exists())
 
+    def test_calendar_deletion_passes_exact_identity_and_surfaces_native_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'Delete.app'
+            (app / 'Contents/MacOS').mkdir(parents=True)
+            (app / 'Contents/MacOS/StellaCalendarBridge').touch()
+            response = {'ok': True, 'deleted': True}
+            class Launcher:
+                def __init__(self, command, **kwargs):
+                    request = json.loads(Path(command[command.index('--stdin') + 1]).read_text())
+                    assert request == {'op': 'delete_calendar', 'calendar_id': 'synthetic-id'}
+                    Path(command[command.index('--stdout') + 1]).write_text(json.dumps(response))
+                def communicate(self, timeout=None):
+                    return ('', '')
+                def poll(self):
+                    return 0
+            with patch('apple_sync.bridge.subprocess.Popen', Launcher):
+                bridge = AppleCalendarBridge(helper_path=app, platform='darwin')
+                self.assertEqual(bridge.call('delete_calendar', calendar_id='synthetic-id'), {'deleted': True})
+                response = {'ok': False, 'error': 'Calendar is read only'}
+                with self.assertRaisesRegex(BridgeError, 'read only'):
+                    bridge.call('delete_calendar', calendar_id='synthetic-id')
+                bridge.close()
+
     def test_app_watcher_stops_the_actual_launched_app_and_cleans_its_files(self):
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / 'Watch.app'

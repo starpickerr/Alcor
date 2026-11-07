@@ -1,3 +1,4 @@
+import { Notice } from './notice.jsx'
 import React, { useEffect, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Field } from './business-pages.jsx'
@@ -13,8 +14,9 @@ export function SchoolConnection({ api }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [noticeTone, setNoticeTone] = useState('success')
   const load = async () => { const value = await unwrap(api.elearningAccount({})); setAccount(value); setUsername(value.username || '') }
-  async function run(work) { setBusy(true); setError(''); setNotice(''); try { await work() } catch (failure) { setError(failure.message) } finally { setBusy(false) } }
+  async function run(work) { setBusy(true); setError(''); setNotice(''); setNoticeTone('success'); try { await work() } catch (failure) { setError(failure.message) } finally { setBusy(false) } }
   useEffect(() => { void run(load) }, [api])
   if (account && !account.installed) return null
   const savedPassword = account?.configured && username === (account.username || '')
@@ -25,8 +27,8 @@ export function SchoolConnection({ api }) {
       <Field label="eLearning 密码"><Input required type="password" maxLength={4096} autoComplete="new-password" disabled={busy || !account?.writable} placeholder={savedPassword ? '********' : ''} aria-description={savedPassword ? '密码已保存，输入新密码以替换。' : undefined} value={password} onChange={event => { setPassword(event.target.value); setNotice('') }} /></Field>
       <div className="stella-actions"><Button type="submit" variant="primary" disabled={busy || !account?.writable || !username.trim() || !password}>保存账号</Button>{account?.configured && <Button type="button" variant="ghost" disabled={busy} onClick={() => setRemoving(true)}>移除账号</Button>}</div>
     </form>
-    {removing && <div className="stella-school-remove"><p>移除账号会停止后续访问，历史记录保留。</p><div className="stella-actions"><Button variant="outline" disabled={busy} onClick={() => run(async () => { await unwrap(api.removeElearningAccount({})); setPassword(''); await load(); setRemoving(false); setNotice('账号已移除，历史记录已保留。') })}>确认移除账号</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(false)}>取消</Button></div></div>}
-    <div className="stella-school-test"><Button variant="outline" disabled={busy || !savedPassword || !!password} onClick={() => run(async () => { const result = await unwrap(api.checkElearning({})); setNotice(result.status === 'ready' ? `连接有效，可访问 ${result.courseCount} 门课程。` : checkMessage(result)) })}>测试连接</Button></div>
-    {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+    {removing && <div className="stella-school-remove"><Notice tone="warning">移除账号会停止后续访问，历史记录保留。</Notice><div className="stella-actions"><Button variant="outline" disabled={busy} onClick={() => run(async () => { await unwrap(api.removeElearningAccount({})); setPassword(''); await load(); setRemoving(false); setNotice('账号已移除，历史记录已保留。') })}>确认移除账号</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(false)}>取消</Button></div></div>}
+    <div className="stella-school-test"><Button variant="outline" disabled={busy || !savedPassword || !!password} onClick={() => run(async () => { const result = await unwrap(api.checkElearning({})); setNoticeTone(result.status === 'ready' ? 'success' : 'warning'); setNotice(result.status === 'ready' ? `连接有效，可访问 ${result.courseCount} 门课程。` : checkMessage(result)) })}>测试连接</Button></div>
+    {error && <Notice tone="error" role="alert">{error}</Notice>}{notice && <Notice tone={noticeTone} role="status">{notice}</Notice>}
   </section>
 }

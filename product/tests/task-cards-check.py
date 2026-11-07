@@ -14,6 +14,8 @@ check_tasks = runpy.run_path(str(Path(__file__).with_name('organizer-ui-check.py
 def main():
     artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/stella-task-cards'))
     artifacts.mkdir(parents=True, exist_ok=True)
+    desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
+    desktop.ARTIFACTS=artifacts
     desktop.verify_release()
     with tempfile.TemporaryDirectory(prefix='stella-task-cards-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
@@ -29,10 +31,11 @@ def main():
         with desktop.desktop(playwright, home, 'task-cards') as (page, errors):
             business = lambda domain, method, args=None: desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
             check_tasks(page, business, artifacts)
-            expect(page.locator('.stella-page-feedback').get_by_role('status')).to_have_text('已删除')
+            expect(page.locator('.stella-page-feedback').get_by_role('status')).to_have_text('事务状态已更新')
             vanished = business('tasks', 'create_todo', {'payload': {'title': 'Removed elsewhere'}})
             page.get_by_role('button', name='刷新', exact=True).click()
-            page.get_by_role('button', name='删除事务：Removed elsewhere', exact=True).click()
+            page.get_by_role('button', name='更多操作：Removed elsewhere', exact=True).click()
+            page.get_by_role('menuitem', name='删除事务', exact=True).click()
             business('tasks', 'delete_todo', {'todo_id': vanished['id']})
             dialog = page.get_by_role('dialog', name='删除事务', exact=True)
             dialog.get_by_role('button', name='确认删除', exact=True).click()
@@ -41,7 +44,8 @@ def main():
             dialog.get_by_role('button', name='取消', exact=True).click()
             persistent = business('tasks', 'create_todo', {'payload': {'title': 'Persistent task', 'notes': 'Only task information remains.', 'due_on': '2026-12-25', 'repeat_frequency': 'daily'}})
             page.get_by_role('button', name='刷新', exact=True).click()
-            page.get_by_role('button', name='删除事务：Persistent task', exact=True).click()
+            page.get_by_role('button', name='更多操作：Persistent task', exact=True).click()
+            page.get_by_role('menuitem', name='删除整个系列', exact=True).click()
             dialog = page.get_by_role('dialog', name='删除事务', exact=True)
             expect(dialog).to_contain_text('整个重复系列')
             dialog.get_by_role('button', name='取消', exact=True).click()
@@ -59,7 +63,7 @@ def main():
             assert not any(row['title'] in ('Project parent', 'First step') for row in saved)
             assert not errors, errors
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
-    print('PASS: official Desktop task cards, full-width filters, keyboard/detail navigation, independent completion/delete, confirmation/cascade/restart, no checklist UI, legacy data preserved, light/dark and 390px')
+    print('PASS: official Desktop task lists, list navigation, keyboard/detail navigation, independent completion/delete, confirmation/cascade/restart, no checklist UI, legacy data preserved, light/dark and 390px')
 
 
 if __name__ == '__main__':

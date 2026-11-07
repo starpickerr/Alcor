@@ -1,3 +1,5 @@
+import noticeStyle from './notice.css'
+import { Notice } from './notice.jsx'
 import { PluginBriefingSources } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useState } from 'react'
@@ -9,10 +11,9 @@ import { QuickChat, QuickConversation } from './quick-chat.jsx'
 import deskBaseStyle from './desk.css'
 import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
-import agentHubStyle from './agent-hub.css'
 import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + agentHubStyle + billStyle + connectionStyle + themeStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle
 import { remote as organizerRemote } from '../../stella-organizer/src/remote.js'
 import { Button, Input, Menu, MenuItemButton, FishLogo, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -38,7 +39,7 @@ function ModeSwitch({ useMode, switchMode, getNotice }) {
           {mode === value && <IconCheckOutlineRegular size={14} />}</span>
       </MenuItemButton>)}
     </Menu>
-    {getNotice() && <span role="status">{getNotice()}</span>}
+    {getNotice() && <Notice role="status" tone="warning" className="stella-mode-notice">{getNotice()}</Notice>}
   </div>
 }
 
@@ -52,31 +53,31 @@ function Workbench({ startSession }) {
 function Preferences({ describe, update }) {
   const [descriptor, setDescriptor] = useState()
   const [name, setName] = useState('')
-  const [status, setStatus] = useState('正在加载…')
+  const [status, setStatus] = useState({message:'正在加载…',tone:'info'})
   useEffect(() => {
     let disposed = false
     describe().then(result => {
       if (disposed) return
-      if (!result.ok) { setStatus('设置不可用，请重新打开。'); return }
+      if (!result.ok) { setStatus({message:'设置不可用，请重新打开。',tone:'error'}); return }
       const entry = result.value.namespaces.find(item => item.ns === 'stella-secretary')
-      if (!entry) { setStatus('设置不可用，请重新打开。'); return }
-      setDescriptor(entry); setName(entry.value.displayName); setStatus('')
-    }).catch(() => { if (!disposed) setStatus('连接中断，请重新打开。') })
+      if (!entry) { setStatus({message:'设置不可用，请重新打开。',tone:'error'}); return }
+      setDescriptor(entry); setName(entry.value.displayName); setStatus({message:'',tone:'info'})
+    }).catch(() => { if (!disposed) setStatus({message:'连接中断，请重新打开。',tone:'error'}) })
     return () => { disposed = true }
   }, [describe])
   async function save(event) {
     event.preventDefault()
     if (!descriptor) return
-    setStatus('正在保存…')
+    setStatus({message:'正在保存…',tone:'info'})
     try {
       const result = await update(name.trim(), descriptor.revision)
-      if (!result.ok) { setStatus('保存失败或设置已变化，请重新打开后重试。'); return }
-      setDescriptor(result.value); setStatus('已保存')
-    } catch { setStatus('连接中断，请重新打开以确认保存结果。') }
+      if (!result.ok) { setStatus({message:'保存失败或设置已变化，请重新打开后重试。',tone:'error'}); return }
+      setDescriptor(result.value); setStatus({message:'已保存',tone:'success'})
+    } catch { setStatus({message:'连接中断，请重新打开以确认保存结果。',tone:'error'}) }
   }
   return <form className="stella-preference-form" onSubmit={save}><h2>Stella</h2><label htmlFor="stella-display-name">助手名称</label>
     <Input id="stella-display-name" value={name} maxLength={80} required disabled={!descriptor} onChange={e => setName(e.target.value)} />
-    <Button type="submit" variant="outline" disabled={!descriptor || !name.trim()}>保存</Button><p role="status">{status}</p></form>
+    <Button type="submit" variant="outline" disabled={!descriptor || !name.trim()}>保存</Button>{status.message && <Notice tone={status.tone} role={status.tone === 'error' ? 'alert' : 'status'}>{status.message}</Notice>}</form>
 }
 
 export async function apply(ctx) {

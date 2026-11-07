@@ -10,10 +10,11 @@ import official_desktop_check as desktop
 from plugin_check import ROOT, PACK
 from web_check import open_secretary, settings
 
+PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(PACK)))
 SOURCES = []
 for name in ('elearning', 'mail'):
     version = json.loads((ROOT / 'packages' / f'stella-{name}' / 'package.json').read_text())['version']
-    SOURCES.append(ROOT / '.local/artifacts' / f'stella-{name}-{version}.tgz')
+    SOURCES.append(Path(os.environ.get('STELLA_SOURCE_REVIEW_DIRECTORY',str(ROOT/'.local/artifacts'))) / f'stella-{name}-{version}.tgz')
 
 
 def config(page, package):

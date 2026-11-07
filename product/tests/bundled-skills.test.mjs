@@ -15,7 +15,7 @@ import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
 import * as StellaTools from '../../packages/stella-secretary/src/tools.js'
 
 const root = new URL('../../packages/', import.meta.url)
-const localNames = ['stella-automation','stella-bills','stella-briefing','stella-calendar','stella-collaboration','stella-tasks']
+const localNames = ['stella-automation','stella-bills','stella-briefing','stella-calendar','stella-tasks']
 
 test('bundled skills load through the native skill tool, remain scoped and leave no registrations after disable', async t => {
   const ctx = new Context()

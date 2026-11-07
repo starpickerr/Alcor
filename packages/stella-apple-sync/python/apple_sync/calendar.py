@@ -13,7 +13,10 @@ from datetime import date, datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from apple_sync.category_links import all_source_links, bidirectional_links, reconcile_names, validate_links
+from apple_sync.metadata import snapshot_fields, record_baseline, changed as metadata_changed, write_fields, conflict_summaries
+from apple_sync.contracts import bind_item,category_binding,process_operations,locate_remote,resolve_pending_deletion
+from apple_sync.categories import synchronize_categories, synchronize_moves, reconcile_category_names, resolve_category_conflict, prime_bindings
+from apple_sync.category_links import bidirectional_links, reconcile_names, validate_links
 from apple_sync.bridge import AppleCalendarBridge
 from apple_sync.runtime import report_sync_error
 from apple_sync.timezones import normalize_timezone
@@ -60,8 +63,10 @@ def _source_key(remote):
     return "eventkit:" + hashlib.sha256(key.encode()).hexdigest()
 
 
-def _payload(remote):
-    data = _content(remote)
+def _payload(remote, category_id=None):
+    data = {**_content(remote),**snapshot_fields(remote)}
+    if category_id is not None:
+        data["category_id"] = category_id
     data["repeat_frequency"] = "none"
     # EventKit may emit fixed-offset labels (GMT+0800) that ZoneInfo rejects.
     data["repeat_timezone"] = normalize_timezone(remote.get("timezone"))
@@ -153,6 +158,10 @@ class AppleCalendarSync:
                             :origin,:local_hash,:remote_hash,:state,:conflict,:missing_since,:updated_at)""", mapping)
 
     def _new_map(self, local, remote, origin, source_key=None):
+        self.calendar.apple_apply_metadata(local["id"],snapshot_fields(remote))
+        local = self.calendar.get_event(local["id"])
+        record_baseline(self,local,remote)
+        bind_item(self.calendar,local,remote,'calendar',['包含多条原生重复规则，请在 Apple 中编辑'] if (remote.get('recurrence') or {}).get('rule_count',0)>1 else [])
         series = origin == "stella"
         return {"stella_id": local["id"], "source_key": source_key or _source_key(remote),
                 "calendar_id": remote["calendar_id"], "event_id": remote.get("event_id") or "",
@@ -173,7 +182,10 @@ class AppleCalendarSync:
         calendars = []
         if native.get("authorization") == "full_access":
             try:
-                calendars = self.bridge.call("calendars")["calendars"]
+                inventory = self.bridge.call("calendars")
+                calendars = inventory["calendars"]
+                self._set('available_sources',inventory.get('sources',[]))
+                self._set('default_source_id',inventory.get('default_source_id'))
             except Exception as exc:
                 listing_error = report_sync_error("calendar", "读取日历列表", exc)
         maps = self._maps()
@@ -181,11 +193,12 @@ class AppleCalendarSync:
                 "auto_enabled": bool(self._get("auto_enabled", True)), "sync_all": bool(self._get("sync_all", False)), "calendar_ids": selected,
                 "direction": self._get("direction", "bidirectional"), "calendars": calendars,
                 "categories": self.calendar.categories(),
-                "last_success": self._get("last_success"), "error": listing_error or self._get("error", ""),
-                "conflicts": [{"stella_id": row["stella_id"], "reason": row["conflict"]}
-                              for row in maps if row["state"] == "conflict"],
+                "range_state":self._get('last_range'),"coverage":self._get('coverage',[]),"last_success": self._get("last_success"), "error": listing_error or self._get("error", ""),
+                "conflicts": conflict_summaries([row for row in maps if row['state']=='conflict'], self.calendar.get_event, 'stella_id'),
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
                 "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps),
+                "category_conflicts":self._get('category_conflicts',[]), "operations":self.calendar.apple_operations(),
+                "sources":self._get('available_sources',[]),"default_source_id":self._get('default_source_id'),
                 "links": [self._public_link(row) for row in self._stored_links()]}
 
     def request_access(self):
@@ -198,10 +211,20 @@ class AppleCalendarSync:
             if state.get("authorization") != "full_access":
                 raise PermissionError("需要系统完整访问授权")
             sync_all = selections is None
-            if sync_all and not state["calendars"]:
-                raise ValueError("没有可同步的来源，请检查系统账户或授权后重试")
-            links = (all_source_links(state["calendars"], state["categories"], self._stored_links()) if sync_all else
-                     bidirectional_links(selections, state["calendars"], state["categories"]))
+            deleted_categories = synchronize_categories(self, self.calendar, 'calendar') if sync_all else 0
+            state = self.status()
+            if sync_all and not state['calendars'] and deleted_categories:
+                self._set('sync_all', True)
+                self._set('sync_deletions', True)
+                self._set('connected', True)
+                self._set('auto_enabled', True)
+                self.resume_auto()
+                self._set('error', '')
+                self._set('last_success', self.clock())
+                return {'state': self.status(), 'result': {'status': 'success', 'deleted_calendars': deleted_categories}}
+            if sync_all and not state['calendars']:
+                raise ValueError('没有可同步的来源，请检查系统账户或授权后重试')
+            links = state['links'] if sync_all else bidirectional_links(selections, state['calendars'], state['categories'])
             state = self.replace_links(links)
             self._set("sync_all", sync_all)
             self._set("sync_deletions", sync_all)
@@ -231,7 +254,7 @@ class AppleCalendarSync:
             if not self._get("ever_connected", False):
                 with self._connect() as db:
                     db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
-                                   [(row["id"],) for row in self.calendar.list_events() if row["source_type"] is None])
+                                   [(row["id"],) for row in self.calendar.list_events() if row["source_type"] != "apple_calendar"])
                 self._set("ever_connected", True)
             self._set("calendar_ids", calendars)
             self._set("direction", direction)
@@ -274,7 +297,7 @@ class AppleCalendarSync:
             create_name = str(raw.get("create_name") or "").strip()
             if not item["stella_id"] and create_name:
                 existing = next((row for row in self.calendar.categories() if row["name"] == create_name), None)
-                item["stella_id"] = existing["id"] if existing else self.calendar.create_category({"name": create_name})["id"]
+                item["stella_id"] = existing["id"] if existing else self.calendar.create_category({"name": create_name, "color": available.get(item["apple_id"], {}).get("color", "#6B8AF7")})["id"]
             prepared.append(item)
         validate_links(prepared)
         rows = []
@@ -286,6 +309,8 @@ class AppleCalendarSync:
                     raise ValueError("selected calendar is unavailable")
                 calendar = {"title": old["apple_name"]}
             category = self.calendar.get_category(item["stella_id"])
+            if item['apple_id'] in available:
+                self.calendar.apple_bind('category',category['id'],category_binding(available[item['apple_id']]))
             old = previous.get(item["apple_id"], {})
             baseline = {key: old[key] for key in ("apple_name", "stella_name", "name_conflict")} if old.get("stella_id") == item["stella_id"] else {}
             rows.append({**item, "apple_name": calendar["title"], "stella_name": category["name"],
@@ -302,7 +327,7 @@ class AppleCalendarSync:
             if enabled and not self._get("ever_connected", False):
                 with self._connect() as db:
                     db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
-                                   [(row["id"],) for row in self.calendar.list_events() if row["source_type"] is None])
+                                   [(row["id"],) for row in self.calendar.list_events() if row["source_type"] != "apple_calendar"])
                 self._set("ever_connected", True)
             directions = {row["direction"] for row in enabled}
             self._set("calendar_ids", [row["apple_id"] for row in enabled])
@@ -312,55 +337,20 @@ class AppleCalendarSync:
         return self.status()
 
     def _reconcile_category_names(self):
-        """Bidirectional category names for enabled links. Returns errors that block success."""
-        available = {row["id"]: row for row in self.bridge.call("calendars")["calendars"]}
-        errors = []
-        for link in self._stored_links():
-            if not link["enabled"]:
-                continue
-            apple = available.get(link["apple_id"])
-            if apple is None:
-                continue
-            try:
-                category = self.calendar.get_category(link["stella_id"])
-            except KeyError:
-                link["name_conflict"] = "Stella category is missing"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            action, name = reconcile_names(link["apple_name"], link["stella_name"], apple["title"], category["name"])
-            if action == "unchanged":
-                continue
-            if action == "conflict":
-                link["name_conflict"] = "Both Apple and Stella renamed this category"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            if action == "aligned":
-                link.update(apple_name=name, stella_name=name, name_conflict="")
-                self._save_link(link)
-                continue
-            if action == "apple_to_stella":
-                self.calendar.update_category(link["stella_id"], {"name": name})
-                link.update(apple_name=name, stella_name=name, name_conflict="")
-                self._save_link(link)
-                continue
-            if not apple.get("writable"):
-                link["name_conflict"] = "Calendar is read only"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            try:
-                self.bridge.call("rename", calendar_id=link["apple_id"], title=name)
-            except Exception as exc:
-                report_sync_error("calendar", "同步分类名称", exc)
-                link["name_conflict"] = str(exc)
-                self._save_link(link)
-                errors.append(str(exc))
-                continue
-            link.update(apple_name=name, stella_name=name, name_conflict="")
-            self._save_link(link)
-        return errors
+        return reconcile_category_names(self,self.calendar,'calendar')
+
+    def resolve_category_conflict(self,apple_id,choice,replacement_id=None,source_id=None,field=None):
+        with self._lock:
+            return resolve_category_conflict(self,self.calendar,'calendar',apple_id,choice,replacement_id,source_id,field)
+
+    def prime_bindings(self):
+        return prime_bindings(self,self.calendar,'calendar')
+
+    def cancel_operation(self,operation_id):
+        if self._get('operation-receipt:'+operation_id):
+            raise ValueError('Apple 已确认此操作，正在完成本地核对，请继续同步')
+        self.calendar.cancel_apple_operation(operation_id)
+        return self.status()
 
     def disconnect(self):
         with self._lock:
@@ -459,7 +449,7 @@ class AppleCalendarSync:
             with self._connect() as db:
                 baseline = {row[0] for row in db.execute("SELECT stella_id FROM baseline_local")}
             mapped = {row["stella_id"] for row in maps}
-            result["new"] += sum(row["source_type"] is None and row["id"] not in mapped and
+            result["new"] += sum(row["source_type"] != "apple_calendar" and row["id"] not in mapped and
                                  row["id"] not in baseline for row in self.calendar.list_events())
         return result
 
@@ -481,7 +471,7 @@ class AppleCalendarSync:
             if any(row is None for row in items):
                 raise KeyError("Stella event not found")
             maps = {row["stella_id"]: row for row in self._maps()}
-            if any((row["source_type"] is not None and row["id"] not in maps) or
+            if any((row["source_type"] == "apple_calendar" and row["id"] not in maps) or
                    (row["id"] in maps and maps[row["id"]]["calendar_id"] != calendar_id)
                    for row in items):
                 raise ValueError("event cannot be exported to the selected calendar")
@@ -615,7 +605,7 @@ class AppleCalendarSync:
             by_category = {row["stella_id"]: row["apple_id"] for row in rows}
             for local in self.calendar.list_events():
                 apple_id = by_category.get(local.get("category_id"))
-                if apple_id is None or local["source_type"] is not None:
+                if apple_id is None or local["source_type"] == "apple_calendar":
                     continue
                 moment = datetime.fromisoformat(local["start_at"].replace("Z", "+00:00"))
                 if bounds[0] <= moment < bounds[1]:
@@ -698,6 +688,10 @@ class AppleCalendarSync:
         for row in maps:
             if row["calendar_id"] == remote["calendar_id"] and row["event_id"] == remote.get("event_id") and row["occurrence_date"] == remote.get("occurrence_date"):
                 return row
+        if (remote.get('recurrence') or {}).get('frequency','none')=='none':
+            direct = [row for row in maps if row['calendar_id']==remote['calendar_id'] and row['event_id']==remote.get('event_id')]
+            if len(direct)==1:
+                return direct[0]
         matches = [row for row in maps if not ambiguous and row["calendar_id"] == remote["calendar_id"] and
                    row["external_id"] and row["external_id"] == remote.get("external_id") and
                    row["occurrence_date"] == remote.get("occurrence_date")]
@@ -716,20 +710,22 @@ class AppleCalendarSync:
         self._save_map(mapping)
 
     def _write_payload(self, local, mapping=None, calendar_id=None, window=None):
-        data = _content(local)
+        data = {**_content(local),**write_fields(self,local,mapping)}
         data.update({"calendar_id": calendar_id or mapping["calendar_id"],
-                     "stella_id": local["id"] if local["source_type"] is None else "",
+                     "stella_id": local["id"] if local["source_type"] != "apple_calendar" else "",
                      "repeat_frequency": local["repeat_frequency"],
                      "repeat_days": json.loads(local["repeat_days"]),
                      "repeat_until": local["repeat_until"],
                      "repeat_timezone": local["repeat_timezone"],
-                     "series": bool(local["source_type"] is None and
+                     "series": bool(local["source_type"] != "apple_calendar" and
                                     (local["repeat_frequency"] != "none" or mapping is not None))})
         if mapping:
             data.update(event_id=mapping["event_id"], external_id=mapping["external_id"],
                         occurrence_date=mapping["occurrence_date"])
         else:
             data["occurrence_date"] = local["start_at"]
+        if mapping and local.get('edit_scope'):
+            data['series'] = local['edit_scope']=='future'
         if window and mapping is None:
             start = datetime.fromisoformat(local["start_at"])
             if not (datetime.fromisoformat(window[0]) <= start < datetime.fromisoformat(window[1])):
@@ -740,7 +736,7 @@ class AppleCalendarSync:
 
     def _place_in_category(self, local, category_id, direction):
         if local and category_id and direction in ("import", "bidirectional") and local.get("category_id") != category_id:
-            return self.calendar.set_event_category(local["id"], category_id)
+            return self.calendar.apple_place_item(local["id"], category_id)
         return local
 
     def _process_remote(self, remote, maps, direction, window, counts, ambiguous=False, moved_candidate=None,
@@ -749,8 +745,16 @@ class AppleCalendarSync:
         if moved_candidate is not None:
             mapping["calendar_id"] = remote["calendar_id"]
             mapping["event_id"] = remote["event_id"]
-        if mapping is None and remote.get("stella_id"):
-            existing = next((row for row in maps if row["stella_id"] == remote["stella_id"] and row["origin"] == "stella"), None)
+        if mapping is None:
+            candidates = [row for row in maps if row['origin']=='stella' and row['calendar_id']==remote['calendar_id'] and
+                          ((remote.get('stella_id') and row['stella_id']==remote['stella_id']) or
+                           (remote.get('external_id') and row['external_id']==remote['external_id']))]
+            existing = candidates[0] if len(candidates)==1 else None
+            if existing:
+                series = self._local(existing['stella_id'])
+                day = datetime.fromisoformat(remote['start_at'].replace('Z','+00:00')).astimezone(ZoneInfo(series['repeat_timezone'] or 'UTC')).date().isoformat() if series else ''
+                if not series or series['repeat_frequency']=='none' or series.get('repeat_until') and day>series['repeat_until']:
+                    existing = None
             if existing:
                 # EventKit expands a Stella-owned series into multiple instances.
                 # The Stella series already renders those instances itself.
@@ -759,10 +763,10 @@ class AppleCalendarSync:
                     if direction != "export" and series and series["repeat_frequency"] != "none":
                         day = datetime.fromisoformat(remote["occurrence_date"].replace("Z", "+00:00"))
                         day = day.astimezone(ZoneInfo(series["repeat_timezone"] or "UTC")).date().isoformat()
-                        self.calendar.exclude_occurrence(series["id"], day)
+                        self.calendar.apple_exclude(series["id"], day)
                         key = _source_key(remote)
                         local = self._place_in_category(
-                            self.calendar.upsert_external_event("apple_calendar", key, _payload(remote)),
+                            self.calendar.upsert_external_event("apple_calendar", key, _payload(remote, category_id)),
                             category_id, direction)
                         exception_map = self._new_map(local, remote, "apple", key)
                         self._save_map(exception_map)
@@ -772,8 +776,8 @@ class AppleCalendarSync:
                         self._conflict(existing, "Apple changed one occurrence of a Stella series")
                         counts["conflicts"] += 1
                 return
-            local = self._local(remote["stella_id"])
-            if local and local["source_type"] is None:
+            local = self._local(remote['stella_id']) if remote.get('stella_id') else None
+            if local and local["source_type"] != "apple_calendar":
                 # The native write may have succeeded immediately before an app crash.
                 mapping = self._new_map(local, remote, "stella")
                 self._save_map(mapping)
@@ -784,7 +788,7 @@ class AppleCalendarSync:
                 return
             key = _source_key(remote)
             local = self._place_in_category(
-                self.calendar.upsert_external_event("apple_calendar", key, _payload(remote)), category_id, direction)
+                self.calendar.upsert_external_event("apple_calendar", key, _payload(remote, category_id)), category_id, direction)
             mapping = self._new_map(local, remote, "apple", key)
             self._save_map(mapping)
             maps.append(mapping)
@@ -804,8 +808,9 @@ class AppleCalendarSync:
         series = mapping["origin"] == "stella"
         local_hash = _fingerprint(local, series=series)
         remote_hash = _fingerprint(remote, series=series, remote=True)
-        local_changed = local_hash != mapping["local_hash"]
-        remote_changed = remote_hash != mapping["remote_hash"]
+        local_extra,remote_extra = metadata_changed(self,local,remote)
+        local_changed = local_hash != mapping["local_hash"] or local_extra
+        remote_changed = remote_hash != mapping["remote_hash"] or remote_extra
         if mapping["state"] == "conflict":
             return
         if local_changed and remote_changed:
@@ -817,19 +822,15 @@ class AppleCalendarSync:
                 counts["conflicts"] += 1
             elif mapping["origin"] == "apple":
                 local = self._place_in_category(self.calendar.upsert_external_event(
-                    "apple_calendar", mapping["source_key"], _payload(remote),
+                    "apple_calendar", mapping["source_key"], _payload(remote, category_id),
                     event_id=local["id"], reconciled=True), category_id, direction)
                 self._refresh_map(mapping, local, remote)
                 counts["updated"] += 1
             else:
-                self._conflict(mapping, "Apple changed a Stella recurring series") if local["repeat_frequency"] != "none" else None
-                if local["repeat_frequency"] != "none":
-                    counts["conflicts"] += 1
-                else:
-                    local = self._place_in_category(
-                        self.calendar.update_event(local["id"], _payload(remote)), category_id, direction)
-                    self._refresh_map(mapping, local, remote)
-                    counts["updated"] += 1
+                fields = self._series_payload(local,remote,category_id)
+                local = self._place_in_category(self.calendar.apple_apply_item(local['id'],fields),category_id,direction)
+                self._refresh_map(mapping,local,remote)
+                counts['updated'] += 1
         elif local_changed:
             if direction == "import":
                 self._conflict(mapping, "Stella changed an import-only event")
@@ -842,6 +843,7 @@ class AppleCalendarSync:
                 self._refresh_map(mapping, local, changed)
                 counts["exported"] += 1
         else:
+            bind_item(self.calendar,local,remote,'calendar',['包含多条原生重复规则，请在 Apple 中编辑'] if (remote.get('recurrence') or {}).get('rule_count',0)>1 else [])
             mapping["state"] = "active"
             mapping["calendar_id"] = remote["calendar_id"]
             mapping["event_id"] = remote.get("event_id") or mapping["event_id"]
@@ -850,7 +852,9 @@ class AppleCalendarSync:
             self._save_map(mapping)
             self._place_in_category(local, category_id, direction)
 
-    def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False):
+    def sync(self, manual=False, confirm_deletions=False, confirm_local_deletions=False, scan_start=None, scan_end=None):
+        if scan_start is not None or scan_end is not None:
+            self._range(scan_start,scan_end)
         with self._lock:
             failures = []
             counts = {"status": "success", "imported": 0, "updated": 0, "exported": 0,
@@ -868,13 +872,23 @@ class AppleCalendarSync:
             confirm_deletions = confirm_deletions or automatic_deletions
             confirm_local_deletions = confirm_local_deletions or automatic_deletions
             if self._get("sync_all", False):
-                sources = self.bridge.call("calendars")["calendars"]
-                categories = self.calendar.categories()
-                stored = self._stored_links()
-                directions = {row["apple_id"]: row["direction"] for row in stored}
-                if any(directions.get(row["id"]) != ("bidirectional" if row.get("writable") else "import")
-                       for row in sources):
-                    self.replace_links(all_source_links(sources, categories, stored))
+                try:
+                    counts['deleted_categories'] = synchronize_categories(self, self.calendar, 'calendar')
+                except Exception as exc:
+                    counts['status'] = 'error'
+                    self._set('error', report_sync_error('calendar', '同步分类', exc))
+                    return counts
+            if not self._get('sync_all',False):
+                _,errors = process_operations(self,self.calendar,'calendar')
+                self._set('operation_errors',errors)
+            for key,value in self._get('operation_counts',{}).items():
+                counts[key] += value
+            try:
+                counts['exported'] += synchronize_moves(self, self.calendar, 'calendar', lambda row, mapping, remote: _fingerprint(row, series=mapping['origin'] == 'stella', remote=remote))
+            except Exception as exc:
+                counts['status'] = 'error'
+                self._set('error', report_sync_error('calendar', '同步分类移动', exc))
+                return counts
             stored_links = self._stored_links()
             using_links = bool(stored_links)
             name_errors = self._reconcile_category_names() if using_links else []
@@ -886,8 +900,9 @@ class AppleCalendarSync:
                 horizon = now.replace(year=now.year + 2)
             except ValueError:
                 horizon = now.replace(year=now.year + 2, day=28)
-            window = ("0001-01-01T00:00:00+00:00" if self._get("sync_all", False) else
-                      (now - timedelta(days=365)).isoformat(), horizon.isoformat())
+            window = ((now-timedelta(days=365)).isoformat(),horizon.isoformat())
+            if scan_start is not None or scan_end is not None:
+                window = self._range(scan_start,scan_end)
             try:
                 inventory = self.bridge.call("events", calendar_ids=selected, start=window[0], end=window[1])
                 successful = set(inventory["successful_calendar_ids"]) & set(selected)
@@ -953,7 +968,7 @@ class AppleCalendarSync:
                 for mapping in maps:
                     if mapping["calendar_id"] not in successful or mapping["stella_id"] in seen:
                         continue
-                    if mapping["state"] in ("deleted", "remote_deleted", "locally_deleted", "conflict"):
+                    if mapping["state"] in ("deleted", "remote_deleted", "locally_deleted", "conflict", "instance_excluded"):
                         continue
                     try:
                         local = self._local(mapping["stella_id"])
@@ -991,7 +1006,7 @@ class AppleCalendarSync:
                               _fingerprint(local, series=mapping["origin"] == "stella") == mapping["local_hash"] and
                               (mapping["calendar_id"] not in bulk_missing or automatic_deletions)):
                             if (manual or automatic_deletions) and confirm_local_deletions:
-                                self.calendar.delete_event(local["id"])
+                                self.calendar.apple_remove_item(local["id"])
                                 mapping["state"] = "remote_deleted"
                                 counts["deleted_local"] += 1
                             else:
@@ -1016,7 +1031,7 @@ class AppleCalendarSync:
                             baseline = {row[0] for row in db.execute("SELECT stella_id FROM baseline_local")}
                         mapped = {row["stella_id"] for row in self._maps()}
                         for local in self.calendar.list_events():
-                            if local["source_type"] is not None or local["id"] in mapped or local["id"] in baseline:
+                            if local["source_type"] == "apple_calendar" or local["id"] in mapped or local["id"] in baseline:
                                 continue
                             match = next((item for item in export_targets
                                           if item[1] is None or local.get("category_id") == item[1]), None)
@@ -1051,9 +1066,15 @@ class AppleCalendarSync:
                     row["state"] == "pending_local_delete" for row in self._maps())
                 if counts["failed_calendar_ids"]:
                     counts["status"] = "partial" if counts["status"] == "success" else counts["status"]
+                counts['conflicts'] = max(counts['conflicts'],sum(row['state']=='conflict' for row in self._maps()))
+                if self._get('operation_errors',[]) or self._get('category_conflicts',[]):
+                    counts['status'] = 'partial'
                 if name_errors and counts["status"] == "success":
                     counts["status"] = "error"
                 if counts["status"] == "success":
+                    coverage = self._get('coverage',[])
+                    coverage.append({'start':window[0],'end':window[1],'checked_at':self.clock(),'calendar_ids':sorted(successful)})
+                    self._set('coverage',coverage[-100:])
                     self._set("last_success", self.clock())
                     self._set("error", "")
                 else:
@@ -1065,32 +1086,94 @@ class AppleCalendarSync:
                 self._set("error", failures[-1])
             return counts
 
+    @staticmethod
+    def _range(start,end):
+        try:
+            lower = datetime.fromisoformat(start.replace('Z','+00:00'))
+            upper = datetime.fromisoformat(end.replace('Z','+00:00'))
+            if lower.tzinfo is None or upper.tzinfo is None or upper<=lower or upper-lower>timedelta(days=370):
+                raise ValueError('invalid range')
+            return lower.astimezone(timezone.utc).isoformat(),upper.astimezone(timezone.utc).isoformat()
+        except (ValueError,TypeError,AttributeError) as error:
+            raise ValueError('日历加载范围须包含时区且不超过 370 天') from error
+
+    def sync_range(self,start,end):
+        lower,upper = self._range(start,end)
+        with self._lock:
+            if not self._get('connected',False):
+                result = {'status':'cached','reason':'同步已暂停，仅显示本地已保存日程'}
+                self._set('last_range',result)
+                return result
+            selected = sorted(row['apple_id'] for row in self._stored_links() if row['enabled']) or sorted(self._get('calendar_ids',[]))
+            now = datetime.fromisoformat(self.clock().replace('Z','+00:00'))
+            for row in reversed(self._get('coverage',[])):
+                if row['start']<=lower and row['end']>=upper and row.get('calendar_ids')==selected and now-datetime.fromisoformat(row['checked_at'].replace('Z','+00:00'))<timedelta(minutes=5):
+                    result = {'status':'success','start':lower,'end':upper,'checked_at':row['checked_at']}
+                    self._set('last_range',result)
+                    return result
+            try:
+                result = self.sync(scan_start=lower,scan_end=upper)
+            except Exception as error:
+                result = {'status':'error','reason':str(error)}
+            result = {**result,'start':lower,'end':upper,'reason':result.get('reason') or self._get('error','')}
+            self._set('last_range',result)
+            return result
+
+    @staticmethod
+    def _series_payload(local, remote, category_id=None):
+        fields = _payload(remote,category_id)
+        rule = remote.get('recurrence') or {}
+        simple = (rule.get('frequency','none') in ('none','daily','weekly','monthly','yearly') and
+                  rule.get('interval',1)==1 and rule.get('rule_count',1)<=1 and not rule.get('count') and
+                  not any(rule.get(key) for key in ('month_days','months','week_numbers','year_days','set_positions')) and
+                  not any(day.get('week') for day in rule.get('weekday_ordinals',[])))
+        if local.get('repeat_frequency')!='none' and simple:
+            fields.update(repeat_frequency=rule.get('frequency','none'), repeat_days=rule.get('days',[]),
+                          repeat_until=(rule.get('until') or '')[:10] or None)
+        return fields
+
     def resolve_conflict(self, stella_id, choice):
-        if choice not in ("keep_stella", "keep_apple"):
-            raise ValueError("invalid conflict resolution")
-        mapping = next((row for row in self._maps() if row["stella_id"] == stella_id), None)
-        if not mapping or mapping["state"] != "conflict":
-            raise KeyError("conflict not found")
+        if choice not in ('keep_stella','keep_apple'):
+            raise ValueError('invalid conflict resolution')
+        mapping = next((row for row in self._maps() if row['stella_id']==stella_id),None)
+        if not mapping or mapping['state']!='conflict':
+            raise KeyError('conflict not found')
         local = self._local(stella_id)
-        if local is None:
-            raise KeyError("Stella event not found")
-        if choice == "keep_apple" and mapping["origin"] == "stella" and local["repeat_frequency"] != "none":
-            raise ValueError("Apple changes to a recurring series need manual review")
-        remote = self.bridge.call("lookup", **{key: mapping[key] for key in
-            ("calendar_id", "event_id", "external_id", "occurrence_date")}).get("event")
-        if choice == "keep_stella":
+        remote = locate_remote(self,mapping,'calendar')
+        if remote:
+            mapping.update(calendar_id=remote['calendar_id'],event_id=remote['event_id'],occurrence_date=remote.get('occurrence_date',mapping['occurrence_date']))
+        if resolve_pending_deletion(self,self.calendar,mapping,'calendar',choice,remote):
+            return self.status()
+        category = next((row['stella_id'] for row in self._stored_links() if row['apple_id']==mapping['calendar_id']),None)
+        if choice=='keep_apple':
             if remote is None:
-                raise ValueError("Apple event is unavailable")
-            remote = self.bridge.call("upsert", **self._write_payload(local, mapping))["event"]
-        else:
-            if remote is None:
-                raise ValueError("Apple event is unavailable")
-            if mapping["origin"] == "apple":
-                local = self.calendar.upsert_external_event("apple_calendar", mapping["source_key"], _payload(remote),
-                                                            event_id=local["id"], reconciled=True)
+                if local:
+                    self.calendar.apple_remove_item(stella_id)
+                mapping.update(state='remote_deleted',conflict='')
+                self._save_map(mapping)
+                return self.status()
+            if local is None:
+                local = self.calendar.apple_restore_item(stella_id,_payload(remote),category,mapping['source_key'] if mapping['origin']=='apple' else None)
             else:
-                local = self.calendar.update_event(local["id"], _payload(remote))
-        self._refresh_map(mapping, local, remote)
+                local = self.calendar.apple_place_item(stella_id,category) if category and category!=local['category_id'] else local
+                local = self.calendar.apple_apply_item(stella_id,self._series_payload(local,remote,category))
+        elif local is None:
+            if remote:
+                if not remote.get('writable'):
+                    raise PermissionError('Apple 来源不允许删除')
+                self.bridge.call('delete',**{key:mapping[key] for key in ('calendar_id','event_id','external_id','occurrence_date')})
+            mapping.update(state='deleted',conflict='')
+            self._save_map(mapping)
+            return self.status()
+        else:
+            if remote is not None and not remote.get('writable'):
+                raise PermissionError('Apple 来源只读')
+            target = next((row['apple_id'] for row in self._stored_links() if row['stella_id']==local.get('category_id')),mapping['calendar_id'])
+            payload = self._write_payload(local,mapping if remote else None,calendar_id=target)
+            if remote:
+                payload['lookup_calendar_id'] = remote['calendar_id']
+            remote = self.bridge.call('upsert',**payload)['event']
+        self._refresh_map(mapping,local,remote)
         return self.status()
 
     def start_auto(self, interval=300):

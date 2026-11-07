@@ -1,5 +1,6 @@
 """Unified briefing settings page on the unchanged official Desktop; no model/source content reads."""
 import json
+import os
 import tempfile
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
@@ -10,6 +11,7 @@ from web_check import open_secretary
 
 
 def main():
+    desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='stella-briefing-settings-') as temporary, sync_playwright() as playwright:
@@ -107,6 +109,7 @@ def main():
             expect(card).to_have_count(0)
             rows = [json.loads(line) for line in (profile / 'node_modules/@stella-test/briefing-source/reads.jsonl').read_text().splitlines()]
             assert all(row['type'] == 'catalog' for row in rows), 'Settings must not read source content'
+            expect(page.locator('.stella-sidebar').get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
             assert not errors, errors
     print('PASS: one gear opens a full settings page with sources and rules; source saves/conflicts, rule creation/edit/cancel/toggle/confirmed deletion and safe Markdown work; desktop and narrow themes; zero model or source content calls')
 

@@ -257,9 +257,9 @@ def check_modes(page):
       return style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none'
         && getComputedStyle(document.body).getPropertyValue('--stella-sidebar').trim() !== '';
     }'''), 'Stella must render its scoped sidebar palette without a decorative gradient'
-    for title in ('Agent 协作', '事务', '日程', '简报', '账单'):
+    for title in ('事务', '日程', '简报', '账单'):
         sidebar.get_by_role('button', name=title, exact=True).click()
-        page.get_by_role('heading', name='尚无协作任务' if title == 'Agent 协作' else title, exact=True).wait_for()
+        page.get_by_role('heading', name=title, exact=True).wait_for()
         page.screenshot(path=str(ARTIFACTS / f'official-stella-{title}.png'))
     sidebar.get_by_role('button', name='自动化', exact=True).click()
     expect(page.get_by_text('当前 DSH 版本尚未提供共用自动化页面接口。', exact=False)).to_have_count(0)
@@ -386,7 +386,7 @@ def main():
                         assert not errors, errors
                 assert not installation_errors, installation_errors
             print('PASS: downloaded official Desktop, isolated native profile, onboarding without credentials' +
-                  ('' if args.baseline else ', native Stella install and restart/settings' + (', mode menu and six apps' if args.mode_only else '' if args.install_only else ', six apps, official Python, persisted modes/data, disable/enable/uninstall/reinstall recovery')))
+                  ('' if args.baseline else ', native Stella install and restart/settings' + (', mode menu and five apps' if args.mode_only else '' if args.install_only else ', five apps, official Python, persisted modes/data, disable/enable/uninstall/reinstall recovery')))
     finally:
         verify_release()
         assert digest(archive) == original, 'Official app.asar changed during plugin installation'

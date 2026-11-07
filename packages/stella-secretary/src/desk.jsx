@@ -1,3 +1,4 @@
+import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useRef, useState } from 'react'
 import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -20,10 +21,10 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
     <div className="stella-page-heading"><div><h1>{currentView.label}</h1>
       </div>
       <Button variant="outline" className="stella-heading-chat" onClick={() => begin()}><IconNewChatOutlineRegular size={16} />开始 Stella 对话</Button></div></>}
-    {startError && <p role="alert" className="stella-error">{startError}</p>}
+    {startError && <Notice tone="error" role="alert" className="stella-error">{startError}</Notice>}
     {view === 'stella-briefing' && <BriefingWorkspace api={business} briefingContext={briefingContext} openSession={openSession} openPlugins={openPlugins} />}
     {application && view !== 'stella-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} quickChat={kind => renderFactorySlot('stella.quick-chat', { kind })} />}
-    {!hasModeSwitch && <p role="status" className="stella-muted">当前版本暂不支持模式切换。</p>}
+    {!hasModeSwitch && <Notice role="status" className="stella-muted">当前版本暂不支持模式切换。</Notice>}
   </section>
 }
 
@@ -39,7 +40,7 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
   return <aside className="stella-sidebar" ref={sidebar} style={{ width: wide ? width : 56 }} data-collapsed={!wide || undefined} data-shortcut-modal={drawer ? 'sidebar' : undefined} role={drawer && !collapsed ? 'dialog' : undefined} aria-modal={drawer && !collapsed ? true : undefined} tabIndex={-1} aria-label="Stella 秘书导航">
     <div className="stella-sidebar-brand"><span className="stella-emblem" aria-hidden="true"><BearLogo size={21} /></span>{wide && <span>Stella</span>}<button type="button" data-sidebar-toggle title={t(collapsed ? 'toggle.open' : 'toggle.collapse')} aria-label={t(collapsed ? 'toggle.open' : 'toggle.collapse')} onClick={toggleSidebar}><IconPanelLeftOutlineRegular size={17} /></button></div>
     <button type="button" className="stella-sidebar-chat" title={t('session.new.label')} aria-label={t('session.new.label')} onClick={async () => { setError(''); try { await startSession() } catch (reason) { setError(reason.message) } }}><IconNewChatOutlineRegular size={17} />{wide && <span>新对话</span>}</button>
-    {error && <p role="alert">{error}</p>}
+    {error && <Notice tone="error" role="alert">{error}</Notice>}
     <nav aria-label="秘书功能">{['应用'].map(group => <div className="stella-nav-group" key={group}>{wide && <p>{group}</p>}{applications.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={panel === item.id || panel === 'stella' && item.id === 'stella-tasks' ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}</div>)}</nav>
     <section className="stella-sidebar-workspaces" aria-label="工作区与会话">{renderFactorySlot('workspace.browser', { wide, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
     <footer>{renderFactorySlot('settings.shell', { wide })}</footer>

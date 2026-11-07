@@ -23,7 +23,8 @@
     "product:prepare": "node scripts/product/prepare-upstream.mjs",
     "product:desktop": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
     "product:ui:build": "node scripts/product/build-native-ui.mjs",
-    "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @stella/elearning --pack-destination .local/artifacts && npm pack --workspace @stella/mail --pack-destination .local/artifacts"
+    "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @stella/elearning --pack-destination .local/artifacts && npm pack --workspace @stella/mail --pack-destination .local/artifacts",
+    "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @stella/agent-hub --pack-destination .local/artifacts"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-alpha.3",

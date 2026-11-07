@@ -1,11 +1,14 @@
+import { Notice } from './notice.jsx'
+import { OrganizerRecordPanel } from './organizer-record-panel.jsx'
+import { OrganizerDetails } from './organizer-details.jsx'
+import { recordClipboardText, recordEditTarget, recordId, recordRepeats } from './organizer-actions.js'
 import { taskCompletion } from './task-focus.js'
-import React, { useEffect, useState } from 'react'
-import { Button, Modal, IconUsersOutlineRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { AgentHub } from './agent-hub.jsx'
+import React, { useEffect, useRef, useState } from 'react'
+import { Button, Modal, IconUsersOutlineRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, Menu, MenuItemButton, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import { localDate } from './presentation.js'
 import { BillsPage, BillEditor } from './bills.jsx'
 import { TasksPage } from './tasks-page.jsx'
-import { CalendarPage } from './calendar-page.jsx'
+import { CalendarPage, Categories } from './calendar-page.jsx'
 import { TaskEditor, CalendarEditor } from './organizer-editors.jsx'
 
 function CalendarIcon({ size }) {
@@ -16,7 +19,6 @@ function BillIcon({ size }) {
 }
 
 export const applicationViews = [
-  { id: 'stella-agents', label: 'Agent 协作', icon: IconUsersOutlineRegular },
   { id: 'stella-tasks', label: '事务', icon: IconChecklistOutlineRegular },
   { id: 'stella-calendar', label: '日程', icon: CalendarIcon },
   { id: 'stella-briefing', label: '简报', icon: IconDeliverDocRegular },
@@ -36,7 +38,16 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [editor, setEditor] = useState(null)
+  const [details, setDetails] = useState(null)
+  const [editorDirty, setEditorDirty] = useState(false)
+  const [pendingPanelAction, setPendingPanelAction] = useState(null)
+  const panelTrigger = useRef(null)
+  useEffect(() => {setEditorDirty(false)},[editor])
+  useEffect(() => { setDetails(null) },[view])
   const [categories, setCategories] = useState([])
+  const [taskCategories, setTaskCategories] = useState([])
+  const [creationMenu, setCreationMenu] = useState(false)
+  const [creationType, setCreationType] = useState('event')
   const [calendarManage, setCalendarManage] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
   const kind = kindFor[view]
@@ -47,13 +58,13 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
     return result.value
   }
   async function refresh() {
-    try { const [value, groups] = await Promise.all([unwrap(api.read({})), unwrap(api.business({ domain: 'calendar', method: 'categories' }))]); setData(value); setCategories(groups); setLoading(false); setReloadKey(previous => previous + 1) }
+    try { const [value, groups, lists] = await Promise.all([unwrap(api.read({})), unwrap(api.business({ domain: 'calendar', method: 'categories' })), unwrap(api.business({ domain: 'tasks', method: 'categories' }))]); setData(value); setCategories(groups); setTaskCategories(lists); setLoading(false); setReloadKey(previous => previous + 1) }
     catch { setLoading(false); setError('连接中断或业务服务不可用，请刷新重试。') }
   }
   useEffect(() => {
     let disposed = false
     const load = async () => {
-      try { const [value, groups] = await Promise.all([unwrap(api.read({})), unwrap(api.business({ domain: 'calendar', method: 'categories' }))]); if (!disposed) { setData(value); setCategories(groups); setLoading(false) } }
+      try { const [value, groups, lists] = await Promise.all([unwrap(api.read({})), unwrap(api.business({ domain: 'calendar', method: 'categories' })), unwrap(api.business({ domain: 'tasks', method: 'categories' }))]); if (!disposed) { setData(value); setCategories(groups); setTaskCategories(lists); setLoading(false) } }
       catch { if (!disposed) { setLoading(false); setError('连接中断或业务服务不可用，请刷新重试。') } }
     }
     void load()
@@ -68,37 +79,85 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   }
   const records = data.records.filter(item => item.kind === kind && !item.archived).sort((a, b) => kind === 'briefing' ? b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt) : b.updatedAt.localeCompare(a.updatedAt))
   function edit(record) { setEditor(record.kind === 'event' && !record.allDay ? { ...record, start: localTime(record.start), end: localTime(record.end) } : record) }
-  function create(day, hour = 9) { const start = day ? new Date(`${day}T${String(hour).padStart(2, '0')}:00`) : null; setEditor(start ? { title: '', details: '', start: localTime(start), end: localTime(new Date(start.getTime() + 3600000)), allDay: false } : {}) }
+  function requestPanel(action) {
+    if (busy) return
+    if (!document.activeElement?.closest('.stella-calendar-record-panel')) panelTrigger.current=document.activeElement
+    if (['event','task'].includes(kind) && editor !== null && editorDirty) {setPendingPanelAction({apply:action});return}
+    action()
+  }
+  function create(day, hour = 9, type = kind) { requestPanel(() => {setDetails(null); setCreationType(type); setCreationMenu(false); const start = day ? new Date(`${day}T${String(hour).padStart(2, '0')}:00`) : null; setEditor(start ? { title: '', details: '', start: localTime(start), end: localTime(new Date(start.getTime() + 3600000)), allDay: false } : {}) }) }
   const mutate = (domain, method, arguments_, success) => run(() => api.business({ domain, method, arguments: arguments_, requestId: crypto.randomUUID() }), success)
+  function inspect(record, remove, viewTree, trigger) {requestPanel(() => {if (trigger?.isConnected) panelTrigger.current=trigger.matches('button,[tabindex]') ? trigger : trigger.querySelector('button');setEditor(null);setError('');setDetails({record,remove,viewTree})})}
+  function editRecord(record, trigger) {requestPanel(() => {if (trigger?.isConnected) panelTrigger.current=trigger.matches('button,[tabindex]') ? trigger : trigger.querySelector('button');if (kind !== 'task' || !details || recordId(details.record) !== recordId(record)) setDetails(null);void loadEditor(record)})}
+  async function loadEditor(record) {
+    if (record.kind==='task' && !data.records.some(item => item.kind==='task' && item.id===recordId(record))) {
+      try {
+        const raw=await unwrap(api.business({domain:'tasks',method:'get_todo',arguments:{todo_id:recordId(record)}}))
+        edit({...record,id:raw.id,title:raw.title,details:raw.notes,due:raw.due_on,business:raw})
+      } catch (failure) { setError(failure.message) }
+    } else edit(recordEditTarget(record,data.records))
+  }
+  async function copyRecord(record) {
+    setError(''); setNotice('')
+    try { await navigator.clipboard.writeText(recordClipboardText(record)); setNotice('已拷贝文本') }
+    catch { setError('拷贝未完成，请检查剪贴板访问后重试。') }
+  }
+  function moveRecord(record, category_id) {
+    if (record.kind==='event' && recordRepeats(record)) {
+      const selected=recordEditTarget(record,data.records)
+      requestPanel(() => {setDetails(null);edit({...selected,business:{...selected.business,category_id}})})
+      return
+    }
+    return record.kind==='task' ? mutate('tasks','set_todo_category',{todo_id:recordId(record),category_id},'清单已更新') : mutate('calendar','set_event_category',{id:recordId(record),category_id},'日历已更新')
+  }
+  const completeRecord = record => mutate('tasks','complete_todo',taskCompletion(record.kind==='task' && record.id.startsWith('task:') ? {...record,id:record.business.id} : record),'事务状态已更新')
+
   function toggleArchive(record) { return run(() => api.archive({ id: record.id, expectedRevision: record.revision, archived: !record.archived }), record.archived ? '已恢复' : '已归档') }
   function download(content, name, type) {
     const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([content], { type }))
     link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url)
   }
-  const primary = kind === 'task' ? '新建事务' : kind === 'event' ? '新建日程' : null
+  const primary = kind === 'task' ? '新建事务' : null
+  const editorKind = editor?.id ? editor.kind : kind === 'event' ? creationType : kind
   function newItem() {
     if (kind === 'task' || kind === 'event') create()
 
   }
-  if (view === 'stella-agents') return <AgentHub jobs={data.jobs} loading={loading} busy={busy} error={error} notice={notice} refresh={() => { setError(''); void refresh() }} openSession={openSession} startSession={startSession} cancel={id => run(() => api.cancelJob({ id }), '取消请求已处理')} start={task => {
-    const parentSessionId = currentSession()
-    if (!parentSessionId) throw new Error('请在「管理接入」中先开始 Stella 对话，再回到这里启动任务。')
-    return run(() => api.startJob({ ...task, parentSessionId }), '协作已交给原生子 Agent')
-  }} />
-  return <div className={`stella-business${kind === 'bill' ? ' stella-bills-page' : ''}`}>
+  const editorContent = <>
+      {kind === 'event' && editor !== null && !editor.id && <SegmentedControl id="calendar-create-type" label="创建类型" value={creationType} onChange={setCreationType} options={[{value:'event',label:'日程'}, {value:'task',label:'事务'}]} />}
+      {editor !== null && <>
+        {(kind === 'task' || kind === 'event' && (!editor.id || editor.kind === 'task')) && <div hidden={editorKind !== 'task'}><TaskEditor key={editor.id ?? 'new-task'} record={editor.id ? editor : undefined} draft={editor} calendar={kind === 'event'} categories={taskCategories} busy={busy} onDirty={() => setEditorDirty(true)} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('tasks', editor.id ? 'update_todo' : 'create_todo', editor.id ? { todo_id: editor.id, payload } : { payload })) setEditor(null) }} /></div>}
+        {kind === 'event' && (!editor.id || editor.kind === 'event') && <div hidden={editorKind !== 'event'}><CalendarEditor key={editor.id ?? 'new-event'} record={editor.id ? editor : undefined} draft={editor} categories={categories} busy={busy} onDirty={() => setEditorDirty(true)} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('calendar', editor.id ? 'update_event' : 'create_event', editor.id ? { id: editor.id, patch: payload } : payload)) setEditor(null) }} /></div>}
+        {kind === 'bill' && <BillEditor key={editor.id ?? 'new'} record={editor.id ? editor : undefined} busy={busy} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('bills', editor.id ? 'update_ledger' : 'create_ledger', editor.id ? { id: editor.id, patch: payload, expectedRevision: editor.business.revision } : payload)) setEditor(null) }} remove={async () => { if (await mutate('bills', 'delete_ledger', { id: editor.id, expectedRevision: editor.business.revision }, '已删除')) setEditor(null) }} archive={async () => { if (await toggleArchive(editor)) setEditor(null) }} />}
+      </>}
+      {error && <Notice tone="error">{error}</Notice>}
+  </>
+  const panelOpen = ['event','task'].includes(kind) && (details !== null || editor !== null)
+  const taskPageProps = {records,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args) => mutate('tasks',method,args,method === 'delete_todo' ? '已删除' : '已保存'),api,reloadKey,busy,loading,quickChat,error}
+  const taskDetail = details?.record.kind === 'task' ? data.records.find(item => item.kind === 'task' && item.id === recordId(details.record)) ?? details.record : null
+  const panelTitle = editor !== null ? `${editor.id ? '编辑' : '新增'}${titles[editorKind]}` : details?.record.kind === 'task' ? '事务详情' : '日程详情'
+  return <div className={`stella-business${kind === 'bill' ? ' stella-bills-page' : kind === 'task' ? ' stella-task-business' : ''}`}>
     <header className="stella-app-header"><div><h1>{current.label}</h1></div><div className="stella-actions">
       <Button variant="outline" aria-label="刷新" title="刷新" onClick={() => { setError(''); void refresh() }}><IconRefreshOutlineRegular size={16} /></Button>
-      {kind === 'event' && <><Button variant="outline" disabled={busy} onClick={() => setCalendarManage('import')}>导入日期</Button><Button variant="outline" disabled={busy} onClick={() => setCalendarManage('categories')}>分类管理</Button></>}
+      {kind === 'event' && <><Button variant="outline" disabled={busy} onClick={() => setCalendarManage('categories')}>分类管理</Button></>}
+      {kind === 'task' && <Button variant="outline" disabled={busy} onClick={() => setCalendarManage('task-categories')}>清单管理</Button>}
+      {kind === 'event' && <Menu open={creationMenu} onClose={() => setCreationMenu(false)} portal autoFocus anchor={<Button variant="primary" aria-label="新建" aria-haspopup="menu" aria-expanded={creationMenu} onClick={() => setCreationMenu(!creationMenu)}><IconPlusOutlineRegular size={20} /></Button>}><MenuItemButton onSelect={() => create(undefined, 9, 'event')}>新建日程</MenuItemButton><MenuItemButton onSelect={() => create(undefined, 9, 'task')}>新建事务</MenuItemButton></Menu>}
       {primary && <Button variant="primary" icon={<IconPlusOutlineRegular size={16} />} onClick={newItem}>{primary}</Button>}
     </div></header>
-    <div className="stella-page-feedback">{loading && <p role="status">正在读取已保存记录…</p>}{error && <p role="alert" className="stella-error">{error}</p>}{notice && <p role="status">{notice}</p>}</div>
-    {kind === 'task' && <TasksPage records={records} edit={edit} mutate={(method, args) => mutate('tasks', method, args, method === 'delete_todo' ? '已删除' : '已保存')} api={api} reloadKey={reloadKey} busy={busy} loading={loading} quickChat={quickChat} toggle={record => mutate('tasks', 'complete_todo', taskCompletion(record), '事务状态已更新')} />}
-    {kind === 'event' && <CalendarPage archive={toggleArchive} archived={false} templates={data.records.filter(item => item.kind === 'event')} edit={record => setEditor(record)} create={create} busy={busy} loading={loading} quickChat={quickChat} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
+    <div className="stella-page-feedback">{loading && <Notice role="status">正在读取已保存记录…</Notice>}{error && <Notice tone="error" role="alert" className="stella-error">{error}</Notice>}{notice && <Notice tone="success" role="status">{notice}</Notice>}</div>
+    {['event','task'].includes(kind) && <div className={`stella-calendar-split${kind === 'task' ? ' stella-task-split' : ''}`} data-panel-open={panelOpen || undefined}>
+      {kind === 'task' && <div className="stella-task-workspace"><TasksPage {...taskPageProps} selectedRecord={editor ?? details?.record} /></div>}
+      {kind === 'event' && <CalendarPage selectedRecord={editor ?? details?.record} archive={toggleArchive} archived={false} templates={data.records.filter(item => ['event', 'task'].includes(item.kind))} taskCategories={taskCategories} toggle={completeRecord} edit={editRecord} inspect={inspect} copy={copyRecord} move={moveRecord} taskMutate={(method,args) => mutate('tasks',method,args)} create={create} busy={busy} loading={loading} quickChat={quickChat} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
+      {panelOpen && <OrganizerRecordPanel title={panelTitle} focusKey={`${editor ? 'edit' : 'view'}:${editor?.id ?? details?.record.id ?? 'new'}`} trigger={panelTrigger} editing={editor !== null} busy={busy} close={() => requestPanel(() => {setEditor(null);setDetails(null)})}>
+        {editor !== null ? <div className="stella-calendar-panel-editor">{editorContent}</div> : kind === 'task' ? <TasksPage {...taskPageProps} detailRecord={taskDetail} /> : <OrganizerDetails inline value={details} groups={details?.record.kind === 'task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
+      </OrganizerRecordPanel>}
+    </div>}
     {kind === 'bill' && <BillsPage records={data.records.filter(item => item.kind === 'bill')} api={api} reloadKey={reloadKey} edit={edit} create={() => create()} archive={toggleArchive} download={download} busy={busy} loading={loading} icon={<BillIcon size={32} />} />}
-    <Modal open={editor !== null} headless title={`${editor?.id ? '编辑' : '新增'}${titles[kind] ?? ''}`} onClose={() => { if (!busy) setEditor(null) }} className="stella-editor-dialog">
-      {editor !== null && (kind === 'task' ? <TaskEditor key={editor.id ?? 'new'} record={editor.id ? editor : undefined} busy={busy} cancel={() => setEditor(null)} save={async payload => { if (await mutate('tasks', editor.id ? 'update_todo' : 'create_todo', editor.id ? { todo_id: editor.id, payload } : { payload })) setEditor(null) }} /> : kind === 'event' ? <CalendarEditor key={editor.id ?? 'new'} record={editor.id ? editor : undefined} draft={editor} categories={categories} busy={busy} cancel={() => setEditor(null)} save={async payload => { if (await mutate('calendar', editor.id ? 'update_event' : 'create_event', editor.id ? { id: editor.id, patch: payload } : payload)) setEditor(null) }} /> : <BillEditor key={editor.id ?? 'new'} record={editor.id ? editor : undefined} busy={busy} cancel={() => setEditor(null)} save={async payload => { if (await mutate('bills', editor.id ? 'update_ledger' : 'create_ledger', editor.id ? { id: editor.id, patch: payload, expectedRevision: editor.business.revision } : payload)) setEditor(null) }} remove={async () => { if (await mutate('bills', 'delete_ledger', { id: editor.id, expectedRevision: editor.business.revision }, '已删除')) setEditor(null) }} archive={async () => { if (await toggleArchive(editor)) setEditor(null) }} />)}
-      {error && <p role="alert" className="stella-error">{error}</p>}
+    <Modal open={calendarManage === 'task-categories'} title="清单管理" closeLabel="关闭清单管理" className="stella-category-dialog" onClose={() => {if (!busy) setCalendarManage(null)}}><Categories failure={error} api={api} categories={taskCategories} counts={Object.fromEntries(taskCategories.map(group => [group.id, data.records.filter(item => item.kind === 'task' && item.business.category_id === group.id).length]))} task busy={busy} mutate={(method, args) => mutate('tasks', method, method === 'cancel_apple_operation' ? args : method === 'create_category' ? {payload: args} : method === 'update_category' ? {category_id: args.id, payload: args.patch} : {category_id: args.id})} /></Modal>
+    {!['event','task'].includes(kind) && <OrganizerDetails value={details} groups={details?.record.kind==='task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
+    <Modal open={!['event','task'].includes(kind) && editor !== null} headless title={`${editor?.id ? '编辑' : '新增'}${titles[editorKind] ?? ''}`} onClose={() => { if (!busy) setEditor(null) }} className="stella-editor-dialog">
+      {editorContent}
     </Modal>
-
+    <Modal open={!!pendingPanelAction} title="放弃未保存的修改？" onClose={() => setPendingPanelAction(null)}><Notice tone="warning">当前修改尚未保存。</Notice><div className="stella-actions"><Button variant="outline" onClick={() => setPendingPanelAction(null)}>继续编辑</Button><Button variant="primary" onClick={() => {const action=pendingPanelAction.apply;setPendingPanelAction(null);setEditorDirty(false);action()}}>放弃修改</Button></div></Modal>
   </div>
 }

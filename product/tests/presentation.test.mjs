@@ -54,3 +54,38 @@ test('calendar initially reveals the first timed event without hiding earlier ho
   assert.equal(calendarFocusMinute([event('2026-11-06T18:30', '2026-11-06T21:00'), event('2026-11-07T09:55', '2026-11-07T12:30')], ['2026-11-06', '2026-11-07']), 565)
   assert.equal(calendarFocusMinute([event('2026-11-06T00:00', '2026-11-06T00:00')], ['2026-11-06']), 0)
 })
+
+test('calendar agenda keeps all-day items before timed events and tasks in local chronological order', async () => {
+  const { calendarOrder } = await import('../../packages/stella-secretary/src/presentation.js')
+  const event = (title,start,allDay=false) => ({title,start,allDay})
+  const early=event('Morning event',new Date(2026,10,7,9).toISOString())
+  const task=event('Noon reminder',new Date(2026,10,7,12).toISOString())
+  const late=event('Evening event',new Date(2026,10,7,18).toISOString())
+  const allDay=event('All-day reminder','2026-11-07',true)
+  assert.deepEqual([late,task,allDay,early].sort(calendarOrder),[allDay,early,task,late])
+  const tomorrow=event('Tomorrow',new Date(2026,10,8,8).toISOString())
+  assert.deepEqual([tomorrow,late].sort(calendarOrder),[late,tomorrow])
+})
+
+test('calendar sidebar groups real source identities and keeps reminders in a single other row', async () => {
+  const { calendarSources, categorySources } = await import('../../packages/stella-secretary/src/presentation.js')
+  const categories=[{id:'a',name:'课程',apple:{source_id:'icloud',source_name:'iCloud'}},{id:'b',name:'工作',apple:{source_id:'icloud',source_name:'iCloud'}},{id:'c',name:'课程',apple:{source_id:'exchange',source_name:'Exchange'}},{id:'local',name:'生活'}]
+  const sources=calendarSources(categories)
+  assert.equal(sources.length,3)
+  assert.deepEqual(sources[0].items.map(item=>item.id),['a','b'])
+  assert.deepEqual(sources[1].items.map(item=>item.id),['c'])
+  assert.deepEqual(sources[2].items.map(item=>item.id),['local','__tasks__'])
+  assert.equal(sources[2].name,'其他')
+  assert.equal(categories.length,4)
+  assert.deepEqual(categorySources(categories).map(source=>source.items.map(item=>item.id)),[['a','b'],['c'],['local']])
+  assert.deepEqual(categorySources([]),[])
+  assert.equal(categories.some(item=>item.id==='__tasks__'),false)
+  assert.equal(calendarSources([])[0].items[0].name,'事务')
+})
+
+test('week labels retain Chinese month/year context at month and year boundaries', async () => {
+  const { calendarWeekLabel }=await import('../../packages/stella-secretary/src/presentation.js')
+  assert.equal(calendarWeekLabel('2026-11-01','2026-11-07'),'2026年11月1日 — 7日')
+  assert.equal(calendarWeekLabel('2026-11-29','2026-12-05'),'2026年11月29日 — 12月5日')
+  assert.equal(calendarWeekLabel('2026-12-27','2027-01-02'),'2026年12月27日 — 2027年1月2日')
+})

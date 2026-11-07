@@ -12,6 +12,9 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from business.apple_contract import AppleContract, setup_apple_contract
+from business.categories import default_category, require_category
+
 from .routes import load_saved_route, normalize_notification_route, same_notification_route
 from .schema import ensure_schema
 from .scheduler_link import task_id_for, sync_task
@@ -43,7 +46,10 @@ TODO_STATUSES = frozenset({"todo", "in_progress", "waiting", "blocked", "complet
 TERMINAL_STATUSES = frozenset({"completed", "cancelled"})
 
 
-class TodoService:
+class TodoService(AppleContract):
+    APPLE_ITEMS = "todos"
+    APPLE_CATEGORIES = "todo_categories"
+
     def __init__(self, db_path, legacy_calendar_db_path=None, scheduler_store=None,
                  notification_dispatcher=None):
         """Open the Tasks database.
@@ -58,10 +64,12 @@ class TodoService:
         if not db_path:
             raise ValueError("db_path is required")
         self.db_path = Path(db_path)
+        created_new = not self.db_path.exists()
         self.legacy_calendar_db_path = Path(legacy_calendar_db_path) if legacy_calendar_db_path else None
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
             ensure_schema(db)
+            setup_apple_contract(db,self.APPLE_ITEMS)
         migration_deferred = False
         try:
             self._migrate_calendar_records()
@@ -103,7 +111,8 @@ class TodoService:
     @staticmethod
     def _apple_native_reminder(row):
         """Apple already owns its default alarm; Stella only sends an explicit route."""
-        if row.get("source_type") != "apple_reminder":
+        native = row.get('native_managed') or json.loads(row.get('apple_data') or '{}').get('native_managed')
+        if row.get("source_type") != "apple_reminder" and not native:
             return False
         route = row.get("reminder_delivery")
         if isinstance(route, str):
@@ -122,7 +131,7 @@ class TodoService:
     def _backfill_scheduler_links(self):
         with self._connect() as db:
             db.execute("PRAGMA busy_timeout=250")
-            for row in db.execute("""SELECT t.id,t.remind_at,t.status,t.source_type,t.reminder_delivery
+            for row in db.execute("""SELECT t.*
                 FROM todos AS t
                 LEFT JOIN todo_scheduler_links AS l ON l.todo_id=t.id
                 WHERE t.remind_at IS NOT NULL AND t.status NOT IN ('completed','cancelled')
@@ -133,7 +142,7 @@ class TodoService:
                         (todo_id,task_id,desired_at,state,updated_at) VALUES (?,?,?,'pending',?)""",
                         (row["id"], task_id_for(row["id"]), row["remind_at"], _now()))
             for row in db.execute("""SELECT t.*,l.desired_at FROM todos t JOIN todo_scheduler_links l
-                ON l.todo_id=t.id WHERE t.source_type='apple_reminder' AND l.desired_at IS NOT NULL"""):
+                ON l.todo_id=t.id WHERE l.desired_at IS NOT NULL"""):
                 if self._apple_native_reminder(dict(row)):
                     self._queue_scheduler_link(db, row["id"], None, row["status"])
 
@@ -242,12 +251,12 @@ class TodoService:
                         db.execute("""INSERT OR IGNORE INTO todos
                             (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                              repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,
-                             created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             created_at,updated_at,category_id,list_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (row["id"], row["title"], row["notes"], row["due_on"], row["due_time"],
                              row["timezone"], row["priority"], row["completed_at"], row["repeat_frequency"],
                              row["repeat_days"], row["repeat_until"], row["source_type"], row["source_key"],
                              row["source_url"], row["user_modified"], handoff_ids.get(row["source_key"]),
-                             row["created_at"], row["updated_at"]))
+                             row["created_at"], row["updated_at"], default_category(db, "todo_categories", "提醒事项"), "提醒事项"))
                     for old_table, new_table in (("calendar_affair_completions", "todo_completions"),
                                                  ("calendar_affair_notifications", "todo_notifications")):
                         if old_table in tables:
@@ -266,12 +275,12 @@ class TodoService:
                         db.execute("""INSERT OR IGNORE INTO todos
                             (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                              repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,
-                             created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             created_at,updated_at,category_id,list_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (str(uuid.uuid4()), row["title"], row["summary"],
                              due.date().isoformat() if due else None,
                              due.strftime("%H:%M") if due else None, "Asia/Shanghai",
                              0, None, "none", "[]", None, "briefing", row["source_key"], "", 0,
-                             row["briefing_id"], now, now))
+                             row["briefing_id"], now, now, default_category(db, "todo_categories", "提醒事项"), "提醒事项"))
             db.execute("INSERT INTO todo_migrations VALUES ('calendar_affairs_v1')")
 
     def _record_legacy_claims(self):
@@ -452,8 +461,8 @@ class TodoService:
             route = row.get("reminder_delivery") or normalize_notification_route(None)
             row["reminder_delivery"] = route if isinstance(route, str) else json.dumps(route, ensure_ascii=False)
         list_name = row.get("list_name") or ""
-        if not isinstance(list_name, str) or len(list_name.strip()) > 80:
-            raise ValueError("list_name must be at most 80 characters")
+        if not isinstance(list_name, str) or len(list_name.strip()) > 200:
+            raise ValueError("list_name must be at most 200 characters")
         row["list_name"] = list_name.strip()
         flagged = row.get("flagged", False)
         if type(flagged) not in (bool, int) or flagged not in (0, 1):
@@ -488,12 +497,36 @@ class TodoService:
             row[field] = json.dumps(values, ensure_ascii=False)
         return row
 
+    @staticmethod
+    def _task_category(db, payload, row):
+        if "category_id" in payload:
+            identity = payload["category_id"]
+            require_category(identity)
+            category = db.execute("SELECT id,name FROM todo_categories WHERE id=?", (identity,)).fetchone()
+            if category is None:
+                raise KeyError("category not found")
+            return category["id"], category["name"]
+        if "list_name" in payload:
+            name = row["list_name"]
+            if not name:
+                identity = default_category(db, "todo_categories", "提醒事项")
+                return identity, db.execute("SELECT name FROM todo_categories WHERE id=?", (identity,)).fetchone()[0]
+            db.execute("INSERT OR IGNORE INTO todo_categories VALUES (?,?,?,?)",
+                       (str(uuid.uuid4()), name, "#6B8AF7", _now()))
+            category = db.execute("SELECT id,name FROM todo_categories WHERE name=?", (name,)).fetchone()
+            return category["id"], category["name"]
+        identity = row.get('category_id') or default_category(db, 'todo_categories', '提醒事项')
+        category = db.execute('SELECT id,name FROM todo_categories WHERE id=?', (identity,)).fetchone()
+        if category is None:
+            raise KeyError('category not found')
+        return category['id'], category['name']
+
     def categories(self):
         with self._connect() as db:
-            return [dict(row) for row in db.execute("SELECT * FROM todo_categories ORDER BY created_at, name")]
+            return [self._apple_decorate(db,"category",row) for row in db.execute("SELECT * FROM todo_categories ORDER BY created_at, name")]
 
     def create_category(self, payload):
-        name = _text(payload.get("name"), "name", 40)
+        name = _text(payload.get("name"), "name", 200)
         color = payload.get("color", "#6B8AF7")
         if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
             raise ValueError("color must be #RRGGBB")
@@ -501,6 +534,10 @@ class TodoService:
         try:
             with self._connect() as db:
                 db.execute("INSERT INTO todo_categories VALUES (?,?,?,?)", (category_id, name, color, _now()))
+                if payload.get('source_id'):
+                    if not isinstance(payload['source_id'],str):
+                        raise ValueError('source_id must be a string')
+                    db.execute('INSERT OR REPLACE INTO apple_bindings VALUES (?,?,?)', ('category',category_id,json.dumps({'source_id':payload['source_id'],'planned':True})))
         except sqlite3.IntegrityError as exc:
             raise ValueError("category name already exists") from exc
         return self.get_category(category_id)
@@ -510,16 +547,20 @@ class TodoService:
             row = db.execute("SELECT * FROM todo_categories WHERE id=?", (category_id,)).fetchone()
         if row is None:
             raise KeyError("category not found")
-        return dict(row)
+        with self._connect() as db:
+            return self._apple_decorate(db,"category",row)
 
-    def update_category(self, category_id, payload):
+    def update_category(self, category_id, payload, *, _apple=False):
         old = self.get_category(category_id)
-        name = _text(payload.get("name", old["name"]), "name", 40)
+        name = _text(payload.get("name", old["name"]), "name", 200)
         color = payload.get("color", old["color"])
         if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
             raise ValueError("color must be #RRGGBB")
         try:
             with self._connect() as db:
+                if not _apple:
+                    self._apple_guard(db,"category",category_id,"can_rename")
+                name = self._apple_category_name(db,category_id,name,_apple)
                 db.execute("UPDATE todo_categories SET name=?, color=? WHERE id=?", (name, color, category_id))
                 db.execute("UPDATE todos SET list_name=? WHERE category_id=?", (name, category_id))
         except sqlite3.IntegrityError as exc:
@@ -529,17 +570,25 @@ class TodoService:
     def delete_category(self, category_id):
         self.get_category(category_id)
         with self._connect() as db:
-            db.execute("UPDATE todos SET category_id=NULL WHERE category_id=?", (category_id,))
+            db.execute('BEGIN IMMEDIATE')
+            binding = self._apple_guard(db,'category',category_id,'can_delete')
+            if binding:
+                return self._apple_queue(db,'category',category_id,'delete')
+            rows = db.execute('SELECT id FROM todos WHERE category_id=?', (category_id,)).fetchall()
+            for row in rows:
+                self._delete_todo_tree(db, row['id'])
             db.execute("DELETE FROM todo_categories WHERE id=?", (category_id,))
+        self._sync_scheduler_links()
         return {"deleted": category_id}
 
-    def set_todo_category(self, todo_id, category_id):
+    def set_todo_category(self, todo_id, category_id, *, _apple=False):
         """Assign a category without marking the task as locally edited."""
         self.get_todo(todo_id)
-        name = ""
-        if category_id is not None:
-            name = self.get_category(category_id)["name"]
+        name = self.get_category(require_category(category_id))["name"]
         with self._connect() as db:
+            if not _apple:
+                self._apple_guard(db,'item',todo_id,'can_modify')
+                self._apple_guard(db,'category',category_id,'can_modify')
             db.execute("UPDATE todos SET category_id=?, list_name=? WHERE id=?", (category_id, name, todo_id))
         return self.get_todo(todo_id)
 
@@ -565,21 +614,29 @@ class TodoService:
                 if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
                     raise ValueError("source task was deleted")
             self._validate_parent(db, todo_id, parent_id, row["repeat_frequency"])
+            category_payload = payload
+            if parent_id and 'category_id' not in payload and 'list_name' not in payload:
+                parent_category = db.execute('SELECT category_id FROM todos WHERE id=?', (parent_id,)).fetchone()[0]
+                category_payload = {**payload, 'category_id':parent_category}
+            row["category_id"], row["list_name"] = self._task_category(db, category_payload, row)
+            if not _external_source_key:
+                self._apple_guard(db,'category',row['category_id'],'can_modify')
             order = self._next_order(db, parent_id)
             db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
                  repeat_days,repeat_until,repeat_interval,source_type,source_key,source_url,user_modified,created_at,updated_at,
-                 planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at,reminder_delivery)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 planned_on,list_name,tags,flagged,checklist,status,parent_id,sort_order,remind_at,reminder_delivery,category_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (todo_id, row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                  row["priority"], now if status == "completed" else None,
                  row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_interval"],
                  source_type, source_key, "", 0, now, now, row["planned_on"], row["list_name"], row["tags"],
                  row["flagged"], row["checklist"], status, parent_id, order, row["remind_at"],
-                 row["reminder_delivery"]))
+                 row["reminder_delivery"], row["category_id"]))
             self._queue_scheduler_link(db, todo_id, None if source_type == "apple_reminder" and
                                        self._apple_native_reminder({**row, "source_type": source_type}) else
                                        row["remind_at"], status)
+            self._apple_fields(db,todo_id,payload,bool(_external_source_key))
         self._sync_scheduler_links()
         return self.get_todo(todo_id)
 
@@ -590,12 +647,17 @@ class TodoService:
             row = db.execute("SELECT * FROM todos WHERE id=?", (todo_id.split("@", 1)[0],)).fetchone()
             if row is None:
                 raise KeyError("todo not found")
-            return self._with_progress(db, dict(row))
+            return self._apple_decorate(db,"item",self._with_progress(db,dict(row)))
 
-    def update_todo(self, todo_id, payload):
+    def update_todo(self, todo_id, payload, *, _apple=False):
         old = self.get_todo(todo_id)
+        if not _apple:
+            with self._connect() as db:
+                self._apple_guard(db,'item',old['id'],'can_modify')
+                self._apple_guard(db,'category',payload.get('category_id',old['category_id']),'can_modify')
         row = self._validate_todo(payload, old)
         with self._connect() as db:
+            row["category_id"], row["list_name"] = self._task_category(db, payload, row)
             if row["repeat_frequency"] != "none" and old["status"] != "todo" and old["source_type"] != "apple_reminder":
                 raise ValueError("recurring task status is set per occurrence")
             if row["repeat_frequency"] != old["repeat_frequency"] and old["parent_id"]:
@@ -618,13 +680,14 @@ class TodoService:
                     WHERE o.todo_id=? AND o.state='cancelled')""", (old["id"],))
             db.execute("""UPDATE todos SET title=?, notes=?, due_on=?, due_time=?, timezone=?,
                 priority=?, repeat_frequency=?, repeat_days=?, repeat_until=?, repeat_interval=?, user_modified=1, updated_at=?
-                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=?, reminder_delivery=? WHERE id=?""",
+                , planned_on=?, list_name=?, tags=?, flagged=?, checklist=?, remind_at=?, reminder_delivery=?, category_id=? WHERE id=?""",
                 (row["title"], row["notes"], row["due_on"], row["due_time"], row["timezone"],
                 row["priority"], row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_interval"], _now(),
                 row["planned_on"], row["list_name"], row["tags"], row["flagged"], row["checklist"],
-                row["remind_at"], row["reminder_delivery"], old["id"]))
+                row["remind_at"], row["reminder_delivery"], row["category_id"], old["id"]))
             self._queue_scheduler_link(db, old["id"], None if self._apple_native_reminder({
                 **row, "source_type": old["source_type"]}) else row["remind_at"], old["status"])
+            self._apple_fields(db,old["id"],payload,_apple)
         self._sync_scheduler_links()
         return self.get_todo(old["id"])
 
@@ -638,7 +701,7 @@ class TodoService:
         if type(completed) is not bool:
             raise ValueError("completed must be true or false")
         allowed = ("title", "notes", "due_on", "due_time", "timezone", "planned_on", "remind_at",
-                   "priority", "repeat_frequency", "repeat_days", "repeat_until", "repeat_interval")
+                   "priority", "repeat_frequency", "repeat_days", "repeat_until", "repeat_interval", "category_id", "url", "alarms", "floating", "native_recurrence", "native_managed", "native_series_key", "native_snapshot", "attendees")
         fields = {key: payload[key] for key in allowed if key in payload}
         with self._connect() as db:
             row = db.execute("SELECT id FROM todos WHERE source_type='apple_reminder' AND source_key=?",
@@ -654,7 +717,7 @@ class TodoService:
             original = self.get_todo(row["id"])
             if original["user_modified"] and not reconciled:
                 raise ValueError("locally modified Apple reminder needs reconciliation")
-            updated = self.update_todo(row["id"], fields)
+            updated = self.update_todo(row["id"], fields, _apple=True)
         else:
             updated = self.create_todo({**fields, "status": "completed" if completed else "todo"},
                                        _external_source_key=source_key)
@@ -688,25 +751,31 @@ class TodoService:
         self.delete_todo(row["id"], preserve_children=True)
         return {"deleted": row["id"]}
 
+    def _delete_todo_tree(self, db, todo_id, preserve_children=False):
+        if preserve_children and db.execute(
+                "SELECT 1 FROM todos WHERE parent_id=? LIMIT 1", (todo_id,)).fetchone():
+            raise ValueError("Apple reminder has Stella subtasks; move them before deleting it")
+        descendants = db.execute("""WITH RECURSIVE subtree(id) AS (
+            SELECT id FROM todos WHERE id=? UNION
+            SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
+            SELECT t.id,t.source_type,t.source_key FROM todos t JOIN subtree s ON t.id=s.id""",
+            (todo_id,)).fetchall()
+        for item in descendants:
+            if item["source_type"] in ("briefing", "apple_reminder") and item["source_key"]:
+                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
+                           (item["source_key"], _now()))
+            self._cancel_pending_reminders(db, item["id"])
+            self._queue_scheduler_link(db, item["id"], None, "cancelled")
+            db.execute("DELETE FROM todos WHERE id=?", (item["id"],))
+
     def delete_todo(self, todo_id, *, preserve_children=False):
         old = self.get_todo(todo_id)
         with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            if preserve_children and db.execute(
-                    "SELECT 1 FROM todos WHERE parent_id=? LIMIT 1", (old["id"],)).fetchone():
-                raise ValueError("Apple reminder has Stella subtasks; move them before deleting it")
-            descendants = db.execute("""WITH RECURSIVE subtree(id) AS (
-                SELECT id FROM todos WHERE id=? UNION
-                SELECT t.id FROM todos t JOIN subtree s ON t.parent_id=s.id)
-                SELECT t.id,t.source_type,t.source_key FROM todos t JOIN subtree s ON t.id=s.id""",
-                (old["id"],)).fetchall()
-            for item in descendants:
-                if item["source_type"] in ("briefing", "apple_reminder") and item["source_key"]:
-                    db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
-                               (item["source_key"], _now()))
-                self._cancel_pending_reminders(db, item["id"])
-                self._queue_scheduler_link(db, item["id"], None, "cancelled")
-                db.execute("DELETE FROM todos WHERE id=?", (item["id"],))
+            db.execute('BEGIN IMMEDIATE')
+            binding = self._apple_guard(db,'item',old['id'],'can_delete')
+            if binding:
+                return self._apple_queue(db,'item',old['id'],'delete')
+            self._delete_todo_tree(db, old['id'], preserve_children)
         self._sync_scheduler_links()
 
     @staticmethod
@@ -833,17 +902,21 @@ class TodoService:
             db.execute("UPDATE todos SET user_modified=1,updated_at=? WHERE id=?", (_now(), old["id"]))
         return self.get_todo(old["id"])
 
-    def change_todo_status(self, todo_id, status, force=False):
+    def change_todo_status(self, todo_id, status, force=False, *, _apple=False):
         status = self._status(status)
         if type(force) is not bool:
             raise ValueError("force must be true or false")
         old = self.get_todo(todo_id)
-        if status == "completed" and old["repeat_frequency"] != "none" and old["source_type"] != "apple_reminder":
+        if not _apple and old.get('apple') and status in ('completed','todo') and old['repeat_frequency']!='none':
+            return self.complete_todo(todo_id,status=='completed',force=force)
+        if status == "completed" and old["repeat_frequency"] != "none" and old["source_type"] != "apple_reminder" and not _apple:
             return self.complete_todo(todo_id, True, force=force)
         if "@" in todo_id:
             raise ValueError("recurring occurrence only supports completion")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if not _apple:
+                self._apple_guard(db,'item',old['id'],'can_modify')
             if status == "completed":
                 self._complete_subtree(db, old["id"], force)
             else:
@@ -920,10 +993,19 @@ class TodoService:
             raise ValueError("completed must be true or false")
         old = self.get_todo(todo_id)
         occurrence = todo_id.split("@", 1)[1] if "@" in todo_id else None
+        if old.get('apple') and old['repeat_frequency']!='none':
+            if occurrence and occurrence!=old['due_on']:
+                raise ValueError('只能完成当前 Apple 提醒事项，未来实例不可提前完成')
+            if not completed and old.get('completion_history'):
+                raise ValueError('已推进的重复提醒请在 Apple 中恢复对应历史记录')
+            with self._connect() as db:
+                self._apple_guard(db,'item',old['id'],'can_modify')
+                self._apple_queue(db,'item',old['id'],'complete',{'completed':completed,'occurrence_on':old['due_on']})
+            return self.get_todo(old['id'])
         if old["source_type"] == "apple_reminder":
             if occurrence:
-                raise ValueError("Apple reminder completion requires the source item, not a projected date")
-            return self.change_todo_status(todo_id, "completed" if completed else "todo", force=force)
+                raise ValueError('Apple reminder completion requires its current source item')
+            return self.change_todo_status(todo_id,'completed' if completed else 'todo',force=force)
         if old["repeat_frequency"] != "none":
             if not occurrence:
                 raise ValueError("recurring todo requires an occurrence date")
@@ -939,6 +1021,14 @@ class TodoService:
             return self.change_todo_status(todo_id, "completed" if completed else "todo", force=force)
         now = _now()
         with self._connect() as db:
+            binding = self._apple_guard(db,'item',old['id'],'can_modify')
+            if binding:
+                if occurrence:
+                    upcoming = self.list_todos_focus()
+                    current = next((item for item in upcoming if item.get('series_id')==old['id'] and item['status']!='completed'),None)
+                    if current and current['due_on']!=occurrence:
+                        raise ValueError('请先完成当前重复事务，不能提前完成未来实例')
+                self._apple_queue(db,'item',old['id'],'complete',{'completed':completed,'occurrence_on':occurrence})
             if completed:
                 self._cancel_pending_reminders(db, old["id"], occurrence)
             if occurrence:
@@ -1283,6 +1373,8 @@ class TodoService:
 
     @staticmethod
     def _todo_matches(row, candidate):
+        if row.get('native_managed') or row.get('source_type')=='apple_reminder':
+            return candidate.isoformat()==row['due_on']
         first = date.fromisoformat(row["due_on"])
         until = date.fromisoformat(row["repeat_until"]) if row["repeat_until"] else None
         if candidate < first or (until and candidate > until):
@@ -1323,17 +1415,26 @@ class TodoService:
         if (first is None) != (last is None) or (first and (last <= first or (last - first).days > 370)):
             raise ValueError("invalid todo range")
         with self._connect() as db:
-            templates = [dict(row) for row in db.execute("SELECT * FROM todos ORDER BY due_on, priority DESC, created_at")]
+            templates = [self._apple_decorate(db,"item",row) for row in db.execute("SELECT * FROM todos ORDER BY due_on, priority DESC, created_at")]
             completions = {(row["todo_id"], row["occurrence_on"]): row["completed_at"]
                            for row in db.execute("SELECT * FROM todo_completions")}
             checklist_completions = {tuple(row) for row in db.execute("SELECT * FROM todo_checklist_completions")}
         if first is None:
             return self._decorate_rows(templates, include_completed)
         result = []
+        if include_completed:
+            by_id = {row['id']:row for row in templates}
+            with self._connect() as db:
+                history = db.execute('SELECT * FROM apple_completion_history WHERE occurrence_on>=? AND occurrence_on<?',(first.isoformat(),last.isoformat())).fetchall()
+            for record in history:
+                parent = by_id.get(record['local_id'])
+                if parent:
+                    previous = json.loads(record['document'])
+                    result.append({**parent,'id':parent['id']+'@history:'+record['native_id']+':'+record['occurrence_on'],'series_id':parent['id'],'due_on':previous.get('due_on'),'due_time':previous.get('due_time'),'timezone':previous.get('timezone') or parent['timezone'],'title':previous.get('title') or parent['title'],'status':'completed','completed_at':previous.get('completed_at'),'apple_history':True})
         for row in templates:
             if not row["due_on"]:
                 continue
-            if row["repeat_frequency"] == "none":
+            if row["repeat_frequency"] == "none" or row.get('native_managed') or row['source_type']=='apple_reminder':
                 if first <= date.fromisoformat(row["due_on"]) < last and (include_completed or not row["completed_at"]):
                     result.append(row)
                 continue
@@ -1389,15 +1490,18 @@ class TodoService:
         except (TypeError, ValueError) as exc:
             raise ValueError("today must be YYYY-MM-DD") from exc
         with self._connect() as db:
-            templates = [dict(row) for row in db.execute("SELECT * FROM todos ORDER BY created_at")]
+            templates = [self._apple_decorate(db,"item",row) for row in db.execute("SELECT * FROM todos ORDER BY created_at")]
             completions = {(row["todo_id"], row["occurrence_on"]): row["completed_at"]
                            for row in db.execute("SELECT * FROM todo_completions")}
             checklist_completions = {tuple(row) for row in db.execute("SELECT * FROM todo_checklist_completions")}
 
         result = []
         for row in templates:
-            if row["repeat_frequency"] == "none" or row["source_type"] == "apple_reminder" or row["status"] in TERMINAL_STATUSES:
+            if row["repeat_frequency"] == "none" or row["source_type"] == "apple_reminder" or row.get("native_managed") or row["status"] in TERMINAL_STATUSES:
                 result.append(row)
+                if row.get('completion_history'):
+                    previous = row['completion_history'][-1]
+                    result.append({**row,'id':row['id']+'@history:'+str(previous.get('reminder_id')),'series_id':row['id'],'due_on':previous.get('due_on'),'due_time':previous.get('due_time'),'status':'completed','completed_at':previous.get('completed_at'),'apple_history':True})
                 continue
             if today is None:
                 anchor = datetime.now(ZoneInfo(row["timezone"])).date()
@@ -1498,8 +1602,8 @@ class TodoService:
             return
         db.execute("""INSERT INTO todos
                 (id,title,notes,due_on,due_time,timezone,priority,completed_at,repeat_frequency,
-                 repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 repeat_days,repeat_until,source_type,source_key,source_url,user_modified,briefing_id,created_at,updated_at,category_id,list_name)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(source_type,source_key) DO UPDATE SET title=excluded.title,notes=excluded.notes,
                 due_on=excluded.due_on,due_time=excluded.due_time,source_url=excluded.source_url,
                 briefing_id=excluded.briefing_id,updated_at=excluded.updated_at""",
@@ -1507,7 +1611,7 @@ class TodoService:
                  local_due.date().isoformat() if local_due else None,
                  local_due.strftime("%H:%M") if local_due else None, "Asia/Shanghai", 0, None,
                  "none", "[]", None, "briefing", source_key, getattr(item, "url", "") or "", 0,
-                 briefing_id, now, now))
+                 briefing_id, now, now, old["category_id"] if old else default_category(db, "todo_categories", "提醒事项"), old["list_name"] if old else "提醒事项"))
 
     def ingest_briefing_revision(self, detail, revision):
         briefing = detail["briefing"]

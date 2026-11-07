@@ -11,7 +11,7 @@ test('independent Apple worker shares business records over reverse RPC and stop
   const helper = fileURLToPath(new URL('./fake-eventkit.py', import.meta.url))
   await chmod(helper, 0o755)
   const fixture = join(directory, 'worker.py')
-  await writeFile(fixture, `import os,sys\nsys.path.insert(0,${JSON.stringify(fileURLToPath(new URL('../../packages/stella-apple-sync/python', import.meta.url)))})\nos.environ['STELLA_EVENTKIT_HELPER']=${JSON.stringify(helper)}\nfrom worker import main\nmain()\n`)
+  await writeFile(fixture, `import os,sys\nsys.path.insert(0,${JSON.stringify(fileURLToPath(new URL('../../packages/stella-apple-sync/python', import.meta.url)))})\nos.environ['STELLA_EVENTKIT_HELPER']=${JSON.stringify(helper)}\nos.environ['STELLA_EVENTKIT_STATE']=${JSON.stringify(join(directory, 'eventkit-state.json'))}\nfrom worker import main\nmain()\n`)
   const business = new BusinessWorker(join(directory, 'business'), { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
   let apple = new BusinessWorker(join(directory, 'legacy'), { worker: pathToFileURL(fixture), onRequest: input => business.call('apple_peer', input) })
   context.after(async () => { await apple.close(); await business.close(); await rm(directory, { recursive: true, force: true }) })

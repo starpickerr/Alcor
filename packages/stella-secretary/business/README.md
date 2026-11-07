@@ -6,7 +6,7 @@ No retired Stella Application or Plugin Runtime is started.
 
 Source provenance:
 
-- `tasks`, `calendar`, `bills`, `briefing`, `agent_hub`: adapted from the matching
+- `tasks`, `calendar`, `bills`, `briefing`: adapted from the matching
   first-party `Stella-Plugins/plugins/*/backend/domain` and backend entry points.
 - `briefing/domain/generator.py`: adapted from `Stella-Core/agent/briefing/generator.py`;
   model requests are executed through DSH, preserving the original result validation.
@@ -19,6 +19,10 @@ receipts, source provenance, conflict handling and recovery remain in these serv
 Business SQLite files live in `<DSH profile>/stella/business/`. Existing preview
 KV records are copied idempotently with their IDs and revisions; their originals
 remain available. Historical Stella databases are not automatically imported.
+
+AgentHub now belongs to the independent `@stella/agent-hub` developer plugin.
+This worker does not open or write collaboration data. The new plugin imports
+the retired collaboration database read-only; see its README for migration boundaries.
 
 Briefing source selection is saved by the briefing page, not by Agent tools.
 The host adapter reads explicitly selected native DSH plugin sources and existing

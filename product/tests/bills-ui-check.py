@@ -10,6 +10,7 @@ from plugin_check import ROOT, CLI, PACK
 from web_check import open_secretary
 import official_desktop_check as desktop
 
+PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(PACK)))
 
 surface = runpy.run_path(str(ROOT / 'product/tests/bill-import-chat-check.py'))['surface']
 

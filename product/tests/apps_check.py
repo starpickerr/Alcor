@@ -10,7 +10,7 @@ from web_check import rpc, requests, open_secretary, start_secretary_chat
 
 def check_app_theme(page):
     actions = [
-        ('Agent 协作', '发送并执行', 'agents'), ('事务', '新建事务', 'tasks'),
+        ('事务', '新建事务', 'tasks'),
         ('日程', '新建日程', 'calendar'), ('简报', '生成今日简报', 'briefing'),
         ('账单', '记账', 'bills'),
     ]
@@ -37,69 +37,6 @@ def check_app_theme(page):
             }'''), (theme, label)
             if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
                 page.screenshot(path=str(Path(directory) / f'dsh-{slug}-{theme}.png'), animations='disabled')
-
-
-def check_hub(page, read):
-    page.get_by_role('button', name='Agent 协作', exact=True).click()
-    expect(page.get_by_role('heading', name='Agent 协作', exact=True)).to_be_visible()
-    page.locator('.stella-hub-task-list button').filter(has_text='Synthetic collaboration').click()
-    expect(page.get_by_role('heading', name='Synthetic collaboration', exact=True)).to_be_visible()
-    for label in ['过程', 'Agents', '流程']:
-        page.get_by_role('tab', name=label, exact=True).click()
-        expect(page.locator('.stella-hub-detail-content')).to_be_visible()
-    page.get_by_role('button', name='管理接入', exact=True).click()
-    dialog = page.get_by_role('dialog', name='管理接入', exact=True)
-    expect(dialog.get_by_role('heading', name='Stella', exact=True)).to_be_visible()
-    expect(dialog.get_by_text('尚未接入', exact=True)).to_have_count(3)
-    page.keyboard.press('Escape')
-    expect(page.get_by_role('button', name='管理接入', exact=True)).to_be_focused()
-    count_before = len(requests)
-    page.get_by_role('button', name='新建协作任务', exact=True).click()
-    page.get_by_label('任务标题', exact=True).fill('UI hub task')
-    page.get_by_label('目标', exact=True).fill('Only this task. UI_HUB_SENTINEL')
-    page.get_by_role('button', name='创建任务', exact=True).click()
-    composer = page.get_by_role('textbox', name='协作任务内容', exact=True)
-    expect(composer).to_have_value('Only this task. UI_HUB_SENTINEL')
-    expect(page.get_by_role('button', name='发送', exact=True)).to_be_disabled()
-    page.get_by_role('tab', name='过程', exact=True).click()
-    page.get_by_text('任务尚未启动，暂无执行记录。', exact=True).wait_for()
-    open_secretary(page)
-    page.get_by_role('button', name='Agent 协作', exact=True).click()
-    expect(composer).to_have_value('Only this task. UI_HUB_SENTINEL')
-    page.reload()
-    page.get_by_role('button', name='Agent 协作', exact=True).click()
-    expect(composer).to_have_value('Only this task. UI_HUB_SENTINEL')
-    assert len(requests) == count_before, 'Saving or viewing a draft must not call a model'
-    for theme in ['dark', 'light']:
-        page.emulate_media(color_scheme=theme)
-        page.wait_for_function('dark => document.body.hasAttribute("data-ds-dark-theme") === dark', arg=theme == 'dark')
-        if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
-            page.screenshot(path=str(Path(directory) / f'hub-draft-{theme}.png'), animations='disabled')
-    page.set_viewport_size({'width': 390, 'height': 844})
-    for label in ['任务', '详情', '交流']:
-        page.get_by_role('tab', name=label, exact=True).click()
-        assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
-        if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
-            page.screenshot(path=str(Path(directory) / f'hub-mobile-{label}.png'), animations='disabled')
-    expect(composer).to_have_value('Only this task. UI_HUB_SENTINEL')
-    page.get_by_role('button', name='发送并执行', exact=True).scroll_into_view_if_needed()
-    expect(page.get_by_role('button', name='发送并执行', exact=True)).to_be_in_viewport()
-    page.set_viewport_size({'width': 1280, 'height': 850})
-    page.get_by_role('button', name='发送并执行', exact=True).click()
-    page.locator('.stella-hub-message').get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for(timeout=25000)
-    expect(page.get_by_role('button', name='发送并执行', exact=True)).to_be_disabled()
-    assert page.evaluate('sessionStorage.getItem("stella.agent-hub.draft.v1")') is None
-    job = next(item for item in read()['jobs'] if item['title'] == 'UI hub task')
-    assert job['status'] == 'completed' and job['output'] and job['prompt'] == 'Only this task. UI_HUB_SENTINEL'
-    delegated = [request for request in requests if any('UI_HUB_SENTINEL' in str(message.get('content', '')) for message in request.get('messages', []))]
-    assert delegated and 'WORKSPACE_USER_SENTINEL' not in json.dumps(delegated), 'Private identity must not enter delegated jobs'
-    page.get_by_role('tab', name='过程', exact=True).click()
-    expect(page.get_by_role('button', name='查看原生会话', exact=True)).to_be_visible()
-    page.get_by_role('button', name='历史委托', exact=True).click()
-    page.get_by_role('dialog', name='历史委托', exact=True).get_by_role('button').filter(has_text='Synthetic collaboration').click()
-    expect(page.get_by_role('heading', name='Synthetic collaboration', exact=True)).to_be_visible()
-    if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
-        page.screenshot(path=str(Path(directory) / 'hub-completed.png'), animations='disabled')
 
 
 def check_apps(page, url, compatible):
@@ -136,7 +73,7 @@ def check_apps(page, url, compatible):
         page.get_by_label('标题', exact=True).fill('Edited synthetic task')
         page.get_by_role('button', name='保存事务', exact=True).click()
         page.get_by_role('heading', name='Edited synthetic task', exact=True).wait_for()
-        page.get_by_role('button', name='返回事务树', exact=True).click()
+        page.get_by_role('button', name='返回事务列表', exact=True).click()
     event = {**base, 'id': str(uuid4()), 'kind': 'event', 'title': 'Synthetic event', 'start': '2026-11-04', 'end': '2026-11-05', 'allDay': True, 'timeZone': 'Asia/Shanghai'}
     call('write', {'record': event, 'expectedRevision': 0})
     rejects('write', {'record': {**event, 'id': str(uuid4()), 'end': event['start']}, 'expectedRevision': 0})
@@ -238,18 +175,7 @@ def check_apps(page, url, compatible):
     generated = call('generateBriefing', {'date': datetime.now().date().isoformat(), 'notes': 'Synthetic structured integration', 'requestId': str(uuid4()), 'parentSessionId': parent, 'sources': []})
     assert generated['body'] == 'Synthetic structured briefing saved through DSH.', generated
     assert generated['business']['snapshot']['briefing']['status'] == 'completed'
-    job = call('startJob', {'id': str(uuid4()), 'parentSessionId': parent, 'title': 'Synthetic collaboration', 'prompt': 'Return a short independent analysis. CHILD_TASK_SENTINEL'})
-    deadline = __import__('time').monotonic() + 30
-    while __import__('time').monotonic() < deadline:
-        saved = next(item for item in call('read')['jobs'] if item['id'] == job['id'])
-        if saved['status'] not in ['starting', 'running']: break
-        page.wait_for_timeout(100)
-    assert saved['status'] == 'completed' and saved['childId'] and saved['output'], saved
-    if compatible: check_hub(page, lambda: call('read'))
-    child_requests = [item for item in requests if 'CHILD_TASK_SENTINEL' in json.dumps(item)]
-    assert child_requests and all('PRIVATE_BUSINESS_SENTINEL' not in json.dumps(item) for item in child_requests)
-    assert 'WORKSPACE_USER_SENTINEL' not in json.dumps(child_requests)
-    assert all(set(tool['function']['name'] for tool in item.get('tools', [])) == {'stella_overview', 'stella_business', 'stella_generate_briefing', 'stella_review_tasks'} for item in child_requests if item.get('tools'))
+    assert call('read')['jobs'] == [], 'Collaboration belongs to the independent developer plugin'
     future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
     schedule = call('createSchedule', {'title': 'Synthetic native schedule', 'prompt': 'Synthetic schedule delivery', 'timing': {'kind': 'at', 'at': future}})
     call('editSchedule', {'id': schedule['id'], 'action': 'pause', 'expectedUpdatedAt': schedule['updatedAt']})

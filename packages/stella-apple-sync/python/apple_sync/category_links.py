@@ -21,7 +21,7 @@ def bidirectional_links(selections, sources, categories):
         target = row.get("stella_id")
         if target is not None and not isinstance(target, str):
             raise ValueError("分类或清单格式无效")
-        if target and (target not in local or target == "china_holidays" or target in used):
+        if target and (target not in local or target in used):
             raise ValueError("请选择不同的有效分类或清单")
         seen.add(identity)
         if target:
@@ -30,9 +30,9 @@ def bidirectional_links(selections, sources, categories):
     links = []
     for selection in selections:
         target = selection.get("stella_id") or ""
-        title = str(available[selection["apple_id"]].get("title") or "Apple")[:40].strip() or "Apple"
+        title = str(available[selection["apple_id"]].get("title") or "Apple")[:200].strip() or "Apple"
         if not target:
-            existing = next((row for row in categories if row["name"] == title and row["id"] not in used and row["id"] != "china_holidays"), None)
+            existing = next((row for row in categories if row["name"] == title and row["id"] not in used), None)
             if existing:
                 target = existing["id"]
                 used.add(target)
@@ -40,7 +40,7 @@ def bidirectional_links(selections, sources, categories):
         number = 2
         while not target and name in names:
             suffix = f" ({number})"
-            name = title[:40 - len(suffix)] + suffix
+            name = title[:200 - len(suffix)] + suffix
             number += 1
         names.add(name)
         links.append({"apple_id": selection["apple_id"], "stella_id": target, "create_name": name,
@@ -95,9 +95,11 @@ def all_source_links(sources, categories, stored):
     selections = [{"apple_id": row["id"], "stella_id": previous.get(row["id"], {}).get("stella_id")}
                   for row in sources]
     if not selections:
-        return stored
+        return [{**row, "enabled": bool(row["enabled"])} for row in stored]
+    reserved = {row['stella_id'] for row in stored if row['apple_id'] not in {source['id'] for source in sources}}
+    categories = [row for row in categories if row['id'] not in reserved]
     links = bidirectional_links(selections, [{**row, "writable": True} for row in sources], categories)
     writable = {row["id"]: row.get("writable", False) for row in sources}
     for link in links:
         link["direction"] = "bidirectional" if writable[link["apple_id"]] else "import"
-    return links + [row for row in stored if row["apple_id"] not in writable]
+    return links + [{**row,"enabled":bool(row["enabled"])} for row in stored if row["apple_id"] not in writable]

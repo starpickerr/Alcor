@@ -1,5 +1,6 @@
 .stella-desk-application { max-width:none; padding:0; }
-.stella-business { min-width:0; min-height:100%; }
+.stella-business { min-width:0; min-height:100%; --stella-sidebar-offset:150px; }
+.stella-business:has(> .stella-page-feedback:not(:empty)) { --stella-sidebar-offset:220px; }
 .stella-app-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; padding:22px 32px; border-bottom:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
 .stella-app-header h1 { margin:0; font-size:23px; line-height:32px; font-weight:600; letter-spacing:-.4px; }
 .stella-app-header p { margin:4px 0 0; font-size:13px; line-height:20px; color:var(--dsw-alias-label-secondary); }
@@ -9,13 +10,30 @@
 .stella-page-feedback p { margin:12px 0; }
 .stella-business select { height:32px; max-width:100%; min-width:0; padding:0 10px; font:inherit; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); color:inherit; background:var(--dsw-alias-bg-layer-1); }
 .stella-business select:disabled { opacity:.45; }
-.stella-tasks-page { max-width:1040px; margin:0 auto; padding-top:24px; }
-.stella-task-tabs { width:100%; max-width:none; margin-bottom:20px; }
-.stella-task-tabs [role=tab] { padding:0 8px; }
-.stella-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
-.stella-tab-count { display:inline-grid; place-items:center; min-width:22px; height:20px; padding:0 5px; border-radius:6px; background:var(--dsw-alias-interactive-bg-active); color:var(--dsw-alias-label-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
-.stella-task-tabs [aria-selected=true] { color:var(--stella-brand); }
-.stella-task-tabs [aria-selected=true] .stella-tab-count { color:var(--stella-brand); background:var(--stella-brand-soft); }
+.stella-tasks-page { display:grid; grid-template-columns:204px minmax(0,1fr); align-items:start; gap:24px; max-width:none; margin:0; padding:0 24px 0 0; }
+.stella-task-sidebar { min-width:0; }
+.stella-task-sidebar nav { min-height:0; overflow-y:auto; }
+.stella-task-sidebar nav > button,.stella-task-sidebar .stella-organizer-source-row > button { width:100%; height:auto; min-height:38px; padding:9px 8px; justify-content:flex-start; gap:10px; border-radius:8px; text-align:left; color:var(--dsw-alias-label-primary); }
+.stella-task-sidebar nav > button[aria-pressed=true],.stella-task-sidebar .stella-organizer-source-row > button[aria-pressed=true] { background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,var(--stella-surface-soft)); }
+.stella-task-sidebar nav > button > span,.stella-task-sidebar .stella-organizer-source-row > button > span:not(.stella-task-list-icon) { flex:1; min-width:0; overflow-wrap:anywhere; font-size:13px; font-weight:500; }
+.stella-task-sidebar .stella-organizer-source { margin-top:22px; }
+.stella-task-sidebar small { font-size:10px; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+.stella-task-all-lists > svg { color:var(--dsw-alias-label-secondary); }
+.stella-task-list-icon { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; flex:none; border-radius:4px; color:white; }
+.stella-task-list-dot { display:inline-block; width:7px; height:7px; flex:none; border-radius:50%; background:var(--dsw-alias-label-tertiary); corner-shape:round; }
+.stella-task-main { margin:24px 0; min-width:0; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:16px; padding:26px 28px 18px; }
+.stella-task-list-heading { display:flex; align-items:baseline; gap:12px; margin-bottom:22px; }
+.stella-task-list-heading h2 { margin:0; font-size:24px; line-height:1.4; font-weight:600; letter-spacing:-.5px; overflow-wrap:anywhere; }
+.stella-task-list-heading > span { color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
+.stella-task-tabs { display:flex; width:100%; max-width:100%; gap:18px; padding:0; margin:0; border-radius:0; background:transparent; border-bottom:1px solid var(--dsw-alias-border-l3); overflow-x:auto; }
+.stella-task-tabs > span { display:none; }
+.stella-task-tabs [role=tab] { height:38px; padding:0 0 12px; border-radius:0; flex:none; border-bottom:2px solid transparent; font-size:12px; }
+.stella-task-tabs [aria-selected=true] { color:var(--stella-brand); border-bottom-color:var(--stella-brand); background:transparent; }
+.stella-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.stella-tab-count { font-size:10px; font-weight:400; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+.stella-task-tabs [aria-selected=true] .stella-tab-count { color:var(--stella-brand); }
+.stella-task-main > .stella-agent-strip { margin-top:28px; padding:10px 0 0; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; }
+.stella-task-main .stella-agent-identity h2 { font-size:12px; font-weight:500; }
 .stella-agent-avatar { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; color:var(--stella-brand); background:var(--dsw-alias-bg-layer-1); }
 .stella-agent-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
 .stella-agent-identity { display:flex; gap:10px; align-items:center; }
@@ -41,51 +59,53 @@
   .stella-quick-chat-toolbar select { flex:1; max-width:100%; }
   .stella-quick-chat-body { height:480px; min-height:300px; }
 }
-.stella-task-filters { display:grid; grid-template-columns:minmax(180px,1fr) repeat(3,minmax(100px,auto)); gap:10px; margin:24px 0; }
-.stella-task-group { margin:24px 0; }
-.stella-task-group > h2 { display:flex; align-items:center; gap:8px; color:var(--dsw-alias-label-secondary); font-size:13px; margin:0 0 12px; }
-.stella-task-group > h2::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--dsw-alias-label-tertiary); }
-.stella-task-group[data-group=overdue] > h2::before { background:var(--dsw-alias-state-error-primary); }
-.stella-task-group[data-group=today] > h2::before { background:var(--stella-brand); }
-.stella-task-group[data-group=completed] > h2::before { background:var(--dsw-alias-state-success-primary); }
-.stella-task-group > h2::after { content:''; height:1px; flex:1; background:var(--dsw-alias-border-l3); }
-.stella-task-card[data-priority="1"] { border-left:3px solid var(--dsw-alias-state-error-primary); padding-left:18px; }
-.stella-task-card[data-completed] { background:var(--dsw-alias-bg-layer-2); border-left-color:var(--dsw-alias-border-l3); box-shadow:none; }
-.stella-task-card[data-completed] .stella-task-badge { color:var(--dsw-alias-label-secondary); }
-.stella-task-group small, .stella-briefing-layout h2 small { color:var(--dsw-alias-label-tertiary); margin-left:6px; font-size:12px; font-weight:400; }
-.stella-task-list { display:grid; gap:10px; list-style:none; padding:0; margin:0; }
-.stella-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:center; padding:18px 20px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); box-shadow:0 2px 6px #233d6806; }
-.stella-task-open { position:absolute; inset:0; border:0; border-radius:inherit; background:transparent; cursor:pointer; }
-.stella-task-card:has(.stella-task-open:hover) { border-color:var(--dsw-alias-border-l4); box-shadow:var(--stella-shadow); }
-.stella-task-card > .stella-task-check,.stella-task-delete { position:relative; z-index:1; flex-shrink:0; }
-.stella-task-delete { color:var(--dsw-alias-label-tertiary); }
-.stella-task-delete:hover { color:var(--dsw-alias-state-error-primary); }
-.stella-task-check { width:18px; min-width:18px; height:18px; padding:0; margin-top:3px; border:1px solid var(--dsw-alias-label-tertiary); border-radius:50%; }
-.stella-task-check[aria-pressed=true] { color:var(--dsw-alias-label-primary-inverted); background:var(--dsw-alias-state-success-primary); border-color:transparent; }
+.stella-task-filters { display:grid; grid-template-columns:minmax(120px,1fr) auto auto; gap:8px; margin:18px 0; }
+.stella-task-filters select { font-size:12px; border-color:transparent; background:var(--dsw-alias-bg-layer-2); }
+.stella-task-quick-add { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--dsw-alias-border-l3); border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-task-quick-add > :first-child { flex:1; min-width:0; background:transparent; box-shadow:none; }
+.stella-task-quick-add > button { color:var(--stella-brand); flex:none; }
+.stella-task-group { margin:24px 0 0; }
+.stella-task-group > h2 { display:flex; align-items:center; gap:8px; color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:600; margin:0; padding:0 0 8px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-task-group[data-group=overdue] > h2 { color:var(--dsw-alias-state-error-primary); }
+.stella-task-group[data-group=today] > h2 { color:var(--stella-brand); }
+.stella-task-group small, .stella-briefing-layout h2 small { color:var(--dsw-alias-label-tertiary); margin-left:4px; font-size:11px; font-weight:400; }
+.stella-task-list { display:grid; gap:0; list-style:none; padding:0; margin:0; }
+.stella-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:flex-start; padding:14px 2px; border:0; border-bottom:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; box-shadow:none; }
+.stella-task-card:last-child { border-bottom-color:transparent; }
+.stella-task-open { position:absolute; inset:0 -8px; border:0; border-radius:8px; background:transparent; cursor:pointer; }
+.stella-task-card:has(.stella-task-open:hover) { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-task-card > .stella-task-check,.stella-task-more { position:relative; z-index:1; flex-shrink:0; }
+.stella-task-card > .stella-task-check { width:18px; min-width:18px; height:18px; padding:0; margin:3px 0 0; border:1.5px solid var(--dsw-alias-label-tertiary); border-radius:50%; corner-shape:round; }
+.stella-task-card[data-priority="3"] > .stella-task-check { border-color:var(--dsw-alias-state-error-primary); background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 6%,transparent); }
+.stella-task-card[data-priority="2"] > .stella-task-check { border-color:var(--dsw-alias-state-warn-primary); }
+.stella-task-card > .stella-task-check[aria-pressed=true] { color:var(--dsw-alias-label-primary-foreground); background:var(--stella-brand); border-color:var(--stella-brand); }
 .stella-task-copy { flex:1; min-width:0; pointer-events:none; }
 .stella-task-copy h3 { margin:0; font-size:14px; line-height:24px; font-weight:500; overflow-wrap:anywhere; }
-.stella-task-copy > small { display:block; margin-top:8px; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-task-note { margin:2px 0 0; font-size:12px; line-height:19px; color:var(--dsw-alias-label-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stella-task-note:empty { display:none; }
+.stella-task-copy > small { display:block; margin-top:5px; color:var(--dsw-alias-label-secondary); font-size:11px; }
 .stella-completed { text-decoration:line-through; color:var(--dsw-alias-label-secondary); }
-.stella-task-metadata { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; }
-.stella-task-copy .stella-task-metadata { margin-top:8px; }
-.stella-task-badge { display:inline-flex; align-items:center; gap:5px; max-width:100%; padding:3px 8px; border-radius:var(--dsw-radius-sm); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; overflow-wrap:anywhere; }
+.stella-task-metadata { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; min-width:0; }
+.stella-task-copy .stella-task-metadata { margin-top:4px; }
+.stella-task-badge { display:inline-flex; align-items:center; gap:5px; max-width:100%; padding:0; color:var(--dsw-alias-label-secondary); font-size:11px; line-height:18px; overflow-wrap:anywhere; }
 .stella-task-badge svg { flex-shrink:0; }
-.stella-task-badge[data-status=completed],.stella-task-status[data-status=completed] { color:var(--dsw-alias-state-business-primary); }
-.stella-task-badge[data-status=blocked],.stella-task-badge[data-priority="1"],.stella-task-status[data-status=blocked] { color:var(--dsw-alias-state-error-primary); }
-.stella-task-detail { max-width:1100px; margin:0 auto; }
-.stella-task-breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:24px; color:var(--dsw-alias-label-secondary); }
+.stella-task-card[data-group=overdue] .stella-task-badge[data-kind=due],.stella-task-badge[data-priority="3"] { color:var(--dsw-alias-state-error-primary); }
+.stella-task-badge[data-priority="2"] { color:var(--dsw-alias-state-warn-primary); }
+.stella-task-card[data-completed] .stella-task-badge { color:var(--dsw-alias-label-tertiary); }
+.stella-task-detail { max-width:960px; margin:0 auto; }
+.stella-task-breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:24px; color:var(--dsw-alias-label-secondary); font-size:12px; }
 .stella-task-breadcrumbs > :last-child { overflow-wrap:anywhere; }
-.stella-task-detail > .stella-calendar-period h2 { font-size:22px; line-height:1.4; overflow-wrap:anywhere; }
-.stella-task-detail-summary { display:grid; gap:20px; padding:20px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); }
-.stella-task-detail-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.stella-task-detail > .stella-calendar-period h2 { font-size:26px; line-height:1.4; overflow-wrap:anywhere; }
+.stella-task-detail-summary { display:grid; gap:20px; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
+.stella-task-detail-toolbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .stella-task-detail-edit { margin-left:auto; }
-.stella-task-description { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; }
+.stella-task-description { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; color:var(--dsw-alias-label-secondary); font-size:14px; }
 .stella-task-progress { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .stella-task-delete-confirm { padding:20px; }
 .stella-task-delete-confirm > p:first-child { margin-top:0; overflow-wrap:anywhere; }
-.stella-task-detail-summary progress { display:block; width:100%; margin-top:8px; accent-color:var(--dsw-alias-button-primary-fill); }
-.stella-task-children { border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:hidden; }
-.stella-task-children .stella-task-list:not(:empty) { padding:12px; }
+.stella-task-detail-summary progress { display:block; width:100%; margin-top:8px; accent-color:var(--stella-brand); }
+.stella-task-children { margin-top:12px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+.stella-task-children .stella-task-list:not(:empty) { padding:0 16px; }
 .stella-task-add { display:flex; flex-wrap:wrap; gap:10px; padding:16px; }
 .stella-task-add > :first-child { flex:1; min-width:140px; }
 .stella-task-dependency { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:8px 0; }
@@ -97,79 +117,114 @@
 .stella-category-editor input[type=color] { width:36px; height:36px; padding:2px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-sm); background:transparent; }
 .stella-date-import > h3 { margin-top:24px; }
 .stella-date-import form { display:grid; gap:12px; }
-.stella-agenda-date { max-width:960px; margin:24px auto; }
-.stella-time-scroll { overflow-x:auto; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); }
-.stella-time-viewport { max-height:min(640px,calc(100dvh - 340px)); min-height:240px; overflow-y:auto; overscroll-behavior:contain; }
-.stella-time-grid { position:relative; min-width:calc(64px + var(--stella-day-count) * 84px); }
-.stella-time-head, .stella-time-all-day, .stella-time-body { display:grid; grid-template-columns:64px repeat(var(--stella-day-count),minmax(0,1fr)); }
-.stella-time-head { background:var(--dsw-alias-bg-layer-1); border-bottom:1px solid var(--dsw-alias-border-l3); }
-.stella-time-head > button { display:flex; flex-direction:column; height:auto; gap:4px; padding:12px 4px; border-left:1px solid var(--dsw-alias-border-l3); }
-.stella-time-head > button[data-today] strong { color:var(--stella-brand); }
-.stella-time-head small { color:var(--dsw-alias-label-secondary); font-size:11px; }
-.stella-time-all-day { border-bottom:1px solid var(--dsw-alias-border-l3); min-height:48px; }
-.stella-time-all-day > div { padding:4px; border-left:1px solid var(--dsw-alias-border-l3); min-width:0; }
-.stella-time-head > span, .stella-time-all-day > span { padding:12px 6px; color:var(--dsw-alias-label-tertiary); font-size:12px; }
+.stella-calendar-workspace { display:grid; grid-template-columns:204px minmax(0,1fr); gap:24px; align-items:start; padding:0 24px 0 0; }
+.stella-calendar-main,.stella-calendar-sidebar-frame,.stella-calendar-surface { min-width:0; }
+.stella-calendar-main { padding:24px 0; }
+.stella-organizer-sidebar { position:sticky; top:0; height:calc(100dvh - var(--stella-sidebar-offset)); display:flex; flex-direction:column; min-height:460px; padding:12px 10px; background:var(--stella-surface-soft); border-right:1px solid var(--dsw-alias-border-l3); }
+.stella-calendar-sidebar-toggle { display:none; }
+.stella-calendar-filters { flex:1; min-height:0; overflow-y:auto; padding:0 2px 20px; }
+.stella-calendar-filter-tools { display:flex; justify-content:flex-end; gap:0; margin-bottom:10px; }
+.stella-calendar-filter-tools button { color:var(--dsw-alias-label-secondary); font-size:10px; padding:0 7px; }
+.stella-organizer-source + .stella-organizer-source { margin-top:24px; }
+.stella-organizer-source h3 { margin:0 8px 10px; color:var(--dsw-alias-label-tertiary); font-size:11px; font-weight:500; }
+.stella-organizer-source ul { display:grid; gap:3px; list-style:none; margin:0; padding:0; }
+.stella-organizer-source-row { display:flex; align-items:center; gap:5px; border-radius:8px; }
+.stella-organizer-source-row:hover,.stella-organizer-source-row:focus-within { background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,var(--stella-surface-soft)); }
+.stella-calendar-source-checkbox { display:flex; flex:1; min-width:0; gap:10px; padding:9px 8px; font-size:13px; font-weight:500; line-height:20px; }
+.stella-calendar-source-checkbox input { width:15px; height:15px; accent-color:var(--calendar-color); }
+.stella-calendar-source-checkbox > span { min-width:0; overflow-wrap:anywhere; }
+.stella-organizer-source-row > span { padding-right:7px; color:var(--dsw-alias-label-tertiary); font-size:9px; }
+.stella-calendar-mini { margin-top:auto; border-top:1px solid var(--dsw-alias-border-l3); padding-top:16px; flex:none; }
+.stella-calendar-mini-heading { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:12px; }
+.stella-calendar-mini-heading h3 { flex:1; margin:0; text-align:center; font-size:11px; font-weight:600; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-mini-heading button { padding:0 5px; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding:0 0 18px; }
+.stella-calendar-navigation { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
+.stella-calendar-navigation h2 { margin:0; font-size:19px; line-height:28px; font-weight:600; letter-spacing:-.4px; }
+.stella-calendar-navigation .stella-actions { gap:3px; }
+.stella-calendar-toolbar [role=tablist] { flex:none; }
+.stella-calendar-toolbar [role=tab] { font-size:12px; padding:0 13px; }
+.stella-calendar-period { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.stella-calendar-coverage,.stella-calendar-loading { margin:0 0 12px; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-main > .stella-agent-strip { padding:10px 0 0; margin-top:16px; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; }
+.stella-calendar-main .stella-agent-identity h2 { font-size:12px; font-weight:500; }
+.stella-time-scroll { overflow-x:auto; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+.stella-time-viewport { max-height:min(700px,calc(100dvh - 320px)); min-height:280px; overflow-y:auto; overscroll-behavior:contain; }
+.stella-time-grid { position:relative; min-width:calc(56px + var(--stella-day-count) * 88px); }
+.stella-time-head,.stella-time-all-day,.stella-time-body { display:grid; grid-template-columns:56px repeat(var(--stella-day-count),minmax(0,1fr)); }
+.stella-time-head { border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-time-head > button { display:flex; flex-direction:column; height:auto; gap:3px; padding:12px 4px 10px; border-left:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; }
+.stella-time-head strong { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; corner-shape:round; font-size:19px; line-height:26px; font-weight:500; }
+.stella-time-head > button[data-today] strong { color:var(--dsw-alias-label-primary-foreground); background:var(--stella-brand); }
+.stella-time-head > button[aria-pressed=true]:not([data-today]) strong { color:var(--stella-brand); background:var(--stella-brand-soft); }
+.stella-time-head small { color:var(--dsw-alias-label-secondary); font-size:10px; }
+.stella-time-all-day { border-bottom:1px solid var(--dsw-alias-border-l3); min-height:44px; }
+.stella-time-all-day > div { padding:4px; border-left:1px solid var(--dsw-alias-border-l3); min-width:0; display:grid; align-content:start; gap:4px; }
+.stella-time-head > span,.stella-time-all-day > span { padding:13px 8px; color:var(--dsw-alias-label-tertiary); font-size:10px; }
 .stella-time-labels { display:grid; grid-template-rows:repeat(24,64px); }
-.stella-time-labels > span { padding:0 8px; font-size:11px; color:var(--dsw-alias-label-secondary); }
+.stella-time-labels > span { padding:2px 8px; font-size:10px; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+.stella-time-body { position:relative; }
 .stella-time-column { position:relative; min-width:0; height:1536px; border-left:1px solid var(--dsw-alias-border-l3); }
 .stella-hour-slot { display:block; width:100%; height:64px; border:0; border-top:1px solid var(--dsw-alias-border-l3); background:transparent; cursor:pointer; }
 .stella-hour-slot:hover { background:var(--dsw-alias-interactive-bg-hover); }
-.stella-timed-event { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; width:calc(100% - 6px); padding:4px 6px; text-align:left; font:inherit; font-size:12px; color:color-mix(in srgb,var(--stella-event-color) 40%,var(--dsw-alias-label-primary)); background:color-mix(in srgb,var(--stella-event-color) 17%,var(--dsw-alias-bg-layer-1)); border:0; border-left:3px solid var(--stella-event-color); border-radius:var(--dsw-radius-sm); overflow:auto; overflow-wrap:anywhere; cursor:pointer; }
+.stella-timed-event { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; width:calc(100% - 6px); padding:6px; text-align:left; font:inherit; font-size:11px; color:color-mix(in srgb,var(--stella-event-color) 35%,var(--dsw-alias-label-primary)); background:color-mix(in srgb,var(--stella-event-color) 13%,var(--dsw-alias-bg-layer-1)); border:0; border-left:3px solid var(--stella-event-color); border-radius:5px; overflow:hidden; overflow-wrap:anywhere; cursor:pointer; }
 .stella-time-column > .stella-timed-event { position:absolute; left:3px; }
-.stella-timed-event strong, .stella-timed-event small { display:block; }
-.stella-timed-event strong { font-weight:600; line-height:1.4; }
-.stella-timed-event small { font-size:11px; line-height:1.5; margin-top:2px; }
+.stella-calendar-title-line { display:flex; gap:4px; align-items:flex-start; width:100%; min-width:0; }
+.stella-calendar-title-line > svg { flex:none; margin-top:2px; }
+.stella-timed-event strong { display:block; font-weight:500; line-height:1.4; }
+.stella-timed-event small { display:block; font-size:10px; line-height:1.5; margin-top:4px; font-variant-numeric:tabular-nums; }
+.stella-timed-event[data-readonly] { border-left-style:dashed; }
+.stella-calendar-event-state { align-self:flex-start; font-size:9px; opacity:.7; margin-top:3px; }
 .stella-timed-event:hover,.stella-calendar-chip:hover { filter:brightness(.97); }
-.stella-day-detail > .stella-month-grid { margin-bottom:20px; }
-@media(max-width:600px) { .stella-task-detail-summary { padding:14px; } .stella-task-detail .stella-calendar-period { align-items:flex-start; } .stella-task-detail .stella-calendar-period > span { display:none; } }
-.stella-calendar-page > .stella-page-content:first-child { padding-block:12px; }
-.stella-calendar-page .stella-agent-strip { padding-block:8px; }
-.stella-calendar-toolbar { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:center; padding:14px 32px; border-block:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
-.stella-calendar-period { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
-.stella-calendar-layout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:20px; align-items:start; }
-.stella-calendar-surface { min-width:0; }
-.stella-day-detail { padding:18px; border:1px solid var(--dsw-alias-border-l3); border-radius:16px; background:var(--dsw-alias-bg-layer-1); }
-.stella-month-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
-.stella-weekday { background:var(--stella-surface-soft); text-align:center; padding:10px 0; color:var(--dsw-alias-label-secondary); font-size:12px; }
-.stella-month-grid > button { display:flex; flex-direction:column; align-items:stretch; text-align:left; min-width:0; min-height:116px; gap:4px; padding:8px; background:transparent; color:inherit; font:inherit; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-right:1px solid var(--dsw-alias-border-l3); cursor:pointer; }
-.stella-month-grid > button:nth-child(7n) { border-right:0; }
-.stella-month-grid > button[aria-pressed=true] { background:var(--stella-brand-soft); box-shadow:inset 0 0 0 1px var(--stella-brand); }
-.stella-month-grid > button:hover { background:var(--dsw-alias-interactive-bg-hover); }
-.stella-month-grid > button[data-outside] { color:var(--dsw-alias-label-tertiary); }
-.stella-day-number { display:flex; align-items:center; justify-content:center; width:24px; height:24px; align-self:flex-start; border-radius:50%; font-size:12px; }
-.stella-month-grid > button[data-today] .stella-day-number { color:var(--dsw-alias-label-primary-inverted); background:var(--stella-brand); }
-.stella-calendar-chip { font-size:11px; line-height:18px; padding:1px 4px; border-radius:var(--dsw-radius-xs); border-left:3px solid var(--stella-event-color); background:color-mix(in srgb,var(--stella-event-color) 16%,var(--dsw-alias-bg-layer-1)); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:color-mix(in srgb,var(--stella-event-color) 40%,var(--dsw-alias-label-primary)); }
-.stella-calendar-chip time { font-variant-numeric:tabular-nums; font-weight:500; }
+.stella-time-all-day .stella-timed-event { width:100%; min-height:26px; padding:4px 6px; }
+.stella-time-all-day .stella-timed-event strong { font-size:11px; }
+.stella-current-time { position:absolute; left:56px; right:0; height:0; border-top:1px solid var(--dsw-alias-state-error-primary); z-index:3; pointer-events:none; }
+.stella-current-time::before { content:''; position:absolute; top:-3.5px; left:-3px; width:6px; height:6px; border-radius:50%; corner-shape:round; background:var(--dsw-alias-state-error-primary); }
+.stella-current-time time { position:absolute; right:calc(100% + 4px); top:-9px; padding:1px 3px; font-size:10px; line-height:16px; color:var(--dsw-alias-state-error-primary); background:var(--dsw-alias-bg-layer-1); }
+.stella-month-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border:1px solid var(--dsw-alias-border-l3); border-radius:12px; overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+.stella-weekday { text-align:center; padding:12px 0; color:var(--dsw-alias-label-secondary); font-size:11px; }
+.stella-month-grid > :is(button,.stella-month-day) { display:flex; flex-direction:column; align-items:stretch; text-align:left; min-width:0; min-height:108px; gap:4px; padding:8px 5px; background:transparent; color:inherit; font:inherit; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-right:1px solid var(--dsw-alias-border-l3); cursor:pointer; }
+.stella-month-grid > :is(button,.stella-month-day):nth-child(7n) { border-right:0; }
+.stella-month-grid > .stella-month-day:nth-child(7n),.stella-month-grid > .stella-month-day:nth-child(7n + 1) { background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 55%,transparent); }
+.stella-month-grid > .stella-month-day[data-selected] { box-shadow:none; background:color-mix(in srgb,var(--stella-brand) 4%,var(--dsw-alias-bg-layer-1)); }
+.stella-month-grid > :is(button,.stella-month-day):hover { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-month-grid > :is(button,.stella-month-day)[data-outside] { color:var(--dsw-alias-label-tertiary); }
+.stella-day-number { display:flex; align-items:center; justify-content:center; width:26px; height:26px; align-self:flex-end; border-radius:50%; corner-shape:round; font-size:12px; }
+.stella-month-grid > :is(button,.stella-month-day)[data-today] .stella-day-number { color:var(--dsw-alias-label-primary-foreground); background:var(--stella-brand); }
+.stella-calendar-chip { font-size:11px; line-height:18px; padding:2px 4px; border-radius:4px; border-left:3px solid var(--stella-event-color); background:color-mix(in srgb,var(--stella-event-color) 12%,var(--dsw-alias-bg-layer-1)); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:color-mix(in srgb,var(--stella-event-color) 35%,var(--dsw-alias-label-primary)); }
+.stella-calendar-chip time { font-variant-numeric:tabular-nums; font-size:10px; font-weight:500; }
+.stella-month-day > .stella-calendar-chip[data-kind=task] { border-left:0; background:transparent; color:var(--dsw-alias-label-primary); padding-left:2px; }
+.stella-calendar-chip[data-completed] { text-decoration:line-through; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-more { width:100%; border:0; padding:1px 4px; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:10px; text-align:left; cursor:pointer; }
+.stella-calendar-more:hover { color:var(--stella-brand); }
 .stella-calendar-dots { display:flex; justify-content:center; gap:2px; }
-.stella-calendar-dots i { width:4px; height:4px; border-radius:50%; }
-.stella-month-grid small { color:var(--dsw-alias-label-tertiary); font-size:11px; }
-.stella-year-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
-.stella-year-grid h3 { font-size:13px; margin:0 0 8px; font-weight:500; }
-.stella-month-compact { border:0; }
-.stella-month-compact .stella-weekday { padding:0; font-size:10px; }
-.stella-month-compact > button { border:0; min-height:30px; position:relative; padding:0; align-items:center; }
+.stella-calendar-dots i { width:3px; height:3px; border-radius:50%; corner-shape:round; }
+.stella-month-grid small { color:var(--dsw-alias-label-tertiary); font-size:10px; }
+.stella-year-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+.stella-year-grid h3 { font-size:13px; margin:0 0 14px; font-weight:500; }
+.stella-month-compact { border:0; border-radius:0; background:transparent; }
+.stella-month-compact .stella-weekday { padding:0 0 6px; font-size:10px; }
+.stella-month-grid.stella-month-compact > button { border:0; min-height:28px; position:relative; padding:0; align-items:center; }
 .stella-month-compact .stella-day-number { width:22px; height:22px; align-self:center; font-size:10px; }
+.stella-month-compact > button[aria-pressed=true]:not([data-today]) .stella-day-number { color:var(--stella-brand); background:var(--stella-brand-soft); }
 .stella-month-compact small { position:absolute; bottom:-6px; }
-.stella-agenda-list, .stella-day-agendas ul { list-style:none; padding:0; margin:0; }
-.stella-agenda-list > li { padding:12px; margin-bottom:8px; border:1px solid var(--dsw-alias-border-l3); border-left:3px solid var(--stella-event-color); border-radius:var(--dsw-radius-md); background:color-mix(in srgb,var(--stella-event-color) 8%,var(--dsw-alias-bg-layer-1)); }
-.stella-agenda-entry { display:flex; width:100%; height:auto; padding:0; gap:10px; justify-content:flex-start; text-align:left; white-space:normal; }
-.stella-agenda-entry time { color:color-mix(in srgb,var(--stella-event-color) 40%,var(--dsw-alias-label-primary)); font-size:12px; font-variant-numeric:tabular-nums; flex-shrink:0; }
-.stella-day-detail .stella-agenda-entry { flex-wrap:wrap; }
-.stella-day-detail .stella-agenda-entry time { width:100%; }
+.stella-agenda-list { list-style:none; padding:0; margin:0; }
+.stella-agenda-date { margin:0; padding:22px 20px; border-bottom:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
+.stella-agenda-date:first-child { border-radius:12px 12px 0 0; }
+.stella-agenda-date:last-child { border-radius:0 0 12px 12px; }
+.stella-agenda-date > h3 { font-size:12px; font-weight:600; margin:0 0 12px; color:var(--dsw-alias-label-secondary); }
+.stella-agenda-list > li { display:flex; align-items:center; gap:10px; position:relative; padding:12px 0; border:0; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-agenda-list > li:last-child { border-bottom:0; }
+.stella-agenda-list > li::before { content:''; width:3px; height:28px; border-radius:3px; background:var(--stella-event-color); flex:none; }
+.stella-agenda-list > li:has(.stella-calendar-task-check)::before { display:none; }
+.stella-agenda-entry { display:flex; flex:1; min-width:0; height:auto; padding:0; gap:14px; justify-content:flex-start; text-align:left; white-space:normal; }
+.stella-agenda-entry time { color:var(--dsw-alias-label-secondary); font-size:11px; font-variant-numeric:tabular-nums; flex-shrink:0; min-width:92px; }
 .stella-agenda-entry > span { flex:1; min-width:0; }
-.stella-agenda-entry h3 { font:inherit; font-weight:500; margin:0; overflow-wrap:anywhere; }
-.stella-agenda-entry small { display:block; font-size:11px; color:var(--dsw-alias-label-tertiary); overflow-wrap:anywhere; }
-.stella-agenda-list > li > button + button { margin-top:8px; }
-.stella-day-detail .stella-empty { padding:28px 8px; }
-.stella-day-detail .stella-empty h2 { font-size:14px; }
-.stella-day-agendas { border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:auto; }
-.stella-week-agendas { display:grid; grid-template-columns:repeat(7,minmax(120px,1fr)); }
-.stella-day-agendas > section { padding:12px; min-height:300px; }
-.stella-week-agendas > section + section { border-left:1px solid var(--dsw-alias-border-l3); }
-.stella-agenda-day, .stella-day-agendas li button { background:transparent; border:0; color:inherit; font:inherit; cursor:pointer; text-align:left; padding:6px; border-radius:var(--dsw-radius-sm); }
-.stella-agenda-day[aria-pressed=true] { color:var(--dsw-alias-state-business-primary); }
-.stella-day-agendas li button { width:100%; background:var(--dsw-alias-interactive-bg-hover); margin:8px 0; }
-.stella-day-agendas li time, .stella-day-agendas li strong { display:block; font-size:12px; overflow-wrap:anywhere; }
+.stella-agenda-entry h3 { font:inherit; font-size:13px; font-weight:500; margin:0; overflow-wrap:anywhere; }
+.stella-agenda-entry small { display:block; font-size:11px; margin-top:3px; color:var(--dsw-alias-label-tertiary); overflow-wrap:anywhere; }
+.stella-agenda-list .stella-actions { flex:none; gap:2px; }
+@media(hover:hover) { .stella-agenda-list > li > .stella-actions { opacity:0; } .stella-agenda-list > li:hover > .stella-actions,.stella-agenda-list > li:focus-within > .stella-actions { opacity:1; } }
+@media(max-width:600px) { .stella-task-detail-summary { padding:14px; } .stella-task-detail .stella-calendar-period { align-items:flex-start; } .stella-task-detail .stella-calendar-period > span { display:none; } }
 .stella-briefing-layout { display:grid; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
 .stella-briefing-history { padding:24px 16px; border-right:1px solid var(--dsw-alias-border-l3); background:var(--stella-surface-soft); }
 .stella-briefing-history h2, .stella-briefing-revisions h2 { font-size:13px; color:var(--dsw-alias-label-secondary); margin-bottom:16px; }
@@ -220,12 +275,21 @@
 .stella-editor-dialog .stella-error { margin:16px 24px; }
 .stella-business :is(button,select,summary):focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary)); outline-offset:-2px; }
 @media(max-width:1100px) {
-  .stella-calendar-layout { grid-template-columns:minmax(0,1fr); }
+
   .stella-year-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .stella-briefing-layout { grid-template-columns:190px minmax(0,1fr); }
   .stella-briefing-revisions { grid-column:2; margin:0 24px 24px; padding:16px 0 0; border-left:0; border-top:1px solid var(--dsw-alias-border-l3); }
-  .stella-task-filters { grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .stella-task-filters > :first-child { grid-column:1 / -1; }
+  .stella-tasks-page { grid-template-columns:204px minmax(0,1fr); gap:20px; padding:0 20px 0 0; }
+  .stella-task-main { padding:22px 20px 16px; }
+}
+@container stella-calendar (max-width:940px) {
+  .stella-calendar-workspace { display:block; padding:20px; }
+  .stella-calendar-sidebar-toggle { display:flex; align-items:center; gap:10px; margin-bottom:16px; font-size:12px; }
+  .stella-calendar-sidebar { display:none; position:static; max-height:none; }
+  .stella-calendar-sidebar[data-open] { display:flex; height:auto; min-height:0; max-height:70vh; padding:16px; margin-bottom:18px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
+  .stella-calendar-filters { flex:none; margin:0 0 20px; padding:0; }
+  .stella-calendar-mini { max-width:260px; width:100%; margin:0 auto; }
+  .stella-calendar-main { padding:0; }
 }
 @media(max-width:760px) {
   .stella-desk-application { padding:0; }
@@ -233,16 +297,24 @@
   .stella-app-header h1 { font-size:22px; }
   .stella-page-content { padding:20px; }
   .stella-page-feedback { padding:0 20px; }
-  .stella-task-tabs { display:flex; flex-wrap:wrap; justify-content:center; }
-  .stella-task-tabs > span { display:none; }
-  .stella-task-tabs [aria-selected=true] { background:var(--dsw-alias-bg-layer-1); }
-  .stella-task-tabs [role=tab] { flex:1; }
   .stella-agent-strip { padding:16px; gap:14px; }
   .stella-task-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .stella-calendar-toolbar { padding:14px 20px; }
+  .stella-task-filters > :first-child { grid-column:1 / -1; }
+  .stella-calendar-workspace { padding:16px; }
+  .stella-calendar-toolbar { gap:14px; padding-bottom:16px; }
   .stella-calendar-toolbar [role=tablist] { width:100%; }
   .stella-calendar-toolbar [role=tab] { padding:0 8px; }
-  .stella-month-grid > button { padding:3px; min-height:70px; gap:2px; }
+  .stella-calendar-navigation { justify-content:space-between; width:100%; gap:10px; }
+  .stella-calendar-navigation h2 { font-size:15px; }
+  .stella-calendar-sidebar[data-open] { overflow-y:auto; }
+  .stella-time-grid { min-width:calc(56px + var(--stella-day-count) * 112px); }
+  .stella-time-viewport { min-height:300px; max-height:calc(100dvh - 330px); }
+  .stella-agenda-entry { flex-wrap:wrap; gap:6px; }
+  .stella-agenda-entry time { min-width:0; flex-basis:100%; }
+  .stella-agenda-list > li { flex-wrap:wrap; }
+  .stella-agenda-list > li > .stella-actions { margin-left:auto; }
+  .stella-year-grid { padding:14px; }
+  .stella-month-grid > :is(button,.stella-month-day) { padding:3px; min-height:70px; gap:2px; }
   .stella-calendar-chip { padding:0 2px; font-size:9px; }
   .stella-calendar-chip time { display:none; }
   .stella-year-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
@@ -373,3 +445,222 @@
 .stella-briefing-toggle:disabled { opacity:.5; cursor:default; }
 
 .stella-rule-enabled { display:flex; align-items:center; gap:12px; font-size:13px; }
+
+.stella-calendar-open { display:flex; flex:1; flex-direction:column; min-width:0; padding:0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.stella-calendar-task { flex-direction:row; align-items:center; gap:7px; border:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); padding:4px 7px; overflow:hidden; }
+.stella-calendar-task-check { display:inline-flex; flex-shrink:0; align-items:center; justify-content:center; width:18px; height:18px; padding:0; border:2px solid var(--stella-event-color,var(--stella-accent,#3976d3)); border-radius:50%; corner-shape:round; background:transparent; color:var(--stella-event-color,var(--stella-accent,#3976d3)); cursor:pointer; }
+.stella-calendar-task-check:disabled { opacity:.5; cursor:default; }
+.stella-calendar-task[data-completed] strong { text-decoration:line-through; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-task-marker { display:inline-flex; align-items:center; justify-content:center; vertical-align:-2px; width:12px; height:12px; border:1.5px solid var(--stella-event-color); border-radius:50%; corner-shape:round; color:var(--stella-event-color); margin-right:4px; }
+.stella-calendar-editor { display:grid; gap:14px; }
+.stella-calendar-editor textarea, .stella-calendar-editor input { max-width:100%; }
+.stella-editor-dialog > [role=tablist] { margin:20px 24px 0; }
+@media (max-width:600px) { .stella-calendar-editor > .stella-form-grid { grid-template-columns:1fr; } }
+.stella-calendar-form-card { display:grid; gap:12px; }
+.stella-calendar-editor > h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.stella-calendar-editor .stella-calendar-form-card { background:var(--dsw-alias-bg-layer-1,#fff); padding:14px 16px; border:1px solid var(--dsw-alias-border-l3); border-radius:16px; }
+.stella-calendar-editor .stella-calendar-form-card:first-of-type input { font-size:22px; font-weight:600; }
+.stella-calendar-editor details summary { color:var(--dsw-alias-label-secondary); cursor:pointer; }
+.stella-calendar-editor details[open] { display:grid; gap:12px; }
+.stella-calendar-editor > .stella-actions { position:sticky; bottom:-24px; margin:0 -24px -24px; padding:14px 24px; background:var(--dsw-alias-bg-layer-2); border-top:1px solid var(--dsw-alias-border-l3); z-index:1; }
+.stella-calendar-task .stella-calendar-open strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:600px) { .stella-calendar-editor > .stella-actions { bottom:-20px; margin:0 -20px -20px; padding:14px 20px; } }
+
+.stella-calendar-switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:30px; }
+
+.stella-category-dialog { width:min(820px,100%); max-height:100%; overflow:auto; font:14px/1.5 var(--dsw-font-family); color:var(--dsw-alias-label-primary); }
+.stella-category-dialog :is(button,input,select):focus-visible { outline:2px solid var(--stella-brand); outline-offset:2px; }
+.stella-category-manager { display:grid; grid-template-columns:210px minmax(0,1fr); gap:28px; padding-bottom:4px; }
+.stella-category-browser { min-width:0; }
+.stella-category-browser > :first-child { width:100%; box-sizing:border-box; }
+.stella-category-manager-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:16px 0 10px; color:var(--dsw-alias-label-secondary); font-size:11px; }
+.stella-category-manager-toolbar button { color:var(--stella-brand); }
+.stella-category-list { list-style:none; padding:0; margin:0; display:grid; gap:4px; max-height:420px; overflow-y:auto; }
+.stella-category-list > li > button { width:100%; display:flex; align-items:center; gap:10px; padding:12px 10px; border:0; border-radius:9px; background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+.stella-category-list > li > button:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.stella-category-list > li > button[aria-pressed=true] { background:var(--stella-brand-soft); }
+.stella-category-swatch { width:9px; height:9px; border-radius:50%; flex:none; corner-shape:round; }
+.stella-category-name { flex:1; min-width:0; display:grid; gap:3px; }
+.stella-category-name strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.stella-category-name small { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.stella-category-count { color:var(--dsw-alias-label-tertiary); font-size:11px; }
+.stella-category-empty { padding:20px 8px; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-category-detail { min-width:0; border-left:1px solid var(--dsw-alias-border-l3); padding-left:28px; }
+.stella-category-form,.stella-category-delete { display:grid; gap:22px; }
+.stella-category-detail-heading { display:flex; align-items:center; gap:14px; min-width:0; }
+.stella-category-preview { display:grid; place-items:center; width:48px; height:48px; border-radius:13px; flex:none; background:color-mix(in srgb,var(--category-color) 12%,transparent); color:var(--category-color); }
+.stella-category-detail-heading h3,.stella-category-delete h3 { font-size:19px; font-weight:600; margin:0 0 5px; overflow-wrap:anywhere; }
+.stella-category-detail-heading > div { min-width:0; }
+.stella-category-detail-heading > div > span { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-category-fields { display:grid; gap:20px; margin:0; padding:0; border:0; min-width:0; }
+.stella-category-fields .stella-field { display:grid; gap:7px; margin:0; }
+.stella-category-fields .stella-field > span:first-child,.stella-category-color-field > span { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-category-fields select { width:100%; height:34px; padding:0 10px; border:1px solid var(--dsw-alias-border-l3); border-radius:8px; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-layer-1); font:inherit; }
+.stella-category-palette { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.stella-category-palette > button { display:grid; place-items:center; width:29px; height:29px; padding:3px; border:1.5px solid transparent; border-radius:50%; corner-shape:round; background:transparent; cursor:pointer; }
+.stella-category-palette > button[aria-pressed=true] { border-color:var(--category-color); }
+.stella-category-palette > button > span { width:19px; height:19px; border-radius:50%; corner-shape:round; background:var(--category-color); }
+.stella-category-custom-color { display:flex; align-items:center; gap:5px; margin-left:4px; font-size:11px; color:var(--dsw-alias-label-secondary); }
+.stella-category-custom-color input { width:26px; height:26px; padding:1px; border:1px solid var(--dsw-alias-border-l3); border-radius:7px; background:transparent; cursor:pointer; }
+.stella-category-facts { display:grid; gap:12px; margin:0; padding:18px 0; border-top:1px solid var(--dsw-alias-border-l3); border-bottom:1px solid var(--dsw-alias-border-l3); font-size:12px; }
+.stella-category-facts > div { display:flex; align-items:baseline; gap:14px; justify-content:space-between; }
+.stella-category-facts dt { color:var(--dsw-alias-label-secondary); flex:none; }
+.stella-category-facts dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+.stella-category-form-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.stella-category-form-actions > span { flex:1; }
+.stella-category-delete-button { color:var(--dsw-alias-state-error-primary); padding-left:0; }
+.stella-category-danger { background:var(--dsw-alias-state-error-primary) !important; color:#fff !important; }
+.stella-category-callout { display:flex; align-items:flex-start; gap:10px; padding:12px; border-radius:10px; background:var(--dsw-alias-interactive-bg-hover); font-size:12px; line-height:1.7; color:var(--dsw-alias-label-secondary); }
+.stella-category-callout > svg { flex:none; margin-top:3px; }
+.stella-category-callout p { margin:0 0 8px; overflow-wrap:anywhere; }
+.stella-category-callout p:last-child { margin-bottom:0; }
+.stella-category-delete > button:first-child { justify-self:start; margin-left:-10px; }
+.stella-category-delete > p { margin:0; font-size:13px; line-height:1.8; }
+.stella-category-delete .stella-category-preview { color:var(--dsw-alias-state-error-primary); background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent); }
+.stella-category-source-error { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.stella-category-source-error summary { cursor:pointer; }
+.stella-category-source-error p { overflow-wrap:anywhere; }
+.stella-category-saved { margin:0; color:var(--stella-brand); font-size:12px; }
+.stella-category-fields:disabled { opacity:.6; }
+@media(max-width:640px) { .stella-category-manager { display:block; } .stella-category-browser { padding-bottom:18px; margin-bottom:20px; border-bottom:1px solid var(--dsw-alias-border-l3); } .stella-category-list { display:flex; max-height:none; overflow-x:auto; padding-bottom:4px; } .stella-category-list > li { flex:0 0 150px; } .stella-category-name strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .stella-category-detail { border-left:0; padding-left:0; } .stella-category-dialog { overflow:auto; } .stella-category-palette { gap:6px; } }
+
+.stella-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: contents; }
+
+.stella-record-context-list { min-width:190px; max-width:min(300px,calc(100vw - 24px)); }
+.stella-record-inspector { display:flex; flex-direction:column; width:min(420px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0; overflow:hidden; font-family:var(--dsw-font-family); font-size:14px; line-height:1.55; }
+.stella-inspector-header { display:grid; grid-template-columns:36px 1fr 36px; align-items:center; gap:8px; padding:10px 12px; }
+.stella-inspector-header h2 { margin:0; text-align:center; font-size:13px; font-weight:500; color:var(--dsw-alias-label-secondary); }
+.stella-inspector-header > button { min-width:32px; height:32px; padding:7px; border-radius:50%; }
+.stella-inspector-body { display:grid; gap:20px; padding:0 18px 20px; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.stella-inspector-card { margin:0; padding:0 14px; border-radius:16px; background:var(--dsw-alias-bg-layer-1); overflow-wrap:anywhere; }
+.stella-inspector-title { padding:18px 16px; border-left:4px solid var(--stella-event-color); }
+.stella-inspector-title h3 { margin:0; font-size:24px; font-weight:600; line-height:1.3; letter-spacing:-.3px; }
+.stella-inspector-title p { margin:12px 0 0; padding-top:12px; border-top:1px solid var(--dsw-alias-border-l3); white-space:pre-wrap; color:var(--dsw-alias-label-secondary); font-size:13px; }
+.stella-inspector-title a { display:block; margin-top:10px; font-size:13px; color:var(--dsw-alias-state-business-primary,var(--stella-accent)); }
+.stella-inspector-section-title { margin:0 4px 8px; font-size:12px; font-weight:500; color:var(--dsw-alias-label-secondary); }
+.stella-inspector-row { padding:13px 0; }
+.stella-inspector-row + .stella-inspector-row { border-top:1px solid var(--dsw-alias-border-l3); }
+.stella-inspector-row dt > svg { flex-shrink:0; color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary)); margin-top:2px; }
+.stella-inspector-row dt { display:flex; align-items:center; gap:12px; margin:0; font-size:13px; font-weight:500; }
+.stella-inspector-row dd { display:grid; gap:3px; margin:3px 0 0 34px; font-size:13px; color:var(--dsw-alias-label-secondary); }
+.stella-inspector-row dd small { font-size:12px; }
+.stella-inspector-group { display:flex; align-items:center; gap:8px; color:var(--dsw-alias-label-primary); }
+.stella-inspector-group i { width:11px; height:11px; flex-shrink:0; border-radius:50%; }
+.stella-inspector-tags { display:flex; flex-wrap:wrap; gap:6px 10px; }
+.stella-inspector-attendees { list-style:none; padding:12px 14px; font-size:13px; }
+.stella-inspector-attendees li + li { margin-top:8px; }
+.stella-inspector-actions { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-2); }
+.stella-inspector-actions > span { flex:1; }
+.stella-inspector-actions .stella-inspector-delete { color:var(--dsw-alias-state-error-primary); }
+.stella-calendar-chip[role=button] { cursor:pointer; }
+.stella-calendar-chip[role=button]:focus-visible { outline:2px solid var(--dsw-focus-ring-color,var(--stella-accent)); outline-offset:-1px; }
+
+.stella-month-day .stella-day-select { display:flex; padding:0; width:100%; border:0; background:transparent; color:inherit; cursor:pointer; }
+.stella-month-day > .stella-calendar-chip { border:0; border-left:3px solid var(--stella-event-color); width:100%; min-width:0; font-family:inherit; text-align:left; cursor:pointer; }
+.stella-month-day > .stella-calendar-chip:focus-visible { outline:2px solid var(--dsw-focus-ring-color,var(--stella-accent)); outline-offset:-1px; }
+
+.stella-record-menu-group { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+
+.stella-task-editor:not(.stella-calendar-editor) .stella-calendar-form-card { border:0; border-radius:12px; padding:16px; background:var(--dsw-alias-bg-layer-1); }
+.stella-task-editor:not(.stella-calendar-editor) .stella-editor-fields { gap:12px; }
+.stella-task-editor:not(.stella-calendar-editor) .stella-task-title-input { height:42px; }
+.stella-task-editor:not(.stella-calendar-editor) .stella-task-title-input input { font-size:19px; font-weight:500; }
+.stella-editor-dialog .stella-task-editor .stella-task-title-input input:focus-visible { outline:none; }
+.stella-task-editor .stella-task-title-input:focus-within { box-shadow:0 0 0 2px var(--stella-brand); }
+.stella-task-editor:not(.stella-calendar-editor) .stella-field > span { font-size:12px; color:var(--dsw-alias-label-secondary); }
+
+@media(max-width:760px) { .stella-task-business .stella-app-header > div:first-child { flex-basis:100%; } .stella-task-business .stella-app-header > .stella-actions { margin-left:auto; } }
+
+.stella-calendar-title-input { height:44px; }
+.stella-editor-dialog .stella-calendar-editor .stella-calendar-title-input input:focus-visible { outline:none; }
+.stella-calendar-title-input:focus-within { box-shadow:0 0 0 2px var(--stella-brand); }
+
+.stella-calendar-title-line > strong { flex:1; min-width:0; }
+.stella-month-day .stella-day-select { justify-content:flex-end; }
+
+.stella-calendar-sidebar-frame { align-self:stretch; }
+.stella-calendar-mini .stella-day-number { width:24px; height:24px; font-size:11px; }
+.stella-time-labels > span[data-current] { color:transparent; }
+
+.stella-calendar-split { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; container-type:inline-size; container-name:calendar-desk; }
+.stella-calendar-split[data-panel-open] { position:relative; z-index:16; grid-template-columns:minmax(0,1fr) min(42%,460px); }
+.stella-calendar-page { min-width:0; container-type:inline-size; container-name:stella-calendar; }
+.stella-calendar-record-panel { position:sticky; top:0; display:flex; flex-direction:column; min-width:0; width:100%; height:calc(100dvh - var(--stella-sidebar-offset) + 24px); min-height:420px; max-height:none; padding:0; overflow:hidden; border-left:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); font:14px/1.55 var(--dsw-font-family); }
+.stella-calendar-panel-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex:none; padding:15px 24px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.stella-calendar-panel-header h2 { margin:0; font-size:14px; font-weight:500; }
+.stella-calendar-panel-header > button { width:30px; height:30px; padding:5px; color:var(--dsw-alias-label-secondary); }
+.stella-calendar-record-panel .stella-record-inspector { flex:1; min-height:0; width:100%; max-height:none; background:transparent; }
+.stella-calendar-record-panel .stella-inspector-body { flex:1; padding:26px 24px; gap:24px; align-content:start; }
+.stella-calendar-record-panel .stella-inspector-card { border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
+.stella-calendar-record-panel .stella-inspector-title { border:0; border-radius:0; padding:0; }
+.stella-calendar-record-panel .stella-inspector-title h3 { font-size:25px; }
+.stella-calendar-record-panel .stella-inspector-title p { border:0; padding:0; }
+.stella-calendar-record-panel .stella-inspector-actions { flex:none; padding:16px 24px; background:var(--dsw-alias-bg-layer-1); }
+.stella-calendar-panel-editor { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.stella-calendar-panel-editor > div:not([hidden]):not(.stella-notice) { display:flex; flex:1; min-height:0; }
+.stella-calendar-panel-editor .stella-editor { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; gap:0; padding:0; }
+.stella-calendar-panel-editor > [role=tablist] { margin:20px 24px 0; }
+.stella-calendar-panel-editor .stella-form-grid { grid-template-columns:minmax(0,1fr); }
+.stella-calendar-panel-editor .stella-calendar-form-card { border-radius:12px; }
+.stella-calendar-panel-editor .stella-editor > .stella-actions { position:static; flex:none; margin:0; padding:16px 24px; justify-content:flex-end; background:var(--dsw-alias-bg-layer-1); }
+.stella-calendar-panel-editor .stella-editor > .stella-actions > button:first-child { order:1; }
+.stella-calendar-panel-editor .stella-editor-fields { display:grid; align-content:start; gap:20px; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:24px; }
+.stella-calendar-page [data-record-selected] { box-shadow:inset 0 0 0 1.5px var(--stella-event-color); background:color-mix(in srgb,var(--stella-event-color) 20%,var(--dsw-alias-bg-layer-1)); }
+@container calendar-desk (max-width:850px) {
+  .stella-calendar-split > .stella-calendar-record-panel { grid-column:1 / -1; }
+  .stella-calendar-record-panel { position:fixed; inset:44px 0 0 auto; z-index:5; width:min(100%,520px); height:calc(100dvh - 44px); min-height:0; border-left:1px solid var(--dsw-alias-border-l3); }
+}
+@media(max-width:600px) {
+  .stella-calendar-record-panel { width:100%; }
+  .stella-calendar-panel-header { padding:12px 20px; }
+  .stella-calendar-record-panel .stella-inspector-body { padding:24px 20px; }
+  .stella-calendar-record-panel .stella-inspector-actions { padding:16px 20px; }
+}
+
+@container stella-calendar (min-width:620px) and (max-width:800px) {
+  .stella-time-grid { min-width:calc(56px + var(--stella-day-count) * 80px); }
+}
+
+.stella-task-workspace { min-width:0; container-type:inline-size; container-name:stella-tasks; }
+.stella-task-workspace [data-record-selected] { background:var(--stella-brand-soft); box-shadow:inset 3px 0 var(--stella-brand); }
+.stella-calendar-record-panel .stella-task-detail { width:100%; min-width:0; margin:0; }
+.stella-calendar-record-panel .stella-task-breadcrumbs { gap:4px; margin-bottom:16px; }
+.stella-calendar-record-panel .stella-task-breadcrumbs > button { padding:3px 6px; font-size:12px; }
+.stella-calendar-record-panel .stella-task-detail .stella-task-group { margin-top:18px; }
+.stella-calendar-record-panel .stella-task-progress progress { display:block; width:100%; margin-top:8px; accent-color:var(--stella-brand); }
+.stella-calendar-record-panel .stella-task-description { margin:12px 0 0; }
+.stella-calendar-panel-editor .stella-editor > h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.stella-calendar-panel-editor .stella-task-editor .stella-calendar-form-card { border:1px solid var(--dsw-alias-border-l3); padding:16px; }
+@container stella-tasks (max-width:760px) {
+  .stella-tasks-page { display:block; padding:16px; }
+  .stella-task-sidebar { position:static; height:auto; min-height:0; padding:8px; margin-bottom:16px; border:0; border-radius:10px; }
+  .stella-task-sidebar .stella-organizer-source,.stella-task-sidebar .stella-organizer-source ul,.stella-task-sidebar .stella-organizer-source-row { display:contents; }
+  .stella-task-sidebar .stella-organizer-source h3 { display:none; }
+  .stella-task-sidebar nav { display:flex; overflow-x:auto; gap:6px; padding:3px; }
+  .stella-task-sidebar nav > button,.stella-task-sidebar .stella-organizer-source-row > button { width:auto; flex:none; min-height:34px; padding:7px 10px; }
+  .stella-task-sidebar nav > button > span,.stella-task-sidebar .stella-organizer-source-row > button > span { white-space:nowrap; }
+  .stella-task-main { margin:0; padding:20px 16px 16px; }
+  .stella-task-list-heading h2 { font-size:22px; }
+  .stella-task-tabs { gap:18px; }
+  .stella-task-tabs [role=tab] { flex:none; }
+  .stella-task-quick-add { gap:4px; }
+}
+
+.stella-task-group > .stella-notice { margin:12px 0; }
+.stella-task-children > .stella-notice { margin:16px; }
+.stella-task-delete-confirm > .stella-notice { margin:16px 0; }
+.stella-calendar-panel-editor > .stella-notice { order:-1; margin:16px 24px 0; flex:none; }
+.stella-calendar-panel-editor .stella-editor > .stella-notice { margin:16px 24px; flex:none; }
+.stella-form-grid > .stella-notice { grid-column:1 / -1; }
+.stella-task-children[data-notice-only] { border:0; background:transparent; overflow:visible; }
+.stella-task-children[data-notice-only] > .stella-notice { margin:0; }
+
+.stella-page-feedback:not(:empty) { display:grid; gap:10px; padding-top:12px; padding-bottom:12px; }
+.stella-page-feedback .stella-notice { margin:0; }
+.stella-hub-feedback .stella-notice { margin-bottom:12px; }
+.stella-calendar-main > .stella-notice { margin-bottom:12px; }
+.stella-quick-chat > .stella-notice { margin:12px 0; }
+.stella-briefing-source-settings .stella-notice { margin:12px 0; }
+.stella-business > .stella-notice { margin:16px 24px; }
+.stella-mode-bar > .stella-mode-notice { padding:3px 8px; font-size:11px; }
+.stella-mode-notice > svg { width:14px; height:14px; }

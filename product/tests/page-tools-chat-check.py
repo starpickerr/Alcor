@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright, expect
 from plugin_check import ROOT, CLI, PACK, NativeProvider
 from web_check import open_secretary
 import official_desktop_check as desktop
+PACK = Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK', str(PACK)))
 surface = runpy.run_path(str(ROOT / 'product/tests/bill-import-chat-check.py'))['surface']
 
 
@@ -40,15 +41,16 @@ class Provider(BaseHTTPRequestHandler):
         if 'PAGE_TOOL_INTEGRATION' in content and not subtask and 'stella_business' in names:
             phase = type(self).phase
             if data['messages'][-1]['role'] == 'tool':
-                result = json.loads(data['messages'][-1]['content'])
+                try:
+                    result = json.loads(data['messages'][-1]['content'])
+                except json.JSONDecodeError as error:
+                    raise AssertionError(f'Invalid tool response at phase {phase}: {data["messages"][-1]["content"]}') from error
                 assert not result.get('isError'), (phase, result)
                 value = result.get('result', result)
-                if phase in (1, 4, 11, 14): type(self).state[{1: 'task', 4: 'event', 11: 'schedule', 14: 'job'}[phase]] = value
+                if phase in (1, 4, 11): type(self).state[{1: 'task', 4: 'event', 11: 'schedule'}[phase]] = value
                 if phase == 13:
                     assert any(row['id'] == self.state['schedule']['id'] and row['status'] == 'paused' for row in value), value
-                if phase == 15 and any(row['status'] in ('starting', 'running') for row in value):
-                    import time; time.sleep(.2)
-                else: phase += 1
+                phase += 1
                 type(self).phase = phase
             state = self.state
             calls = [
@@ -66,8 +68,6 @@ class Provider(BaseHTTPRequestHandler):
                 ('automation', 'create', {'title': 'Synthetic page schedule', 'prompt': '回顾事务', 'timing': {'kind': 'at', 'at': '2099-11-06T00:00:00Z'}}),
                 ('automation', 'edit', {'id': state.get('schedule', {}).get('id', ''), 'action': 'update', 'patch': {'active': False}}),
                 ('automation', 'list', {}),
-                ('agent_hub', 'start_job', {'title': 'Synthetic page collaboration', 'prompt': 'Return Synthetic task result.'}),
-                ('agent_hub', 'list_jobs', {}),
                 (None, 'stella_generate_briefing', {}),
                 ('automation', 'history', {'id': state.get('schedule', {}).get('id', ''), 'limit': 10}),
             ]
@@ -126,9 +126,10 @@ def main():
                 with (artifacts / 'install.log').open('w') as log: subprocess.run(['node', str(CLI), 'plugin', '--profile', 'compatibility', 'add', str(PACK), '--ignore-scripts'], env=env, cwd=home, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120)
             with surface(playwright, home, env, artifacts, native) as (page, query, errors):
                 open_secretary(page)
+                query('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'stella_tasks', 'accountId': 'local'}]}}})
                 before = set(page.locator('[data-row-key^="session:"]').evaluate_all('rows => rows.map(row => row.dataset.rowKey)'))
                 page.locator('.stella-sidebar-chat').click()
-                composer = page.locator('[data-composer-input][contenteditable="true"]'); composer.fill('PAGE_TOOL_INTEGRATION 请按要求操作事务、日程、账单、简报、协作和自动化。'); composer.press('Enter')
+                composer = page.locator('[data-composer-input][contenteditable="true"]'); composer.fill('PAGE_TOOL_INTEGRATION 请按要求操作事务、日程、账单、简报和自动化。'); composer.press('Enter')
                 import time
                 deadline = time.monotonic() + 15; new = []
                 while not new and time.monotonic() < deadline:
@@ -144,12 +145,12 @@ def main():
                 assert any(row['title'] == 'Updated page event' for row in saved['records'])
                 assert any(row['title'] == 'Synthetic special date' for row in saved['records'])
                 assert any(row['title'] == '=SUM(1,2)' for row in saved['records'])
-                assert any(row['title'] == 'Synthetic page collaboration' and row['status'] == 'completed' for row in saved['jobs'])
+                assert saved['jobs'] == [], 'Stella no longer owns AgentHub jobs'
                 assert (docs / 'result.csv').is_file() and "'=SUM(1,2)" in (docs / 'result.csv').read_text()
-                for title in ('事务', '日程', '账单', '简报', 'Agent 协作', '自动化'):
+                for title in ('事务', '日程', '账单', '简报', '自动化'):
                     page.get_by_role('button', name=title, exact=True).click(); page.screenshot(path=str(artifacts / f'page-{title}.png'))
                 assert not errors, errors
-        print('PASS: model directly invokes all six page domains, imports dates and exports bills under DSH policy; shared saved records, collaboration and automation persist')
+        print('PASS: model directly invokes five page domains, imports dates and exports bills under DSH policy; shared saved records and automation persist')
     finally: server.shutdown()
 
 
