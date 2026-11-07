@@ -184,7 +184,7 @@ class Business:
         self.meta.commit()
         return document
 
-    def generated_briefing(self, record, request_id, sources, submissions=None, run_at=None, configurations=None, rules_snapshot=None, baseline=None):
+    def generated_briefing(self, record, request_id, sources, submissions=None, run_at=None, configurations=None, rules_snapshot=None, baseline=None, validate_only=False):
         from business.briefing.domain.generator import AgentBriefingGenerator, NeedModel, rules_document
         from uuid import uuid5, NAMESPACE_URL
         stamp = run_at or now()
@@ -265,12 +265,20 @@ class Business:
             if old_thread_ids == new_ids and old_thread_ids <= preserved.keys() and card.get('payload', {}).get('_briefing_report'):
                 reports[card['source_item_id']] = card['payload']['_briefing_report']
         try:
-            draft = AgentBriefingGenerator(submissions or []).generate(list(rows.values()), rules, briefing_date=record['date'], window_start=start, window_end=stamp, preserved_decisions=preserved, preserved_reports=reports)
+            draft = AgentBriefingGenerator(submissions or [], global_mode=True).generate(list(rows.values()), rules, briefing_date=record['date'], window_start=start, window_end=stamp, preserved_decisions=preserved, preserved_reports=reports)
         except NeedModel as pending:
             return {'model': pending.request, 'runAt': stamp}
+        if validate_only:
+            return {'validated': True}
         same_scopes = {key: value.get('scope') for key, value in detail.get('briefing', {}).get('source_windows', {}).items()} == {row['source'] + ':' + (row.get('account_id') or 'default'): row['scope'] for row in normalized}
         if same_scopes and set(rows) == set(preserved) == {row['id'] for row in detail.get('mail', [])} and len(reports) == len(draft['items']) and detail.get('briefing', {}).get('body'):
             draft['body'] = detail['briefing']['body']
+        run_row = self.meta.execute('SELECT document FROM briefing_runs WHERE id=?', (request_id,)).fetchone()
+        if run_row:
+            run = json.loads(run_row[0])
+            if run['phase'] not in ('collecting', 'model'):
+                raise ValueError('简报任务已结束，不能提交迟到结果。')
+            self.briefing_runs.assert_current(run)
         result = jsonable(self.briefing.run_pipeline(briefing_date=record['date'], sources=normalized, draft=draft, run_at=stamp))
         document = {**record, 'id': request_id, 'body': result['briefing']['body'], 'title': result['briefing']['title'], 'revision': 1, 'archived': False, 'createdAt': stamp, 'updatedAt': stamp,
                     'business': {'briefingId': result['briefing']['id'], 'revision': result['revisions'][0]['number'], 'snapshot': result}}

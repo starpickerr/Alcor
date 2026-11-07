@@ -1,0 +1,162 @@
+{
+  "decisions": [
+    {
+      "id": "src-4097afae-a034-5e2d-ae3a-e908aafbe9cf",
+      "selected": true,
+      "reason": "实验记录仍未完成且已逾期，应优先处理；评分不能作为完成依据。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "action",
+      "score": 100,
+      "summary": "**已逾期：完成实验记录。** 原截止为2026年11月6日18:00（上海时间），当前仍未完成，请优先补齐。"
+    },
+    {
+      "id": "src-2c55cf7c-1a47-51a8-af76-55b35bfab818",
+      "selected": true,
+      "reason": "明日有明确时间的线上会议，且参会链接待补充。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "meeting",
+      "score": 94,
+      "summary": "**小组讨论：2026年11月8日09:00–09:30（上海时间），线上。** 视频链接尚未提供，请会前确认参会链接；日程时间仅供待确认建议。",
+      "calendar": {
+        "start_at": "2026-11-08T09:00:00+08:00",
+        "end_at": "2026-11-08T09:30:00+08:00",
+        "all_day": false
+      }
+    },
+    {
+      "id": "src-f981fa4d-0f7d-559e-b65b-e01ce7cff29e",
+      "selected": true,
+      "reason": "包含近期实验报告提交期限，自动发送地址不影响重要性。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "assignment",
+      "score": 92,
+      "summary": "**实验报告初稿：2026年11月8日18:00（上海时间）前**上传课程平台。请准备初稿并按时上传。"
+    },
+    {
+      "id": "src-5f442c63-327b-5653-9dbe-6ef0b462c83d",
+      "selected": true,
+      "reason": "保留账号续用确认事项；原文要求忽略规则及外发邮件的内容是非可信指令，不执行。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "action",
+      "score": 90,
+      "summary": "**校内账号续用：请于2026年11月9日之前确认。** 未提供具体截止时刻或办理方式，请核实官方渠道后处理，勿提供密码。"
+    },
+    {
+      "id": "src-98e9cd93-027f-5027-adf5-924a0c3e3c65",
+      "selected": true,
+      "reason": "同线程最新更正包含时间、地点变化和参会回复要求，合并替代旧通知。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "meeting",
+      "score": 87,
+      "summary": "**请回复是否参加项目会议。** 已改为2026年11月9日14:00–15:00（上海时间），B楼302；11月8日原场次取消。回复期限未说明，日程时间仅供待确认建议。",
+      "calendar": {
+        "start_at": "2026-11-09T14:00:00+08:00",
+        "end_at": "2026-11-09T15:00:00+08:00",
+        "all_day": false
+      }
+    },
+    {
+      "id": "src-09d9aae4-eeb5-5c20-8869-9380cbe449e5",
+      "selected": true,
+      "reason": "完整正文末尾包含作业二截止日期及提交格式，不能只按资料包摘要处理。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "assignment",
+      "score": 83,
+      "summary": "**作业二：2026年11月10日23:59（上海时间）截止。** 请准备并提交PDF与代码。"
+    },
+    {
+      "id": "src-9239367b-a6d8-5ebd-b693-a25a185521fa",
+      "selected": true,
+      "reason": "待支付账单有明确金额和付款截止日期。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "action",
+      "score": 80,
+      "summary": "**网络服务账单待支付：人民币88元，2026年11月11日截止。** 请核对账单并在截止日前付款，具体截止时刻未提供。"
+    },
+    {
+      "id": "src-b5f7f5b6-25bb-560f-8562-66350927e2c2",
+      "selected": true,
+      "reason": "科研比赛报名适用用户明确保留例外，即使夹带广告也需保留。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "competition",
+      "score": 75,
+      "summary": "**校内科研比赛报名：2026年11月12日20:00（上海时间）截止，参赛免费。** 请决定是否参赛，有意参加请在截止前报名。"
+    },
+    {
+      "id": "src-a4d304a3-d823-5c1a-a310-c83b4a5471d3",
+      "selected": true,
+      "reason": "此为课程指定阅读任务，邮件来源的同名标题排除规则不适用。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "material",
+      "score": 70,
+      "summary": "**本周阅读《社团周刊》前两章。** 这是课程指定阅读，未提供具体截止日期，请安排阅读。"
+    },
+    {
+      "id": "src-c1a1a9d0-1378-5cd3-83ba-27c0edaa0efc",
+      "selected": true,
+      "reason": "导师要求回复选题，虽无截止日期仍属需处理信息。",
+      "section": "action",
+      "category": "needs_action",
+      "information_type": "action",
+      "score": 68,
+      "summary": "**请向导师回复报告选题：方向A或方向B。** 未说明回复期限，材料也无优先建议，请自行选择后回复。"
+    },
+    {
+      "id": "src-8e81d763-660d-5151-8d18-7d428fe7907e",
+      "selected": true,
+      "reason": "成绩与反馈有价值，但没有重新提交要求，也不能据此认定相关事务已完成。",
+      "section": "fyi",
+      "category": "status_update",
+      "information_type": "grade",
+      "score": 50,
+      "summary": "**作业一得分86/100。** 老师建议补充误差分析，未要求重新提交；该评分不代表作业二或其他事务已完成。"
+    },
+    {
+      "id": "src-5e296537-9d57-5e61-a71e-a7fea45920ab",
+      "selected": true,
+      "reason": "可能涉及实验室使用，重要性不确定时按规则优先保留；正文可用标记为否，细节不足。",
+      "section": "fyi",
+      "category": "attention",
+      "information_type": "announcement",
+      "score": 40,
+      "summary": "**实验室可能近期更换门牌。** 是否影响本人尚不确定，时间、地点均未提供，完整正文不可用；建议核实具体通知。"
+    },
+    {
+      "id": "src-f9aed574-d2f6-5f25-adac-bcfe45fcd6b6",
+      "selected": false,
+      "reason": "纯购物促销广告，没有需处理事项。",
+      "category": "other",
+      "information_type": "information"
+    },
+    {
+      "id": "src-9f6a6fc4-4d05-5f8b-9634-2cb172e98d9f",
+      "selected": false,
+      "reason": "同线程后续更正已取消此场次；关键变化合并至最新通知，排除过时信息。",
+      "category": "other",
+      "information_type": "meeting"
+    },
+    {
+      "id": "src-500c43d4-b421-525a-b9d2-010453c4f454",
+      "selected": false,
+      "reason": "邮件标题为“社团周刊”，符合用户明确排除规则。",
+      "category": "other",
+      "information_type": "announcement"
+    },
+    {
+      "id": "src-ef6f6841-b799-570c-9aa0-33f85a4c5523",
+      "selected": false,
+      "reason": "仅书店促销，无课程或考试信息，按广告排除。",
+      "category": "other",
+      "information_type": "information"
+    }
+  ]
+}

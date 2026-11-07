@@ -21,10 +21,6 @@
     - id: stella-ui-settings-models
       name: './vendor/ui-settings-models/lib/index.js'
 - insert:
-    - id: stella-spawn
-      name: '@deepseek-ai/dsh-subagent-spawn-in-process'
-      config:
-        providerName: stella-spawn
     - id: stella-organizer
       name: '@stella/secretary/organizer'
     - id: stella-secretary

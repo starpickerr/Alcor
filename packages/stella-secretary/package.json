@@ -1,6 +1,6 @@
 {
   "name": "@stella/secretary",
-  "version": "0.1.57",
+  "version": "0.1.58",
   "type": "module",
   "license": "MIT",
   "stella": { "agentHubDetached": true },
@@ -55,7 +55,6 @@
     "react": "*",
     "@deepseek-ai/dsh-home-paths": "*",
     "@deepseek-ai/dsh-mcp-client": "*",
-    "@deepseek-ai/dsh-subagent-spawn-in-process": "*",
     "@deepseek-ai/dsh-storage-domain": "*",
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/dsh-typert-protocol": "*",
@@ -83,9 +82,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-mcp-client": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-subagent-spawn-in-process": {
       "optional": true
     },
     "@deepseek-ai/dsh-storage-domain": {

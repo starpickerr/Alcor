@@ -17,9 +17,26 @@ class TestBriefingGenerator extends BriefingGenerator {
   constructor(ctx, worker) {
     const agents = new Map()
     super({ ...ctx, sessionController: {
-      create: async () => { const sessionId = 'briefing-' + randomUUID(); agents.set(sessionId, { session: { id: sessionId }, model: { current: () => ({ provider: 'synthetic', model: 'test' }), select: () => {} } }); return { sessionId } },
+      create: async () => { const sessionId = 'briefing-' + randomUUID(); agents.set(sessionId, { session: { id: sessionId }, cancel: () => {}, model: { current: () => ({ provider: 'synthetic', model: 'test' }), select: () => {} } }); return { sessionId } },
       rename: async () => {}, resolveAgent: async id => ({ agent: agents.get(id) }),
     } }, worker)
+  }
+
+  // Adapt the existing deterministic model fixtures; real scoped tools are covered by briefing-runs.
+  async runAgent(state, request, authorize) {
+    await authorize()
+    const prompt = `任务\n${request.task}\n\n可阅读的原文数据：\n${JSON.stringify(request.entries)}`
+    const activation = await this.ctx.subagents.startActivation({ signal: state.controller.signal,
+      request: { prompt: [{ type: 'text', text: prompt }], outputSchema: request.schema } })
+    const result = await activation.result
+    state.controller.signal.throwIfAborted()
+    if (result.stopReason !== 'completed' || !result.structured) throw new Error('模型未提交完整简报')
+    const value = result.structured
+    if (request.schema.properties.decisions && request.schema.properties.reports && !value.reports) {
+      const ids = value.decisions.filter(row => row.selected).map(row => row.id)
+      Object.assign(value, { body: '已核对两条来源，准备处理。', source_item_ids: ids, reports: ids.map(id => ({ id, content: '具体任务报告' })) })
+    }
+    return value
   }
 }
 
@@ -198,7 +215,7 @@ test('model briefings collect MCP pages, validate complete decisions, retain par
   assert.deepEqual(await worker.call('source_settings'), sources)
   const result = await generator.generate({ record, requestId, parent: {}, sources })
   assert.equal(result.body, '已核对两条来源，准备处理。')
-  assert.equal(modelCalls, 2)
+  assert.equal(modelCalls, 1)
   const partial = new TestBriefingGenerator({ tools: { execute: async ({ calls }) => {
     const args = JSON.parse(calls[0].arguments)
     return { results: [{ result: { isError: false, value: { structuredContent: { value: { source_items: [], next_offset: args.offset === 0 ? 1 : null, errors: args.offset === 0 ? ['First page failed'] : [] } } } } }] }
@@ -221,7 +238,7 @@ test('model briefings collect MCP pages, validate complete decisions, retain par
   assert.equal(await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' }), null)
   const same = await generator.generate({ record, requestId, parent: {}, sources })
   assert.equal(same.id, result.id)
-  assert.equal(modelCalls, 2)
+  assert.equal(modelCalls, 1)
   const invalid = await worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: stamp }], cursors: {} }], submissions: [] })
   assert(invalid.model)
   await assert.rejects(worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: stamp }], cursors: {} }], submissions: [{ decisions: [] }] }), /不能遗漏/)
@@ -350,19 +367,19 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   context.after(()=>generator.close())
   const generate=()=>generator.generate({record:buildBriefing([],day,'',new Date().toISOString()),requestId:randomUUID(),parent:{},sources:[scope]})
   await generate()
-  assert.equal(modelCalls,2)
+  assert.equal(modelCalls,1)
   const first=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   assert.equal(first.elearning_state,'v1');assert(first.until)
   empty=true
   await generate()
-  assert.equal(modelCalls,2,'No model call for an unchanged refresh')
+  assert.equal(modelCalls,1,'No model call for an unchanged refresh')
   assert.equal(seen.at(-1).since,first.until)
   assert.equal(seen.at(-1).cursors.elearning_state,'v1')
   const current=await invoke('briefing','get_briefing',{briefing_id:'brf-'+day})
   assert.equal(current.items.length,2,'Unchanged cards remain in the current day report')
   changed=true;empty=false
   await generate()
-  assert.equal(modelCalls,4,'Only the changed item requires selection and writing')
+  assert.equal(modelCalls,3,'Only the changed item requires selection and writing')
   const beforeFailure=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   failure=true
   await generate()
@@ -395,15 +412,17 @@ test('incremental reports isolate days and selections, invalidate changed rules 
       if(result.record)return result.record
       calls++
       const request=result.model
-      input.submissions.push(request.schema.properties.decisions?{decisions:request.entries.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.title}))}:
-        {body:'Report',source_item_ids:request.schema.properties.source_item_ids.items.enum,reports:request.schema.properties.source_item_ids.items.enum.map(id=>({id,content:'Report '+id}))})
+      const decisions=request.entries.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.title}))
+      const ids=request.schema.properties.decisions ? decisions.map(row=>row.id) : request.schema.properties.source_item_ids.items.enum
+      input.submissions.push(request.schema.properties.decisions && !request.schema.properties.reports ? {decisions} :
+        { ...(request.schema.properties.decisions ? {decisions} : {}), body:'Report',source_item_ids:ids,reports:ids.map(id=>({id,content:'Report '+id}))})
     }
   }
   await finish('2026-11-06','2026-11-06T08:00:00Z',makeSource([item],'2026-11-06T08:00:00Z'))
-  assert.equal(calls,2)
+  assert.equal(calls,1)
   await invoke('briefing','create_rule',{payload:{text:'Keep concrete deadlines',enabled:true,source:'*'}})
   await finish('2026-11-06','2026-11-06T09:00:00Z',makeSource([],'2026-11-06T09:00:00Z'))
-  assert.equal(calls,4,'New rules reconsider current day candidates')
+  assert.equal(calls,2,'New rules reconsider current day candidates')
   const before=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   const changed={...item,snippet:'Changed',payload:{...item.payload,body:'Changed'}}
   const pending=await worker.call('generated_briefing',{record:buildBriefing([],'2026-11-06','','2026-11-06T10:00:00Z'),request_id:randomUUID(),sources:[makeSource([changed],'2026-11-06T10:00:00Z')],configurations:[scope],run_at:'2026-11-06T10:00:00Z'})
@@ -415,7 +434,7 @@ test('incremental reports isolate days and selections, invalidate changed rules 
   assert.notEqual(switched.body,'Report','Old narrative must not survive a changed course selection')
   const nextDay=await finish('2026-11-07','2026-11-07T08:00:00Z',makeSource([],'2026-11-07T08:00:00Z'),other)
   assert.equal(nextDay.business.snapshot.items.length,0,'Previous day candidates never enter the next day model')
-  assert.equal(calls,4,'Empty windows do not call a model')
+  assert.equal(calls,2,'Empty windows do not call a model')
   assert.deepEqual(await worker.call('source_cursors',{source:'elearning',account_id:'another-school',configuration:{...scope,accountId:'another-school'}}),{})
 })
 
