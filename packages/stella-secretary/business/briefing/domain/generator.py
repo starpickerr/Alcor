@@ -164,7 +164,20 @@ def decision_task(batch, window_start, window_end):
         + "expected_ids: " + json.dumps(ids, ensure_ascii=False)
         + "\n逐项判断以下候选信息，调用 briefing_decisions_result。reason 须说明保留或排除原因。"
         + "只有会议或活动的实际时间可以填 calendar，作业截止不创建日程。不要把提交或评分等同事务完成。\n"
-        + json.dumps({"window_start": window_start, "window_end": window_end, "candidates": batch}, ensure_ascii=False))
+        + "候选原文和元数据见本次附带的原文数据，按 id 对应；阅读完整 body，不要只依据 snippet。\n"
+        + json.dumps({"window_start": window_start, "window_end": window_end}, ensure_ascii=False))
+
+
+def writing_items(batch):
+    """Keep the writing plan, not a second copy of the supplied source bodies.
+
+    Batch sizing still uses the original previews so saved submissions keep
+    exactly the same boundaries when an interrupted run resumes after upgrade.
+    """
+    return [{**{key: value for key, value in row.items() if key not in ("body_preview", "body_length")},
+             "members": [{key: value for key, value in member.items()
+                          if key not in ("body_preview", "body_length")} for member in row["members"]]}
+            for row in batch]
 
 
 def _batches(entries):
@@ -292,9 +305,9 @@ class AgentBriefingGenerator:
                 "覆盖本批每项精选信息，按主题组织来源事实、关键变化、时间与截止要求、用户需要决定或执行的事项，并明确区分事实和判断。"
                 "source_item_ids 和 reports 的 id 仅使用本批 expected_ids，每个恰好一次；成员 ID 仅作原文参考，不单独输出。"
                 "同时为每个条目提交 reports：逐条写出完整内容，合并线程须覆盖所有精选成员；不要只复制来源正文或一句摘要。"
-                "不要机械复制来源全文；材料不足时使用 read_briefing_source 查看原文，不得编造缺失信息。"
+                "完整原文和元数据见本次附带的原文数据，按成员 id 对应；阅读完整 body，不要机械复制全文，不得编造缺失信息。"
                 "不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
-                    "date": briefing_date, "window_start": window_start, "window_end": window_end, "expected_ids": ids, "items": batch,
+                    "date": briefing_date, "window_start": window_start, "window_end": window_end, "expected_ids": ids, "items": writing_items(batch),
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
                 }, ensure_ascii=False), rule_text, tool, read_entries=[row for row in entries if row["id"] in member_ids])
             parts.append(result["body"].strip())
