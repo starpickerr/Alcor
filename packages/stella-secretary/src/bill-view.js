@@ -21,6 +21,16 @@ export function periodStatus(report, today = localDate()) {
 }
 export const shareText = basisPoints => `${(basisPoints / 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 })}%`
 
+export function donutArc(start, share) {
+  if (share <= 0) return ''
+  if (share >= 100) return 'M 80 22 A 58 58 0 1 1 80 138 A 58 58 0 1 1 80 22'
+  const point = percent => {
+    const angle = percent * Math.PI / 50
+    return `${80 + 58 * Math.sin(angle)} ${80 - 58 * Math.cos(angle)}`
+  }
+  return `M ${point(start)} A 58 58 0 ${share > 50 ? 1 : 0} 1 ${point(start + share)}`
+}
+
 export function billValues(record) {
   const now = new Date()
   return { name: record?.title ?? '', amount: record?.amount ?? '', currency: record?.currency ?? 'CNY',

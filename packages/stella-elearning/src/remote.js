@@ -1,3 +1,4 @@
+import { checkMessages } from '../../stella-secretary/src/elearning-status.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 
@@ -6,7 +7,7 @@ export const schemas = {
   elearningAccount: [z.object({}).strict(), state],
   saveElearningAccount: [z.object({ username: z.string().trim().min(1).max(160), password: z.string().min(1).max(4096) }).strict(), state],
   removeElearningAccount: [z.object({}).strict(), state],
-  checkElearning: [z.object({}).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'login_required', 'query_failed']), courseCount: z.number().int().nonnegative().optional() }).strict()],
+  checkElearning: [z.object({}).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'login_required', 'query_failed']), courseCount: z.number().int().nonnegative().optional(), code: z.enum(Object.keys(checkMessages)).optional() }).strict()],
 }
 export const remote = createTypertRemoteInfo({ package: '@stella/elearning', methods: Object.fromEntries(Object.entries(schemas).map(([name, [request, result]]) => [`stellaSchool/${name}`, {
   service: 'stellaSchool', invocation: { kind: 'direct' },

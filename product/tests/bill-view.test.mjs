@@ -21,3 +21,16 @@ test('bill display keeps exact large amounts, currency scales, periods and histo
   const large = { ...record, amount: '900719925474109.12' }
   assert.equal('amount_minor' in billPayload(billValues(large), large), false)
 })
+
+test('donut arcs draw separate hit targets, including a complete single-category ring', async () => {
+  const { donutArc } = await import('../../packages/stella-secretary/src/bill-view.js')
+  assert.equal(donutArc(0, 0), '')
+  const quarter = donutArc(0, 25).split(' ').map(value => Number(value))
+  assert.equal(quarter[1], 80)
+  assert.equal(quarter[2], 22)
+  assert.equal(quarter[8], 1)
+  assert.equal(quarter[9], 138)
+  assert(Math.abs(quarter[10] - 80) < 1e-10)
+  assert(donutArc(25, 60).includes('A 58 58 0 1 1'))
+  assert.equal((donutArc(0, 100).match(/ A /g) || []).length, 2)
+})

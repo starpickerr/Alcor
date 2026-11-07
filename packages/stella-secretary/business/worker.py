@@ -35,20 +35,17 @@ class Business:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.entries = {name: importlib.import_module(f'business.{name}.entry')
-                        for name in ('tasks', 'calendar', 'bills', 'briefing', 'agent_hub')}
+                        for name in ('tasks', 'calendar', 'bills', 'briefing')}
         from business.tasks.domain.service import TodoService
         from business.calendar.domain.service import CalendarService
         from business.bills.domain.service import BillsService
         from business.bills.domain.store import BillStore
         from business.briefing.domain.service import BriefingService
         from business.briefing.domain.store import BriefingStore
-        from business.agent_hub.domain.service import AgentHubService
-        from business.agent_hub.domain.store import AgentHubStore
         self.tasks = TodoService(self.root / 'tasks.sqlite3')
         self.calendar = CalendarService(self.root / 'calendar.sqlite3')
         self.bills = BillsService(BillStore(self.root / 'bills.sqlite3'))
         self.briefing = BriefingService(BriefingStore(self.root / 'briefing.sqlite3'), self.tasks, self.calendar)
-        self.agent_hub = AgentHubService(AgentHubStore(self.root / 'agent-hub.sqlite3'))
         for name, entry in self.entries.items():
             entry._service = lambda request, name=name: getattr(self, name)
         self.meta = sqlite3.connect(self.root / 'projection.sqlite3')
@@ -62,14 +59,6 @@ class Business:
         from business.briefing.runs import BriefingRuns
         self.briefing_runs = BriefingRuns(self, jsonable)
 
-        with self.agent_hub.store._connect() as db:
-            tasks = [json.loads(row[0]) for row in db.execute('SELECT document_json FROM hub_tasks')]
-        for task in tasks:
-            for step in task['steps']:
-                for attempt in step['attempts']:
-                    if attempt['status'] in ('queued', 'running', 'cancel_requested', 'waiting_approval', 'interrupted'):
-                        self.agent_hub.sync_attempt(task['taskId'], step['stepId'], attempt['executionId'], {
-                            'status': 'outcome_unknown', 'summary': '宿主曾停止，执行结果未知；请核对原结果后显式重试。'})
 
     def invoke(self, domain, method, arguments=None, request_id=None):
         descriptor = next((item for entry in [self.entries.get(domain)] if entry for group in entry.SERVICE_DESCRIPTORS for item in group['methods'] if item['name'] == method), None)
@@ -141,10 +130,10 @@ class Business:
         for item in self.tasks.list_todos_focus():
             if item.get('series_id'):
                 field = 'last_completed_occurrence' if item['status'] == 'completed' else 'current_occurrence'
-                focus.setdefault(item['series_id'], {})[field] = {key: item[key] for key in ('id', 'due_on', 'status', 'completed_at')}
+                focus.setdefault(item['series_id'], {})[field] = {**{key: item[key] for key in ('id', 'due_on', 'status', 'completed_at')},'apple_history':bool(item.get('apple_history'))}
         for row in self.tasks.list_todos():
-            if row['repeat_frequency'] != 'none' and row['source_type'] != 'apple_reminder':
-                row = {**row, 'current_occurrence': None, **focus.get(row['id'], {})}
+            if row['repeat_frequency'] != 'none' and (row['source_type'] != 'apple_reminder' or row.get('native_managed')):
+                row = {**row, 'current_occurrence': ({key:row[key] for key in ('id','due_on','status','completed_at')} if row.get('native_managed') else None), **focus.get(row['id'], {})}
             records.append(self._metadata({'kind': 'task', 'id': row['id'], 'title': row['title'], 'details': row['notes'],
                                           'due': row['due_on'], 'status': 'done' if row['status'] in ('completed', 'cancelled') else 'open'}, row))
         for row in self.calendar.list_events():
@@ -428,6 +417,7 @@ class Business:
         if domain not in ('tasks', 'calendar'):
             raise ValueError('Unknown Apple peer domain')
         allowed = {item['name'] for descriptor in self.entries[domain].SERVICE_DESCRIPTORS for item in descriptor['methods']}
+        allowed.update({'apple_bind','apple_operations','apple_operation_error','apple_finish_operation','apple_apply_category','apple_apply_metadata','apple_restore_item','apple_apply_item','apple_place_item','apple_exclude','apple_record_completion','apple_remove_item','apple_remove_category','apple_restore_category'})
         if method not in allowed:
             raise ValueError('Unknown Apple peer operation')
         return jsonable(getattr(getattr(self, domain), method)(*(args or []), **(kwargs or {})))

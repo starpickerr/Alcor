@@ -10,6 +10,7 @@ from business.calendar.domain.service import CalendarService  # noqa: E402
 
 # (name, effect, permission, idempotent)
 _METHODS = (
+    ("cancel_apple_operation", "domainWrite", "calendar.write", True),
     ("categories", "query", "calendar.read", False),
     ("get_category", "query", "calendar.read", False),
     ("get_event", "query", "calendar.read", False),
@@ -65,6 +66,8 @@ def _service(invoke_params: dict[str, Any]) -> CalendarService:
 
 
 def _dispatch(svc: CalendarService, method: str, p: dict[str, Any]) -> Any:
+    if method == "cancel_apple_operation":
+        return svc.cancel_apple_operation(p["operation_id"])
     if method == "categories":
         return svc.categories()
     if method == "get_category":
@@ -74,7 +77,7 @@ def _dispatch(svc: CalendarService, method: str, p: dict[str, Any]) -> Any:
     if method == "update_category":
         return svc.update_category(p["id"], dict(p.get("patch") or {}))
     if method == "delete_category":
-        svc.delete_category(p["id"])
+        return svc.delete_category(p["id"]) or {"deleted":p["id"]}
         return {"deleted": True, "id": p["id"]}
     if method == "set_event_category":
         return svc.set_event_category(p["id"], p.get("category_id"))
@@ -89,7 +92,7 @@ def _dispatch(svc: CalendarService, method: str, p: dict[str, Any]) -> Any:
     if method == "update_event":
         return svc.update_event(p["id"], dict(p.get("patch") or {}))
     if method == "delete_event":
-        svc.delete_event(p["id"])
+        return svc.delete_event(p["id"],p.get("scope"),p.get("occurrence_on")) or {"deleted":p["id"]}
         return {"deleted": True, "id": p["id"]}
     if method == "upsert_external_event":
         return svc.upsert_external_event(

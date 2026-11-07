@@ -21,6 +21,7 @@ CONTRACT = "stella.tasks@1"
 
 # name -> (effect, permission, idempotent, ordered parameter names)
 METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
+    "cancel_apple_operation": ("domainWrite", "tasks.write", True, ("operation_id",)),
     "get_todo": ("query", "tasks.read", False, ("todo_id",)),
     "list_todos": ("query", "tasks.read", False, ("start", "end", "include_completed")),
     "list_todos_focus": ("query", "tasks.read", False, ("today",)),
@@ -179,7 +180,7 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         else:
             value = getattr(svc, method)(**params)
         if method == "delete_todo":
-            value = {"deleted": True, "id": params["todo_id"]}
+            value = value or {"deleted":True,"id":params["todo_id"]}
         elif method == "sync_briefing_facts":
             value = list(value)
     except KeyError as exc:

@@ -1,6 +1,6 @@
 {
   "name": "@stella/elearning",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "复旦 eLearning连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",

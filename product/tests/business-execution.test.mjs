@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
-import { HubCoordinator } from '../../packages/stella-organizer/src/hub.js'
+import { HubWorker } from '../../packages/stella-agent-hub/src/worker.js'
+import { HubCoordinator } from '../../packages/stella-agent-hub/src/hub.js'
 import { ReminderDelivery } from '../../packages/stella-organizer/src/reminders.js'
 import { BriefingGenerator } from '../../packages/stella-organizer/src/briefing.js'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -25,7 +26,9 @@ class TestBriefingGenerator extends BriefingGenerator {
 async function fixture(context) {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-execution-'))
   const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
-  const worker = new BusinessWorker(directory, options)
+  const business = new BusinessWorker(directory, options)
+  const hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
+  const worker = {call:(action,input={}) => action==='invoke' && input.domain==='agent_hub' ? hub.call(action,input) : business.call(action,input),close:async()=>{await hub.close();await business.close()}}
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (domain, method, args = {}) => worker.call('invoke', { domain, method, arguments: args })
   return { directory, options, worker, invoke }
@@ -77,6 +80,7 @@ test('Hub executes dependency joins, captures model/persona, and retries a faile
     { stepId: 'a', title: 'Research A', participantId: task.participants[0].participantId, dependsOn: [] },
     { stepId: 'b', title: 'Research B', participantId: task.participants[1].participantId, dependsOn: [] },
     { stepId: 'c', title: 'Join after both', participantId: task.participants[2].participantId, dependsOn: ['a', 'b'] },
+    { stepId: 'd', title: 'Final summary', participantId: task.participants[1].participantId, dependsOn: ['c'] },
   ]
   await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps, expected_revision: task.revision, request_id: randomUUID() })
   await coordinator.start({ task_id: task.taskId, parentSessionId: 'parent' })
@@ -93,8 +97,10 @@ test('Hub executes dependency joins, captures model/persona, and retries a faile
   result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
   assert.equal(result.status, 'succeeded')
   assert.equal(result.steps[2].attempts.length, 2)
-  assert.equal(result.messages.filter(message => message.kind === 'reply').length, 3)
+  assert.equal(result.messages.filter(message => message.kind === 'reply').length, 4)
   assert.equal(result.steps[2].attempts[1].attemptId, 'child-4')
+  assert.equal(requests.length, 5, 'Retry only the failed step, then continue its pending dependents')
+  assert.ok(requests[4].request.prompt[0].text.includes('Formal reply Fail once'))
 })
 
 test('unreturned Hub attempts become unknown after restart and do not replay', async context => {
@@ -103,7 +109,7 @@ test('unreturned Hub attempts become unknown after restart and do not replay', a
   task = await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps: [{ stepId: 'one', title: 'One', participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: randomUUID() })
   await invoke('agent_hub', 'claim_step', { task_id: task.taskId, step_id: 'one' })
   await worker.close()
-  const restarted = new BusinessWorker(directory, options)
+  const restarted = new HubWorker(join(directory,'hub')); await restarted.call('initialize')
   context.after(() => restarted.close())
   const result = await restarted.call('invoke', { domain: 'agent_hub', method: 'get_task', arguments: { task_id: task.taskId } })
   assert.equal(result.steps[0].attempts[0].status, 'outcome_unknown')

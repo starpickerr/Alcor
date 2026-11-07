@@ -52,13 +52,14 @@ class AppleWorker:
             manager = cls(bridge=self.bridge, db_path=target, **{port: Peer(domain, self.peer)})
             self.managers[kind] = manager
         for manager in self.managers.values():
+            manager.prime_bindings()
             manager.resume_auto()
         return True
 
     def invoke(self, method, arguments=None):
         arguments = dict(arguments or {})
         manager = self.managers[arguments.pop('kind', 'calendar')]
-        methods = ('status', 'request_access', 'start_sync', 'configure', 'replace_links', 'disconnect', 'set_auto', 'items', 'lookup_item', 'preview', 'preview_items', 'one_time', 'sync', 'resolve_conflict', 'preview_batch', 'transfer_batch')
+        methods = ('status', 'request_access', 'start_sync', 'configure', 'replace_links', 'disconnect', 'set_auto', 'items', 'lookup_item', 'preview', 'preview_items', 'one_time', 'sync', 'resolve_conflict','resolve_category_conflict','cancel_operation','sync_range', 'preview_batch', 'transfer_batch')
         if method == 'catalog':
             return [{'name': name, 'parameters': str(inspect.signature(getattr(manager, name)))} for name in methods if hasattr(manager, name)]
         if method not in methods or not hasattr(manager, method):

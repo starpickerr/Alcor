@@ -1,3 +1,4 @@
+import { checkMessages } from './elearning-status.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 
@@ -12,7 +13,7 @@ export const accountSchemas = {
   elearningAccount: [z.object({}).strict(), elearningAccountState],
   saveElearningAccount: [z.object({ username: z.string().trim().min(1).max(160), password: z.string().min(1).max(4096) }).strict(), elearningAccountState],
   removeElearningAccount: [z.object({}).strict(), elearningAccountState],
-  checkElearning: [z.object({}).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'login_required', 'query_failed']), courseCount: z.number().int().nonnegative().optional() }).strict()],
+  checkElearning: [z.object({}).strict(), z.object({ status: z.enum(['ready', 'disconnected', 'login_required', 'query_failed']), courseCount: z.number().int().nonnegative().optional(), code: z.enum(Object.keys(checkMessages)).optional() }).strict()],
 }
 
 export const remote = createTypertRemoteInfo({

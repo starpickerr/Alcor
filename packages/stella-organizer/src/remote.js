@@ -4,7 +4,7 @@ import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-
 import { recordSchema, writeRequest, archiveRequest, date, text } from './records.js'
 
 const id = z.object({ id: z.string().min(1).max(200) }).strict()
-export const jobSchema = z.object({ id: z.string().min(1).max(200), title: text, prompt: z.string().min(1).max(16000), parentSessionId: z.string(), childId: z.string().optional(), createdAt: z.iso.datetime(), status: z.enum(['starting', 'running', 'completed', 'cancelled', 'failed', 'interrupted']), output: z.string().max(100000), diagnostic: z.string().max(4096) }).strict()
+export const jobSchema = z.object({ id: z.string().min(1).max(200), title: text, prompt: z.string().min(1).max(16000), parentSessionId: z.string(), childId: z.string().optional(), createdAt: z.iso.datetime(), status: z.enum(['starting', 'running', 'completed', 'cancelled', 'failed', 'interrupted']), output: z.string().max(100000), diagnostic: z.string().max(4096), collaboration: z.json().optional() }).strict()
 export const nativeScheduleSchema = z.object({ id: z.string(), title: z.string(), prompt: z.string(), status: z.string(), scheduledAt: z.string(), updatedAt: z.string().nullable(), targetSessionId: z.string().nullable(), deliveredAt: z.string().nullable() }).strict()
 const briefingSources = z.array(z.union([
   z.object({ source: z.enum(['calendar_agenda', 'stella_tasks', 'stella_bills']), accountId: z.literal('local'), label: z.string().max(200).optional() }).strict(),
@@ -18,7 +18,7 @@ export const briefingRunSchema = z.object({ requestId: z.uuid(), date, phase: z.
 export const schemas = {
   briefingSources,
   sourceGroups: z.record(z.string().regex(/^(email|elearning|calendar_agenda|stella_tasks|stella_bills|plugin:[A-Za-z0-9_-]{1,64})$/), z.boolean()).refine(value => Object.keys(value).length <= 200),
-  business: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills', 'briefing', 'agent_hub', 'apple', 'automation']), method: z.string().min(1).max(80), arguments: z.record(z.string(), z.json()).default({}), requestId: z.string().min(1).max(200).optional() }).strict(), z.json()],
+  business: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills', 'briefing', 'apple', 'automation']), method: z.string().min(1).max(80), arguments: z.record(z.string(), z.json()).default({}), requestId: z.string().min(1).max(200).optional() }).strict(), z.json()],
   automation: [automationRequest, z.json()],
   read: [z.object({}).strict(), z.object({ records: z.array(recordSchema), jobs: z.array(jobSchema), schedules: z.array(nativeScheduleSchema) }).strict()],
   write: [writeRequest, recordSchema],
@@ -27,8 +27,11 @@ export const schemas = {
   generateBriefing: [briefingRequest, recordSchema],
   startBriefing: [briefingRequest, briefingRunSchema],
   resumeBriefing: [z.object({ requestId: z.uuid() }).strict(), briefingRunSchema],
-  startJob: [z.object({ id: z.uuid(), parentSessionId: z.string().min(1).max(200), title: text, prompt: z.string().trim().min(1).max(12000) }).strict(), jobSchema],
-  cancelJob: [id, jobSchema],
+
+
+
+
+
   createSchedule: [z.object({ title: text.max(120), prompt: z.string().trim().min(1).max(12000), timing: z.discriminatedUnion('kind', [z.object({ kind: z.literal('at'), at: z.string().datetime() }).strict(), z.object({ kind: z.literal('daily'), time: z.string().regex(/^\d{2}:\d{2}$/), timeZone: z.string().min(1).max(100) }).strict()]) }).strict(), nativeScheduleSchema],
   editSchedule: [z.object({ id: z.string().min(1), action: z.enum(['pause', 'resume', 'run', 'delete']), expectedUpdatedAt: z.string().nullable() }).strict(), z.boolean()],
 }

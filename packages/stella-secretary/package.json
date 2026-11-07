@@ -1,8 +1,9 @@
 {
   "name": "@stella/secretary",
-  "version": "0.1.44",
+  "version": "0.1.56",
   "type": "module",
   "license": "MIT",
+  "stella": { "agentHubDetached": true },
   "files": [
     "lib",
     "skills",
@@ -13,7 +14,9 @@
     "cordis.patch.yml",
     "DSH-LICENSE.txt",
     "README.md",
-    "vendor"
+    "vendor",
+    "!business/agent_hub",
+    "!skills/stella-collaboration"
   ],
   "exports": {
     ".": "./lib/index.js",

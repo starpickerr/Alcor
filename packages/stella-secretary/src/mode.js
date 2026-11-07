@@ -16,7 +16,7 @@ export function readModeState(storage) {
       const location = value.locations?.[mode]
       if (location && (location.panel === null || typeof location.panel === 'string')
         && (location.sessionId === undefined || typeof location.sessionId === 'string')) {
-        locations[mode] = { panel: mode === 'stella' && location.panel === 'stella-sources' ? 'stella-briefing' : mode === 'stella' && ['stella', 'stella-history', 'stella-attention'].includes(location.panel) ? 'stella-tasks' : location.panel, sessionId: location.sessionId }
+        locations[mode] = { panel: mode === 'stella' && location.panel === 'stella-sources' ? 'stella-briefing' : mode === 'stella' && ['stella', 'stella-history', 'stella-attention', 'stella-agents'].includes(location.panel) ? 'stella-tasks' : location.panel, sessionId: location.sessionId }
       }
     }
     return { mode: value.mode, locations }

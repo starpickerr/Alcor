@@ -1,0 +1,15 @@
+.stella-notice { --stella-notice-accent:var(--stella-brand,var(--dsw-alias-state-business-primary,#3966bf)); flex:0 0 auto; display:flex; align-items:flex-start; gap:10px; min-width:0; margin:0; padding:12px 14px; border:1px solid color-mix(in srgb,var(--stella-notice-accent) 16%,var(--dsw-alias-border-l3)); border-radius:10px; background:color-mix(in srgb,var(--stella-notice-accent) 5%,var(--dsw-alias-bg-layer-1)); color:var(--dsw-alias-label-secondary); font-size:12px; line-height:1.65; }
+.stella-notice > svg { flex:none; margin-top:1px; color:var(--stella-notice-accent); }
+.stella-notice-content { display:grid; gap:6px; min-width:0; overflow-wrap:anywhere; }
+.stella-notice-content > p { margin:0; }
+ .stella-notice[data-tone=error] { --stella-notice-accent:var(--dsw-alias-state-error-primary,#b84d59); }
+.stella-notice[data-tone=warning] { --stella-notice-accent:var(--dsw-alias-state-warning-primary,#94651d); }
+.stella-notice[data-tone=success] { --stella-notice-accent:var(--dsw-alias-state-success-primary,#428f72); }
+.stella-notice-content > button { justify-self:start; }
+.stella-notice + .stella-notice,.stella-notice + .stella-actions,.stella-actions + .stella-notice { margin-top:12px; }
+.stella-notice[data-tone] { color:var(--dsw-alias-label-secondary); }
+.stella-notice-content > strong { margin:0; font-weight:600; }
+.stella-mail-editor > .stella-notice,.apple-sync-connection > .stella-notice,.apple-sync-review-body > .stella-notice { margin-top:16px; }
+:is(.apple-sync-readonly,.apple-sync-coverage,.apple-sync-diagnostic) > .stella-notice { margin-top:12px; }
+.stella-notice { box-sizing:border-box; max-width:100%; text-align:left; }
+:is(h1,h2,h3,h4,summary) + .stella-notice,.stella-notice + button { margin-top:12px; }

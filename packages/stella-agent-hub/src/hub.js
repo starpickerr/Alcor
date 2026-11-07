@@ -10,24 +10,48 @@ export class HubCoordinator {
 
   call(method, args) { return this.worker.call('invoke', { domain: 'agent_hub', method, arguments: args }) }
 
+  async kick(request) {
+    const running = this.tasks.get(request.task_id)
+    if (running) { running.wake = request; return }
+    return this.start(request)
+  }
+
   async start({ task_id, parentSessionId, workspacePath, step_id, retry = false }) {
     if (this.closed || this.tasks.has(task_id)) throw new Error('任务正在运行或功能已停用。')
-    const task = await this.call('get_task', { task_id })
-    if (!task.steps.length) throw new Error('请先添加流程步骤。')
-    let parent
-    if (task.participants.some(person => person.nativeAgentId)) {
-      if (!parentSessionId) throw new Error('请提供当前 Stella 对话。')
-      const result = await this.ctx.sessionController.resolveAgent(parentSessionId)
-      if ('error' in result) throw new Error('当前对话不可用。')
-      parent = result.agent
-    }
     const controller = new AbortController()
-    const state = { controller, activations: new Set(), external: new Set(), completion: undefined }
+    const state = { controller, activations: new Set(), external: new Set(), completion: undefined, wake: undefined }
     this.tasks.set(task_id, state)
-    state.completion = this.execute(task_id, state, parent, workspacePath, step_id, retry)
-      .catch(error => { this.ctx.logger.warn('协作流程执行中断：' + error.message) })
-      .finally(() => this.tasks.delete(task_id))
-    return task
+    try {
+      const task = await this.call('get_task', { task_id })
+      if (!task.steps.length) throw new Error('请先添加流程步骤。')
+      if (step_id) {
+        const step = task.steps.find(item => item.stepId === step_id)
+        if (!step || (retry ? !['failed', 'cancelled', 'outcome_unknown'].includes(status(step)) || step.attempts.length >= 3 : status(step) !== 'pending')) throw new Error('只能重试失败、取消或结果未知的步骤，每个步骤最多执行三次。')
+        if (step.dependsOn.some(id => status(task.steps.find(item => item.stepId === id)) !== 'succeeded')) throw new Error('请先完成此步骤的前序分工。')
+      }
+      let parent
+      if (task.participants.some(person => person.nativeAgentId)) {
+        if (!parentSessionId) throw new Error('请提供当前开发对话。')
+        const result = await this.ctx.sessionController.resolveAgent(parentSessionId)
+        if ('error' in result) throw new Error('当前对话不可用。')
+        parent = result.agent
+      }
+      state.completion = this.execute(task_id, state, parent, workspacePath, step_id, retry)
+        .catch(error => { this.ctx.logger.warn('协作流程执行中断：' + error.message) })
+        .finally(async () => {
+          this.tasks.delete(task_id)
+          if (state.wake && !this.closed && !controller.signal.aborted) {
+            try {
+              const latest = await this.call('get_task', { task_id })
+              if (!latest.cancelled && !this.tasks.has(task_id) && latest.steps.some(step => status(step) === 'pending' && step.dependsOn.every(id => status(latest.steps.find(item => item.stepId === id)) === 'succeeded'))) await this.start(state.wake)
+            } catch (error) { this.ctx.logger.warn('新增协作任务未能继续：' + error.message) }
+          }
+        })
+      return task
+    } catch (error) {
+      this.tasks.delete(task_id)
+      throw error
+    }
   }
 
   async execute(task_id, state, parent, workspacePath, step_id, retry) {
@@ -40,7 +64,7 @@ export class HubCoordinator {
       for (const step of task.steps) {
         if (state.controller.signal.aborted) break
         if (pending.size >= 3) break
-        if (step_id && !requested) continue
+        if (step_id && !retry && !requested) continue
         if (requested ? step.stepId !== requested : status(step) !== 'pending') continue
         if (step.dependsOn.some(dependency => states.get(dependency) !== 'succeeded')) continue
         const claim = await this.call('claim_step', { task_id, step_id: step.stepId, retry: requested ? retry : false })
@@ -109,8 +133,8 @@ export class HubCoordinator {
       }
       const selection = person.modelSelection
       const route = selection.mode === 'explicit' ? { model: selection.modelId, provider: selection.providerId ?? parent?.model?.current()?.provider } : parent?.model?.current()
-      const activation = await this.ctx.subagents.startActivation({ provider: 'stella-spawn', label: person.displayName, delivery: 'caller', signal: state.controller.signal,
-        request: { parent, agentPreset: 'stella', maxDepth: 1,
+      const activation = await this.ctx.subagents.startActivation({ provider: 'agent-hub-spawn', label: person.displayName, delivery: 'caller', signal: state.controller.signal,
+        request: { parent, agentPreset: 'agent-hub-developer', maxDepth: 1,
           ...(route ? { agentOptions: route } : {}),
           prompt: [{ type: 'text', text: `任务内人设：${person.persona}\n\n${claim.goal}` }],
         } })

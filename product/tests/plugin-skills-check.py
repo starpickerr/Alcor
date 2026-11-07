@@ -25,7 +25,7 @@ class Provider(BaseHTTPRequestHandler):
                 assert 'skill' in names, 'Missing native skill tool: '+','.join(sorted(names))
                 text = json.dumps(payload['messages'], ensure_ascii=False)
                 if self.phase == 0:
-                    expected=['stella-bills','stella-tasks','stella-calendar','stella-briefing','stella-automation','stella-collaboration','stella-elearning','stella-mail','stella-apple-sync']
+                    expected=['stella-bills','stella-tasks','stella-calendar','stella-briefing','stella-automation','stella-elearning','stella-mail','stella-apple-sync']
                     assert all(name in text for name in expected), 'Missing advertised skills: '+','.join(name for name in expected if name not in text)
                     assert '新版使用整数 amount_minor' not in text, 'Full bodies must not be preloaded'
                     name, args = 'skill', {'name':'stella-bills'}

@@ -7,7 +7,6 @@ import { callAutomation } from './page-tools.js'
 import { stellaTarget } from './automation.js'
 import { recordSchema, buildBriefing } from './records.js'
 import { BusinessWorker, resolveBusinessPython } from './business.js'
-import { HubCoordinator } from './hub.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { join } from 'node:path'
 import { ReminderDelivery } from './reminders.js'
@@ -20,10 +19,10 @@ const spec = defineDomain({ name: 'stella_organizer', version: 1, tables: {
 } })
 
 export default class Organizer extends TypertRemoteService {
+  readonly agentHubDetached = true
   static inject = ['storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools']
   private domain
   private businessWorker
-  private hub
   private briefingGenerator
   private active = true
   private queue = Promise.resolve()
@@ -36,14 +35,11 @@ export default class Organizer extends TypertRemoteService {
     this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'stella', 'business'), { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
     try { await this.businessWorker.call('migrate', { records: [...this.domain.table('records').entries()].map(([, value]) => value) }) }
     catch (error) { await this.businessWorker.close(); await this.domain.close(); throw error }
-    this.hub = new HubCoordinator(this.ctx, this.businessWorker)
+    this.ctx.inject(['agentHub'], ctx => { void ctx.agentHub.importLegacyJobs([...this.domain.table('jobs').entries()].map(([,value])=>value)).catch(error=>this.ctx.logger.warn('旧协作记录导入失败：'+error.message)) })
     this.briefingGenerator = new BriefingGenerator(this.ctx, this.businessWorker)
     const reminders = new ReminderDelivery(this.businessWorker, { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
     const reminderTimer = setInterval(() => { void reminders.tick() }, 30000)
     void reminders.tick()
-    for (const [id, job] of this.domain.table('jobs').entries()) {
-      if (['starting', 'running'].includes(job.status)) await this.domain.table('jobs').put(id, { ...job, status: 'interrupted', diagnostic: '宿主曾停止；请核对原生会话结果，再决定是否重新发起。' })
-    }
     this.ctx.typert.register({ package: '@stella/organizer', face: 'host', schemas: [], invocations: remote.descriptors, model: { services: [], events: [], objects: [] } })
     this.ctx.effect(() => async () => {
       this.active = false
@@ -51,7 +47,6 @@ export default class Organizer extends TypertRemoteService {
       await reminders.close()
       await this.briefingGenerator.close()
       await this.queue
-      await this.hub.close()
       // A host stop preserves schedules; unloading Stella while the host is live revokes its wakeups.
       if (this.ctx.root.fiber.state === 2) {
         for (const [id] of this.domain.table('schedules').entries()) {
@@ -78,13 +73,20 @@ export default class Organizer extends TypertRemoteService {
   async business(request) {
     const input = schemas.business[0].parse(request)
     if (input.domain === 'automation') return callAutomation(this, input.method, input.arguments)
-    if (input.domain === 'agent_hub' && input.method === 'start_job') return this.startJob(input.arguments)
-    if (input.domain === 'agent_hub' && input.method === 'list_jobs') return (await this.read({})).jobs
-    if (input.domain === 'agent_hub' && input.method === 'cancel_job') return this.cancelJob(input.arguments)
     if (input.domain === 'apple') {
       const apple = this.ctx.get('stellaAppleSync')
       if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
       return apple.invoke({ method: input.method, arguments: input.arguments })
+    }
+    if (input.domain === 'calendar' && input.method === 'list_events' && input.arguments.start && input.arguments.end) {
+      const apple = this.ctx.get('stellaAppleSync')
+      let sync
+      if (apple) {
+        try { sync = await apple.invoke({ method: 'sync_range', arguments: { kind: 'calendar', start: input.arguments.start, end: input.arguments.end } }) }
+        catch (error) { sync = { status: 'error', reason: error instanceof Error ? error.message : 'Apple 日程加载失败' } }
+      }
+      const result = await this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+      return result
     }
     if (input.domain === 'briefing' && input.method === 'generate') return this.startBriefing({ ...input.arguments, ...(input.requestId ? { requestId: input.requestId } : {}) })
     if (input.domain === 'briefing' && input.method === 'configure_sources') {
@@ -106,8 +108,6 @@ export default class Organizer extends TypertRemoteService {
     if (input.domain === 'briefing' && input.method === 'source_preferences') return this.businessWorker.call('source_settings')
     if (input.domain === 'briefing' && input.method === 'list_sources') return this.effectiveSources()
     if (input.domain === 'briefing' && input.method === 'available_sources') return this.ctx.tools.definitions().map(tool => tool.name).filter(name => /^(mcp__[A-Za-z0-9_-]+__(fetch_messages|fetch_source|fetch)|[A-Za-z0-9_-]{1,64}_briefing_fetch)$/.test(name))
-    if (input.domain === 'agent_hub' && input.method === 'run_workflow') return this.serialize(() => this.hub.start(input.arguments))
-    if (input.domain === 'agent_hub' && input.method === 'cancel_task') return this.serialize(() => this.hub.cancel(input.arguments.task_id))
     return this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
   }
 
@@ -125,9 +125,7 @@ export default class Organizer extends TypertRemoteService {
     schemas.read[0].parse(request); this.assertActive()
     const owned = new Set([...this.domain.table('schedules').keys()])
     const schedules = (await this.ctx.schedule.catalog()).filter(entry => owned.has(entry.id)).map(entry => this.nativeSchedule(entry))
-    const tasks = await this.businessWorker.call('invoke', { domain: 'agent_hub', method: 'list_tasks' })
-    const jobs = await Promise.all(tasks.map(async task => this.hubJob(await this.businessWorker.call('invoke', { domain: 'agent_hub', method: 'get_task', arguments: { task_id: task.taskId } }))))
-    return { records: await this.businessRecords(), jobs: [...[...this.domain.table('jobs').entries()].map(([, value]) => value), ...jobs], schedules }
+    return { records: await this.businessRecords(), jobs: [], schedules }
   }
 
   @Remote
@@ -206,41 +204,6 @@ export default class Organizer extends TypertRemoteService {
     const { requestId } = schemas.resumeBriefing[0].parse(request)
     const run = await this.businessWorker.call('briefing_run', { method: 'get', request_id: requestId })
     return this.briefingGenerator.resume(requestId, this.briefingAuthorization(run.sources))
-  }
-
-  @Remote
-  async startJob(request) {
-    const input = schemas.startJob[0].parse(request)
-    return this.serialize(async () => {
-      const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
-      if ('error' in found || this.ctx.agentPresets.presetForSession(found.agent.session) !== 'stella') throw new Error('请先开始一个 Stella 对话，再发起协作。')
-      const invoke = (method, args) => this.businessWorker.call('invoke', { domain: 'agent_hub', method, arguments: args })
-      let task = await invoke('create_task', { payload: { title: input.title, goal: input.prompt, participants: [{ nativeAgentId: 'stella' }] }, request_id: input.id })
-      if (!task.steps.length) task = await invoke('set_workflow', { task_id: task.taskId, steps: [{ stepId: 'work', title: input.title, participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: input.id + ':workflow' })
-      if (!task.steps.some(step => step.attempts.length)) await this.hub.start({ task_id: task.taskId, parentSessionId: input.parentSessionId })
-      return this.hubJob(task)
-    })
-  }
-
-  private hubJob(task) {
-    const attempts = task.steps.flatMap(step => step.attempts)
-    const latest = attempts.at(-1)
-    return jobSchema.parse({ id: task.taskId, title: task.title, prompt: task.goal, parentSessionId: '', createdAt: new Date(task.createdAt).toISOString(),
-      status: ({ pending: 'starting', queued: 'starting', running: 'running', succeeded: 'completed', outcome_unknown: 'interrupted', failed: 'failed', cancelled: 'cancelled' })[task.status] ?? 'starting',
-      ...(latest?.attemptId ? { childId: latest.attemptId } : {}),
-      output: task.messages.filter(message => message.kind === 'reply').map(message => message.body).join('\n\n').slice(0, 100000),
-      diagnostic: task.messages.filter(message => message.kind === 'status').map(message => message.body).join('\n').slice(0, 4096),
-    })
-  }
-
-  @Remote
-  async cancelJob(request) {
-    const { id } = schemas.cancelJob[0].parse(request)
-    this.assertActive()
-    if (id.startsWith('hub-')) return this.hubJob(await this.hub.cancel(id))
-    const current = this.domain.table('jobs').get(id)
-    if (!current) throw new Error('协作任务不存在。')
-    return current
   }
 
   @Remote

@@ -75,3 +75,18 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   assert(!(await readFile(filename, 'utf8')).includes('second-synthetic-secret'))
   assert.equal((await ctx.credentials.resolve(credentialRef('UNRELATED_MODEL_API_KEY'))).value, 'synthetic-model-key')
 })
+
+test('school connection checks distinguish safe failure categories without showing raw errors', async () => {
+  const { checkConnection } = await import('../../packages/stella-secretary/src/elearning.js')
+  const { checkMessage } = await import('../../packages/stella-secretary/src/elearning-status.js')
+  const check = result => checkConnection({ tools: { executable: () => true, execute: async () => ({ results: [{ result }] }) } })
+  for (const code of ['browser_unavailable', 'network_error', 'login_form_error', 'login_timeout', 'login_required', 'permission_denied']) {
+    const result = await check({ isError: true, error: { message: JSON.stringify({ error_code: code, message: 'synthetic-secret' }) } })
+    assert.equal(result.code, code)
+    assert.equal(result.status, code === 'login_required' ? 'login_required' : 'query_failed')
+    assert(!checkMessage(result).includes('synthetic-secret'))
+  }
+  assert.deepEqual(await check({ isError: true, error: { message: 'Login: private URL and credentials' } }), { status: 'query_failed', code: 'query_failed' })
+  assert.deepEqual(await check({ value: { structuredContent: { value: [] } } }), { status: 'ready', courseCount: 0 })
+  assert.equal((await checkConnection({ tools: { executable: () => false } })).status, 'disconnected')
+})

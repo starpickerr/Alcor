@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { midnight, calendarRecord, eventLanes } from '../../packages/stella-secretary/src/organizer-forms.js'
+import { midnight, calendarRecord, calendarTaskRecord, dateTimeDraft, dateTimeInZone, calendarDraftTimes, eventLanes } from '../../packages/stella-secretary/src/organizer-forms.js'
 
 test('all-day form dates keep their selected timezone across DST and calendar projection', () => {
   assert.equal(midnight('2026-03-08', 'America/New_York'), '2026-03-08T05:00:00.000Z')
@@ -29,4 +29,42 @@ test('simultaneous point events occupy separate lanes without changing their tim
   assert.deepEqual(lanes.get('a'), { left: 0, width: 50 })
   assert.deepEqual(lanes.get('b'), { left: 50, width: 50 })
   assert.equal(points[0].end, start)
+})
+
+
+test('calendar tasks remain point reminders with original identity, category, timezone and completion', () => {
+  const row = { id: 'series@2026-11-07', series_id: 'series', title: 'planA task', due_on: '2026-11-07', due_time: '04:00', timezone: 'Asia/Shanghai', category_id: 'planA', status: 'completed' }
+  const projected = calendarTaskRecord(row)
+  assert.equal(projected.kind, 'task')
+  assert.equal(projected.start, '2026-11-06T20:00:00.000Z')
+  assert.equal(projected.end, projected.start)
+  assert.equal(projected.status, 'done')
+  assert.equal(projected.groupId, 'task:planA')
+  assert.equal(projected.business.id, row.id)
+  assert.equal(calendarTaskRecord({...row, due_on: null}), null)
+  const allDay = calendarTaskRecord({...row, due_time: null})
+  assert.equal(allDay.start, '2026-11-07')
+  assert.equal(allDay.end, '2026-11-08')
+  assert.equal(allDay.allDay, true)
+})
+
+
+test('calendar editor preserves event-zone time and uses exclusive all-day ends', () => {
+  const instant = '2026-11-07T09:00:00Z'
+  const draft = dateTimeDraft(instant, 'America/New_York')
+  assert.equal(draft, '2026-11-07T04:00')
+  assert.equal(dateTimeInZone(draft.slice(0, 10), draft.slice(11), 'America/New_York'), '2026-11-07T09:00:00.000Z')
+  assert.deepEqual(calendarDraftTimes('2026-11-07T09:00', '2026-11-07T10:00', true), {start:'2026-11-07',end:'2026-11-08'})
+  assert.deepEqual(calendarDraftTimes('2026-11-07', '2026-11-08', false), {start:'2026-11-07T09:00',end:'2026-11-07T10:00'})
+})
+
+ test('floating events retain wall time across display zones and all-day boundaries stay exclusive', () => {
+  const previous=process.env.TZ
+  try {
+    process.env.TZ='America/New_York'
+    const raw={id:'floating',title:'Floating',start_at:'2026-11-07T01:00:00Z',end_at:'2026-11-07T02:00:00Z',repeat_timezone:'Asia/Shanghai',floating:true}
+    const record=calendarRecord(raw)
+    assert.equal(new Date(record.start).toISOString(),'2026-11-07T14:00:00.000Z')
+    assert.equal(calendarRecord({...raw,all_day:true,start_at:'2026-11-06T16:00:00Z',end_at:'2026-11-07T15:59:59Z'}).end,'2026-11-08')
+  } finally { if(previous===undefined) delete process.env.TZ; else process.env.TZ=previous }
 })

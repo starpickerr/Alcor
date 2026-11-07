@@ -8,6 +8,7 @@ import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
 import { BriefingGenerator } from '../../packages/stella-organizer/src/briefing.js'
 import { buildBriefing } from '../../packages/stella-organizer/src/records.js'
 import { schemas } from '../../packages/stella-organizer/src/remote.js'
+import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 
 const source = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', method: 'fetch', arguments: { course_ids: ['selected'] } }
 const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
@@ -51,6 +52,23 @@ const input = () => { const now = new Date().toISOString(); return { requestId: 
 const state = (worker, id) => worker.call('briefing_run', { method: 'get', request_id: id })
 async function until(check) { for (let i = 0; i < 400; i++) { const value = await check(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 10)) } throw new Error('Run did not settle') }
 
+test('public run output is lossless JSON across optional fields and phases', () => {
+  const generator = new BriefingGenerator({}, {})
+  const common = { requestId: randomUUID(), date: '2026-11-07', message: '状态', createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z', collected: [], submissions: [] }
+  for (const [phase, optional] of [
+    ['starting', {}], ['collecting', { sessionId: 'session' }],
+    ['model', { sessionId: 'session', model: { provider: 'synthetic', model: 'demo' } }],
+    ['failed', { sessionId: 'session', model: { provider: 'synthetic', model: 'demo', reasoningEffort: 'high' } }],
+    ['completed', { sessionId: 'session', model: { provider: 'synthetic', model: 'demo' }, briefingId: 'briefing' }],
+  ]) {
+    const value = generator.publicRun({ ...common, phase, ...optional })
+    assert.deepEqual(snapshotJsonValue(value), value, phase)
+    assert.deepEqual(Object.fromEntries(Object.keys(optional).map(key => [key, value[key]])), optional)
+    for (const key of ['sessionId', 'model', 'briefingId']) if (!(key in optional)) assert.equal(Object.hasOwn(value, key), false)
+    schemas.startBriefing[1].parse(value)
+  }
+})
+
 test('briefing owns its root, freezes model and rules, and returns before model completion', async t => {
   const { worker } = await fixture(t), native = nativeContext()
   const generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
@@ -59,12 +77,14 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   const request = input()
   const started = await generator.start(request)
   schemas.startBriefing[1].parse(started)
+  assert.deepEqual(snapshotJsonValue(started), started)
   assert.notEqual(started.sessionId, 'chat-owner')
   assert.deepEqual(native.creations, [{ agentPreset: 'stella-briefing', cwd: '/tmp' }])
   await until(() => release)
   request.parent.model.current = () => ({ provider: 'changed', model: 'other-model' })
   await worker.call('invoke', { domain: 'briefing', method: 'create_rule', arguments: { payload: { text: 'NEW RULE MUST NOT ENTER THIS RUN', source: '*', enabled: true } } })
   const status = await generator.status()
+  assert.deepEqual(snapshotJsonValue(status), status)
   assert(!JSON.stringify(status).includes('secret-payload'))
   assert(!('sources' in status)); assert(!('submissions' in status))
   release()
@@ -81,7 +101,12 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   assert.equal(saved.completedBatches, 2); assert.equal(saved.completedSources, 1)
   assert.deepEqual(saved.collected, []); assert.deepEqual(saved.submissions, [])
   assert.equal((await generator.generate(request)).id, result.id)
+  const completed = await generator.start(request)
+  assert.equal(completed.phase, 'completed')
+  assert.equal(completed.briefingId, result.business.briefingId)
+  assert.deepEqual(snapshotJsonValue(completed), completed)
   assert.equal(native.requests.length, 2); assert.equal(native.reads(), 1)
+  assert.equal(native.creations.length, 1)
 })
 
 test('failed runs resume saved batches after worker restart, preserve scope and require explicit retry', async t => {
@@ -96,13 +121,16 @@ test('failed runs resume saved batches after worker restart, preserve scope and 
   worker = fixtureData.restart(); generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
   assert.equal((await generator.status()).phase, 'failed')
   const before = native.requests.length
-  assert.equal((await generator.start(request)).phase, 'failed')
+  const failed = await generator.start(request)
+  assert.equal(failed.phase, 'failed')
+  assert.deepEqual(snapshotJsonValue(failed), failed)
   assert.equal(native.requests.length, before)
   await assert.rejects(generator.resume(request.requestId, async () => { throw new Error('授权已撤销') }), /授权已撤销/)
   assert.equal(native.requests.length, before)
   await assert.rejects(generator.start({ ...request, sources: [{ ...source, accountId: 'unselected' }] }), /不同简报或来源/)
   native.response(async request => structured(request))
   const resumed = await generator.resume(request.requestId, async () => {})
+  assert.deepEqual(snapshotJsonValue(resumed), resumed)
   assert.equal(resumed.sessionId, native.requests[0].parent.session.id)
   const result = await generator.wait(request.requestId)
   assert.equal(native.requests.length, before + 1)

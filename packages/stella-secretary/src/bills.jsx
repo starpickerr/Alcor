@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import { Notice } from './notice.jsx'
+import React, { useEffect, useId, useState } from 'react'
 import { Button, Input, SegmentedControl, IconPlusOutlineRegular, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { currencies, minorUnits } from '../../stella-organizer/src/records.js'
 import { Field, Empty } from './business-pages.jsx'
 import { localDate, periodBills, ledgerCsv } from './presentation.js'
-import { money, periodRange, periodTitle, periodStatus, shareText, billValues, billPayload } from './bill-view.js'
+import { money, periodRange, periodTitle, periodStatus, shareText, donutArc, billValues, billPayload } from './bill-view.js'
 
-const palette = ['#4c78b6', '#7a9dc9', '#7886ab', '#a58a68', '#b99562', '#9f7d98', '#677c93', '#9aabbe']
-const incomePalette = ['#8b7bb6', '#6689bd', '#b29270', '#a27d94', '#8e9dbd', '#7b8da4']
+const palette = ['#f87171', '#fb923c', '#fbbf24', '#a78bfa', '#38bdf8', '#2dd4bf', '#f472b6', '#a3e635']
+const incomePalette = ['#34d399', '#2dd4bf', '#a3e635', '#38bdf8', '#86efac', '#22d3ee', '#4ade80', '#bef264']
 
 function Totals({ total, cards = false }) {
   return <dl className={`stella-bill-totals${cards ? ' stella-bill-totals-cards' : ''}`}>
@@ -15,20 +16,28 @@ function Totals({ total, cards = false }) {
 }
 
 function Composition({ rows, total, direction, currency }) {
+  const [hovered, setHovered] = useState(null)
+  const [focused, setFocused] = useState(null)
+  const tooltipId = useId()
+  const active = rows.find(row => row.category === (hovered ?? focused))
+  const label = direction === 'income' ? '收入' : '支出'
   const colors = direction === 'income' ? incomePalette : palette
   let offset = 0
   return <section className="stella-bill-composition" aria-label={direction === 'income' ? '收入构成' : '支出构成'}>
-    <h3>{direction === 'income' ? '收入构成' : '支出构成'}</h3><strong>{money(total, currency)}</strong>
+    <h3>{label}构成</h3><strong data-direction={direction}>{money(total, currency)}</strong>
     {rows.length ? <>
+      <div className="stella-bill-chart">
       <svg className="stella-bill-donut" viewBox="0 0 160 160" role="img" aria-label={`${direction === 'income' ? '收入' : '支出'}分类占比，合计${money(total, currency)}`}>
         <circle className="stella-bill-ring-track" cx="80" cy="80" r="58" fill="none" strokeWidth="22" />
         {rows.map((row, index) => {
           const share = Number(BigInt(row.amount_minor) * 1000000n / BigInt(total)) / 10000
           const start = offset; offset += share
-          return <circle key={row.category} cx="80" cy="80" r="58" fill="none" stroke={colors[index % colors.length]} strokeWidth="22" pathLength="100" strokeDasharray={`${share} ${100 - share}`} strokeDashoffset={-start} transform="rotate(-90 80 80)"><title>{row.category} {money(row.amount_minor, currency)} · {shareText(row.share_basis_points)}</title></circle>
+          return <path key={row.category} className="stella-bill-segment" data-category={row.category} data-active={active?.category === row.category || undefined} d={donutArc(start, share)} fill="none" stroke={colors[index % colors.length]} strokeWidth="22" onPointerEnter={() => setHovered(row.category)} onPointerLeave={() => setHovered(null)} />
         })}
       </svg>
-      <ul className="stella-bill-legend">{rows.map((row, index) => <li key={row.category}><span className="stella-bill-dot" style={{ background: colors[index % colors.length] }} /><span>{row.category}</span><span>{money(row.amount_minor, currency)}</span><span>{shareText(row.share_basis_points)}</span></li>)}</ul>
+      {active && <div className="stella-bill-chart-tooltip" id={tooltipId} role="tooltip"><strong>{active.category}</strong><span><span data-direction={direction}>{label} {money(active.amount_minor, currency)}</span><span>占比 {shareText(active.share_basis_points)}</span></span></div>}
+      </div>
+      <ul className="stella-bill-legend">{rows.map((row, index) => <li key={row.category}><button type="button" data-active={active?.category === row.category || undefined} aria-label={`${row.category}，${label} ${money(row.amount_minor, currency)}，占比 ${shareText(row.share_basis_points)}`} aria-describedby={active?.category === row.category ? tooltipId : undefined} onPointerEnter={() => setHovered(row.category)} onPointerLeave={() => setHovered(null)} onFocus={() => setFocused(row.category)} onBlur={() => setFocused(null)} onKeyDown={event => { if (event.key === 'Escape') { setHovered(null); event.currentTarget.blur() } }}><span className="stella-bill-dot" style={{ background: colors[index % colors.length] }} /><span>{row.category}</span><span data-direction={direction}>{money(row.amount_minor, currency)}</span><span>{shareText(row.share_basis_points)}</span></button></li>)}</ul>
     </> : <div className="stella-bill-chart-empty">暂无{direction === 'income' ? '收入' : '支出'}</div>}
   </section>
 }
@@ -90,7 +99,7 @@ export function BillsPage({ records, api, reloadKey, edit, create, download, bus
         <div className="stella-actions"><Button variant="primary" disabled={busy} icon={<IconPlusOutlineRegular size={16} />} onClick={create}>记账</Button>{(view === 'ledger' || report) && <Button variant="outline" disabled={pending || !rows.length} onClick={() => download(ledgerCsv(rows), `stella-ledger-${year}${selectedMonth ? '-' + selectedMonth : ''}-${currentCurrency}.csv`, 'text/csv;charset=utf-8')}>导出 CSV</Button>}</div>
       </div>
       <div id={`bill-view-${view}-panel`} role="tabpanel" aria-labelledby={`bill-view-${view}`} aria-busy={loading || pending}>
-        {error ? <div role="alert" className="stella-bill-load-error"><p>{error}</p><Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试</Button></div> : pending || loading ? <p role="status" className="stella-muted">正在读取账单…</p> : view === 'ledger' ? <>
+        {error ? <Notice tone="error" role="alert" className="stella-bill-load-error">{error}<Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试</Button></Notice> : pending || loading ? <Notice role="status" className="stella-muted">正在读取账单…</Notice> : view === 'ledger' ? <>
           {total && <Totals total={total} cards />}
           {!days.length ? <Empty icon={icon} title="这个月还没有流水" /> : days.map(day => {
             const dayTotal = day.totals.find(row => row.currency === currentCurrency)
@@ -118,8 +127,8 @@ export function BillEditor({ record, save, remove, archive, cancel, busy }) {
     <Field label="发生时间"><Input required type="datetime-local" step="1" value={value.occurred_at} onChange={event => set('occurred_at', event.target.value)} /></Field>
     <Field label="账单状态"><select value={value.status} onChange={event => set('status', event.target.value)}><option value="posted">已记账</option><option value="pending">待处理</option><option value="reversed">已冲正</option></select></Field>
     <Field label="备注"><textarea aria-label="备注" rows={3} value={value.note} onChange={event => set('note', event.target.value)} /></Field>
-    {error && <p role="alert" className="stella-error">{error}</p>}
+    {error && <Notice tone="error" role="alert" className="stella-error">{error}</Notice>}
     <div className="stella-actions"><Button type="submit" variant="primary" disabled={busy}>保存账单</Button><Button type="button" variant="outline" disabled={busy} onClick={cancel}>取消编辑</Button>{record && <><Button type="button" variant="ghost" disabled={busy} onClick={archive}>{record.archived ? '恢复' : '归档'}</Button><Button type="button" variant="ghost" className="stella-bill-delete" disabled={busy} onClick={() => setDeleting(true)}>删除记录</Button></>}</div>
-    {deleting && <div role="alert" className="stella-bill-delete-confirm"><p>删除这笔记录？收支统计将同步更新。</p><div className="stella-actions"><Button type="button" variant="outline" disabled={busy} onClick={remove}>确认删除</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setDeleting(false)}>取消删除</Button></div></div>}
+    {deleting && <Notice tone="warning" role="alert" className="stella-bill-delete-confirm"><p>删除这笔记录？收支统计将同步更新。</p><div className="stella-actions"><Button type="button" variant="outline" disabled={busy} onClick={remove}>确认删除</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setDeleting(false)}>取消删除</Button></div></Notice>}
   </form>
 }

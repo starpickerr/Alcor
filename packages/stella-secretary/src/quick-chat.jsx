@@ -1,3 +1,4 @@
+import { Notice } from './notice.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -17,8 +18,8 @@ function ChatView({ renderSlot }) {
 export function QuickConversation({ useSession, useProjection, renderFactorySlot }) {
   const state = useSession(value => value)
   const preset = useProjection('agentPreset')
-  if (state.openState === 'error') return <p role="alert">会话连接失败，请重新选择历史会话，或新建会话。</p>
-  if (preset !== 'stella') return <p role="status">这段会话未使用 Stella，请新建会话。</p>
+  if (state.openState === 'error') return <Notice tone="error" role="alert">会话连接失败，请重新选择历史会话，或新建会话。</Notice>
+  if (preset !== 'stella') return <Notice role="status">这段会话未使用 Stella，请新建会话。</Notice>
   return renderFactorySlot('conversation.content', {
     variant: 'embedded', phase: state.openState === 'open' ? 'active' : 'settling', hero: false,
   }, { slots: { views: ChatView } })
@@ -97,10 +98,10 @@ export function QuickChat({ kind, sessions, getCurrentSession, useSessions, useW
       </select></label>
       <Button variant="ghost" size="sm" disabled={busy || workspaces.phase !== 'ready'} onClick={() => void create()}>新会话</Button>
     </div>
-    {notice && <p role="status" className="stella-quick-chat-notice">{notice}</p>}
-    {error && <div className="stella-quick-chat-notice"><p role="alert">{error}</p><Button variant="outline" size="sm" onClick={() => void create()}>重试</Button></div>}
+    {notice && <Notice tone="warning" role="status" className="stella-quick-chat-notice">{notice}</Notice>}
+    {error && <div className="stella-quick-chat-notice"><Notice tone="error" role="alert">{error}</Notice><Button variant="outline" size="sm" onClick={() => void create()}>重试</Button></div>}
     {reference && reference.sessionId === history.current
       ? <div className="stella-quick-chat-body"><SessionProvider session={reference}>{renderSlot('stella.quick-chat.conversation', {})}</SessionProvider></div>
-      : !error && <p role="status" className="stella-quick-chat-notice">正在打开对话…</p>}
+      : !error && <Notice role="status" className="stella-quick-chat-notice">正在打开对话…</Notice>}
   </section>
 }

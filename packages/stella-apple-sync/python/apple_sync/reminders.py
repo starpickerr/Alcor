@@ -12,7 +12,10 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from apple_sync.category_links import all_source_links, bidirectional_links, reconcile_names, validate_links
+from apple_sync.metadata import snapshot_fields, record_baseline, changed as metadata_changed, write_fields, conflict_summaries
+from apple_sync.contracts import bind_item,category_binding,process_operations,locate_remote,resolve_pending_deletion
+from apple_sync.categories import synchronize_categories, synchronize_moves, reconcile_category_names, resolve_category_conflict, prime_bindings
+from apple_sync.category_links import bidirectional_links, reconcile_names, validate_links
 from apple_sync.bridge import AppleCalendarBridge
 from apple_sync.runtime import report_sync_error
 
@@ -30,16 +33,16 @@ def _priority(value, *, remote=False):
     return {0: 0, 1: 9, 2: 5, 3: 1}.get(value, 0)
 
 
-def _payload(remote):
+def _payload(remote, category_id=None):
     from apple_sync.timezones import normalize_timezone
     rule = remote.get("recurrence") or {}
-    return {"title": remote["title"], "notes": remote.get("notes") or "",
+    return {**snapshot_fields(remote),**({"category_id": category_id} if category_id is not None else {}), "title": remote["title"], "notes": remote.get("notes") or "",
             "due_on": remote.get("due_on"), "due_time": remote.get("due_time"),
             "timezone": normalize_timezone(remote.get("timezone")), "planned_on": remote.get("planned_on"),
             "remind_at": remote.get("remind_at"), "priority": _priority(remote.get("priority"), remote=True),
-            "repeat_frequency": rule.get("frequency") or "none", "repeat_days": rule.get("days") or [],
+            "repeat_frequency": (rule.get("frequency") or "none") if _supported(remote) else "none", "repeat_days": (rule.get("days") or []) if _supported(remote) else [],
             "repeat_until": (rule.get("until") or "")[:10] or None,
-            "repeat_interval": rule.get("interval", 1),
+            "repeat_interval": rule.get("interval", 1) if _supported(remote) else 1,
             "completed": bool(remote.get("completed")), "completed_at": remote.get("completed_at")}
 
 
@@ -149,6 +152,11 @@ class AppleReminderSync:
                 missing_since=excluded.missing_since,updated_at=excluded.updated_at""", mapping)
 
     def _new_map(self, local, remote, origin, source_key=None):
+        self.todos.apple_apply_metadata(local["id"],snapshot_fields(remote))
+        local = self.todos.get_todo(local["id"])
+        record_baseline(self,local,remote)
+        self.todos.apple_apply_metadata(local['id'],{'native_managed':True})
+        bind_item(self.todos,local,remote,'reminders',[] if _supported(remote) else ['此提醒包含复杂重复或位置/多重提醒，完整保留；请在 Apple 中编辑'])
         return {"todo_id": local["id"], "source_key": source_key or _source_key(remote),
                 "list_id": remote["list_id"], "reminder_id": remote["reminder_id"],
                 "external_id": remote.get("external_id") or "", "origin": origin,
@@ -173,7 +181,7 @@ class AppleReminderSync:
         if not remote.get("stella_id"):
             return False
         local = self._local(remote["stella_id"])
-        if local is None or local["source_type"] is not None or any(
+        if local is None or local["source_type"] == "apple_reminder" or any(
                 row["todo_id"] == remote["stella_id"] for row in maps):
             counts["conflicts"] += 1
             return True
@@ -191,7 +199,10 @@ class AppleReminderSync:
         lists = []
         if native.get("authorization") == "full_access":
             try:
-                lists = self.bridge.call("reminder_lists")["lists"]
+                inventory = self.bridge.call("reminder_lists")
+                lists = inventory["lists"]
+                self._set('available_sources',inventory.get('sources',[]))
+                self._set('default_source_id',inventory.get('default_source_id'))
             except Exception as exc:
                 listing_error = report_sync_error("reminder", "读取提醒事项列表", exc)
         maps = self._maps()
@@ -199,10 +210,11 @@ class AppleReminderSync:
                 "auto_enabled": bool(self._get("auto_enabled", True)), "sync_all": bool(self._get("sync_all", False)),
                 "list_ids": self._get("list_ids", []), "direction": self._get("direction", "bidirectional"),
                 "lists": lists, "categories": self.todos.categories(), "last_success": self._get("last_success"), "error": listing_error or self._get("error", ""),
-                "conflicts": [{"todo_id": row["todo_id"], "reason": row["conflict"]}
-                              for row in maps if row["conflict"]],
+                "conflicts": conflict_summaries(maps, self.todos.get_todo, 'todo_id'),
                 "pending_deletions": sum(row["state"] == "pending_delete" for row in maps),
                 "pending_local_deletions": sum(row["state"] == "pending_local_delete" for row in maps),
+                "readonly_issues":self._get('readonly_issues',[]),"category_conflicts":self._get('category_conflicts',[]), "operations":self.todos.apple_operations(),
+                "sources":self._get('available_sources',[]),"default_source_id":self._get('default_source_id'),
                 "links": [self._public_link(row) for row in self._stored_links()]}
 
     def request_access(self):
@@ -215,10 +227,19 @@ class AppleReminderSync:
             if state.get("authorization") != "full_access":
                 raise PermissionError("需要系统完整访问授权")
             sync_all = selections is None
-            if sync_all and not state["lists"]:
-                raise ValueError("没有可同步的来源，请检查系统账户或授权后重试")
-            links = (all_source_links(state["lists"], state["categories"], self._stored_links()) if sync_all else
-                     bidirectional_links(selections, state["lists"], state["categories"]))
+            deleted_categories = synchronize_categories(self, self.todos, 'reminders') if sync_all else 0
+            state = self.status()
+            if sync_all and not state['lists'] and deleted_categories:
+                self._set('sync_all', True)
+                self._set('sync_deletions', True)
+                self._set('connected', True)
+                self._set('auto_enabled', True)
+                self.resume_auto()
+                self._set('error', '')
+                return {'state': self.status(), 'result': {'status': 'success', 'deleted_lists': deleted_categories}}
+            if sync_all and not state['lists']:
+                raise ValueError('没有可同步的来源，请检查系统账户或授权后重试')
+            links = state['links'] if sync_all else bidirectional_links(selections, state['lists'], state['categories'])
             state = self.replace_links(links)
             self._set("sync_all", sync_all)
             self._set("sync_deletions", sync_all)
@@ -226,7 +247,7 @@ class AppleReminderSync:
             names = {row["name"]: row["id"] for row in self.todos.categories() if row["id"] in selected}
             for row in self.todos.list_todos():
                 if not row.get("category_id") and row.get("list_name") in names:
-                    self.todos.set_todo_category(row["id"], names[row["list_name"]])
+                    self.todos.apple_place_item(row["id"], names[row["list_name"]])
             with self._connect() as db:
                 db.executemany("DELETE FROM baseline_local WHERE todo_id=?",
                                [(row["id"],) for row in self.todos.list_todos() if row.get("category_id") in selected])
@@ -256,7 +277,7 @@ class AppleReminderSync:
             if not self._get("ever_connected", False):
                 with self._connect() as db:
                     db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
-                                   [(row["id"],) for row in self.todos.list_todos() if row["source_type"] is None])
+                                   [(row["id"],) for row in self.todos.list_todos() if row["source_type"] != "apple_reminder"])
                 self._set("ever_connected", True)
             self._set("list_ids", list_ids)
             self._set("direction", direction)
@@ -298,7 +319,7 @@ class AppleReminderSync:
             create_name = str(raw.get("create_name") or "").strip()
             if not item["stella_id"] and create_name:
                 existing = next((row for row in self.todos.categories() if row["name"] == create_name), None)
-                item["stella_id"] = existing["id"] if existing else self.todos.create_category({"name": create_name})["id"]
+                item["stella_id"] = existing["id"] if existing else self.todos.create_category({"name": create_name, "color": available.get(item["apple_id"], {}).get("color", "#6B8AF7")})["id"]
             prepared.append(item)
         validate_links(prepared)
         rows = []
@@ -310,6 +331,8 @@ class AppleReminderSync:
                     raise ValueError("selected reminder list is unavailable")
                 apple = {"title": old["apple_name"]}
             category = self.todos.get_category(item["stella_id"])
+            if item['apple_id'] in available:
+                self.todos.apple_bind('category',category['id'],category_binding(available[item['apple_id']]))
             old = previous.get(item["apple_id"], {})
             baseline = {key: old[key] for key in ("apple_name", "stella_name", "name_conflict")} if old.get("stella_id") == item["stella_id"] else {}
             rows.append({**item, "apple_name": apple["title"], "stella_name": category["name"],
@@ -326,7 +349,7 @@ class AppleReminderSync:
             if enabled and not self._get("ever_connected", False):
                 with self._connect() as db:
                     db.executemany("INSERT OR IGNORE INTO baseline_local VALUES (?)",
-                                   [(row["id"],) for row in self.todos.list_todos() if row["source_type"] is None])
+                                   [(row["id"],) for row in self.todos.list_todos() if row["source_type"] != "apple_reminder"])
                 self._set("ever_connected", True)
             directions = {row["direction"] for row in enabled}
             self._set("list_ids", [row["apple_id"] for row in enabled])
@@ -336,58 +359,24 @@ class AppleReminderSync:
         return self.status()
 
     def _reconcile_category_names(self):
-        available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
-        errors = []
-        for link in self._stored_links():
-            if not link["enabled"]:
-                continue
-            apple = available.get(link["apple_id"])
-            if apple is None:
-                continue
-            try:
-                category = self.todos.get_category(link["stella_id"])
-            except KeyError:
-                link["name_conflict"] = "Stella category is missing"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            action, name = reconcile_names(link["apple_name"], link["stella_name"], apple["title"], category["name"])
-            if action in ("unchanged",):
-                continue
-            if action == "conflict":
-                link["name_conflict"] = "Both Apple and Stella renamed this category"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            if action == "aligned":
-                link.update(apple_name=name, stella_name=name, name_conflict="")
-                self._save_link(link)
-                continue
-            if action == "apple_to_stella":
-                self.todos.update_category(link["stella_id"], {"name": name})
-                link.update(apple_name=name, stella_name=name, name_conflict="")
-                self._save_link(link)
-                continue
-            if not apple.get("writable"):
-                link["name_conflict"] = "Reminder list is read only"
-                self._save_link(link)
-                errors.append(link["name_conflict"])
-                continue
-            try:
-                self.bridge.call("reminder_rename", list_id=link["apple_id"], title=name)
-            except Exception as exc:
-                report_sync_error("reminder", "同步分类名称", exc)
-                link["name_conflict"] = str(exc)
-                self._save_link(link)
-                errors.append(str(exc))
-                continue
-            link.update(apple_name=name, stella_name=name, name_conflict="")
-            self._save_link(link)
-        return errors
+        return reconcile_category_names(self,self.todos,'reminders')
+
+    def resolve_category_conflict(self,apple_id,choice,replacement_id=None,source_id=None,field=None):
+        with self._lock:
+            return resolve_category_conflict(self,self.todos,'reminders',apple_id,choice,replacement_id,source_id,field)
+
+    def prime_bindings(self):
+        return prime_bindings(self,self.todos,'reminders')
+
+    def cancel_operation(self,operation_id):
+        if self._get('operation-receipt:'+operation_id):
+            raise ValueError('Apple 已确认此操作，正在完成本地核对，请继续同步')
+        self.todos.cancel_apple_operation(operation_id)
+        return self.status()
 
     def _place_todo(self, local, category_id, direction):
         if local and category_id and direction in ("import", "bidirectional") and local.get("category_id") != category_id:
-            return self.todos.set_todo_category(local["id"], category_id)
+            return self.todos.apple_place_item(local["id"], category_id)
         return local
 
     def disconnect(self):
@@ -445,7 +434,7 @@ class AppleReminderSync:
         return None
 
     def _write_payload(self, local, mapping=None, list_id=None):
-        data = {"list_id": list_id or mapping["list_id"], "title": local["title"],
+        data = {**write_fields(self,local,mapping),"list_id": list_id or mapping["list_id"], "title": local["title"],
                 "notes": local["notes"], "due_on": local["due_on"], "due_time": local["due_time"],
                 "timezone": local["timezone"], "planned_on": local["planned_on"],
                 "remind_at": local["remind_at"], "priority": _priority(local["priority"]),
@@ -465,17 +454,44 @@ class AppleReminderSync:
             return self.todos.upsert_external_todo(mapping["source_key"], payload,
                                                    todo_id=local["id"], reconciled=True)
         fields = {key: value for key, value in payload.items() if key not in ("completed", "completed_at")}
-        updated = self.todos.update_todo(local["id"], fields)
+        updated = self.todos.apple_apply_item(local["id"], fields)
         if updated["repeat_frequency"] == "none" and updated["status"] != "cancelled":
             wanted = "completed" if payload["completed"] else "todo" if updated["status"] == "completed" else updated["status"]
             if wanted != updated["status"]:
-                updated = self.todos.change_todo_status(local["id"], wanted)
+                updated = self.todos.apple_record_completion(local['id'],remote,payload)
         return updated
+
+    def _native_successors(self,rows):
+        retired = self._get('retired_reminder_ids',[])
+        for mapping in self._maps():
+            local = self._local(mapping['todo_id'])
+            if not local or local.get('apple_pending') or mapping['state']!='active':
+                continue
+            before = (local.get('apple') or {}).get('native',{})
+            if (before.get('recurrence') or {}).get('frequency','none')=='none':
+                continue
+            completed = next((row for row in rows if row['reminder_id']==mapping['reminder_id'] and row.get('completed')),None)
+            if not completed or not completed.get('external_id'):
+                continue
+            following = [row for row in rows if row['list_id']==completed['list_id'] and row.get('external_id')==completed['external_id'] and not row.get('completed') and (row.get('due_on') or '')>(completed.get('due_on') or '')]
+            if len(following)!=1:
+                continue
+            local = self.todos.apple_record_completion(local['id'],completed,_payload(following[0]))
+            self._refresh_map(mapping,local,following[0])
+            retired.append(completed['reminder_id'])
+        self._set('retired_reminder_ids',list(dict.fromkeys(retired)))
+        return [row for row in rows if row['reminder_id'] not in retired]
 
     def _process_remote(self, remote, mapping, direction, counts, category_id=None):
         if not _supported(remote):
-            self._conflict(mapping, "Apple reminder has unsupported alarms or recurrence")
-            counts["conflicts"] += 1
+            local = self._local(mapping['todo_id'])
+            if local:
+                local = self._apply_remote(mapping,local,remote)
+                self._refresh_map(mapping,local,remote)
+            counts['conflicts'] += 1
+            return
+        if mapping.get('state')=='conflict':
+            counts['conflicts'] += 1
             return
         local = self._local(mapping["todo_id"])
         if local is None:
@@ -487,8 +503,9 @@ class AppleReminderSync:
                            updated_at=self.clock())
             self._save_map(mapping)
             return
-        local_changed = _hash(local) != mapping["local_hash"]
-        remote_changed = _hash(remote, remote=True) != mapping["remote_hash"]
+        local_extra,remote_extra = metadata_changed(self,local,remote)
+        local_changed = _hash(local) != mapping["local_hash"] or local_extra
+        remote_changed = _hash(remote, remote=True) != mapping["remote_hash"] or remote_extra
         if local_changed and remote_changed:
             self._conflict(mapping, "Both Stella and Apple changed this reminder")
             counts["conflicts"] += 1
@@ -550,7 +567,7 @@ class AppleReminderSync:
             with self._connect() as db:
                 baseline = {row[0] for row in db.execute("SELECT todo_id FROM baseline_local")}
             mapped = {row["todo_id"] for row in maps}
-            result["new"] += sum(local["source_type"] is None and local["id"] not in mapped and
+            result["new"] += sum(local["source_type"] != "apple_reminder" and local["id"] not in mapped and
                                  local["id"] not in baseline and local["status"] != "cancelled"
                                  for local in self.todos.list_todos())
         return result
@@ -567,7 +584,7 @@ class AppleReminderSync:
             if any(row is None for row in items):
                 raise KeyError("Stella todo not found")
             maps = {row["todo_id"]: row for row in self._maps()}
-            if any((row["source_type"] is not None and row["id"] not in maps) or
+            if any((row["source_type"] == "apple_reminder" and row["id"] not in maps) or
                    (row["id"] in maps and maps[row["id"]]["list_id"] != list_id)
                    for row in items):
                 raise ValueError("todo cannot be exported to the selected list")
@@ -672,13 +689,23 @@ class AppleReminderSync:
             confirm_deletions = confirm_deletions or automatic_deletions
             confirm_local_deletions = confirm_local_deletions or automatic_deletions
             if self._get("sync_all", False):
-                sources = self.bridge.call("reminder_lists")["lists"]
-                categories = self.todos.categories()
-                stored = self._stored_links()
-                directions = {row["apple_id"]: row["direction"] for row in stored}
-                if any(directions.get(row["id"]) != ("bidirectional" if row.get("writable") else "import")
-                       for row in sources):
-                    self.replace_links(all_source_links(sources, categories, stored))
+                try:
+                    counts['deleted_categories'] = synchronize_categories(self, self.todos, 'reminders')
+                except Exception as exc:
+                    counts['status'] = 'error'
+                    self._set('error', report_sync_error('reminders', '同步分类', exc))
+                    return counts
+            if not self._get('sync_all',False):
+                _,errors = process_operations(self,self.todos,'reminders')
+                self._set('operation_errors',errors)
+            for key,value in self._get('operation_counts',{}).items():
+                counts[key] += value
+            try:
+                counts['exported'] += synchronize_moves(self, self.todos, 'reminders', lambda row, mapping, remote: _hash(row, remote=remote))
+            except Exception as exc:
+                counts['status'] = 'error'
+                self._set('error', report_sync_error('reminders', '同步分类移动', exc))
+                return counts
             stored_links = self._stored_links()
             using_links = bool(stored_links)
             name_errors = self._reconcile_category_names() if using_links else []
@@ -694,7 +721,9 @@ class AppleReminderSync:
                         db.executemany("UPDATE mappings SET missing_since='' WHERE list_id=?",
                                        [(key,) for key in counts["failed_list_ids"]])
                 maps = self._maps()
-                rows = [row for row in inventory["reminders"] if row["list_id"] in successful]
+                retired_ids = set(self._get('retired_reminder_ids',[]))
+                rows = [row for row in inventory["reminders"] if row["list_id"] in successful and row['reminder_id'] not in retired_ids]
+                rows = self._native_successors(rows)
                 external_counts = {key: sum(row.get("external_id") == key for row in rows)
                                    for key in {row.get("external_id") for row in rows if row.get("external_id")}}
                 empty_unsafe = {key for key in successful if not any(row["list_id"] == key for row in rows) and
@@ -713,7 +742,7 @@ class AppleReminderSync:
                                 continue
                             item_direction = link["direction"]
                             category_id = link["stella_id"]
-                        if (not _supported(remote) or remote.get("external_id") and
+                        if (remote.get("external_id") and
                                 external_counts[remote["external_id"]] > 1):
                             mapping = self._match(remote, maps, rows)
                             if mapping:
@@ -728,9 +757,9 @@ class AppleReminderSync:
                         elif self._recover_marked(remote, maps, counts):
                             if remote.get("stella_id"):
                                 seen.add(remote["stella_id"])
-                        elif item_direction in ("import", "bidirectional") and _supported(remote):
+                        elif item_direction in ("import", "bidirectional"):
                             key = _source_key(remote)
-                            local = self._place_todo(self.todos.upsert_external_todo(key, _payload(remote)),
+                            local = self._place_todo(self.todos.upsert_external_todo(key, _payload(remote, category_id)),
                                                      category_id, item_direction)
                             mapping = self._new_map(local, remote, "apple", key)
                             self._save_map(mapping)
@@ -782,7 +811,7 @@ class AppleReminderSync:
                             baseline = {row[0] for row in db.execute("SELECT todo_id FROM baseline_local")}
                         mapped = {row["todo_id"] for row in self._maps()}
                         for local in self.todos.list_todos():
-                            if (local["source_type"] is not None or local["id"] in mapped or
+                            if (local["source_type"] == "apple_reminder" or local["id"] in mapped or
                                     local["id"] in baseline or local["status"] == "cancelled"):
                                 continue
                             match = next((item for item in export_targets
@@ -792,7 +821,7 @@ class AppleReminderSync:
                                 continue
                             try:
                                 if match[1] and local.get("category_id") != match[1]:
-                                    local = self.todos.set_todo_category(local["id"], match[1])
+                                    local = self.todos.apple_place_item(local["id"], match[1])
                                 remote = self.bridge.call("reminder_upsert", **self._write_payload(
                                     local, list_id=match[0]))["reminder"]
                                 self._save_map(self._new_map(local, remote, "stella"))
@@ -814,7 +843,7 @@ class AppleReminderSync:
                                 if local is not None and _hash(local) != mapping["local_hash"]:
                                     raise ValueError("Stella reminder changed before deletion")
                                 if local is not None:
-                                    self.todos.delete_todo(mapping["todo_id"], preserve_children=True)
+                                    self.todos.apple_remove_item(mapping["todo_id"],preserve_children=True)
                                 mapping["state"] = "remote_deleted"
                                 mapping["conflict"] = ""
                                 self._save_map(mapping)
@@ -844,6 +873,11 @@ class AppleReminderSync:
                             except Exception as exc:
                                 failures.append(report_sync_error("reminder", "删除 Apple 提醒事项", exc))
                                 counts["status"] = "error"
+                counts['conflicts'] = max(counts['conflicts'],sum(row['state']=='conflict' for row in self._maps()))
+                issues = [dict(todo_id=row['todo_id'],reason='复杂 Apple 提醒已只读保留') for row in self._maps() if (self._local(row['todo_id']) or {}).get('apple',{}).get('issues')]
+                self._set('readonly_issues',issues)
+                if issues or self._get('operation_errors',[]) or self._get('category_conflicts',[]):
+                    counts['status'] = 'partial'
                 if name_errors and counts["status"] == "success":
                     counts["status"] = "error"
                 if counts["status"] == "success":
@@ -857,26 +891,48 @@ class AppleReminderSync:
                 self._set("error", failures[-1])
             return counts
 
-    def resolve_conflict(self, todo_id, choice):
-        if choice not in ("keep_stella", "keep_apple"):
-            raise ValueError("invalid conflict resolution")
-        mapping = next((row for row in self._maps() if row["todo_id"] == todo_id), None)
-        if not mapping or mapping["state"] != "conflict":
-            raise KeyError("conflict not found")
+    def resolve_conflict(self,todo_id,choice):
+        if choice not in ('keep_stella','keep_apple'):
+            raise ValueError('invalid conflict resolution')
+        mapping = next((row for row in self._maps() if row['todo_id']==todo_id),None)
+        if not mapping or mapping['state']!='conflict':
+            raise KeyError('conflict not found')
         local = self._local(todo_id)
-        if local is None:
-            raise KeyError("Stella todo not found")
-        remote = self.bridge.call("reminder_lookup", list_id=mapping["list_id"],
-            reminder_id=mapping["reminder_id"], external_id=mapping["external_id"]).get("reminder")
-        if remote is None:
-            raise ValueError("Apple reminder is unavailable")
-        if not _supported(remote):
-            raise ValueError("Apple reminder has unsupported fields")
-        if choice == "keep_stella":
-            remote = self.bridge.call("reminder_upsert", **self._write_payload(local, mapping))["reminder"]
+        remote = locate_remote(self,mapping,'reminders')
+        if remote:
+            mapping.update(list_id=remote['list_id'],reminder_id=remote['reminder_id'])
+        if resolve_pending_deletion(self,self.todos,mapping,'reminders',choice,remote):
+            return self.status()
+        category = next((row['stella_id'] for row in self._stored_links() if row['apple_id']==mapping['list_id']),None)
+        if choice=='keep_apple':
+            if remote is None:
+                if local:
+                    self.todos.apple_remove_item(todo_id)
+                mapping.update(state='remote_deleted',conflict='')
+                self._save_map(mapping)
+                return self.status()
+            if local is None:
+                local = self.todos.apple_restore_item(todo_id,_payload(remote),category,mapping['source_key'] if mapping['origin']=='apple' else None)
+            else:
+                local = self.todos.apple_place_item(todo_id,category) if category and category!=local['category_id'] else local
+                local = self._apply_remote(mapping,local,remote)
+        elif local is None:
+            if remote:
+                if not remote.get('writable'):
+                    raise PermissionError('Apple 来源不允许删除')
+                self.bridge.call('reminder_delete',list_id=mapping['list_id'],reminder_id=mapping['reminder_id'],external_id=mapping['external_id'])
+            mapping.update(state='deleted',conflict='')
+            self._save_map(mapping)
+            return self.status()
         else:
-            local = self._apply_remote(mapping, local, remote)
-        self._refresh_map(mapping, local, remote)
+            if remote and (not remote.get('writable') or not _supported(remote)):
+                raise PermissionError('此 Apple 提醒只读，请在 Apple 中编辑')
+            target = next((row['apple_id'] for row in self._stored_links() if row['stella_id']==local.get('category_id')),mapping['list_id'])
+            payload = self._write_payload(local,mapping if remote else None,list_id=target)
+            if remote:
+                payload['lookup_list_id'] = remote['list_id']
+            remote = self.bridge.call('reminder_upsert',**payload)['reminder']
+        self._refresh_map(mapping,local,remote)
         return self.status()
 
     def _batch_selections(self, selections):
@@ -978,7 +1034,7 @@ class AppleReminderSync:
                     chosen.append((remote, targets[remote["list_id"]]))
         else:
             by_category = {row["stella_id"]: row["apple_id"] for row in rows}
-            locals_only = [row for row in self.todos.list_todos() if row["source_type"] is None]
+            locals_only = [row for row in self.todos.list_todos() if row["source_type"] != "apple_reminder"]
             for stella_id, apple_id in by_category.items():
                 members = [row for row in locals_only if row.get("category_id") == stella_id]
                 ids = {row["id"] for row in members}
@@ -1047,7 +1103,7 @@ class AppleReminderSync:
                     if self._match(item, self._maps(), [row for row, _target in chosen]):
                         counts["skipped"] += 1
                         continue
-                    local = self._place_todo(self.todos.upsert_external_todo(_source_key(item), _payload(item)),
+                    local = self._place_todo(self.todos.upsert_external_todo(_source_key(item), _payload(item, target)),
                                              target, "import")
                     self._save_map(self._new_map(local, item, "apple"))
                     counts["imported"] += 1

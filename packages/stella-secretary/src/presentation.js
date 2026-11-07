@@ -42,3 +42,35 @@ export function calendarFocusMinute(records, days) {
   }
   return Number.isFinite(first) ? Math.max(0, first - 30) : 8 * 60
 }
+
+export function calendarOrder(left, right) {
+  const day = item => item.allDay ? item.start : localDate(new Date(item.start))
+  return day(left).localeCompare(day(right)) || Number(right.allDay)-Number(left.allDay) || Date.parse(left.start)-Date.parse(right.start) || left.title.localeCompare(right.title,'zh-CN')
+}
+
+export function categorySources(categories) {
+  const sources = new Map()
+  for (const item of categories) {
+    const id = item.apple?.source_id || item.apple?.source_name || '__other__'
+    if (!sources.has(id)) sources.set(id,{id,name:item.apple?.source_name || '其他',items:[]})
+    sources.get(id).items.push(item)
+  }
+  const other = sources.get('__other__')
+  sources.delete('__other__')
+  return [...sources.values(),...(other ? [other] : [])]
+}
+
+export function calendarSources(categories) {
+  const sources = categorySources(categories)
+  let other = sources.find(source => source.id === '__other__')
+  if (!other) {other={id:'__other__',name:'其他',items:[]};sources.push(other)}
+  other.items.push({id:'__tasks__',name:'事务',color:'var(--stella-brand)'})
+  return sources
+}
+
+export function calendarWeekLabel(first, last) {
+  const start = new Date(`${first}T12:00`)
+  const end = new Date(`${last}T12:00`)
+  const options = {day:'numeric',...(first.slice(0,7) !== last.slice(0,7) ? {month:'long'} : {}),...(first.slice(0,4) !== last.slice(0,4) ? {year:'numeric'} : {})}
+  return `${start.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})} — ${end.toLocaleDateString('zh-CN',options)}`
+}

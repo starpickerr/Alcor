@@ -1,3 +1,4 @@
+import { Notice } from './notice.jsx'
 import React, { useMemo } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -10,6 +11,6 @@ export function AutomationPage({ scope, api, schedule, renderFactorySlot, availa
   const remote = useMemo(() => Object.fromEntries(['catalog', 'create', 'edit', 'run', 'history', 'deleteInactive'].map(action => [action, request => api.automation({ scope, action, ...(request === undefined ? {} : { request }) })]).concat([
     ['deliveryLimits', () => schedule.deliveryLimits()],
   ])), [api, schedule, scope])
-  if (!available) return <section className="stella-business"><header className="stella-app-header"><h1>自动化</h1></header><p>请在 DSH 中管理自动化。</p><Button variant="outline" onClick={openNative}>打开 DSH 自动化</Button></section>
+  if (!available) return <section className="stella-business"><header className="stella-app-header"><h1>自动化</h1></header><Notice>请在 DSH 中管理自动化。</Notice><Button variant="outline" onClick={openNative}>打开 DSH 自动化</Button></section>
   return renderFactorySlot('schedule.manager.view', { remote, ...(scope === 'stella' ? { scopeLabel: 'Stella', manualCreation: true, templates: automationTemplates } : {}) })
 }

@@ -5,8 +5,8 @@
       "module": "elearning_mcp",
       "package": "stella-elearning",
       "binary": "elearning-mcp",
-      "version": "1.0.6",
-      "sourceSha256": "6f84afee79f0a6e1024d93bffac8f0e616456a5979a37871d0bbb498726d921f",
+      "version": "1.0.7",
+      "sourceSha256": "cdfd628505fdfe3e0d0e8c10df9bd89736f81126d5b1ddc72813f76deda65320",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",

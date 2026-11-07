@@ -11,6 +11,9 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from business.apple_contract import AppleContract, setup_apple_contract
+from business.categories import default_category, ensure_required_categories, require_category
+
 from .imports import HOLIDAY_SCHEDULES, parse_special_dates
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -42,12 +45,14 @@ def _text(value, field, limit=500):
     return value.strip()
 
 
-class CalendarService:
+class CalendarService(AppleContract):
+    APPLE_ITEMS = "calendar_events"
+    APPLE_CATEGORIES = "calendar_categories"
+
     def __init__(self, db_path):
         if db_path is None:
             raise ValueError("db_path is required (host data handle)")
         self.db_path = Path(db_path)
-        created_new = not self.db_path.exists()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
             db.executescript(load_schema_sql())
@@ -63,29 +68,9 @@ class CalendarService:
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {declaration}")
-            defaults = (
-                ("personal", "个人", "#55B89A"), ("work", "工作", "#6B8AF7"),
-                ("study", "学习", "#E5A755"),
-                ("china_holidays", "中国大陆节假日", "#B35BD6"),
-            )
-            for category_id, name, color in (defaults if created_new else defaults[-1:]):
-                db.execute("INSERT OR IGNORE INTO calendar_categories VALUES (?,?,?,?)",
-                           (category_id, name, color, _now()))
-            db.execute("""UPDATE OR IGNORE calendar_categories SET name='中国大陆节假日'
-                WHERE id='china_holidays' AND name='中国节假日'""")
-            if not created_new:
-                db.execute("""DELETE FROM calendar_categories WHERE id='tasks' AND name='事务'
-                    AND NOT EXISTS (SELECT 1 FROM calendar_events WHERE category_id='tasks')""")
-                db.execute("""DELETE FROM calendar_categories WHERE id='other' AND name='其他'
-                    AND NOT EXISTS (SELECT 1 FROM calendar_events WHERE category_id='other')""")
-                # Earlier date imports created a sixth default category. Fold only that
-                # unchanged category into Personal, preserving user-customized categories.
-                db.execute("""UPDATE calendar_events SET category_id='personal'
-                    WHERE category_id='special_dates' AND EXISTS
-                    (SELECT 1 FROM calendar_categories WHERE id='special_dates' AND name='特殊日期')
-                    AND EXISTS (SELECT 1 FROM calendar_categories WHERE id='personal')""")
-                db.execute("""DELETE FROM calendar_categories WHERE id='special_dates' AND name='特殊日期'
-                    AND NOT EXISTS (SELECT 1 FROM calendar_events WHERE category_id='special_dates')""")
+            ensure_required_categories(db, 'calendar_categories', 'calendar_events', '日程', 'personal')
+        with self._connect() as db:
+            setup_apple_contract(db,self.APPLE_ITEMS)
 
     @contextmanager
     def _connect(self):
@@ -130,12 +115,12 @@ class CalendarService:
 
     def categories(self):
         with self._connect() as db:
-            return [dict(row) for row in db.execute("""SELECT * FROM calendar_categories ORDER BY
+            return [self._apple_decorate(db, "category", row) for row in db.execute("""SELECT * FROM calendar_categories ORDER BY
                 CASE id WHEN 'personal' THEN 0 WHEN 'work' THEN 1 WHEN 'study' THEN 2
                 WHEN 'china_holidays' THEN 3 ELSE 4 END, created_at, name""")]
 
     def create_category(self, payload):
-        name = _text(payload.get("name"), "name", 40)
+        name = _text(payload.get("name"), "name", 200)
         color = payload.get("color", "#6B8AF7")
         if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
             raise ValueError("color must be #RRGGBB")
@@ -143,6 +128,10 @@ class CalendarService:
         try:
             with self._connect() as db:
                 db.execute("INSERT INTO calendar_categories VALUES (?,?,?,?)", (category_id, name, color, _now()))
+                if payload.get('source_id'):
+                    if not isinstance(payload['source_id'],str):
+                        raise ValueError('source_id must be a string')
+                    db.execute('INSERT OR REPLACE INTO apple_bindings VALUES (?,?,?)', ('category',category_id,json.dumps({'source_id':payload['source_id'],'planned':True})))
         except sqlite3.IntegrityError as exc:
             raise ValueError("category name already exists") from exc
         return self.get_category(category_id)
@@ -152,37 +141,46 @@ class CalendarService:
             row = db.execute("SELECT * FROM calendar_categories WHERE id=?", (category_id,)).fetchone()
         if row is None:
             raise KeyError("category not found")
-        return dict(row)
+        with self._connect() as db:
+            return self._apple_decorate(db, "category", row)
 
-    def set_event_category(self, event_id, category_id):
+    def set_event_category(self, event_id, category_id, *, _apple=False):
         """Move an event between categories without treating that as a content edit."""
         self.get_event(event_id)
-        if category_id is not None:
-            self.get_category(category_id)
+        self.get_category(require_category(category_id))
         with self._connect() as db:
+            if not _apple:
+                self._apple_guard(db,'item',event_id,'can_modify')
+                self._apple_guard(db,'category',category_id,'can_modify')
             db.execute("UPDATE calendar_events SET category_id=? WHERE id=?", (category_id, event_id))
         return self.get_event(event_id)
 
-    def update_category(self, category_id, payload):
+    def update_category(self, category_id, payload, *, _apple=False):
         old = self.get_category(category_id)
-        name = _text(payload.get("name", old["name"]), "name", 40)
-        if category_id == "china_holidays" and name != old["name"]:
-            raise ValueError("reserved category cannot be renamed")
+        name = _text(payload.get("name", old["name"]), "name", 200)
         color = payload.get("color", old["color"])
         if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(c not in "0123456789abcdefABCDEF" for c in color[1:]):
             raise ValueError("color must be #RRGGBB")
         try:
             with self._connect() as db:
+                if not _apple:
+                    self._apple_guard(db,"category",category_id,"can_rename")
+                name = self._apple_category_name(db,category_id,name,_apple)
                 db.execute("UPDATE calendar_categories SET name=?, color=? WHERE id=?", (name, color, category_id))
         except sqlite3.IntegrityError as exc:
             raise ValueError("category name already exists") from exc
         return self.get_category(category_id)
 
     def delete_category(self, category_id):
-        if category_id == "china_holidays":
-            raise ValueError("reserved category cannot be deleted")
         self.get_category(category_id)
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            binding = self._apple_guard(db, 'category', category_id, 'can_delete')
+            if binding:
+                return self._apple_queue(db, 'category', category_id, 'delete')
+            rows = db.execute('SELECT * FROM calendar_events WHERE category_id=?', (category_id,)).fetchall()
+            for row in rows:
+                self._delete_event(db, row)
             db.execute("DELETE FROM calendar_categories WHERE id=?", (category_id,))
 
     def _validate_event(self, payload, existing=None):
@@ -228,6 +226,8 @@ class CalendarService:
         row["repeat_timezone"] = zone
         if frequency != "none" and until and until < datetime.fromisoformat(row["start_at"]).astimezone(ZoneInfo(zone)).date().isoformat():
             raise ValueError("repeat_until must be on or after start_at")
+        if "category_id" in payload:
+            require_category(payload["category_id"])
         if row.get("category_id"):
             self.get_category(row["category_id"])
         return row
@@ -237,7 +237,8 @@ class CalendarService:
             row = db.execute("SELECT * FROM calendar_events WHERE id=?", (event_id,)).fetchone()
         if row is None:
             raise KeyError("event not found")
-        return dict(row)
+        with self._connect() as db:
+            return self._apple_decorate(db,"item",row)
 
     def list_events(self, start=None, end=None, category_id=None):
         start_at = datetime.fromisoformat(_instant(start, "start")) if start else None
@@ -259,7 +260,7 @@ class CalendarService:
             args.append(category_id)
         sql = "SELECT * FROM calendar_events" + (" WHERE " + " AND ".join(clauses) if clauses else "") + " ORDER BY start_at, id"
         with self._connect() as db:
-            templates = [dict(row) for row in db.execute(sql, args)]
+            templates = [self._apple_decorate(db,"item",row) for row in db.execute(sql,args)]
             exclusions = {(row["series_id"], row["occurrence_on"]) for row in db.execute(
                 "SELECT series_id,occurrence_on FROM calendar_occurrence_exclusions")}
         if not start_at or not end_at:
@@ -278,7 +279,7 @@ class CalendarService:
                                if (row["id"], instance["id"].rsplit("@", 1)[-1]) not in exclusions)
         return sorted(results, key=lambda row: (row["start_at"], row["id"]))
 
-    def exclude_occurrence(self, series_id, occurrence_on):
+    def exclude_occurrence(self, series_id, occurrence_on, *, _apple=False):
         try:
             day = date.fromisoformat(occurrence_on).isoformat()
         except (ValueError, TypeError) as exc:
@@ -287,6 +288,9 @@ class CalendarService:
         if series["repeat_frequency"] == "none":
             raise ValueError("event is not a recurring series")
         with self._connect() as db:
+            binding = None if _apple else self._apple_guard(db,'item',series_id,'can_modify')
+            if binding:
+                self._apple_queue(db,'item',series_id,'exclude',{'occurrence_on':day})
             db.execute("INSERT OR IGNORE INTO calendar_occurrence_exclusions VALUES (?,?)", (series_id, day))
 
     @staticmethod
@@ -322,7 +326,10 @@ class CalendarService:
             candidate += timedelta(days=1)
         return results
 
-    def create_event(self, payload, *, _briefing_key=None):
+    def create_event(self, payload, *, _briefing_key=None, _apple=False):
+        if payload.get('category_id') and not _apple:
+            with self._connect() as db:
+                self._apple_guard(db,'category',payload['category_id'],'can_modify')
         row = self._validate_event(payload)
         event_id, now = str(payload.get('id') or uuid.uuid4()), _now()
         with self._connect() as db:
@@ -333,11 +340,13 @@ class CalendarService:
                     return self.get_event(existing[0])
                 if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (_briefing_key,)).fetchone():
                     raise ValueError("source event was deleted")
+            row['category_id'] = row.get('category_id') or default_category(db, 'calendar_categories', '日程', 'personal')
             db.execute("""INSERT INTO calendar_events
                 (id,title,description,start_at,end_at,all_day,location,category_id,source_type,source_key,source_url,user_modified,repeat_frequency,repeat_days,repeat_until,repeat_timezone,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (event_id, row["title"], row["description"], row["start_at"], row["end_at"], row["all_day"],
                  row["location"], row.get("category_id"), "briefing" if _briefing_key else None, _briefing_key, "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], now, now))
+            self._apple_fields(db,event_id,payload,_apple)
         return self.get_event(event_id)
 
     def upsert_external_event(self, provider, source_key, payload, event_id=None, reconciled=False):
@@ -366,6 +375,7 @@ class CalendarService:
                 if event_id:
                     raise KeyError("source event not found")
                 return_id = str(uuid.uuid4())
+                row['category_id'] = row.get('category_id') or default_category(db, 'calendar_categories', '日程', 'personal')
                 db.execute("""INSERT INTO calendar_events
                     (id,title,description,start_at,end_at,all_day,location,category_id,source_type,source_key,
                      source_url,user_modified,repeat_frequency,repeat_days,repeat_until,repeat_timezone,created_at,updated_at)
@@ -374,27 +384,75 @@ class CalendarService:
                      row["all_day"], row["location"], row.get("category_id"), provider, source_key,
                      "", 0, row["repeat_frequency"], row["repeat_days"], row["repeat_until"],
                      row["repeat_timezone"], now, now))
+            self._apple_fields(db,return_id,payload,True)
         return self.get_event(return_id)
 
-    def update_event(self, event_id, payload):
+    def update_event(self, event_id, payload, *, _apple=False):
+        if '@' in event_id and not _apple:
+            identity,day = event_id.rsplit('@',1)
+            old = self.get_event(identity)
+            zone = ZoneInfo(old['repeat_timezone'] or 'UTC')
+            lower = datetime.combine(date.fromisoformat(day),time.min,zone)
+            instance = next((row for row in self._occurrences(old,lower,lower+timedelta(days=1)) if row['id']==event_id),None)
+            if not instance:
+                raise ValueError('所选日期不是此日程的实例')
+            fields = {**instance,**payload}
+            self._validate_event(fields)
+            scope = payload.get('edit_scope','this')
+            if scope not in ('this','future'):
+                raise ValueError('请选择本次或将来所有日程')
+            with self._connect() as db:
+                binding = self._apple_guard(db,'item',identity,'can_modify')
+                if not binding:
+                    raise ValueError('请先同步重复日程后选择编辑本次或将来日程')
+                self._apple_guard(db,'category',fields['category_id'],'can_modify')
+                self._apple_queue(db,'item',identity,'edit',{'occurrence_on':day,'scope':scope,'patch':payload})
+            return self.get_event(identity)
         old = self.get_event(event_id)
         if old["source_type"] == "china_holiday":
             raise ValueError("official holidays cannot be edited")
+        if not _apple:
+            with self._connect() as db:
+                self._apple_guard(db,'item',event_id,'can_modify')
+                self._apple_guard(db,'category',payload.get('category_id',old['category_id']),'can_modify')
         row = self._validate_event(payload, old)
         with self._connect() as db:
             db.execute("""UPDATE calendar_events SET title=?,description=?,start_at=?,end_at=?,all_day=?,location=?,
                 category_id=?,repeat_frequency=?,repeat_days=?,repeat_until=?,repeat_timezone=?,user_modified=1,updated_at=? WHERE id=?""",
                 (row["title"], row["description"], row["start_at"], row["end_at"], row["all_day"],
                  row["location"], row.get("category_id"), row["repeat_frequency"], row["repeat_days"], row["repeat_until"], row["repeat_timezone"], _now(), event_id))
+            self._apple_fields(db,event_id,payload,_apple)
         return self.get_event(event_id)
 
-    def delete_event(self, event_id):
+    @staticmethod
+    def _delete_event(db, old):
+        if old['source_type'] == 'briefing' and old['source_key']:
+            db.execute('INSERT OR REPLACE INTO source_tombstones VALUES (?,?)', (old['source_key'], _now()))
+        db.execute('DELETE FROM calendar_events WHERE id=?', (old['id'],))
+
+    def delete_event(self,event_id,scope=None,occurrence_on=None):
         old = self.get_event(event_id)
+        if scope is not None and scope not in ('this','future'):
+            raise ValueError('请选择本次或将来所有日程')
+        if occurrence_on and old['repeat_frequency']!='none':
+            day = date.fromisoformat(occurrence_on)
+            zone = ZoneInfo(old['repeat_timezone'] or 'UTC')
+            lower = datetime.combine(day,time.min,zone)
+            if not list(self._occurrences(old,lower,lower+timedelta(days=1))):
+                raise ValueError('所选日期不是此系列的实例')
+            if scope=='this':
+                return self.exclude_occurrence(event_id,occurrence_on)
+            if day>datetime.fromisoformat(old['start_at']).astimezone(zone).date():
+                with self._connect() as db:
+                    binding = self._apple_guard(db,'item',event_id,'can_delete')
+                    if binding:
+                        return self._apple_queue(db,'item',event_id,'truncate',{'occurrence_on':occurrence_on})
+                return self.update_event(event_id,{'repeat_until':(day-timedelta(days=1)).isoformat()})
         with self._connect() as db:
-            if old["source_type"] == "briefing" and old["source_key"]:
-                db.execute("INSERT OR REPLACE INTO source_tombstones VALUES (?,?)",
-                           (old["source_key"], _now()))
-            db.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
+            binding = self._apple_guard(db,'item',event_id,'can_delete')
+            if binding:
+                return self._apple_queue(db,'item',event_id,'delete',{'scope':scope} if scope else {})
+            self._delete_event(db, old)
 
     @staticmethod
     def _import_category(db, category_id, name, color):
@@ -459,7 +517,7 @@ class CalendarService:
                                    payload.get("description") or "")
         with self._connect() as db:
             category = db.execute("SELECT id FROM calendar_categories WHERE id='personal'").fetchone()
-            category_id = category["id"] if category else None
+            category_id = category['id'] if category else default_category(db, 'calendar_categories', '日程', 'personal')
             key = "manual:" + str(uuid.uuid4())
             self._insert_import_event(db, row, category_id, "special_date", key)
             event = db.execute("SELECT * FROM calendar_events WHERE source_type='special_date' AND source_key=?", (key,)).fetchone()
@@ -476,7 +534,7 @@ class CalendarService:
             prepared.append((row, key))
         with self._connect() as db:
             category = db.execute("SELECT id FROM calendar_categories WHERE id='personal'").fetchone()
-            category_id = category["id"] if category else None
+            category_id = category['id'] if category else default_category(db, 'calendar_categories', '日程', 'personal')
             added = sum(self._insert_import_event(db, row, category_id, "special_date", key)
                         for row, key in prepared)
         return {"added": added, "total": len(prepared)}
@@ -512,12 +570,13 @@ class CalendarService:
         category_id = preferred if db.execute("SELECT 1 FROM calendar_categories WHERE id=?", (preferred,)).fetchone() else None
         row = self._validate_event({"title": item.title, "description": item.snippet,
                                     "start_at": start, "end_at": end, "all_day": all_day,
-                                    "location": "", "category_id": category_id})
+                                    "location": "", **({"category_id": category_id} if category_id else {})})
         if db.execute("SELECT 1 FROM source_tombstones WHERE source_key=?", (source_key,)).fetchone():
             return None
         old = db.execute("SELECT * FROM calendar_events WHERE source_type='briefing' AND source_key=?", (source_key,)).fetchone()
         if old and old["user_modified"]:
             return dict(old)
+        row["category_id"] = old["category_id"] if old else category_id or default_category(db, "calendar_categories", "日程", "personal")
         event_id = old["id"] if old else str(uuid.uuid4())
         now = _now()
         db.execute("""INSERT INTO calendar_events
