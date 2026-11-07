@@ -16,7 +16,7 @@ export class BriefingGenerator {
 
   publicRun(run) {
     const { requestId, date, phase, message, sessionId, model, createdAt, updatedAt, briefingId } = run
-    return { requestId, date, phase, message, sessionId, model, createdAt, updatedAt, briefingId,
+    return { requestId, date, phase, message, ...(sessionId === undefined ? {} : { sessionId }), ...(model === undefined ? {} : { model }), createdAt, updatedAt, ...(briefingId === undefined ? {} : { briefingId }),
       completedSources: run.completedSources ?? run.collected.length, completedBatches: run.completedBatches ?? run.submissions.length }
   }
 
