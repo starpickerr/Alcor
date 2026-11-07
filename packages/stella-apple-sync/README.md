@@ -1,6 +1,6 @@
 # Apple 同步
 
-独立 DSH 原生插件 `@stella/apple-sync@0.1.15`，与 `@stella/secretary@0.1.51` 配合使用。支持官方 DSH 0.2.2-alpha.3 / 0.2.2-rc.1、macOS 和公开 EventKit。安装、查看状态不请求 Apple 权限；首次点击同步才由独立的 Stella Apple Sync.app 请求完整访问，不修改官方 DSH 的签名。
+独立 DSH 原生插件 `@stella/apple-sync@0.1.16`，与 `@stella/secretary@0.1.56` 配合使用。支持官方 DSH 0.2.2-alpha.3 / 0.2.2-rc.1、macOS 和公开 EventKit。安装、查看状态不请求 Apple 权限；首次点击同步才由独立的 Stella Apple Sync.app 请求完整访问，不修改官方 DSH 的签名。
 
 配置页的“同步”连接所有可见日历／提醒事项清单，“暂停同步”保留连接关系和本地内容。分类／清单与 Apple 一一对应，事务清单在日程页聚合显示为“事务”。每条日程和事务必须有归属；新建默认采用 Apple 的默认可写日历／清单，新建分类可选择 Apple 账户。同名跨账户保留不同身份，界面显示账户。新资料库不预建额外分类；已有分类、记录 ID 和专有字段均保留，无分类旧记录迁入有效归属。
 

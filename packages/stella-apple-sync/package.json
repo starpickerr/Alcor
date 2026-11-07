@@ -1,6 +1,6 @@
 {
   "name": "@stella/apple-sync",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Apple 同步：连接系统日历与提醒事项，共用 Stella 事务和日程。",
   "type": "module",
   "license": "MIT",

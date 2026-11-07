@@ -6,7 +6,7 @@
 
 Stella 侧栏「插件」直接打开宿主原生插件页面。保留当前 Profile、插件生命周期、配置和 `pluginManager/listBundles` 的访问检查；不另建安装器、账号表单或工具授权列表。
 
-已提供可独立安装的 `@stella/elearning@0.1.4` 和 `@stella/mail@0.1.7`。Bundle 管理安装、启停、配置、原生凭据与 MCP Client；随包冻结的独立 MCP（eLearning 1.0.6、邮件 1.0.6） 负责业务，不依赖开发目录或用户另装 Python。学校连接复用现有适配器，保留 `stellaElearning`、原生凭据键与课程来源身份；邮件使用 `stella-email/accounts` 原生凭据记录，多邮箱编辑保留其他账号。账号表单始终展开，测试连接位于各表单下方；已保存授权码以固定星号占位，空值保留原授权码。不同表单的未提交编辑保留原版本，冲突时拒绝覆盖并允许撤销修改。两包均不安装 DSH 核心组件。
+已提供可独立安装的 `@stella/elearning@0.1.6` 和 `@stella/mail@0.1.8`。Bundle 管理安装、启停、配置、原生凭据与 MCP Client；随包冻结的独立 MCP（eLearning 1.0.7、邮件 1.0.6） 负责业务，不依赖开发目录或用户另装 Python。学校连接复用现有适配器，保留 `stellaElearning`、原生凭据键与课程来源身份；邮件使用 `stella-email/accounts` 原生凭据记录，多邮箱编辑保留其他账号。账号表单始终展开，测试连接位于各表单下方；已保存授权码以固定星号占位，空值保留原授权码。不同表单的未提交编辑保留原版本，冲突时拒绝覆盖并允许撤销修改。两包均不安装 DSH 核心组件。
 
 在原生插件页打开相应包：学校填写学工号和密码；邮件填写邮箱、IMAP SSL 地址、客户端授权码与文件夹。保存仅建立本地 MCP 连接，不登录外部网站或读取正文；用户点击「测试连接」才请求课程列表或测试 IMAP 登录和文件夹。真实网站的额外认证由用户处理。对话使用 DSH 策略；邮箱开启/停用统一控制所有读取，简报还需启用独立来源开关，两层都开启才会采集。
 
@@ -14,7 +14,7 @@ Stella 侧栏「插件」直接打开宿主原生插件页面。保留当前 Pro
 
 邮件 DSH 模式只发布 `list_accounts`、`list_sources`、`get_cursors`、`fetch_messages`、`test_connection`、`list_folders`；账号增删不作为 MCP 工具，且禁止伪造管理调用。账号密码仅来自当前 DSH 记录，MCP 忽略旧数据库账号和环境默认密码，业务库只保存游标。读取采用只读 IMAP，不标已读、不发送或删除邮件。停用插件关闭连接、撤销工具，保留凭据与历史数据；移除账号后阻断后续访问。
 
-构建：`npm run product:sources:pack`，产物为 `.local/artifacts/stella-elearning-0.1.2.tgz` 与 `stella-mail-0.1.2.tgz`。依赖与源码摘要在 `source-releases.lock.json` 固定，修改来源后先验证再更新锁。冻结库在入包时解除符号链接，防止 npm 省略运行库；保留运行依赖许可证。
+构建：`npm run product:sources:pack`，产物为 `.local/artifacts/stella-elearning-0.1.6.tgz` 与 `stella-mail-0.1.8.tgz`。依赖与源码摘要在 `source-releases.lock.json` 固定，修改来源后先验证再更新锁。冻结库在入包时解除符号链接，防止 npm 省略运行库；保留运行依赖许可证。
 
 ## eLearning 账号与凭据
 
