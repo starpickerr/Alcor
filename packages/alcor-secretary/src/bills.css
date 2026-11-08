@@ -1,0 +1,111 @@
+.alcor-bills { --alcor-bill-income:#15803d; --alcor-bill-expense:#dc2626; }
+body[data-ds-dark-theme] .alcor-bills { --alcor-bill-income:#4ade80; --alcor-bill-expense:#fb7185; }
+.alcor-bills [data-direction=income] { color:var(--alcor-bill-income); }
+.alcor-bills [data-direction=expense] { color:var(--alcor-bill-expense); }
+.alcor-bills .alcor-bills-content { max-width:1040px; margin:0 auto; padding:16px 24px; }
+.alcor-bills .alcor-empty { padding:72px 16px; }
+.alcor-bill-tabs { display:flex; justify-content:center; border-bottom:1px solid var(--dsw-alias-border-l3); background:var(--dsw-alias-bg-layer-1); }
+.alcor-bills .alcor-bill-tabs { padding:8px 24px; }
+.alcor-bill-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.alcor-bill-toolbar h2 { font-size:15px; font-weight:600; margin:0; }
+.alcor-bill-card { padding:16px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); min-width:0; }
+.alcor-bill-card h2 { font-size:14px; font-weight:600; margin:0 0 16px; }
+.alcor-bill-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:0; }
+.alcor-bill-totals > div { min-width:0; }
+.alcor-bill-totals dt { color:var(--dsw-alias-label-secondary); font-size:12px; margin-bottom:4px; }
+.alcor-bill-totals dd { margin:0; font-size:17px; line-height:1.4; font-weight:500; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.alcor-bill-totals-cards { gap:0; padding:20px 4px; border:1px solid var(--dsw-alias-border-l3); border-radius:16px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--alcor-shadow); }
+.alcor-bill-totals-cards > div { padding:0 20px; }
+.alcor-bill-totals-cards > div + div { border-left:1px solid var(--dsw-alias-border-l3); }
+.alcor-bill-totals-cards dd { font-size:22px; font-weight:600; letter-spacing:-.4px; }
+.alcor-bill-day { margin-top:20px; }
+.alcor-bill-day > header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px 16px; margin-bottom:8px; }
+.alcor-bill-day h2 { font-size:14px; font-weight:600; margin:0; }
+.alcor-bill-day > header > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px 12px; font-size:12px; font-variant-numeric:tabular-nums; }
+.alcor-bills .alcor-ledger-list { margin:0; padding:0; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+.alcor-bills .alcor-ledger-list > li { display:block; padding:0; border:0; }
+.alcor-bills .alcor-ledger-list > li + li { border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-bill-row { display:flex; align-items:center; gap:12px; width:100%; min-height:56px; padding:10px 16px; border:0; background:transparent; text-align:left; color:inherit; font:inherit; line-height:20px; cursor:pointer; }
+.alcor-bill-row:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-bill-row-copy { min-width:0; flex:1; display:grid; gap:2px; }
+.alcor-bill-row-copy > strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.alcor-bill-row-copy > span { font-size:12px; color:var(--dsw-alias-label-secondary); }
+.alcor-bills .alcor-ledger-amount { flex-shrink:0; font-size:14px; font-weight:500; font-variant-numeric:tabular-nums; }
+.alcor-bill-row > svg { flex-shrink:0; color:var(--dsw-alias-label-tertiary); }
+.alcor-bill-report { display:grid; gap:12px; }
+.alcor-bill-period-list { display:grid; grid-template-columns:minmax(0,1fr); width:100%; max-width:720px; margin:0 auto; gap:10px; align-content:start; }
+.alcor-bill-period-list .alcor-bill-card { padding:12px; }
+.alcor-bill-period-list .alcor-bill-period-heading { margin-bottom:8px; gap:8px; }
+.alcor-bill-period-list .alcor-bill-totals { gap:10px; }
+.alcor-bill-period-list .alcor-bill-totals dt { font-size:11px; line-height:16px; margin-bottom:2px; }
+.alcor-bill-period-list .alcor-bill-totals dd { font-size:15px; line-height:20px; }
+.alcor-bill-period-list .alcor-bill-period-heading h2 { line-height:20px; }
+.alcor-bill-period-list .alcor-bill-status { padding:2px 7px; line-height:18px; }
+button.alcor-bill-card { display:block; width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+button.alcor-bill-card:hover { border-color:var(--dsw-alias-label-tertiary); }
+.alcor-bill-period-heading { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.alcor-bill-period-heading h2 { margin:0; flex:1; }
+.alcor-bill-status { display:inline-block; padding:3px 9px; border-radius:var(--dsw-radius-md); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
+.alcor-bill-status[data-current] { color:var(--alcor-bill-income); background:color-mix(in srgb,var(--alcor-bill-income) 10%,transparent); }
+.alcor-bill-period-meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; padding-top:12px; margin-top:12px; border-top:1px solid var(--dsw-alias-border-l3); color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-bill-compositions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.alcor-bill-composition { min-width:0; padding-right:20px; }
+.alcor-bill-composition + .alcor-bill-composition { border-left:1px solid var(--dsw-alias-border-l3); padding:0 0 0 20px; }
+.alcor-bill-composition h3 { margin:0 0 6px; color:var(--dsw-alias-label-secondary); font-size:13px; font-weight:400; }
+.alcor-bill-composition > strong { font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; }
+.alcor-bill-chart { position:relative; width:132px; max-width:100%; margin:12px auto; }
+.alcor-bill-donut { display:block; width:132px; height:132px; max-width:100%; }
+.alcor-bill-segment { transform-origin:80px 80px; transition:transform 160ms ease; }
+.alcor-bill-segment[data-active] { transform:scale(1.07); }
+.alcor-bill-chart-tooltip { position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%); z-index:2; width:max-content; max-width:240px; padding:10px 12px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); background:var(--dsw-alias-bg-overlay); box-shadow:var(--alcor-shadow); font-size:12px; line-height:20px; pointer-events:none; overflow-wrap:anywhere; }
+.alcor-bill-chart-tooltip > strong { display:block; font-weight:600; }
+.alcor-bill-chart-tooltip > span { display:flex; flex-wrap:wrap; gap:0 12px; font-variant-numeric:tabular-nums; }
+.alcor-bill-ring-track { stroke:var(--dsw-alias-interactive-bg-hover); }
+.alcor-bill-legend { padding:0; margin:0; list-style:none; }
+.alcor-bill-legend > li { margin:4px 0 0; }
+.alcor-bill-legend button { display:grid; grid-template-columns:8px minmax(0,1fr) auto 44px; align-items:baseline; gap:10px; width:100%; padding:4px 0; border:0; border-radius:4px; background:transparent; color:inherit; font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+.alcor-bill-legend button[data-active] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-bill-dot { display:inline-block; width:8px; height:8px; border-radius:50%; }
+.alcor-bill-legend button > :nth-child(2) { overflow-wrap:anywhere; }
+.alcor-bill-legend button > :nth-child(n+3) { font-variant-numeric:tabular-nums; text-align:right; }
+.alcor-bill-legend button > :last-child { color:var(--dsw-alias-label-secondary); }
+.alcor-bill-chart-empty { display:grid; place-items:center; height:156px; color:var(--dsw-alias-label-tertiary); font-size:13px; }
+.alcor-bill-ranking-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.alcor-bill-ranking-header h2 { margin:0; }
+.alcor-bill-ranking { list-style:none; padding:0; margin:8px 0 0; }
+.alcor-bill-ranking > li { display:flex; gap:12px; padding:12px 0; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-bill-ranking > li:last-child { border:0; padding-bottom:0; }
+.alcor-bill-ranking > li > span { flex:0 0 18px; color:var(--dsw-alias-label-tertiary); font-size:12px; padding-top:2px; }
+.alcor-bill-ranking > li > div { flex:1; min-width:0; }
+.alcor-bill-ranking strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.alcor-bill-ranking > li > strong { flex-shrink:0; font-variant-numeric:tabular-nums; }
+.alcor-bill-ranking p { margin:2px 0 0; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.alcor-editor-dialog .alcor-bill-editor { padding:20px; }
+.alcor-bill-editor .alcor-field { margin:12px 0; font-size:13px; gap:4px; }
+.alcor-bill-delete { color:var(--dsw-alias-state-error-primary); }
+.alcor-bill-delete-confirm { margin-top:18px; padding-top:12px; border-top:1px solid var(--dsw-alias-border-l3); }
+@media(prefers-reduced-motion:reduce) { .alcor-bill-segment { transition:none; } }
+@media(max-width:760px) {
+  .alcor-bill-totals { gap:12px; }
+  .alcor-bills-page .alcor-app-header { padding:12px 16px; }
+  .alcor-bills .alcor-bills-content { padding:16px; }
+  .alcor-bill-totals dd { font-size:16px; }
+  .alcor-bill-totals-cards > div { padding:12px; }
+  .alcor-bill-compositions { grid-template-columns:minmax(0,1fr); gap:16px; }
+  .alcor-bill-composition { padding:0; }
+  .alcor-bill-composition + .alcor-bill-composition { border-left:0; border-top:1px solid var(--dsw-alias-border-l3); padding:16px 0 0; }
+  .alcor-bill-row { gap:10px; padding:10px 12px; }
+  .alcor-bill-row > svg { display:none; }
+  .alcor-bills .alcor-ledger-amount { font-size:14px; }
+}
+@media(max-width:440px) {
+  .alcor-bill-totals-cards { gap:0; }
+  .alcor-bill-totals-cards > div { padding:12px 10px; }
+  .alcor-bill-totals dd { font-size:15px; }
+  .alcor-bill-day > header > div { width:100%; }
+  .alcor-bill-ranking > li { gap:10px; flex-wrap:wrap; }
+  .alcor-bill-ranking > li > strong { margin-left:28px; max-width:calc(100% - 28px); }
+  .alcor-bill-row { flex-wrap:wrap; }
+  .alcor-bill-row-copy { flex-basis:50%; }
+  .alcor-bills .alcor-ledger-amount { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}

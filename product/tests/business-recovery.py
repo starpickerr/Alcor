@@ -9,8 +9,8 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/stella-secretary'))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/stella-apple-sync/python'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-secretary'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-apple-sync/python'))
 
 from business.worker import Business
 from apple_sync.calendar import AppleCalendarSync
@@ -23,39 +23,49 @@ from business.bills.domain.export import build_ledger_xlsx
 class Bridge:
     def __init__(self, kind):
         self.kind = kind
-        self.sources = [{"id": "a", "title": "Synthetic", "source": "test", "writable": True}]
-        self.rows = [dict(calendar_id='a', event_id='event', external_id='external', occurrence_date='2026-11-05T01:00:00Z',
-                          stella_id='', title='Remote event', description='', location='',
+        self.sources = [{"id": "a", "title": "Synthetic", "source": "test", "source_id": "synthetic-source", "writable": True}]
+        self.rows = [dict(source_id='synthetic-source', calendar_id='a', event_id='event', external_id='external', occurrence_date='2026-11-05T01:00:00Z',
+                          alcor_id='', title='Remote event', description='', location='',
                           start_at='2026-11-05T01:00:00Z', end_at='2026-11-05T02:00:00Z',
                           all_day=False, timezone='Asia/Shanghai', recurrence={'frequency': 'none'},
                           is_detached=False, last_modified='2026-11-04T00:00:00Z', writable=True)] if kind == 'calendar' else [
-            dict(list_id='a', reminder_id='reminder', external_id='external', stella_id='', title='Remote task',
+            dict(source_id='synthetic-source', list_id='a', reminder_id='reminder', external_id='external', alcor_id='', title='Remote task',
                  notes='', due_on='2026-11-05', due_time=None, timezone='Asia/Shanghai', planned_on=None,
                  remind_at=None, alarm_count=0, priority=0, completed=False, completed_at=None,
                  recurrence={'frequency': 'none'}, last_modified='2026-11-04T00:00:00Z', writable=True)]
 
     def call(self, op, **payload):
         if op in ('status', 'reminder_status'):
-            return {'supported': True, 'authorization': 'full_access'}
+            return {'supported': True, 'authorization': 'full_access', 'category_write_version': 1, 'category_create_version': 1}
         if op in ('calendars', 'reminder_lists'):
-            return {'calendars' if op == 'calendars' else 'lists': copy.deepcopy(self.sources)}
+            return {'calendars' if op == 'calendars' else 'lists': copy.deepcopy(self.sources), 'source_ids': sorted({row['source_id'] for row in self.sources}), 'default_id': self.sources[0]['id'] if self.sources else None, 'default_source_id': self.sources[0]['source_id'] if self.sources else None}
         if op in ('create_calendar', 'reminder_list_create'):
-            row = {'id': 'created-' + payload['title'], 'title': payload['title'], 'color': payload['color'], 'writable': True}
+            row = {'id': 'created-' + payload['title'], 'title': payload['title'], 'color': payload['color'], 'writable': True, 'source_id': 'synthetic-source'}
             self.sources.append(row)
+            if payload.get('receipt_binding'):
+                Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'],'saved':row}))
             return {'calendar' if op == 'create_calendar' else 'list': copy.deepcopy(row)}
         if op in ('rename', 'reminder_rename'):
+            from apple_sync.bridge import BridgeError
             identity = payload['calendar_id' if op == 'rename' else 'list_id']
             row = next(row for row in self.sources if row['id'] == identity)
+            if (payload.get('category_write_version') != 1 or payload.get('expected_source_id') != row['source_id']
+                    or payload.get('expected_snapshot') != row):
+                raise BridgeError('Synthetic category changed before save',native_no_side_effects=True)
             row.update({key: payload[key] for key in ('title', 'color') if key in payload})
-            return {'calendar' if op == 'rename' else 'list': copy.deepcopy(row)}
+            proof={'version':1,'binding':payload['receipt_binding'],'op':op,'target_id':identity,
+                   'source_id':row['source_id'],'expected_snapshot':copy.deepcopy(payload['expected_snapshot']),
+                   'title':payload['title'],'color':payload.get('color'),'result':copy.deepcopy(row)}
+            Path(payload['receipt_file']).write_text(json.dumps({'state':'saved','category_receipt':proof}))
+            return {'calendar' if op == 'rename' else 'list': copy.deepcopy(row),'category_receipt':proof}
         if op in ('delete_calendar', 'reminder_list_delete'):
             identity = payload['calendar_id' if op == 'delete_calendar' else 'list_id']
             self.sources = [row for row in self.sources if row['id'] != identity]
             return {'deleted': True}
         if op == 'events':
-            return {'events': copy.deepcopy(self.rows), 'successful_calendar_ids': [row['id'] for row in self.sources], 'failed_calendar_ids': []}
+            return {'events': copy.deepcopy([row for row in self.rows if row['calendar_id'] in payload['calendar_ids']]), 'successful_calendar_ids': [row['id'] for row in self.sources], 'failed_calendar_ids': []}
         if op == 'reminders':
-            return {'reminders': copy.deepcopy(self.rows), 'successful_list_ids': [row['id'] for row in self.sources], 'failed_list_ids': []}
+            return {'reminders': copy.deepcopy([row for row in self.rows if row['list_id'] in payload['list_ids']]), 'successful_list_ids': [row['id'] for row in self.sources], 'failed_list_ids': []}
         if op in ('lookup', 'reminder_lookup'):
             return {'event' if op == 'lookup' else 'reminder': copy.deepcopy(self.rows[0])}
         raise AssertionError(f'Unexpected system write: {op}')
@@ -73,6 +83,10 @@ class Recovery(unittest.TestCase):
 
     def test_unavailable_apple_account_does_not_delete_categories(self):
         class AccountBridge(Bridge):
+            def __init__(self, kind):
+                super().__init__(kind)
+                for row in self.sources + self.rows:
+                    row['source_id'] = 'account'
             account_online = True
             def call(self, op, **payload):
                 if op in ('calendars', 'reminder_lists'):
@@ -117,7 +131,7 @@ class Recovery(unittest.TestCase):
                 target = service.create_category({'name': 'Target'})
                 sync.sync()
                 original = sync._maps()[0]
-                local_id = original['todo_id' if kind == 'reminders' else 'stella_id']
+                local_id = original['todo_id' if kind == 'reminders' else 'alcor_id']
                 if kind == 'calendar':
                     service.set_event_category(local_id, target['id'])
                 else:
@@ -128,7 +142,7 @@ class Recovery(unittest.TestCase):
                 self.assertEqual(len(sync._maps()), 1)
                 self.assertEqual(len(bridge.rows), 1)
                 group_key = 'list_id' if kind == 'reminders' else 'calendar_id'
-                expected = next(row['apple_id'] for row in sync._stored_links() if row['stella_id'] == target['id'])
+                expected = next(row['apple_id'] for row in sync._stored_links() if row['alcor_id'] == target['id'])
                 self.assertEqual(bridge.rows[0][group_key], expected)
                 read = service.get_todo if kind == 'reminders' else service.get_event
                 self.assertEqual(read(local_id)['category_id'], target['id'])
@@ -147,7 +161,7 @@ class Recovery(unittest.TestCase):
                 sync.start_sync()
                 local = service.create_category({'name': 'planA', 'color': '#112233'})
                 self.assertEqual(sync.sync()['status'], 'success')
-                linked = next(row for row in sync._stored_links() if row['stella_id'] == local['id'])
+                linked = next(row for row in sync._stored_links() if row['alcor_id'] == local['id'])
                 apple = next(row for row in bridge.sources if row['id'] == linked['apple_id'])
                 self.assertEqual(apple['title'], 'planA')
                 self.assertEqual(apple['color'], '#112233')
@@ -165,18 +179,22 @@ class Recovery(unittest.TestCase):
                 sync.sync()
                 self.assertEqual(service.get_category(local['id'])['name'], 'Apple rename')
                 now[0] = '2026-11-07T00:02:00Z'
-                self.assertEqual(sync.sync()['status'], 'partial')
-                self.assertTrue(service.get_category(local['id']))
-                sync.resolve_category_conflict(apple['id'],'keep_apple')
+                result = sync.sync()
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(result['deleted_categories'], 1)
                 with self.assertRaises(KeyError):
                     service.get_category(local['id'])
+                archives = [row for row in service.list_apple_inbound_recoveries()
+                            if row['entity'] == 'category' and row['target_id'] == local['id']]
+                self.assertEqual(len(archives), 1)
                 service.create_category({'name': 'Delete locally'})
                 sync.sync()
                 local = next(row for row in service.categories() if row['name'] == 'Delete locally')
-                service.delete_category(local['id'])
-                self.assertEqual(sync.sync()['status'], 'success')
-                self.assertFalse(any(row['title'] == 'Delete locally' for row in bridge.sources))
-                self.assertEqual({row['stella_id'] for row in sync._stored_links()},
+                with self.assertRaisesRegex(PermissionError, '人工确认'):
+                    service.delete_category(local['id'])
+                self.assertEqual(sync.sync()['deleted_remote'], 0)
+                self.assertTrue(any(row['title'] == 'Delete locally' for row in bridge.sources))
+                self.assertEqual({row['alcor_id'] for row in sync._stored_links()},
                                  {row['id'] for row in service.categories()})
                 self.assertEqual(len(bridge.sources), len(sync._stored_links()))
 
@@ -193,7 +211,9 @@ class Recovery(unittest.TestCase):
         self.assertEqual(migrated['category_id'], row['category_id'])
         self.assertEqual(migrated['due_time'], '04:00')
         self.assertEqual(migrated['timezone'], 'Asia/Shanghai')
-        reopened.delete_category(row['category_id'])
+        op = 'a' * 64
+        plan = reopened.prepare_local_category_delete(row['category_id'], operation_id=op)
+        reopened.commit_local_category_delete(row['category_id'], snapshot=plan['snapshot'], operation_id=op)
         again = TodoService(tasks.db_path)
         with self.assertRaises(KeyError):
             again.get_todo(row['id'])
@@ -205,10 +225,13 @@ class Recovery(unittest.TestCase):
                 if op in ('upsert', 'reminder_upsert'):
                     row = copy.deepcopy(self.rows[0])
                     row.update(payload)
-                    row['event_id' if op == 'upsert' else 'reminder_id'] = payload['stella_id']
-                    row['external_id'] = payload['stella_id']
+                    row['event_id' if op == 'upsert' else 'reminder_id'] = payload['alcor_id']
+                    row['external_id'] = payload['alcor_id']
                     row['recurrence'] = {'frequency': payload['repeat_frequency']}
                     self.rows.append(row)
+                    if payload.get('receipt_binding'):
+                        row['source_id'] = payload['expected_source_id']
+                        Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'], 'saved':row}))
                     return {'event' if op == 'upsert' else 'reminder': row}
                 return super().call(op, **payload)
         for kind, cls, service, port in (
@@ -230,7 +253,7 @@ class Recovery(unittest.TestCase):
                 result = sync.start_sync()['result']
                 self.assertEqual(result['status'], 'success')
                 self.assertEqual(result['exported'], 2)
-                self.assertEqual({row['stella_id'] for row in bridge.rows if row['stella_id']}, {first['id'], second['id']})
+                self.assertEqual({row['alcor_id'] for row in bridge.rows if row['alcor_id']}, {first['id'], second['id']})
 
     def test_task_categories_are_stable_across_edits_legacy_names_and_deletion(self):
         tasks = self.business.tasks
@@ -247,7 +270,9 @@ class Recovery(unittest.TestCase):
         self.assertEqual(tasks.get_todo(row['id'])['list_name'], 'Renamed')
         with self.assertRaises(KeyError):
             tasks.update_todo(row['id'], {'category_id': 'missing'})
-        tasks.delete_category(group['id'])
+        op = 'a' * 64
+        plan = tasks.prepare_local_category_delete(group['id'], operation_id=op)
+        tasks.commit_local_category_delete(group['id'], snapshot=plan['snapshot'], operation_id=op)
         with self.assertRaises(KeyError):
             tasks.get_todo(row['id'])
 
@@ -258,11 +283,11 @@ class Recovery(unittest.TestCase):
 
             def call(self, op, **payload):
                 if op in ('calendars', 'reminder_lists'):
-                    return {'calendars' if op == 'calendars' else 'lists': [{'id': 'a', 'title': self.title, 'writable': self.writable}]}
+                    return {'calendars' if op == 'calendars' else 'lists': [{'id': 'a', 'title': self.title, 'writable': self.writable, 'source_id': 'synthetic-source'}], 'source_ids': ['synthetic-source']}
                 if op in ('upsert', 'reminder_upsert'):
                     row = {**copy.deepcopy(self.rows[0]), **payload}
                     identity = 'event_id' if op == 'upsert' else 'reminder_id'
-                    row[identity] = payload.get(identity) or payload['stella_id']
+                    row[identity] = payload.get(identity) or payload['alcor_id']
                     row['external_id'] = payload.get('external_id') or row[identity]
                     row['recurrence'] = {'frequency': payload['repeat_frequency']}
                     previous = next((item for item in self.rows if item[identity] == row[identity]), None)
@@ -270,6 +295,9 @@ class Recovery(unittest.TestCase):
                         previous.update(row)
                     else:
                         self.rows.append(row)
+                    if payload.get('receipt_binding'):
+                        row['source_id'] = payload['expected_source_id']
+                        Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'], 'saved':row}))
                     return {'event' if op == 'upsert' else 'reminder': row}
                 return super().call(op, **payload)
 
@@ -298,7 +326,7 @@ class Recovery(unittest.TestCase):
                 bridge.writable = True
                 with self.assertRaisesRegex(ValueError, '重复'):
                     sync.start_sync([{'apple_id': 'a'}, {'apple_id': 'a'}])
-                result = sync.start_sync([{'apple_id': 'a', 'stella_id': category['id']}])
+                result = sync.start_sync([{'apple_id': 'a', 'alcor_id': category['id']}])
                 self.assertEqual(result['result']['status'], 'success')
                 self.assertEqual(result['result']['imported'], 1)
                 self.assertEqual(result['result']['exported'], 1)
@@ -309,10 +337,10 @@ class Recovery(unittest.TestCase):
                 self.assertFalse(any(row['title'] == other['title'] for row in bridge.rows))
                 reopened = cls(bridge=bridge, db_path=path, **{port: service})
                 reopened.start_auto = lambda: None
-                self.assertEqual(reopened.status()['links'][0]['stella_id'], category['id'])
-                self.assertEqual(reopened.start_sync([{'apple_id': 'a', 'stella_id': category['id']}])['result']['exported'], 0)
+                self.assertEqual(reopened.status()['links'][0]['alcor_id'], category['id'])
+                self.assertEqual(reopened.start_sync([{'apple_id': 'a', 'alcor_id': category['id']}])['result']['exported'], 0)
                 bridge.title = 'Renamed Apple source'
-                self.assertEqual(reopened.start_sync([{'apple_id': 'a', 'stella_id': category['id']}])['result']['status'], 'success')
+                self.assertEqual(reopened.start_sync([{'apple_id': 'a', 'alcor_id': category['id']}])['result']['status'], 'success')
                 self.assertEqual(service.get_category(category['id'])['name'], bridge.title)
                 if kind == 'reminders':
                     self.assertEqual(service.get_todo(local['id'])['list_name'], bridge.title)
@@ -322,72 +350,26 @@ class Recovery(unittest.TestCase):
                 reopened.disconnect()
                 self.assertEqual(len(reopened.status()['links']), 1)
 
-    def test_deleted_calendar_category_deletes_apple_calendar_without_recreation(self):
-        class DeletingBridge(Bridge):
-            writable = True
-            fail_delete = False
-            deleted = False
-            calls = 0
-
-            def call(self, op, **payload):
-                if op == 'calendars':
-                    return {'calendars': [] if self.deleted else [
-                        {'id': 'a', 'title': 'Synthetic', 'writable': self.writable}]}
-                if op == 'delete_calendar':
-                    self.calls += 1
-                    if self.fail_delete:
-                        raise RuntimeError('Synthetic deletion failed')
-                    self.assert_payload = payload
-                    self.deleted = True
-                    self.rows = []
-                    return {'deleted': True}
-                return super().call(op, **payload)
-
-        for manual in (False, True):
-            with self.subTest(manual=manual):
-                for category in self.business.calendar.categories():
-                    self.business.calendar.delete_category(category['id'])
-                bridge = DeletingBridge('calendar')
-                sync = AppleCalendarSync(bridge=bridge, db_path=self.root / f'delete-category-{manual}.sqlite3',
-                                         calendar_port=self.business.calendar)
-                sync.start_auto = lambda: None
-                started = sync.start_sync([{'apple_id': 'a'}])
-                sync._set('sync_all', True)
-                category_id = started['state']['links'][0]['stella_id']
-                local_id = sync._maps()[0]['stella_id']
-                self.business.calendar.delete_category(category_id)
-                bridge.writable = False
-                result = sync.start_sync()['result'] if manual else sync.sync()
-                self.assertIn(result['status'],('partial','error'))
-                self.assertEqual(bridge.calls,0)
-                self.assertTrue(self.business.calendar.get_event(local_id))
-                bridge.writable = True
-                bridge.fail_delete = True
-                result = sync.start_sync()['result'] if manual else sync.sync()
-                self.assertIn(result['status'],('partial','error'))
-                self.assertTrue(self.business.calendar.get_event(local_id))
-                self.assertEqual(len(sync._stored_links()), 1)
-                bridge.fail_delete = False
-                result = sync.start_sync()['result'] if manual else sync.sync()
-                self.assertEqual(result['status'], 'success')
-                self.assertTrue(bridge.deleted)
-                self.assertEqual(bridge.assert_payload, {'calendar_id': 'a'})
-                self.assertEqual(sync._stored_links(), [])
-                self.assertFalse(any(row['id'] == category_id or row['name'] == 'Synthetic'
-                                     for row in self.business.calendar.categories()))
-                with self.assertRaises(KeyError):
-                    self.business.calendar.get_event(local_id)
-                self.assertTrue(all(row['state'] == 'deleted' for row in sync._maps()))
-                calls=bridge.calls
-                sync.sync()
-                self.assertEqual(bridge.calls,calls)
+    def test_unconfirmed_category_delete_preserves_apple_calendar(self):
+        bridge = Bridge('calendar')
+        sync = AppleCalendarSync(bridge=bridge, db_path=self.root/'delete-category.sqlite3',
+                                 calendar_port=self.business.calendar)
+        sync.start_auto = lambda: None
+        started = sync.start_sync([{'apple_id': 'a'}])
+        category = started['state']['links'][0]['alcor_id']
+        with self.assertRaisesRegex(PermissionError, '人工确认'):
+            self.business.calendar.delete_category(category)
+        for result in (sync.start_sync()['result'], sync.sync()):
+            self.assertEqual(result['deleted_remote'], 0)
+        self.assertTrue(self.business.calendar.get_category(category))
+        self.assertEqual(len(bridge.rows), 1)
 
     def test_sync_all_sources_updates_deletes_and_pause(self):
         class AllBridge(Bridge):
             def __init__(self, kind):
                 super().__init__(kind)
-                self.sources = [{'id': 'a', 'title': '课程' if kind == 'calendar' else 'planA', 'writable': True},
-                                {'id': 'b', 'title': 'Read only', 'writable': False}]
+                self.sources = [{'id': 'a', 'title': '课程' if kind == 'calendar' else 'planA', 'writable': True, 'source_id': 'synthetic-source'},
+                                {'id': 'b', 'title': 'Read only', 'writable': False, 'source_id': 'synthetic-source'}]
                 extra = copy.deepcopy(self.rows[0])
                 extra.update({'calendar_id' if kind == 'calendar' else 'list_id': 'b',
                               'event_id' if kind == 'calendar' else 'reminder_id': 'second',
@@ -401,20 +383,24 @@ class Recovery(unittest.TestCase):
                 source = 'calendar_id' if self.kind == 'calendar' else 'list_id'
                 singular = 'event' if self.kind == 'calendar' else 'reminder'
                 if op in ('calendars', 'reminder_lists'):
-                    return {'calendars' if op == 'calendars' else 'lists': copy.deepcopy(self.sources)}
+                    return {'calendars' if op == 'calendars' else 'lists': copy.deepcopy(self.sources), 'source_ids': sorted({row['source_id'] for row in self.sources}), 'default_id': self.sources[0]['id'] if self.sources else None, 'default_source_id': self.sources[0]['source_id'] if self.sources else None}
                 if op in ('events', 'reminders'):
-                    return {singular + 's': copy.deepcopy(self.rows),
+                    requested = payload['calendar_ids' if op == 'events' else 'list_ids']
+                    return {singular + 's': copy.deepcopy([row for row in self.rows if row[source] in requested and row[source] not in self.failed]),
                             'successful_calendar_ids' if op == 'events' else 'successful_list_ids':
-                                [s['id'] for s in self.sources if s['id'] not in self.failed],
-                            'failed_calendar_ids' if op == 'events' else 'failed_list_ids': self.failed}
+                                [s['id'] for s in self.sources if s['id'] in requested and s['id'] not in self.failed],
+                            'failed_calendar_ids' if op == 'events' else 'failed_list_ids': [key for key in self.failed if key in requested]}
                 if op in ('lookup', 'reminder_lookup'):
                     return {singular: next((copy.deepcopy(r) for r in self.rows if r[identity] == payload[identity]), None)}
                 if op in ('upsert', 'reminder_upsert'):
                     row = next((r for r in self.rows if r[identity] == payload.get(identity)), None)
                     if row is None:
-                        row = {**copy.deepcopy(self.template), identity: payload['stella_id'], 'external_id': payload['stella_id']}
+                        row = {**copy.deepcopy(self.template), identity: payload['alcor_id'], 'external_id': payload['alcor_id']}
                         self.rows.append(row)
                     row.update(payload)
+                    if payload.get('receipt_binding'):
+                        row['source_id'] = payload['expected_source_id']
+                        Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'], 'saved':row}))
                     return {singular: copy.deepcopy(row)}
                 if op in ('delete', 'reminder_delete'):
                     self.rows = [r for r in self.rows if r[identity] != payload[identity]]
@@ -443,11 +429,11 @@ class Recovery(unittest.TestCase):
                 self.assertTrue(result['state']['sync_all'])
                 self.assertEqual({r['direction'] for r in result['state']['links']}, {'import', 'bidirectional'})
                 link = next(r for r in result['state']['links'] if r['apple_id'] == 'a')
-                self.assertEqual(link['stella_name'], bridge.sources[0]['title'])
+                self.assertEqual(link['alcor_name'], bridge.sources[0]['title'])
                 read = service.get_event if kind == 'calendar' else service.get_todo
                 update = service.update_event if kind == 'calendar' else service.update_todo
                 delete = service.delete_event if kind == 'calendar' else service.delete_todo
-                key = 'stella_id' if kind == 'calendar' else 'todo_id'
+                key = 'alcor_id' if kind == 'calendar' else 'todo_id'
                 mapping = next(r for r in sync._maps() if r['calendar_id' if kind == 'calendar' else 'list_id'] == 'a')
                 bridge.rows[0]['title'] = 'Apple edit'
                 self.assertEqual(sync.sync()['updated'], 1)
@@ -455,18 +441,18 @@ class Recovery(unittest.TestCase):
                 update(mapping[key], {'title': 'Stella edit'})
                 self.assertEqual(sync.sync()['exported'], 1)
                 self.assertEqual(bridge.rows[0]['title'], 'Stella edit')
-                delete(mapping[key])
-                self.assertEqual(sync.sync()['deleted_remote'], 1)
-                self.assertEqual(len(bridge.rows), 1)
+                with self.assertRaisesRegex(PermissionError, '人工确认'): delete(mapping[key])
+                self.assertEqual(sync.sync()['deleted_remote'], 0)
+                self.assertEqual(len(bridge.rows), 2)
                 # A new source joins without another click.
-                bridge.sources.append({'id': 'c', 'title': 'New source', 'writable': True})
+                bridge.sources.append({'id': 'c', 'title': 'New source', 'writable': True, 'source_id': 'synthetic-source'})
                 self.assertEqual(sync.sync()['status'], 'success')
                 self.assertEqual(len(sync.status()['links']), len(service.categories()))
                 if kind == 'calendar':
-                    local = service.create_event({'title': 'Local new', 'category_id': link['stella_id'],
+                    local = service.create_event({'title': 'Local new', 'category_id': link['alcor_id'],
                         'start_at': '2026-11-06T01:00:00Z', 'end_at': '2026-11-06T02:00:00Z'})
                 else:
-                    local = service.create_todo({'title': 'Local new', 'list_name': link['stella_name']})
+                    local = service.create_todo({'title': 'Local new', 'list_name': link['alcor_name']})
                 self.assertEqual(sync.sync()['exported'], 1)
                 bridge.rows = [r for r in bridge.rows if r['external_id'] != local['id']]
                 bridge.failed = ['a']
@@ -474,10 +460,17 @@ class Recovery(unittest.TestCase):
                 bridge.failed = []
                 sync.sync()
                 now[0] = '2026-11-06T00:02:00Z'
-                self.assertEqual(sync.sync()['deleted_local'], 1)
-                with self.assertRaises(KeyError):
-                    read(local['id'])
-                # Deleting the final Apple-owned item is valid after a second verified absence.
+                result = sync.sync()
+                if kind == 'calendar':
+                    self.assertEqual(result['deleted_local'], 0)
+                    self.assertEqual(result['status'], 'partial')
+                    self.assertTrue(read(local['id']))
+                    self.assertEqual(next(row for row in sync._maps() if row[key] == local['id'])['state'], 'conflict')
+                else:
+                    self.assertEqual(result['deleted_local'], 1)
+                    with self.assertRaises(KeyError):
+                        read(local['id'])
+                # Calendar window null remains unknown; reminder full inventory keeps its existing behavior.
                 remote = copy.deepcopy(bridge.template)
                 remote.update({'event_id' if kind == 'calendar' else 'reminder_id': 'third', 'external_id': 'third'})
                 bridge.rows.append(remote)
@@ -486,20 +479,26 @@ class Recovery(unittest.TestCase):
                 bridge.rows = [r for r in bridge.rows if r['external_id'] != 'third']
                 sync.sync()
                 now[0] = '2026-11-06T00:04:00Z'
-                self.assertEqual(sync.sync()['deleted_local'], 1)
-                with self.assertRaises(KeyError):
-                    read(imported[key])
+                result = sync.sync()
+                if kind == 'calendar':
+                    self.assertEqual(result['deleted_local'], 0)
+                    self.assertTrue(read(imported[key]))
+                    self.assertEqual(next(row for row in sync._maps() if row[key] == imported[key])['state'], 'conflict')
+                else:
+                    self.assertEqual(result['deleted_local'], 1)
+                    with self.assertRaises(KeyError):
+                        read(imported[key])
                 # A remote edit racing with a Stella deletion must survive as a conflict.
                 remote = copy.deepcopy(bridge.template)
                 remote.update({'event_id' if kind == 'calendar' else 'reminder_id': 'fourth', 'external_id': 'fourth'})
                 bridge.rows.append(remote)
                 self.assertEqual(sync.sync()['imported'], 1)
                 imported = next(r for r in sync._maps() if r['external_id'] == 'fourth')
-                delete(imported[key])
+                with self.assertRaisesRegex(PermissionError, '人工确认'): delete(imported[key])
                 bridge.rows[-1]['title'] = 'Changed after local deletion'
                 result = sync.sync()
                 self.assertEqual(result['deleted_remote'], 0)
-                self.assertGreaterEqual(result['conflicts'], 1)
+                self.assertEqual(read(imported[key])['title'], 'Changed after local deletion')
                 self.assertTrue(any(r['external_id'] == 'fourth' for r in bridge.rows))
                 sync.disconnect()
                 self.assertEqual(sync.sync()['status'], 'disconnected')
@@ -547,8 +546,9 @@ class Recovery(unittest.TestCase):
             def call(self, op, **payload):
                 if op == 'reminder_complete':
                     self.completed = payload['completed']
+                    completed = {**copy.deepcopy(self.rows[0]), 'completed':payload['completed'], 'completed_at':'2026-08-19T12:00:00Z'}
                     self.rows[0].update(due_on='2026-08-20', completed=False, completed_at=None)
-                    return {'reminder': copy.deepcopy(self.rows[0])}
+                    return {'reminder': copy.deepcopy(self.rows[0]), 'completed_snapshot':completed}
                 return super().call(op, **payload)
         bridge = RepeatingBridge('reminders')
         bridge.rows[0].update(due_on='2026-08-19', recurrence={'frequency': 'daily'})
@@ -613,10 +613,10 @@ class Recovery(unittest.TestCase):
         sources = [{'id': 'a', 'title': 'Work', 'writable': True}, {'id': 'b', 'title': 'Work', 'writable': True}]
         categories = [{'id': 'existing', 'name': 'Work'}]
         links = bidirectional_links([{'apple_id': 'a'}, {'apple_id': 'b'}], sources, categories)
-        self.assertEqual(links[0]['stella_id'], 'existing')
+        self.assertEqual(links[0]['alcor_id'], 'existing')
         self.assertEqual(links[1]['create_name'], 'Work (2)')
         with self.assertRaisesRegex(ValueError, '有效'):
-            bidirectional_links([{'apple_id': 'a', 'stella_id': 'missing'}], sources, categories)
+            bidirectional_links([{'apple_id': 'a', 'alcor_id': 'missing'}], sources, categories)
         with self.assertRaisesRegex(ValueError, '格式'):
             bidirectional_links([{'apple_id': 'a', 'direction': 'import'}], sources, categories)
         with self.assertRaisesRegex(ValueError, '至少'):

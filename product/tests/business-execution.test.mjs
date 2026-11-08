@@ -1,17 +1,17 @@
-import { discoverBriefingSources } from '../../packages/stella-organizer/src/briefing-sources.js'
+import { discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
-import { HubWorker } from '../../packages/stella-agent-hub/src/worker.js'
-import { HubCoordinator } from '../../packages/stella-agent-hub/src/hub.js'
-import { ReminderDelivery } from '../../packages/stella-organizer/src/reminders.js'
-import { BriefingGenerator } from '../../packages/stella-organizer/src/briefing.js'
+import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
+import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
+import { HubCoordinator } from '../../packages/alcor-agent-hub/src/hub.js'
+import { ReminderDelivery } from '../../packages/alcor-organizer/src/reminders.js'
+import { BriefingGenerator } from '../../packages/alcor-organizer/src/briefing.js'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
-import { buildBriefing } from '../../packages/stella-organizer/src/records.js'
+import { buildBriefing } from '../../packages/alcor-organizer/src/records.js'
 
 class TestBriefingGenerator extends BriefingGenerator {
   constructor(ctx, worker) {
@@ -42,7 +42,7 @@ class TestBriefingGenerator extends BriefingGenerator {
 
 async function fixture(context) {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-execution-'))
-  const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
+  const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
   const business = new BusinessWorker(directory, options)
   const hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
   const worker = {call:(action,input={}) => action==='invoke' && input.domain==='agent_hub' ? hub.call(action,input) : business.call(action,input),close:async()=>{await hub.close();await business.close()}}
@@ -63,7 +63,7 @@ async function waitFor(check) {
 
 test('briefing settings reject stale writes', async context => {
   const { worker } = await fixture(context)
-  const previous = await worker.call('source_settings', { sources: [{ source: 'stella_tasks', accountId: 'local' }] })
+  const previous = await worker.call('source_settings', { sources: [{ source: 'alcor_tasks', accountId: 'local' }] })
   await worker.call('source_settings', { sources: [], expected_sources: previous })
   await assert.rejects(worker.call('source_settings', { sources: previous, expected_sources: previous }), /其他页面变化/)
   assert.deepEqual(await worker.call('source_settings'), [])
@@ -441,11 +441,11 @@ test('incremental reports isolate days and selections, invalidate changed rules 
 
 test('briefing source switches persist separately from source scopes and reject stale writes', async t => {
   const { worker, directory, options } = await fixture(t)
-  await worker.call('source_settings', { sources: [{ source: 'stella_tasks', accountId: 'local' }] })
+  await worker.call('source_settings', { sources: [{ source: 'alcor_tasks', accountId: 'local' }] })
   assert.deepEqual(await worker.call('source_group_settings'), {})
   await worker.call('source_group_settings', { groups: { email: false }, expected_groups: {} })
   await assert.rejects(worker.call('source_group_settings', { groups: { email: true }, expected_groups: {} }), /其他页面变化/)
-  assert.deepEqual(await worker.call('source_settings'), [{ source: 'stella_tasks', accountId: 'local' }])
+  assert.deepEqual(await worker.call('source_settings'), [{ source: 'alcor_tasks', accountId: 'local' }])
   await worker.close()
   const restarted = new BusinessWorker(directory, options); t.after(() => restarted.close())
   assert.deepEqual(await restarted.call('source_group_settings'), { email: false })

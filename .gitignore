@@ -84,3 +84,14 @@ packages/stella-secretary/business/**/__pycache__/
 !/packages/stella-apple-sync/python/
 
 /packages/stella-apple-sync/python/apple_sync/Stella Apple Sync.app/
+
+# Alcor package paths (retain legacy patterns above for compatibility).
+/packages/alcor-elearning/server/
+/packages/alcor-mail/server/
+/packages/alcor-privacy/native/keychain-bridge
+packages/alcor-apple-sync/python/apple_sync/StellaCalendarBridge
+packages/alcor-apple-sync/python/**/__pycache__/
+packages/alcor-secretary/business/**/__pycache__/
+!/packages/alcor-apple-sync/python/
+/packages/alcor-apple-sync/python/apple_sync/Alcor Apple Sync.app/
+/packages/alcor-secretary/native/Alcor Confirm.app/

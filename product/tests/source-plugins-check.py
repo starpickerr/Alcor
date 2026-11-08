@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 import official_desktop_check as desktop
@@ -13,8 +14,8 @@ from web_check import open_secretary, settings
 PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(PACK)))
 SOURCES = []
 for name in ('elearning', 'mail'):
-    version = json.loads((ROOT / 'packages' / f'stella-{name}' / 'package.json').read_text())['version']
-    SOURCES.append(Path(os.environ.get('STELLA_SOURCE_REVIEW_DIRECTORY',str(ROOT/'.local/artifacts'))) / f'stella-{name}-{version}.tgz')
+    version = json.loads((ROOT / 'packages' / f'alcor-{name}' / 'package.json').read_text())['version']
+    SOURCES.append(Path(os.environ.get('STELLA_SOURCE_REVIEW_DIRECTORY',str(ROOT/'.local/artifacts'))) / f'alcor-{name}-{version}.tgz')
 
 
 def config(page, package):
@@ -42,8 +43,8 @@ def open_sources(page):
 
 def check(page, home, profile, artifacts):
     call = lambda endpoint, args={}: desktop.rpc(page, endpoint, args)
-    school = lambda: call('stellaSchool/elearningAccount', {'request': {}})
-    mail = lambda: call('stellaMail/state', {'request': {}})
+    school = lambda: call('alcorSchool/elearningAccount', {'request': {}})
+    mail = lambda: call('alcorMail/state', {'request': {}})
     assert school()['installed'] and not school()['configured']
     assert mail()['installed'] and not mail()['configured']
     open_secretary(page)
@@ -53,6 +54,7 @@ def check(page, home, profile, artifacts):
     expect(dialog.get_by_text('连接', exact=True)).to_have_count(0)
     expect(dialog.get_by_text('权限与安全', exact=True)).to_have_count(0)
     expect(dialog.get_by_text('旧版身份导入', exact=True)).to_have_count(0)
+    expect(dialog.get_by_text('Alcor 对话工具', exact=True)).to_have_count(0)
     expect(dialog.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
     expect(dialog.get_by_label('学工号', exact=True)).to_have_count(0)
     expect(dialog.get_by_label('DSH 文件工作区', exact=True)).to_have_count(0)
@@ -60,13 +62,13 @@ def check(page, home, profile, artifacts):
     page.screenshot(path=str(artifacts / 'stella-settings-desktop.png'), animations='disabled')
     page.set_viewport_size({'width':390,'height':844})
     expect(dialog.get_by_label('助手名称', exact=True)).to_be_in_viewport()
-    assert page.locator('.stella-settings-content').bounding_box()['width'] >= 250
+    assert page.locator('.alcor-settings-content').bounding_box()['width'] >= 250
     assert dialog.evaluate('element => element.scrollWidth <= element.clientWidth')
     page.screenshot(path=str(artifacts / 'stella-settings-mobile.png'), animations='disabled')
     page.set_viewport_size({'width':1440,'height':1000})
     dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
     dialog = open_sources(page)
-    for package in ('@stella/elearning', '@stella/mail'):
+    for package in ('@alcor/elearning', '@alcor/mail'):
         row = dialog.locator('[data-source-card="'+('elearning' if package.endswith('elearning') else 'email')+'"]')
         expect(row).to_contain_text('待配置')
         expect(row).to_be_enabled()
@@ -77,7 +79,7 @@ def check(page, home, profile, artifacts):
     page.screenshot(path=str(artifacts / 'source-setup-narrow.png'), animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     dialog.get_by_role('button', name='管理来源：eLearning', exact=True).click()
-    page.locator('[data-plugin-detail="@stella/elearning"] [data-plugin-config]').wait_for()
+    page.locator('[data-plugin-detail="@alcor/elearning"] [data-plugin-config]').wait_for()
     expect(page.locator('[data-plugin-config] details')).to_have_count(0)
     expect(page.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
     page.get_by_label('学工号', exact=True).fill('synthetic-source-user')
@@ -107,9 +109,9 @@ def check(page, home, profile, artifacts):
     page.set_viewport_size({'width': 1440, 'height': 1000})
     dialog = open_sources(page)
     expect(dialog.locator('[data-source-card="elearning"]')).to_be_visible()
-    expect(dialog.locator('[data-source-connection="@stella/elearning"]')).to_have_count(0)
+    expect(dialog.locator('[data-source-connection="@alcor/elearning"]')).to_have_count(0)
     dialog.get_by_role('button', name='管理来源：Email', exact=True).click()
-    page.locator('[data-plugin-detail="@stella/mail"] [data-plugin-config]').wait_for()
+    page.locator('[data-plugin-detail="@alcor/mail"] [data-plugin-config]').wait_for()
     expect(page.locator('[data-plugin-config] details')).to_have_count(0)
     expect(page.locator('[data-mail-account="new"]')).to_be_visible()
     page.get_by_label('邮箱账号', exact=True).fill('synthetic@example.com')
@@ -127,9 +129,9 @@ def check(page, home, profile, artifacts):
     expect(first.get_by_role('button', name='保存邮箱', exact=True)).to_be_disabled()
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
     assert first.get_by_role('button', name='测试连接', exact=True).bounding_box()['y'] > first.get_by_role('button', name='保存邮箱', exact=True).bounding_box()['y']
-    chosen = lambda: call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
+    chosen = lambda: call('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
     assert any(row['source'] == 'email' for row in chosen()), 'An enabled mailbox must not require a second briefing subscription'
-    expect(page.locator('[data-plugin-briefing="@stella/mail"]')).to_have_count(0)
+    expect(page.locator('[data-plugin-briefing="@alcor/mail"]')).to_have_count(0)
     first.get_by_role('button', name='停用邮箱', exact=True).click()
     expect(first.get_by_role('button', name='开启邮箱', exact=True)).to_be_enabled()
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
@@ -141,15 +143,15 @@ def check(page, home, profile, artifacts):
     checking = first.get_by_role('button', name='正在测试…', exact=True)
     expect(checking).to_be_disabled()
     expect(checking).to_have_attribute('aria-busy', 'true')
-    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_contain_text('邮箱服务器拒绝登录')
+    expect(page.locator('.alcor-mail-settings').get_by_role('alert')).to_contain_text('邮箱服务器拒绝登录')
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
     first.get_by_role('button', name='测试连接', exact=True).click()
     expect(first.get_by_role('button', name='正在测试…', exact=True)).to_be_disabled()
-    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_contain_text('测试连接超时')
+    expect(page.locator('.alcor-mail-settings').get_by_role('alert')).to_contain_text('测试连接超时')
     first.get_by_role('button', name='测试连接', exact=True).click()
     expect(first.get_by_role('button', name='正在测试…', exact=True)).to_be_disabled()
     expect(first.get_by_text('连接正常', exact=True)).to_be_visible()
-    expect(page.locator('.stella-mail-settings').get_by_role('alert')).to_have_count(0)
+    expect(page.locator('.alcor-mail-settings').get_by_role('alert')).to_have_count(0)
     first.get_by_label('邮件文件夹', exact=True).fill('Archive')
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_disabled()
     page.get_by_role('button', name='添加邮箱', exact=True).click()
@@ -192,18 +194,18 @@ def check(page, home, profile, artifacts):
     # Exercise the supported 20-mailbox limit without connecting to any external mailbox.
     extra_ids = []
     for index in range(19):
-        result = call('stellaMail/save', {'request': {'expectedRevision': mail()['revision'], 'account': {
+        result = call('alcorMail/save', {'request': {'expectedRevision': mail()['revision'], 'account': {
             'user': f'synthetic{index}@example.com', 'password': 'synthetic-only-pass', 'host': 'imap.example.com',
             'port': 993, 'folder': 'INBOX', 'enabled': False}}})
         extra_ids.append(next(r['id'] for r in result['accounts'] if r['user'] == f'synthetic{index}@example.com'))
-    config(page, '@stella/mail')
+    config(page, '@alcor/mail')
     page.get_by_role('button', name='刷新状态', exact=True).click()
     expect(page.get_by_role('button', name='添加邮箱', exact=True)).to_be_disabled()
-    expect(page.locator('.stella-mail-connection:visible')).to_have_count(1)
+    expect(page.locator('.alcor-mail-connection:visible')).to_have_count(1)
     page.get_by_label('搜索邮箱', exact=True).fill('synthetic18@')
-    expect(page.locator('.stella-mail-account-row')).to_have_count(1)
+    expect(page.locator('.alcor-mail-account-row')).to_have_count(1)
     page.get_by_role('button', name='选择邮箱：synthetic18@example.com', exact=True).click()
-    expect(page.locator('.stella-mail-connection:visible').get_by_label('邮箱账号', exact=True)).to_have_value('synthetic18@example.com')
+    expect(page.locator('.alcor-mail-connection:visible').get_by_label('邮箱账号', exact=True)).to_have_value('synthetic18@example.com')
     page.get_by_label('搜索邮箱', exact=True).fill('')
     page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
     first.get_by_label('邮件文件夹', exact=True).fill('Draft kept locally')
@@ -211,18 +213,18 @@ def check(page, home, profile, artifacts):
     page.get_by_role('button', name='选择邮箱：synthetic@example.com', exact=True).click()
     expect(first.get_by_label('邮件文件夹', exact=True)).to_have_value('Draft kept locally')
     first.get_by_role('button', name='撤销修改', exact=True).click()
-    page.locator('.stella-mail-settings').screenshot(path=str(artifacts / 'mail-multi-desktop.png'), animations='disabled')
+    page.locator('.alcor-mail-settings').screenshot(path=str(artifacts / 'mail-multi-desktop.png'), animations='disabled')
     page.set_viewport_size({'width': 390, 'height': 844})
-    page.locator('.stella-mail-settings').screenshot(path=str(artifacts / 'mail-multi-mobile.png'), animations='disabled')
-    assert page.locator('.stella-mail-settings').evaluate('element => element.scrollWidth <= element.clientWidth')
+    page.locator('.alcor-mail-settings').screenshot(path=str(artifacts / 'mail-multi-mobile.png'), animations='disabled')
+    assert page.locator('.alcor-mail-settings').evaluate('element => element.scrollWidth <= element.clientWidth')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     for identity in extra_ids:
-        call('stellaMail/removeAccount', {'request': {'id': identity, 'expectedRevision': mail()['revision']}})
+        call('alcorMail/removeAccount', {'request': {'id': identity, 'expectedRevision': mail()['revision']}})
     page.get_by_role('button', name='刷新状态', exact=True).click()
     credential_file = home / 'dsh/.credentials.yaml'
     assert credential_file.stat().st_mode & 0o777 == 0o600
     assert 'synthetic-mail-secret' not in (profile / 'cordis.patch.yml').read_text()
-    for path in (profile / 'stella').rglob('*'):
+    for path in (profile / 'alcor').rglob('*'):
         if path.is_file():
             assert not any(secret in path.read_bytes() for secret in (b'synthetic-mail-secret', b'updated-mail-password', b'synthetic-school-secret')), path.name
     page.screenshot(path=str(artifacts / 'mail-settings.png'), animations='disabled')
@@ -244,39 +246,40 @@ def check(page, home, profile, artifacts):
     revision_before = mail()['revision']
     email_switch.click()
     expect(email_switch).to_have_attribute('aria-checked', 'false')
-    assert not any(row['source'] == 'email' for row in call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}}))
+    assert not any(row['source'] == 'email' for row in call('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}}))
     assert [(row['id'], row['enabled']) for row in mail()['accounts']] == account_flags
     assert mail()['revision'] == revision_before, 'Briefing switch must not rewrite plugin credentials'
     email_switch.click()
     expect(email_switch).to_have_attribute('aria-checked', 'true')
     page.screenshot(path=str(artifacts / 'source-discovery.png'), animations='disabled')
     dialog.get_by_role('button', name='返回简报', exact=True).click()
-    chosen = call('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
+    chosen = call('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
     assert {row['source'] for row in chosen} >= {'email', 'elearning'}
 
 
 def main():
-    artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/stella-source-desktop')); artifacts.mkdir(parents=True, exist_ok=True)
+    artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/alcor-source-desktop')); artifacts.mkdir(parents=True, exist_ok=True)
     desktop.verify_release(); desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='stella-source-desktop-') as temporary, sync_playwright() as playwright:
+    with fresh_test_home(prefix='alcor-source-desktop-') as temporary, sync_playwright() as playwright:
         home = Path(temporary); desktop.environment(home)
         profile = home / 'dsh/profiles/desktop'; profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'source-bundle-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         fixture = home / 'mail-check-fixture.mjs'
-        fixture.write_text("""export const inject=['stellaMailConnection','tools'];
+        fixture.write_text("""export const inject=['alcorMailConnection','tools'];
 export function apply(ctx) {
   const execute=ctx.tools.execute;
   let schoolCount=0;
   ctx.tools.execute=async function(request){
-    if(request.calls?.[0]?.id==='stella-elearning-check') {
+    if(request.calls?.[0]?.id==='alcor-elearning-check') {
       const code=['browser_unavailable','network_error','login_timeout'][Math.min(schoolCount++,2)];
       return {results:[{result:{isError:true,error:{message:JSON.stringify({error_code:code})}}}]};
     }
     return execute.call(this,request);
   };
   ctx.effect(()=>()=>{ctx.tools.execute=execute});
-  const prototype=Object.getPrototypeOf(ctx.stellaMailConnection);
+  const prototype=Object.getPrototypeOf(ctx.alcorMailConnection);
   const original=prototype.check;
   const results=[{status:'query_failed',code:'auth_failed'},{status:'query_failed',code:'timeout'},{status:'ready'}];
   let count=0;
@@ -288,31 +291,31 @@ export function apply(ctx) {
         baseline = (profile / 'cordis.patch.yml').read_bytes()
         desktop.native_cli(home, 'sources-install', 'add', str(PACK), *map(str, SOURCES), '--ignore-scripts')
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
-        subprocess.run([str(ROOT.parent / 'MCP/email-mcp/.venv/bin/python'), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
+        subprocess.run([str(ROOT.parent / 'MCP/dsh-email/.venv/bin/python'), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
         with desktop.desktop(playwright, home, 'sources') as (page, errors):
             check(page, home, profile, artifacts)
             assert not errors, errors
-            for name in ('@stella/elearning', '@stella/mail'):
+            for name in ('@alcor/elearning', '@alcor/mail'):
                 result = desktop.rpc(page, 'pluginManager/setBundleEnabled', {'name': name, 'enabled': False})
                 assert result['application'] in ('applied', 'restart-required')
         with desktop.desktop(playwright, home, 'sources-disabled') as (page, errors):
-            state = desktop.rpc(page, 'stellaSecretary/elearningAccount', {'request': {}})
+            state = desktop.rpc(page, 'alcorSecretary/elearningAccount', {'request': {}})
             assert not state['installed']
-            catalog = desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'discover_sources'}})
+            catalog = desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'discover_sources'}})
             assert not catalog['connections']
-            for name in ('@stella/elearning', '@stella/mail'):
+            for name in ('@alcor/elearning', '@alcor/mail'):
                 desktop.rpc(page, 'pluginManager/setBundleEnabled', {'name': name, 'enabled': True})
             assert not errors, errors
         with desktop.desktop(playwright, home, 'sources-restored') as (page, errors):
-            assert desktop.rpc(page, 'stellaSchool/elearningAccount', {'request': {}})['connected']
-            config(page, '@stella/elearning')
+            assert desktop.rpc(page, 'alcorSchool/elearningAccount', {'request': {}})['connected']
+            config(page, '@alcor/elearning')
             expect(page.get_by_label('学工号', exact=True)).to_have_value('synthetic-source-user')
             expect(page.get_by_label('eLearning 密码', exact=True)).to_have_value('')
             expect(page.get_by_label('eLearning 密码', exact=True)).to_have_attribute('placeholder', '********')
             expect(page.locator('[data-plugin-config] details')).to_have_count(0)
-            state = desktop.rpc(page, 'stellaMail/state', {'request': {}})
+            state = desktop.rpc(page, 'alcorMail/state', {'request': {}})
             assert state['connected'] and len(state['accounts']) == 1
-            config(page, '@stella/mail')
+            config(page, '@alcor/mail')
             expect(page.locator('[data-plugin-config] details')).to_have_count(0)
             expect(page.get_by_label('邮箱账号', exact=True)).to_have_value('synthetic@example.com')
             expect(page.get_by_label('邮箱授权码', exact=True)).to_have_value('')
@@ -320,11 +323,11 @@ export function apply(ctx) {
             page.get_by_role('button', name='移除邮箱', exact=True).click()
             page.get_by_role('button', name='确认移除邮箱', exact=True).click()
             expect(page.locator('[data-plugin-config]').get_by_role('status')).to_contain_text('邮箱已移除')
-            assert not desktop.rpc(page, 'stellaMail/state', {'request': {}})['configured']
+            assert not desktop.rpc(page, 'alcorMail/state', {'request': {}})['configured']
             assert 'synthetic-mail-secret' not in (home / 'dsh/.credentials.yaml').read_text()
             assert 'updated-mail-password' not in (home / 'dsh/.credentials.yaml').read_text()
             assert not errors, errors
-        desktop.native_cli(home, 'sources-uninstall', 'remove', '@stella/elearning', '@stella/mail')
+        desktop.native_cli(home, 'sources-uninstall', 'remove', '@alcor/elearning', '@alcor/mail')
         assert 'synthetic-school-secret' in (home / 'dsh/.credentials.yaml').read_text()
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
         assert not (home / 'dsh/storages/stella_mcp.json').exists()

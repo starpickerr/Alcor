@@ -21,21 +21,21 @@ class Provider(BaseHTTPRequestHandler):
         names = {tool['function']['name'] for tool in payload.get('tools', [])}
         delta, finish = {'content': 'Synthetic title'}, 'stop'
         try:
-            if 'stella_overview' in names:
+            if 'alcor_overview' in names:
                 assert 'skill' in names, 'Missing native skill tool: '+','.join(sorted(names))
                 text = json.dumps(payload['messages'], ensure_ascii=False)
                 if self.phase == 0:
-                    expected=['stella-bills','stella-tasks','stella-calendar','stella-briefing','stella-automation','stella-elearning','stella-mail','stella-apple-sync']
+                    expected=['alcor-bills','alcor-tasks','alcor-calendar','alcor-briefing','alcor-automation','alcor-elearning','alcor-mail','alcor-apple-sync']
                     assert all(name in text for name in expected), 'Missing advertised skills: '+','.join(name for name in expected if name not in text)
                     assert '新版使用整数 amount_minor' not in text, 'Full bodies must not be preloaded'
-                    name, args = 'skill', {'name':'stella-bills'}
+                    name, args = 'skill', {'name':'alcor-bills'}
                 elif self.phase == 1:
                     content = payload['messages'][-1]['content']
-                    assert '<skill_content name="stella-bills">' in content
+                    assert '<skill_content name="alcor-bills">' in content
                     assert 'amount_minor' in content
                     examples = [json.loads(raw) for raw in re.findall(r'```json\n([\s\S]*?)\n```', content)]
                     args = next(row for row in examples if row['method'] == 'create_ledger')
-                    name = 'stella_business'
+                    name = 'alcor_business'
                 elif self.phase == 2:
                     saved = json.loads(payload['messages'][-1]['content'])['result']
                     assert saved['amount_minor'] == 1390 and saved['currency'] == 'CNY'
@@ -92,8 +92,8 @@ def main():
             credential=Path(env['DSH_HOME'])/'.credentials.yaml';credential.write_text('version: 1\nrefs:\n  STELLA_SYNTHETIC_KEY: synthetic-test-key\n');credential.chmod(0o600)
             packages=[]
             for package in ['secretary','elearning','mail','apple-sync']:
-                version=json.loads((desktop.ROOT/f'packages/stella-{package}/package.json').read_text())['version']
-                packages.append(str(desktop.ROOT/f'.local/artifacts/stella-{package}-{version}.tgz'))
+                version=json.loads((desktop.ROOT/f'packages/alcor-{package}/package.json').read_text())['version']
+                packages.append(str(desktop.ROOT/f'.local/artifacts/alcor-{package}-{version}.tgz'))
             desktop.native_cli(home,'skills-install','add',*packages,'--ignore-scripts')
             with desktop.desktop(playwright,home,'plugin-skills') as (page,errors):
                 open_secretary(page)
@@ -108,7 +108,7 @@ def main():
                     (desktop.ARTIFACTS/'skill-session-events.json').write_text(json.dumps(events,ensure_ascii=False))
                 assert not Provider.failure,Provider.failure
                 assert Provider.phase==3,f'Native skill/model flow did not complete: phase={Provider.phase}'
-                rows=desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':'bills','method':'list_ledger','arguments':{'year':2026,'month':11}}})
+                rows=desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'bills','method':'list_ledger','arguments':{'year':2026,'month':11}}})
                 assert len(rows)==1 and rows[0]['amount_minor']==1390 and rows[0]['name']=='咖啡'
                 page.get_by_role('button',name='账单',exact=True).click()
                 page.get_by_label('账单年份',exact=True).select_option('2026')

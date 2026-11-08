@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const lock = JSON.parse(await readFile(join(root, 'product/source-releases.lock.json'), 'utf8'))
 const run = promisify(execFile)
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('此发行构建仅用于 macOS Apple Silicon。')
+await mkdir(join(root, '.local/artifacts'), { recursive: true })
 for (const source of lock.sources) {
   const repo = join(root, '..', 'MCP', source.repo)
   const files = ['mcp_server.py', 'pyproject.toml', ...(await readdir(join(repo, source.module))).filter(name => /\.(py|json|sql)$/.test(name)).map(name => source.module + '/' + name)].sort()
@@ -33,7 +34,7 @@ for (const source of lock.sources) {
   await cp(join(root, 'product/DSH-LICENSE.txt'), join(directory, 'DSH-LICENSE.txt'))
   await mkdir(join(directory, 'lib'), { recursive: true })
   await build({ entryPoints: [join(directory, 'src/index.ts')], outdir: join(directory, 'lib'), bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
-  const client = await build({ entryPoints: [join(directory, 'src/client.jsx')], bundle: true, external: ['react', 'react-dom', 'zod', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-primitives'], loader: { '.css': 'text' }, format: 'cjs', platform: 'browser', write: false, target: 'es2022' })
+  const client = await build({ entryPoints: [join(directory, 'src/client.jsx')], bundle: true, external: ['react', 'react-dom', 'zod', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-primitives'], loader: { '.css': 'text', '.svg': 'dataurl' }, format: 'cjs', platform: 'browser', write: false, target: 'es2022' })
   const id = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')).name
   await writeFile(join(directory, 'lib/client.js'), `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(require){const module={exports:{}};const exports=module.exports;\n${client.outputFiles[0].text}\nreturn module.exports;}});\n`)
   await writeFile(join(directory, 'THIRD_PARTY_NOTICES.md'), `# ${id}\n\nMCP ${source.version}，来源：本工作区独立 ${source.repo}。源码摘要见 server/source.json。\n\n包含 Python、MCP Python SDK（MIT）、PyInstaller（GPL with bootloader exception）${source.module === 'elearning_mcp' ? '、Playwright（Apache-2.0）' : ''} 及其运行依赖。许可证随冻结运行库的 dist-info 与 licenses 目录分发。官方 DSH SDK 使用宿主可选 peer，不包含宿主副本。\n`)

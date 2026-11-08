@@ -1,10 +1,10 @@
-# Stella 利用ガイド
+# Alcor 利用ガイド
 
 [English](../guide.md) · [中文](../zh/guide.md) · [繁體中文](../zh/guide-Hant.md) · [日本語](guide.md)
 
 ## インストールと起動
 
-公開済みのインストーラーは [GitHub Releases](https://github.com/starpickerr/Stella/releases) にあります。パッケージ版は同梱のバックエンドを自動起動します。ソースには Python 3.10+ と Node.js 22.13+、macOS では Xcode Command Line Tools（`xcode-select --install`）も必要です。
+公開済みのインストーラーは [GitHub Releases](https://github.com/starpickerr/Alcor/releases) にあります。パッケージ版は同梱のバックエンドを自動起動します。ソースには Python 3.10+ と Node.js 22.13+、macOS では Xcode Command Line Tools（`xcode-select --install`）も必要です。
 
 リポジトリをクローンし、ルートで実行します。
 

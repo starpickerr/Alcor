@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from datetime import datetime, timedelta
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
@@ -11,9 +12,9 @@ from web_check import open_secretary
 
 
 def fixtures(profile):
-    sys.path.insert(0, str(desktop.ROOT / 'packages/stella-secretary'))
+    sys.path.insert(0, str(desktop.ROOT / 'packages/alcor-secretary'))
     from business.worker import Business
-    business = Business(profile / 'stella/business')
+    business = Business(profile / 'alcor/business')
     today = datetime.now().astimezone().date().isoformat()
     zone = str(Path('/etc/localtime').resolve()).split('/zoneinfo/')[-1]
     offset = datetime.now().astimezone().strftime('%z')
@@ -46,18 +47,19 @@ def main():
     artifacts.mkdir(parents=True,exist_ok=True);desktop.ARTIFACTS=artifacts
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
-    apple_version=json.loads((desktop.ROOT/'packages/stella-apple-sync/package.json').read_text())['version']
-    apple_pack=desktop.ROOT/f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
-    with tempfile.TemporaryDirectory(prefix='stella-record-context-') as temporary,sync_playwright() as playwright:
+    apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_pack=desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
+    with fresh_test_home(prefix='stella-record-context-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         (home/'documents').mkdir()
         (profile/'package.json').write_text(json.dumps({'name':'record-context-check','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home,'context-install','add',str(desktop.PACK),str(apple_pack),'--ignore-scripts')
         data=fixtures(profile)
         with desktop.desktop(playwright,home,'context-menus') as (page,errors):
-            business=lambda domain,method,args=None:desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
+            business=lambda domain,method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
             open_secretary(page);page.set_viewport_size({'width':1440,'height':1000})
             page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__stellaCopied=text}}})")
             task=page.locator(f'[data-task-id="{data["task"]["id"]}"]')
@@ -73,7 +75,7 @@ def main():
             expect(details).to_contain_text('planA')
             expect(details).to_contain_text('已标记')
             expect(details.locator('dd').filter(has_text='#Python')).to_be_visible()
-            expect(details.locator('.stella-inspector-row').filter(has_text='优先级')).to_contain_text('高')
+            expect(details.locator('.alcor-inspector-row').filter(has_text='优先级')).to_contain_text('高')
             expect(details.get_by_role('button',name='关闭详情')).to_be_focused()
             page.screenshot(path=str(artifacts/'task-inspector-desktop.png'),animations='disabled')
             details.get_by_role('button',name='关闭详情').click()
@@ -82,7 +84,7 @@ def main():
             expect(menu).to_be_visible();page.keyboard.press('Escape');expect(menu).to_have_count(0)
             expect(task.get_by_role('button',name=data['task']['title'],exact=True)).to_be_focused()
             task.click(button='right');menu.get_by_role('menuitem',name='拷贝文本',exact=True).click()
-            expect(page.locator('.stella-page-feedback')).to_contain_text('已拷贝文本')
+            expect(page.locator('.alcor-page-feedback')).to_contain_text('已拷贝文本')
             assert data['task']['title'] in page.evaluate('window.__stellaCopied')
             assert data['task']['id'] not in page.evaluate('window.__stellaCopied')
             task.click(button='right');menu.get_by_role('menuitem',name='清单',exact=True).click()
@@ -95,11 +97,11 @@ def main():
             repeating=page.locator(f'[data-task-id="{data["repeating"]["id"]}"]')
             repeating.get_by_role('button',name='重复阅读计划',exact=True).click()
             repeat_panel=page.get_by_role('region',name='事务详情',exact=True)
-            help_notice=repeat_panel.locator('.stella-notice').filter(has_text='重复事务按日期完成，不支持子事务。')
+            help_notice=repeat_panel.locator('.alcor-notice').filter(has_text='重复事务按日期完成，不支持子事务。')
             expect(help_notice).to_be_visible()
             expect(repeat_panel.get_by_label('子事务标题',exact=True)).to_have_count(0)
             expect(repeat_panel.get_by_role('button',name='添加子事务',exact=True)).to_have_count(0)
-            page.locator('.stella-business').evaluate('e=>e.scrollIntoView({block:"start"})')
+            page.locator('.alcor-business').evaluate('e=>e.scrollIntoView({block:"start"})')
             help_notice.scroll_into_view_if_needed()
             assert help_notice.evaluate('e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),t=e.lastElementChild.getBoundingClientRect();return parseFloat(s.paddingLeft)>=12 && parseFloat(s.paddingTop)>=12 && t.left-r.left>=12 && r.bottom-t.bottom>=12}')
             page.screenshot(path=str(artifacts/'01-repeat-help-desktop.png'),animations='disabled')
@@ -119,8 +121,8 @@ def main():
                 page.get_by_role('button',name=title,exact=True).click()
                 task_panel=page.get_by_role('region',name='事务详情',exact=True)
                 expect(task_panel).to_contain_text(status)
-                expect(task_panel.locator('.stella-notice[role=status]')).to_contain_text(status)
-                page.locator('.stella-business').evaluate('e=>e.scrollIntoView({block:"start"})')
+                expect(task_panel.locator('.alcor-notice[role=status]')).to_contain_text(status)
+                page.locator('.alcor-business').evaluate('e=>e.scrollIntoView({block:"start"})')
                 page.screenshot(path=str(artifacts/('04-readonly-notice.png' if title=='只读事务' else '05-pending-notice.png')),animations='disabled')
                 expect(task_panel.get_by_role('button',name='编辑详情',exact=True)).to_be_disabled()
                 expect(task_panel.get_by_role('button',name='删除',exact=True)).to_be_disabled()
@@ -129,7 +131,7 @@ def main():
                 expect(task_panel.get_by_role('button',name='添加子事务',exact=True)).to_be_disabled()
                 task_panel.get_by_role('button',name='关闭详情',exact=True).click()
             page.get_by_role('button',name='日程',exact=True).click()
-            chip=page.locator(f'.stella-calendar-chip[data-record-id="{data["event"]["id"]}"]')
+            chip=page.locator(f'.alcor-calendar-chip[data-record-id="{data["event"]["id"]}"]')
             chip.click(button='right');menu.get_by_role('menuitem',name='显示简介',exact=True).click()
             event=page.get_by_role('region',name='日程详情',exact=True)
             expect(event).to_contain_text('HGX502');expect(event).to_contain_text('提前 15 分钟')
@@ -147,11 +149,11 @@ def main():
             assert business('calendar','get_event',{'id':data['event']['id']})['category_id']==data['target']['id']
             chip.click();expect(event).to_be_visible();event.get_by_role('button',name='关闭详情').click()
             page.get_by_role('tab',name='周',exact=True).click()
-            card=page.locator(f'.stella-time-column [data-record-id="{data["event"]["id"]}"]')
+            card=page.locator(f'.alcor-time-column [data-record-id="{data["event"]["id"]}"]')
             card.click(button='right');expect(menu).to_be_visible();page.keyboard.press('Escape')
-            all_day=page.locator(f'.stella-time-all-day [data-record-id="{data["all_day"]["id"]}"]')
+            all_day=page.locator(f'.alcor-time-all-day [data-record-id="{data["all_day"]["id"]}"]')
             all_day.click(button='right');expect(menu).to_be_visible();page.keyboard.press('Escape')
-            readonly=page.locator(f'.stella-time-column [data-record-id="{data["readonly"]["id"]}"]')
+            readonly=page.locator(f'.alcor-time-column [data-record-id="{data["readonly"]["id"]}"]')
             readonly.click(button='right')
             expect(menu.get_by_role('menuitem',name='编辑详情',exact=True)).to_be_disabled()
             expect(menu.get_by_role('menuitem',name='删除日程',exact=True)).to_be_disabled()
@@ -159,13 +161,13 @@ def main():
             expect(event).to_contain_text('Apple 来源内容只读')
             expect(event.get_by_role('button',name='编辑详情')).to_be_disabled()
             event.get_by_role('button',name='关闭详情').click()
-            pending=page.locator(f'.stella-time-column [data-record-id="{data["pending"]["id"]}"]')
+            pending=page.locator(f'.alcor-time-column [data-record-id="{data["pending"]["id"]}"]')
             pending.click(button='right');menu.get_by_role('menuitem',name='显示简介',exact=True).click()
             expect(event).to_contain_text('等待 Apple 确认')
             expect(event.get_by_role('button',name='删除',exact=True)).to_be_disabled()
             event.get_by_role('button',name='关闭详情').click()
             page.get_by_role('tab',name='列表',exact=True).click()
-            entry=page.locator(f'.stella-agenda-list [data-record-id="{data["event"]["id"]}"]')
+            entry=page.locator(f'.alcor-agenda-list [data-record-id="{data["event"]["id"]}"]')
             entry.click(button='right');menu.get_by_role('menuitem',name='删除日程',exact=True).click()
             deletion=page.get_by_role('dialog',name='删除日程',exact=True)
             deletion.get_by_role('button',name='取消',exact=True).click()
@@ -199,9 +201,9 @@ def main():
             event.get_by_role('button',name='关闭详情').click()
             assert not errors,errors
         with desktop.desktop(playwright,home,'context-restart') as (page,errors):
-            event=desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':'calendar','method':'get_event','arguments':{'id':data['event']['id']}}})
+            event=desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'calendar','method':'get_event','arguments':{'id':data['event']['id']}}})
             assert event['category_id']==data['target']['id'] and event['title']=='计算机网络 · 已调整'
-            task=desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':'tasks','method':'get_todo','arguments':{'todo_id':data['task']['id']}}})
+            task=desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'tasks','method':'get_todo','arguments':{'todo_id':data['task']['id']}}})
             assert task['status']=='completed' and task['category_id']==data['task_target']['id']
             assert not errors,errors
     print('PASS: native context menus across task/calendar views, keyboard/focus, inspectors, copying, moves, completion, cancel deletion, readonly/pending, narrow viewport and restart')

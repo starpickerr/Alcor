@@ -1,0 +1,29 @@
+.alcor-mail-settings { max-width:1100px; }
+.alcor-mail-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px; }
+.alcor-mail-header h2 { margin:0; }
+.alcor-mail-header h2 small { margin-left:6px; color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:400; }
+.alcor-mail-layout { display:grid; grid-template-columns:minmax(210px,280px) minmax(0,1fr); gap:24px; }
+.alcor-mail-sidebar { min-width:0; display:flex; flex-direction:column; gap:12px; }
+.alcor-mail-accounts { max-height:520px; overflow:auto; display:grid; align-content:start; gap:6px; }
+.alcor-mail-account-row { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; padding:12px; border:1px solid transparent; border-radius:var(--dsw-radius-md); background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+.alcor-mail-account-row:hover,.alcor-mail-account-row[aria-current=true] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-mail-account-row[aria-current=true] { border-color:var(--dsw-alias-border-l3); }
+.alcor-mail-account-row:focus-visible { outline:2px solid var(--dsw-alias-label-primary); outline-offset:2px; }
+.alcor-mail-account-row > span:first-child { min-width:0; display:grid; gap:4px; }
+.alcor-mail-account-row strong { font-weight:500; font-size:13px; overflow-wrap:anywhere; }
+.alcor-mail-account-row small,.alcor-mail-empty { font-size:12px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.alcor-mail-state-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dsw-alias-label-tertiary); }
+.alcor-mail-state-dot[data-state=ready] { background:var(--dsw-alias-state-success-primary); }
+.alcor-mail-state-dot[data-state=query_failed] { background:var(--dsw-alias-state-error-primary); }
+.alcor-mail-editor { min-width:0; padding-left:24px; border-left:1px solid var(--dsw-alias-border-l3); }
+.alcor-mail-connection { max-width:none; border:0; padding:0; }
+.alcor-mail-connection[hidden] { display:none; }
+.alcor-mail-editor-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.alcor-mail-state { padding:3px 8px; font-size:12px; border-radius:var(--dsw-radius-sm); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); }
+.alcor-mail-state[data-state=ready] { color:var(--dsw-alias-state-success-primary); }
+.alcor-mail-state[data-state=query_failed] { color:var(--dsw-alias-state-error-primary); }
+@media(max-width:700px) {
+  .alcor-mail-layout { grid-template-columns:minmax(0,1fr); gap:20px; }
+  .alcor-mail-accounts { max-height:180px; }
+  .alcor-mail-editor { padding-left:0; border-left:0; border-top:1px solid var(--dsw-alias-border-l3); padding-top:20px; }
+}

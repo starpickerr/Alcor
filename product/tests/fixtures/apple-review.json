@@ -4,16 +4,16 @@
     "last_success": "2026-11-07T07:32:00Z", "sources": [{"id":"icloud","title":"iCloud"}], "default_source_id":"icloud",
     "calendars": [{"id":"work","title":"项目计划","source":"iCloud","writable":true},{"id":"holiday","title":"中国大陆节假日","source":"订阅","writable":false}],
     "categories": [{"id":"work-local","name":"工作","color":"#6185dc","apple":{"source_name":"iCloud","can_rename":true}},{"id":"course-local","name":"课程","color":"#28b8d4","apple":{"source_name":"iCloud"}}],
-    "links": [{"apple_id":"work","stella_id":"work-local","stella_name":"工作","apple_name":"项目计划","name_conflict":"Apple 与 Stella 同时更改了分类名称，请选择保留哪一侧"},{"apple_id":"old-course","stella_id":"course-local","stella_name":"课程","apple_name":"课程"}],
-    "category_conflicts": [{"apple_id":"old-course","stella_id":"course-local","kind":"missing_source","reason":"Apple 来源暂不可用或身份已变化；保留全部本地数据，请重新关联或确认来源已删除","candidates":[{"id":"new-course","title":"课程","source":"iCloud"}]}],
+    "links": [{"apple_id":"work","alcor_id":"work-local","alcor_name":"工作","apple_name":"项目计划","name_conflict":"Apple 与 Alcor 同时更改了分类名称，请选择保留哪一侧"},{"apple_id":"old-course","alcor_id":"course-local","alcor_name":"课程","apple_name":"课程"}],
+    "category_conflicts": [{"apple_id":"old-course","alcor_id":"course-local","kind":"missing_source","reason":"Apple 来源暂不可用或身份已变化；保留全部本地数据，请重新关联或确认来源已删除","candidates":[{"id":"new-course","title":"课程","source":"iCloud"}]}],
     "operations": [{"id":"pending-1","entity":"item","action":"delete","document":{"title":"每周项目回顾"},"error":"Apple 暂时无法连接，请稍后重试。"}],
     "coverage":[{"start":"2026-10-01T00:00:00Z","end":"2026-12-01T00:00:00Z","checked_at":"2026-11-07T07:32:00Z"}]
   },
   "reminders": {
     "supported": true, "authorization": "full_access", "connected": true, "auto_enabled": true,
     "last_success": "2026-11-07T07:32:00Z", "lists":[{"id":"plan","title":"planA","source":"iCloud","writable":true}],
-    "categories":[{"id":"plan-local","name":"planA"}], "links":[{"apple_id":"plan","stella_id":"plan-local"}],
-    "conflicts":[{"todo_id":"task-1","title":"完成 Python 练习","category_id":"plan-local","reason":"Stella and Apple changed since last sync"}],
+    "categories":[{"id":"plan-local","name":"planA"}], "links":[{"apple_id":"plan","alcor_id":"plan-local"}],
+    "conflicts":[{"todo_id":"task-1","title":"完成 Python 练习","category_id":"plan-local","reason":"Alcor and Apple changed since last sync"}],
     "readonly_issues":[{"todo_id":"task-readonly","reason":"准备课堂展示：包含多条原生重复规则，请在 Apple 中编辑"}]
   }
 }

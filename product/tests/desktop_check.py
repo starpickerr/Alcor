@@ -17,7 +17,7 @@ def main():
         log_path = home / 'desktop.log'
         with log_path.open('w') as log:
             process = subprocess.Popen(['node', '.local/upstream/node_modules/tsx/dist/cli.mjs', 'scripts/product/desktop.mjs'], cwd=ROOT,
-                env={**os.environ, 'STELLA_PRODUCT_HOME': str(home)}, stdout=log, stderr=subprocess.STDOUT)
+                env={**os.environ, 'ALCOR_PRODUCT_HOME': str(home)}, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 60
                 while True:
@@ -37,13 +37,13 @@ def main():
                 page = next(p for p in context.pages if p.url.startswith('dsh-app://app/'))
                 errors = []
                 page.on('pageerror', lambda error: errors.append(str(error)))
-                stella = page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True)
+                stella = page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True)
                 dsh = page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True)
                 dsh.wait_for()
                 if page.get_by_role('button', name='Continue', exact=True).count():
                     page.get_by_role('button', name='Continue', exact=True).click()
                 dsh.click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 page.get_by_role('button', name='事务', exact=True).click()
                 page.get_by_role('heading', name='事务', exact=True).wait_for()
                 stella.click()
@@ -53,7 +53,7 @@ def main():
                 dsh = page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True)
                 dsh.wait_for()
                 dsh.click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 page.get_by_role('heading', name='事务', exact=True).wait_for()
                 # Upstream's native minimum width is 520px; test the renderer at that boundary.
                 page.set_viewport_size({'width': 520, 'height': 844})

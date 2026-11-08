@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { monthDays, taskMatches, taskGroup, eventOnDay, periodBills, ledgerCsv } from '../../packages/stella-secretary/src/presentation.js'
+import { monthDays, taskMatches, taskGroup, eventOnDay, periodBills, ledgerCsv } from '../../packages/alcor-secretary/src/presentation.js'
 
 test('task tabs retain original overdue, incomplete, upcoming and completed rules', () => {
   const now = new Date('2026-11-04T12:00:00')
@@ -45,7 +45,7 @@ test('a point event at midnight belongs to its own day', () => {
 })
 
 test('calendar initially reveals the first timed event without hiding earlier hours', async () => {
-  const { calendarFocusMinute } = await import('../../packages/stella-secretary/src/presentation.js')
+  const { calendarFocusMinute } = await import('../../packages/alcor-secretary/src/presentation.js')
   const event = (start, end, allDay = false) => ({ start, end, allDay })
   assert.equal(calendarFocusMinute([event('2026-11-06T13:30', '2026-11-06T15:00')], ['2026-11-06']), 780)
   assert.equal(calendarFocusMinute([event('2026-11-05T23:00', '2026-11-06T02:00')], ['2026-11-06']), 0)
@@ -56,7 +56,7 @@ test('calendar initially reveals the first timed event without hiding earlier ho
 })
 
 test('calendar agenda keeps all-day items before timed events and tasks in local chronological order', async () => {
-  const { calendarOrder } = await import('../../packages/stella-secretary/src/presentation.js')
+  const { calendarOrder } = await import('../../packages/alcor-secretary/src/presentation.js')
   const event = (title,start,allDay=false) => ({title,start,allDay})
   const early=event('Morning event',new Date(2026,10,7,9).toISOString())
   const task=event('Noon reminder',new Date(2026,10,7,12).toISOString())
@@ -68,7 +68,7 @@ test('calendar agenda keeps all-day items before timed events and tasks in local
 })
 
 test('calendar sidebar groups real source identities and keeps reminders in a single other row', async () => {
-  const { calendarSources, categorySources } = await import('../../packages/stella-secretary/src/presentation.js')
+  const { calendarSources, categorySources } = await import('../../packages/alcor-secretary/src/presentation.js')
   const categories=[{id:'a',name:'课程',apple:{source_id:'icloud',source_name:'iCloud'}},{id:'b',name:'工作',apple:{source_id:'icloud',source_name:'iCloud'}},{id:'c',name:'课程',apple:{source_id:'exchange',source_name:'Exchange'}},{id:'local',name:'生活'}]
   const sources=calendarSources(categories)
   assert.equal(sources.length,3)
@@ -84,7 +84,7 @@ test('calendar sidebar groups real source identities and keeps reminders in a si
 })
 
 test('week labels retain Chinese month/year context at month and year boundaries', async () => {
-  const { calendarWeekLabel }=await import('../../packages/stella-secretary/src/presentation.js')
+  const { calendarWeekLabel }=await import('../../packages/alcor-secretary/src/presentation.js')
   assert.equal(calendarWeekLabel('2026-11-01','2026-11-07'),'2026年11月1日 — 7日')
   assert.equal(calendarWeekLabel('2026-11-29','2026-12-05'),'2026年11月29日 — 12月5日')
   assert.equal(calendarWeekLabel('2026-12-27','2027-01-02'),'2026年12月27日 — 2027年1月2日')

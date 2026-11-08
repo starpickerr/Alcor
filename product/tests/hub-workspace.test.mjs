@@ -4,12 +4,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { schemas, jobSchema } from '../../packages/stella-agent-hub/src/remote.js'
-import { prepareHubJob, projectHubJob, projectHubActivity } from '../../packages/stella-agent-hub/src/hub-job.js'
-import { HubWorker } from '../../packages/stella-agent-hub/src/worker.js'
+import { schemas, jobSchema } from '../../packages/alcor-agent-hub/src/remote.js'
+import { prepareHubJob, projectHubJob, projectHubActivity } from '../../packages/alcor-agent-hub/src/hub-job.js'
+import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
 
 test('Hub accepts bounded native divisions and preserves single-agent callers', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'stella-hub-workspace-'))
+  const directory = await mkdtemp(join(tmpdir(), 'alcor-hub-workspace-'))
   const worker = new HubWorker(directory); await worker.call('initialize')
   t.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (method, args) => worker.call('invoke', { domain: 'agent_hub', method, arguments: args })

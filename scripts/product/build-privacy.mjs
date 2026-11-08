@@ -7,8 +7,8 @@ import { build } from 'esbuild'
 
 if (process.platform !== 'darwin') throw new Error('Building the Keychain provider requires macOS.')
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const directory = resolve(root, 'packages/stella-privacy')
-const temporary = await mkdtemp(resolve(tmpdir(), 'stella-keychain-build-'))
+const directory = resolve(root, 'packages/alcor-privacy')
+const temporary = await mkdtemp(resolve(tmpdir(), 'alcor-keychain-build-'))
 try {
   const sdk = execFileSync('/usr/bin/xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { encoding: 'utf8' }).trim()
   for (const architecture of ['arm64', 'x86_64']) {

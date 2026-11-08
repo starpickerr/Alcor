@@ -152,7 +152,7 @@ def convert_affairs(source_path, target_path):
 
 
 def refresh_statements(destination):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/stella-secretary'))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-secretary'))
     from business.bills.domain.store import BillStore
     from business.bills.domain.service import BillsService
     service = BillsService(BillStore(destination))

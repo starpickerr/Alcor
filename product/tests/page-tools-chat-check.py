@@ -38,7 +38,7 @@ class Provider(BaseHTTPRequestHandler):
         content = '\n'.join(text if isinstance(text, str) else str(text) for text in texts)
         subtask = any(isinstance(text, str) and text.startswith('任务内人设：') for text in texts)
         delta, finish = {'content': 'Synthetic task result' if subtask else 'Synthetic title'}, 'stop'
-        if 'PAGE_TOOL_INTEGRATION' in content and not subtask and 'stella_business' in names:
+        if 'PAGE_TOOL_INTEGRATION' in content and not subtask and 'alcor_business' in names:
             phase = type(self).phase
             if data['messages'][-1]['role'] == 'tool':
                 try:
@@ -62,18 +62,18 @@ class Provider(BaseHTTPRequestHandler):
                 ('calendar', 'update_event', {'id': state.get('event', {}).get('id', ''), 'patch': {'title': 'Updated page event'}}),
                 ('bills', 'catalog', {}),
                 ('bills', 'create_ledger', {'name': '=SUM(1,2)', 'amount_minor': 1234, 'currency': 'CNY', 'entry_type': 'expense', 'occurred_at': self.start}),
-                (None, 'stella_export_bills', {'path': str(self.docs / 'result.csv'), 'start': '2026-01-01', 'end': '2099-12-31'}),
-                (None, 'stella_import_dates', {'path': str(self.docs / 'dates.csv'), 'timezone': 'Asia/Shanghai'}),
+                (None, 'alcor_export_bills', {'path': str(self.docs / 'result.csv'), 'start': '2026-01-01', 'end': '2099-12-31'}),
+                (None, 'alcor_import_dates', {'path': str(self.docs / 'dates.csv'), 'timezone': 'Asia/Shanghai'}),
                 ('automation', 'catalog', {}),
                 ('automation', 'create', {'title': 'Synthetic page schedule', 'prompt': '回顾事务', 'timing': {'kind': 'at', 'at': '2099-11-06T00:00:00Z'}}),
                 ('automation', 'edit', {'id': state.get('schedule', {}).get('id', ''), 'action': 'update', 'patch': {'active': False}}),
                 ('automation', 'list', {}),
-                (None, 'stella_generate_briefing', {}),
+                (None, 'alcor_generate_briefing', {}),
                 ('automation', 'history', {'id': state.get('schedule', {}).get('id', ''), 'limit': 10}),
             ]
             if phase < len(calls):
                 domain, method, args = calls[phase]
-                tool = method if domain is None else 'stella_business'
+                tool = method if domain is None else 'alcor_business'
                 arguments = args if domain is None else {'domain': domain, 'method': method, 'arguments': args}
                 delta = {'tool_calls': [{'index': 0, 'id': f'page-tools-{phase}', 'type': 'function', 'function': {'name': tool, 'arguments': json.dumps(arguments)}}]}
                 finish = 'tool_calls'
@@ -126,9 +126,9 @@ def main():
                 with (artifacts / 'install.log').open('w') as log: subprocess.run(['node', str(CLI), 'plugin', '--profile', 'compatibility', 'add', str(PACK), '--ignore-scripts'], env=env, cwd=home, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120)
             with surface(playwright, home, env, artifacts, native) as (page, query, errors):
                 open_secretary(page)
-                query('stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'stella_tasks', 'accountId': 'local'}]}}})
+                query('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'alcor_tasks', 'accountId': 'local'}]}}})
                 before = set(page.locator('[data-row-key^="session:"]').evaluate_all('rows => rows.map(row => row.dataset.rowKey)'))
-                page.locator('.stella-sidebar-chat').click()
+                page.locator('.alcor-sidebar-chat').click()
                 composer = page.locator('[data-composer-input][contenteditable="true"]'); composer.fill('PAGE_TOOL_INTEGRATION 请按要求操作事务、日程、账单、简报和自动化。'); composer.press('Enter')
                 import time
                 deadline = time.monotonic() + 15; new = []
@@ -140,7 +140,7 @@ def main():
                 while not Provider.completed and time.monotonic() < deadline: page.wait_for_timeout(100)
                 assert Provider.completed, f'Failed at phase {Provider.phase}, state={list(Provider.state)}'
                 expect(page.get_by_text('All page tools completed.', exact=True)).to_be_visible(timeout=10000)
-                saved = query('stellaOrganizer/read', {'request': {}})
+                saved = query('alcorOrganizer/read', {'request': {}})
                 assert any(row['title'] == 'Synthetic page task' and row['status'] == 'done' for row in saved['records'])
                 assert any(row['title'] == 'Updated page event' for row in saved['records'])
                 assert any(row['title'] == 'Synthetic special date' for row in saved['records'])

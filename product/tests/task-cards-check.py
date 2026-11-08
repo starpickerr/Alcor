@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import runpy
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
@@ -17,11 +18,12 @@ def main():
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.ARTIFACTS=artifacts
     desktop.verify_release()
-    with tempfile.TemporaryDirectory(prefix='stella-task-cards-') as temporary, sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-task-cards-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         desktop.environment(home)
         profile = home / 'dsh/profiles/desktop'
         profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'task-card-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         (profile / 'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
@@ -29,9 +31,9 @@ def main():
         desktop.native_cli(home, 'task-cards-install', 'add', str(desktop.PACK), '--ignore-scripts')
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
         with desktop.desktop(playwright, home, 'task-cards') as (page, errors):
-            business = lambda domain, method, args=None: desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
+            business = lambda domain, method, args=None: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
             check_tasks(page, business, artifacts)
-            expect(page.locator('.stella-page-feedback').get_by_role('status')).to_have_text('事务状态已更新')
+            expect(page.locator('.alcor-page-feedback').get_by_role('status')).to_have_text('事务状态已更新')
             vanished = business('tasks', 'create_todo', {'payload': {'title': 'Removed elsewhere'}})
             page.get_by_role('button', name='刷新', exact=True).click()
             page.get_by_role('button', name='更多操作：Removed elsewhere', exact=True).click()
@@ -56,9 +58,9 @@ def main():
         with desktop.desktop(playwright, home, 'task-cards-restart') as (page, errors):
             open_secretary(page)
             page.get_by_role('button', name='Persistent task', exact=True).click()
-            expect(page.locator('.stella-task-description')).to_have_text('Only task information remains.')
+            expect(page.locator('.alcor-task-description')).to_have_text('Only task information remains.')
             expect(page.get_by_role('heading', name='检查清单', exact=True)).to_have_count(0)
-            saved = desktop.rpc(page, 'stellaOrganizer/read', {'request': {}})['records']
+            saved = desktop.rpc(page, 'alcorOrganizer/read', {'request': {}})['records']
             assert any(row['id'] == persistent['id'] for row in saved)
             assert not any(row['title'] in ('Project parent', 'First step') for row in saved)
             assert not errors, errors

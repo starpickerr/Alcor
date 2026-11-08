@@ -8,13 +8,13 @@ import { adaptModelsClient, verifyNativeUi } from '../../scripts/product/build-n
 
 test('welcome namespace adaptation is exact and rejects incompatible upstream builds', () => {
   const original = 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";'
-  assert.equal(adaptModelsClient(original), 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "stella-ui-settings-general";')
+  assert.equal(adaptModelsClient(original), 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "alcor-ui-settings-general";')
   assert.throws(() => adaptModelsClient(''), /Unexpected/)
   assert.throws(() => adaptModelsClient(original + original), /Unexpected/)
 })
 
 test('models onboarding preserves original profile override and inherited preferences', async () => {
-  const { apply, inject } = await import('../../packages/stella-secretary/vendor/ui-settings-models/lib/index.js')
+  const { apply, inject } = await import('../../packages/alcor-secretary/vendor/ui-settings-models/lib/index.js')
   assert.deepEqual(inject, ['configEditor'])
   for (const [override, inherited, fallback, expected] of [
     [false, true, true, false], [true, false, false, true],
@@ -36,7 +36,7 @@ test('native UI package verification rejects missing, stale and changed runtime 
   const temporary = await mkdtemp(join(tmpdir(), 'stella-ui-integrity-'))
   context.after(() => rm(temporary, { recursive: true, force: true }))
   const directory = join(temporary, 'vendor')
-  await cp(fileURLToPath(new URL('../../packages/stella-secretary/vendor', import.meta.url)), directory, { recursive: true })
+  await cp(fileURLToPath(new URL('../../packages/alcor-secretary/vendor', import.meta.url)), directory, { recursive: true })
   await verifyNativeUi(directory)
   for (const path of ['ui-layout/lib/client.js', 'ui-settings-general/lib/index.js', 'ui-settings-models/lib/upstream-index.js']) {
     const file = join(directory, path)

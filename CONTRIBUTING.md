@@ -1,4 +1,4 @@
-# Contributing to Stella
+# Contributing to Alcor
 
 Contributions of all sizes are welcome, from documentation fixes to new features.
 
@@ -12,7 +12,7 @@ pull requests, code comments, and commit messages in English.**
 
 ## Reporting issues
 
-Found a bug or have an idea? [Open an issue](https://github.com/starpickerr/Stella/issues/new/choose).
+Found a bug or have an idea? [Open an issue](https://github.com/starpickerr/Alcor/issues/new/choose).
 
 Before opening one, please search existing issues (including closed ones) to
 avoid duplicates, and make sure you're on the latest version.
@@ -71,7 +71,7 @@ Run checks appropriate to your changes:
 .venv/bin/python scripts/quality_check.py incremental
 ```
 
-The runner selects checks from changed files, isolates Stella state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths. For the full Python and frontend suite, build, and browser checks:
+The runner selects checks from changed files, isolates Alcor state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths. For the full Python and frontend suite, build, and browser checks:
 
 ```bash
 .venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md
@@ -83,4 +83,4 @@ Tests use temporary user data. Manual app launches share `~/.stella` with the in
 
 ## Code of conduct
 
-Be respectful and constructive. We want Stella to be a welcoming place for everyone.
+Be respectful and constructive. We want Alcor to be a welcoming place for everyone.

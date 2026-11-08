@@ -1,4 +1,4 @@
-# Stella documentation
+# Alcor documentation
 
 Practical guides for the current desktop application:
 
@@ -21,4 +21,4 @@ Practical guides for the current desktop application:
 - [Permission modes and platform limits](security-permission-modes.md)
 - [Source attribution](../THIRD_PARTY_NOTICES.md)
 
-The guides describe Stella's current implementation. Upstream history and original project documentation are available from [CowAgent](https://github.com/zhayujie/CowAgent).
+The guides describe Alcor's current implementation. Upstream history and original project documentation are available from [CowAgent](https://github.com/zhayujie/CowAgent).

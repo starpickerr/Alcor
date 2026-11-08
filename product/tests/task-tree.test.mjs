@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { taskTree } from '../../packages/stella-secretary/src/task-tree.js'
+import { taskTree } from '../../packages/alcor-secretary/src/task-tree.js'
 
 const now = new Date(2026, 10, 7, 12)
 const task = (id, parent, due, status = 'todo') => ({ id, title: id, due, status: status === 'completed' ? 'done' : 'open', business: { parent_id: parent, status } })

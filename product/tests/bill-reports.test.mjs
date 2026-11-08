@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
+import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 
 test('bill reports share posted ledger totals, categories, rankings and day groups across edits and deletes', async t => {
   const root = await mkdtemp(join(tmpdir(), 'stella-bill-reports-'))
-  const worker = new BusinessWorker(root, { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
+  const worker = new BusinessWorker(root, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   t.after(async () => { await worker.close(); await rm(root, { recursive: true, force: true }) })
   const call = (method, args = {}) => worker.call('invoke', { domain: 'bills', method, arguments: args })
   const add = (name, amount_minor, extra = {}) => call('create_ledger', { name, amount_minor, currency: 'CNY', entry_type: 'expense', occurred_at: '2026-09-27T17:00:00+08:00', category: '餐饮', ...extra })
@@ -39,7 +39,8 @@ test('bill reports share posted ledger totals, categories, rankings and day grou
   let updated = await call('statement_reports', { period_type: 'monthly', year: 2026 })
   assert.equal(updated.find(row => row.currency === 'CNY').expense_minor, '266')
   assert.equal(updated.find(row => row.currency === 'USD').categories.expense[0].category, '工作')
-  await call('delete_ledger', { id: lunch.id, expectedRevision: 2 })
+  const snapshot = await call('get_ledger', { id: lunch.id })
+  await worker.call('commit_bill_delete', { entry_id: lunch.id, revision: snapshot.revision, snapshot, operation_id: 'b'.repeat(64) })
   updated = await call('statement_reports', { period_type: 'monthly', year: 2026 })
   assert.equal(updated.some(row => row.currency === 'USD'), false)
   assert.equal((await call('statement_reports', { period_type: 'yearly', year: 2026 })).find(row => row.currency === 'CNY').expense_minor, '266')

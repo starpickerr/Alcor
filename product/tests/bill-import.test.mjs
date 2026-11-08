@@ -4,11 +4,11 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
+import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 
 test('bill files preview without writes and commit once across duplicate files and restart', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'stella-bill-import-'))
-  const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
+  const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
   let worker = new BusinessWorker(dir, options)
   t.after(async () => { await worker.close(); await rm(dir, { recursive: true, force: true }) })
   const call = (method, args = {}) => worker.call('invoke', { domain: 'bills', method, arguments: args })
@@ -36,7 +36,7 @@ test('WeChat XLSX and GB18030 Alipay exports preserve exact IDs, money and CSV q
   const { execFileSync } = await import('node:child_process')
   const files = JSON.parse(execFileSync('python3', ['product/tests/bill-import-fixtures.py'], { encoding: 'utf8' }))
   const dir = await mkdtemp(join(tmpdir(), 'stella-bill-xlsx-'))
-  const worker = new BusinessWorker(dir, { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
+  const worker = new BusinessWorker(dir, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   t.after(async () => { await worker.close(); await rm(dir, { recursive: true, force: true }) })
   const call = (method, args = {}) => worker.call('invoke', { domain: 'bills', method, arguments: args })
   const result = await call('import_files', { files })
@@ -62,7 +62,7 @@ test('a mid-import failure rolls back ledger, dedupe keys and period reports tog
   execFileSync('python3', ['-B', '-c', `
 import sys,tempfile,runpy
 from pathlib import Path
-sys.path.insert(0, 'packages/stella-secretary')
+sys.path.insert(0, 'packages/alcor-secretary')
 from business.bills.domain.store import BillStore
 from business.bills.domain.service import BillsService
 files=runpy.run_path('product/tests/bill-import-fixtures.py')['files']()
@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory() as tmp:
  store.insert_ledger=original
  assert service.import_files(files)['imported']==3
  row=store.list_ledgers()[0]
- service.delete_ledger(row['id'])
+ service.commit_approved_ledger_delete(row['id'], 'a'*64, row['revision'], service.get_ledger(row['id']))
  assert service.import_files(files)['imported']==0
  assert len(store.list_ledgers())==2
 `])
@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as tmp:
 test('spreadsheet formulas and external entities are refused before ledger writes', () => {
   execFileSync('python3', ['-B', '-c', `
 import sys,io,zipfile,base64
-sys.path.insert(0,'packages/stella-secretary')
+sys.path.insert(0,'packages/alcor-secretary')
 from business.bills.domain.import_files import parse_files
 for xml in ['<!DOCTYPE worksheet [<!ENTITY x SYSTEM "file:///etc/passwd">]><worksheet/>', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row><c r="A1"><f>HYPERLINK("http://example.com")</f></c></row></sheetData></worksheet>']:
  output=io.BytesIO()

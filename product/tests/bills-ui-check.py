@@ -17,7 +17,7 @@ surface = runpy.run_path(str(ROOT / 'product/tests/bill-import-chat-check.py'))[
 
 def check_composition(page, name, category, amount, share):
     composition = page.get_by_role('region', name=name, exact=True)
-    segment = composition.locator('.stella-bill-segment[data-category="' + category + '"]')
+    segment = composition.locator('.alcor-bill-segment[data-category="' + category + '"]')
     segment.scroll_into_view_if_needed()
     point = segment.evaluate('path => { const p = path.getPointAtLength(path.getTotalLength() / 2); const screen = new DOMPoint(p.x, p.y).matrixTransform(path.getScreenCTM()); return {x:screen.x,y:screen.y}; }')
     page.mouse.move(point['x'], point['y'])
@@ -39,13 +39,13 @@ def check_composition(page, name, category, amount, share):
 
 def check_amount_colors(page):
     for direction, dominant in [('income', 1), ('expense', 0)]:
-        values = page.locator('.stella-bills [data-direction="' + direction + '"]').evaluate_all('elements => elements.map(e => getComputedStyle(e).color.match(/[0-9.]+/g).slice(0,3).map(Number))')
+        values = page.locator('.alcor-bills [data-direction="' + direction + '"]').evaluate_all('elements => elements.map(e => getComputedStyle(e).color.match(/[0-9.]+/g).slice(0,3).map(Number))')
         assert values and all(color[dominant] > max(color[index] for index in range(3) if index != dominant) for color in values), (direction, values)
 
 
 def check(page, query, artifacts, native):
     def call(method, args):
-        return query('stellaOrganizer/business', {'request': {'domain': 'bills', 'method': method, 'arguments': args}})
+        return query('alcorOrganizer/business', {'request': {'domain': 'bills', 'method': method, 'arguments': args}})
     def add(name, amount, **extra):
         return call('create_ledger', {'name': name, 'amount_minor': amount, 'currency': 'CNY', 'entry_type': 'expense', 'category': '餐饮', 'occurred_at': '2026-09-27T17:46:12.123+08:00', **extra})
     lunch = add('Synthetic Cafe', 1234)
@@ -61,18 +61,18 @@ def check(page, query, artifacts, native):
     page.get_by_role('button', name='刷新', exact=True).click()
     page.get_by_label('账单年份', exact=True).select_option('2026')
     page.get_by_label('账单月份', exact=True).select_option('09')
-    totals = page.locator('.stella-bill-totals-cards')
+    totals = page.locator('.alcor-bill-totals-cards')
     expect(totals).to_contain_text('¥300.00'); expect(totals).to_contain_text('¥15.00'); expect(totals).to_contain_text('¥285.00')
-    expect(page.locator('.stella-bill-day')).to_have_count(2)
-    expect(page.locator('.stella-ledger-list > li')).to_have_count(6)
-    expect(page.locator('.stella-bill-day').first).to_contain_text('Synthetic Metro')
-    expect(page.locator('.stella-bill-day').last).to_contain_text('餐饮 · 17:46')
-    row_height = page.locator('.stella-bill-row').first.bounding_box()['height']
+    expect(page.locator('.alcor-bill-day')).to_have_count(2)
+    expect(page.locator('.alcor-ledger-list > li')).to_have_count(6)
+    expect(page.locator('.alcor-bill-day').first).to_contain_text('Synthetic Metro')
+    expect(page.locator('.alcor-bill-day').last).to_contain_text('餐饮 · 17:46')
+    row_height = page.locator('.alcor-bill-row').first.bounding_box()['height']
     assert 56 <= row_height <= 64, row_height
     check_amount_colors(page)
     page.screenshot(path=str(artifacts / 'bills-ledger-desktop.png'))
     page.get_by_label('账单币种').select_option('JPY')
-    expect(totals).to_contain_text('JP¥300'); expect(page.locator('.stella-ledger-list > li')).to_have_count(1)
+    expect(totals).to_contain_text('JP¥300'); expect(page.locator('.alcor-ledger-list > li')).to_have_count(1)
     page.get_by_label('账单币种').select_option('CNY')
     with page.expect_download() as export:
         page.get_by_role('button', name='导出 CSV', exact=True).click()
@@ -81,11 +81,11 @@ def check(page, query, artifacts, native):
     page.get_by_role('tab', name='月账单', exact=True).click()
     page.get_by_role('button', name='查看2026年9月账单', exact=True).click()
     expect(page.get_by_role('heading', name='分类构成', exact=True)).to_be_visible()
-    expect(page.locator('.stella-bill-donut')).to_have_count(2)
-    assert page.locator('.stella-bill-donut').first.bounding_box()['width'] <= 132
-    expect(page.locator('.stella-bill-legend').first).to_contain_text('¥13.00')
-    expect(page.locator('.stella-bill-ranking')).to_contain_text('2 笔 · 86.7%')
-    expect(page.locator('.stella-bill-ranking')).not_to_contain_text('Synthetic Pending')
+    expect(page.locator('.alcor-bill-donut')).to_have_count(2)
+    assert page.locator('.alcor-bill-donut').first.bounding_box()['width'] <= 132
+    expect(page.locator('.alcor-bill-legend').first).to_contain_text('¥13.00')
+    expect(page.locator('.alcor-bill-ranking')).to_contain_text('2 笔 · 86.7%')
+    expect(page.locator('.alcor-bill-ranking')).not_to_contain_text('Synthetic Pending')
     check_composition(page, '支出构成', '餐饮', '¥13.00', '86.7%')
     check_composition(page, '支出构成', '交通', '¥2.00', '13.3%')
     check_composition(page, '收入构成', '工资', '¥300.00', '100%')
@@ -93,7 +93,7 @@ def check(page, query, artifacts, native):
     page.screenshot(path=str(artifacts / 'bills-chart-focus-desktop.png'))
     page.keyboard.press('Escape')
     page.get_by_role('tab', name='收入', exact=True).click()
-    expect(page.locator('.stella-bill-ranking')).to_contain_text('Synthetic Salary')
+    expect(page.locator('.alcor-bill-ranking')).to_contain_text('Synthetic Salary')
     page.get_by_role('tab', name='支出', exact=True).click()
     page.screenshot(path=str(artifacts / 'bills-month-desktop.png'))
     for theme in ('dark', 'light'):
@@ -111,7 +111,7 @@ def check(page, query, artifacts, native):
         assert tooltip['x'] >= 0 and tooltip['x'] + tooltip['width'] <= 390, tooltip
         page.screenshot(path=str(artifacts / f'bills-report-{theme}-narrow.png'), full_page=True, animations='disabled')
         page.keyboard.press('Escape')
-        page.locator('.stella-bill-ranking').scroll_into_view_if_needed()
+        page.locator('.alcor-bill-ranking').scroll_into_view_if_needed()
         assert page.locator('body').evaluate('node => node.scrollWidth <= node.clientWidth'), theme
         page.screenshot(path=str(artifacts / f'bills-ranking-{theme}-narrow.png'), animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
@@ -119,8 +119,8 @@ def check(page, query, artifacts, native):
     expect(page.get_by_role('button', name='查看2026年10月账单', exact=True)).to_be_visible()
     page.get_by_role('tab', name='年账单', exact=True).click()
     page.get_by_role('button', name='查看2026年账单', exact=True).click()
-    expect(page.locator('.stella-bill-report .stella-bill-totals')).to_contain_text('¥25.00')
-    expect(page.locator('.stella-bill-period-meta')).to_contain_text('2026-01-01 – 2026-12-31')
+    expect(page.locator('.alcor-bill-report .alcor-bill-totals')).to_contain_text('¥25.00')
+    expect(page.locator('.alcor-bill-period-meta')).to_contain_text('2026-01-01 – 2026-12-31')
     page.screenshot(path=str(artifacts / 'bills-year-desktop.png'))
     page.get_by_role('tab', name='明细', exact=True).click()
     page.get_by_role('button', name='记账', exact=True).click()
@@ -148,10 +148,10 @@ def check(page, query, artifacts, native):
     call('update_ledger', {'id': created['id'], 'patch': {'note': 'Concurrent edit'}, 'expectedRevision': current['revision']})
     page.get_by_label('备注', exact=True).fill('Stale edit')
     page.get_by_role('button', name='保存账单', exact=True).click()
-    expect(page.locator('.stella-editor-dialog').get_by_role('alert')).to_contain_text('revision conflict')
+    expect(page.locator('.alcor-editor-dialog').get_by_role('alert')).to_contain_text('revision conflict')
     assert call('get_ledger', {'id': created['id']})['note'] == 'Concurrent edit'
     page.get_by_role('button', name='取消编辑', exact=True).click()
-    with page.expect_response(lambda response: '/api/stellaOrganizer/business' in response.url and 'ledger_report' in (response.request.post_data or '')):
+    with page.expect_response(lambda response: '/api/alcorOrganizer/business' in response.url and 'ledger_report' in (response.request.post_data or '')):
         page.get_by_role('button', name='刷新', exact=True).click()
     expect(page.get_by_role('tabpanel')).to_have_attribute('aria-busy', 'false')
     page.get_by_role('button', name='编辑账单：Synthetic single bill', exact=True).click()
@@ -166,18 +166,18 @@ def check(page, query, artifacts, native):
     expect(page.get_by_role('button', name='导出 CSV', exact=True)).to_be_disabled()
     if not native:
         # Desktop uses its native RPC bridge, so HTTP failure injection belongs to Web.
-        page.route('**/api/stellaOrganizer/business', lambda route: route.fulfill(status=503, body='Unavailable'))
+        page.route('**/api/alcorOrganizer/business', lambda route: route.fulfill(status=503, body='Unavailable'))
         page.get_by_role('tab', name='月账单', exact=True).click()
-        expect(page.locator('.stella-bill-load-error')).to_be_visible()
-        page.unroute('**/api/stellaOrganizer/business')
+        expect(page.locator('.alcor-bill-load-error')).to_be_visible()
+        page.unroute('**/api/alcorOrganizer/business')
         page.get_by_role('button', name='重试', exact=True).click()
         expect(page.get_by_role('button', name='查看2026年9月账单', exact=True)).to_be_visible()
     page.reload()
-    page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).wait_for()
+    page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).wait_for()
     open_secretary(page)
     page.get_by_role('button', name='账单', exact=True).click()
     page.get_by_label('账单月份', exact=True).select_option('09')
-    expect(page.locator('.stella-bill-totals-cards')).to_contain_text('¥15.00')
+    expect(page.locator('.alcor-bill-totals-cards')).to_contain_text('¥15.00')
     page.set_viewport_size({'width': 390, 'height': 844})
     page.keyboard.press('Escape')
     expect(page.locator('[data-sidebar-drawer]')).to_have_attribute('data-sidebar-collapsed', 'true')

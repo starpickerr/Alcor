@@ -5,13 +5,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 if (process.platform === 'darwin') {
-  const directory = fileURLToPath(new URL('../../packages/stella-apple-sync/python/apple_sync/', import.meta.url))
+  const directory = fileURLToPath(new URL('../../packages/alcor-apple-sync/python/apple_sync/', import.meta.url))
   const source = join(directory, 'native')
-  const app = join(directory, 'Stella Apple Sync.app')
-  const executable = join(app, 'Contents/MacOS/StellaCalendarBridge')
+  const app = join(directory, 'Alcor Apple Sync.app')
+  const executable = join(app, 'Contents/MacOS/AlcorCalendarBridge')
   await mkdir(join(app, 'Contents/MacOS'), { recursive: true })
   await copyFile(join(source, 'Info.plist'), join(app, 'Contents/Info.plist'))
-  const temporary = await mkdtemp(join(tmpdir(), 'stella-eventkit-build-'))
+  const temporary = await mkdtemp(join(tmpdir(), 'alcor-eventkit-build-'))
   try {
     await copyFile(join(source, 'CalendarBridge.swift'), join(temporary, 'main.swift'))
     execFileSync('/usr/bin/swiftc', ['-O', '-framework', 'EventKit',

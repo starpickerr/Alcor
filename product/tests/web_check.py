@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,20 +30,21 @@ class Provider(BaseHTTPRequestHandler):
         assert self.headers.get("Authorization") == "Bearer synthetic-test-key"
         if tools:
             names = [tool["function"]["name"] for tool in tools]
-            if "stella_overview" in names:
-                assert {"stella_overview", "stella_business", "stella_generate_briefing", "stella_review_tasks", "stella_import_bills", "stella_import_dates", "stella_export_bills"} <= set(names), names
+            if "alcor_overview" in names:
+                assert {"alcor_overview", "alcor_business", "alcor_generate_briefing", "alcor_review_tasks", "alcor_import_bills", "alcor_import_dates", "alcor_export_bills"} <= set(names), names
                 assert self.shared_tools <= set(names), names
             else:
                 assert self.shared_tools <= set(names), names
                 assert set(names) - self.shared_tools == {"todo_write", "ask_user_question"}, names
                 assert "你是 Stella" not in json.dumps(payload, ensure_ascii=False)
+                assert "你是 Alcor" not in json.dumps(payload, ensure_ascii=False)
         completed = any(message["role"] == "tool" for message in payload["messages"])
         delta = {"content": "Stella synthetic tool round trip passed." if completed else "Synthetic title"}
-        if tools and "stella_overview" not in names:
+        if tools and "alcor_overview" not in names:
             delta = {"content": "DSH synthetic conversation passed."}
         reason = "stop"
-        if tools and "stella_overview" in names and not completed:
-            delta = {"tool_calls": [{"index": 0, "id": "call_overview", "type": "function", "function": {"name": "stella_generate_briefing" if "生成并保存今日简报" in json.dumps(payload["messages"], ensure_ascii=False) else "stella_review_tasks" if "回顾本机未完成事务" in json.dumps(payload["messages"], ensure_ascii=False) else "stella_overview", "arguments": "{}"}}]}
+        if tools and "alcor_overview" in names and not completed:
+            delta = {"tool_calls": [{"index": 0, "id": "call_overview", "type": "function", "function": {"name": "alcor_generate_briefing" if "生成并保存今日简报" in json.dumps(payload["messages"], ensure_ascii=False) else "alcor_review_tasks" if "回顾本机未完成事务" in json.dumps(payload["messages"], ensure_ascii=False) else "alcor_overview", "arguments": "{}"}}]}
             reason = "tool_calls"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -55,7 +57,7 @@ class Provider(BaseHTTPRequestHandler):
 
 
 def start(home, logfile, port=0):
-    environment = {**os.environ, "STELLA_PRODUCT_HOME": str(home)}
+    environment = {**os.environ, "ALCOR_PRODUCT_HOME": str(home)}
     process = subprocess.Popen(["node", "scripts/product/web.mjs", "--no-open", "--port", str(port)], cwd=ROOT, env=environment, stdout=logfile, stderr=subprocess.STDOUT)
     deadline = time.monotonic() + 35
     while time.monotonic() < deadline:
@@ -91,16 +93,16 @@ def open_page(context, url):
     return page, errors
 
 
-def open_secretary(page):
+def open_secretary(page, brand='Alcor'):
     mode = page.get_by_role('button', name=re.compile('切换使用模式'))
     if mode.count():
         if mode.get_attribute('aria-label').endswith('DeepSeek Harness'):
             mode.click()
-            page.get_by_role('menuitem', name='Stella', exact=True).click()
+            page.get_by_role('menuitem', name=brand, exact=True).click()
         page.get_by_role('button', name='事务', exact=True).click()
     else:
-        settings(page)
-        page.get_by_role('button', name='打开 Stella', exact=True).click()
+        settings(page, brand)
+        page.get_by_role('button', name='打开 ' + brand, exact=True).click()
     page.get_by_role('heading', name='事务', exact=True).wait_for()
 
 
@@ -109,8 +111,8 @@ def wait_secretary(page):
     mode.or_(page.get_by_role('button', name='Account menu', exact=True)).first.wait_for()
     if page.get_by_role('button', name='Continue', exact=True).count():
         page.get_by_role('button', name='Continue', exact=True).click()
-    if mode.count() and mode.get_attribute('aria-label').endswith('Stella'):
-        page.locator('.stella-sidebar').wait_for()
+    if mode.count() and mode.get_attribute('aria-label').endswith('Alcor'):
+        page.locator('.alcor-sidebar').wait_for()
     settings(page)
     page.get_by_label('助手名称', exact=True).wait_for()
     page.get_by_role('button', name='Close', exact=True).click()
@@ -118,13 +120,13 @@ def wait_secretary(page):
 
 def start_secretary_chat(page):
     open_secretary(page)
-    page.locator('.stella-sidebar-chat').click()
+    page.locator('.alcor-sidebar-chat').click()
 
 
-def settings(page):
+def settings(page, brand='Alcor'):
     page.get_by_role("button", name=re.compile(r"^(Account menu|账号菜单|More|更多)$")).last.click()
     page.get_by_role("menuitem", name=re.compile(r"^(Settings|设置)")).click()
-    page.get_by_role("dialog", name=re.compile(r"^(Settings|设置)$")).get_by_role("button", name="Stella", exact=True).click()
+    page.get_by_role("dialog", name=re.compile(r"^(Settings|设置)$")).get_by_role("button", name=brand, exact=True).click()
 
 
 def rpc(page, url, endpoint, args=None):
@@ -140,11 +142,12 @@ def rpc(page, url, endpoint, args=None):
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    with tempfile.TemporaryDirectory(prefix="stella-dsh-web-check-") as temporary, sync_playwright() as playwright:
+    with fresh_test_home(prefix="stella-dsh-web-check-") as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         (home / ".stella-product.json").write_text('{"version":1,"kind":"web"}\n')
         profile = home / "profiles/stella"
         profile.mkdir(parents=True)
+        initialize_fresh(temporary, home, profile)
         (profile / "cordis.patch.yml").write_text(f"""- id: agent-default-model
   config:
     provider: stella-test
@@ -174,19 +177,19 @@ def main():
                 page, errors = open_page(context, url)
                 expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
                 page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 page.get_by_role("button", name="事务", exact=True).click()
                 page.get_by_role("heading", name="事务", exact=True).wait_for()
-                assert page.request.post(url.split("/?")[0] + "/api/stellaSecretary/overview", data={}).ok
+                assert page.request.post(url.split("/?")[0] + "/api/alcorSecretary/overview", data={}).ok
                 settings(page)
                 page.get_by_label("助手名称", exact=True).fill("Stella regression")
                 page.get_by_role("button", name="保存", exact=True).click()
                 page.get_by_text("已保存", exact=True).wait_for()
-                assert rpc(page, url, 'stellaSecretary/overview')['displayName'] == 'Stella regression'
+                assert rpc(page, url, 'alcorSecretary/overview')['displayName'] == 'Stella regression'
                 page.get_by_role("button", name="Close", exact=True).click()
                 start_secretary_chat(page)
                 composer = page.locator('[data-composer-input][contenteditable="true"]')
-                composer.fill("Read stella_overview and report the result.")
+                composer.fill("Read alcor_overview and report the result.")
                 composer.press("Enter")
                 page.get_by_text("Stella synthetic tool round trip passed.", exact=True).wait_for(timeout=25000)
                 assert any(any(message["role"] == "tool" for message in request["messages"]) for request in requests)
@@ -198,14 +201,14 @@ def main():
                 composer.fill("Unsent secretary draft")
                 secretary_location = page.evaluate('localStorage.getItem("dsh.sessions.current")')
                 second, second_errors = open_page(context, url)
-                second.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).wait_for()
+                second.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).wait_for()
                 count_before = len(requests)
-                page.get_by_role("button", name="切换使用模式，当前 Stella", exact=True).click()
+                page.get_by_role("button", name="切换使用模式，当前 Alcor", exact=True).click()
                 page.get_by_role("menuitem", name="DeepSeek Harness", exact=True).click()
                 expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
-                expect(page.locator('.stella-desk')).to_have_count(0)
+                expect(page.locator('.alcor-desk')).to_have_count(0)
                 assert len(requests) == count_before
-                expect(second.get_by_role('button', name='切换使用模式，当前 Stella', exact=True)).to_be_visible()
+                expect(second.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True)).to_be_visible()
                 assert second_errors == [], second_errors
                 second.close()
                 page.get_by_role("button", name="New session", exact=True).last.click()
@@ -216,31 +219,31 @@ def main():
                 page.get_by_text("DSH synthetic conversation passed.", exact=True).wait_for(timeout=25000)
                 assert any(set(t["function"]["name"] for t in item.get("tools", [])) == {"todo_write", "ask_user_question"} for item in requests)
                 page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness", exact=True).click()
-                page.get_by_role("menuitem", name="Stella", exact=True).click()
+                page.get_by_role("menuitem", name="Alcor", exact=True).click()
                 expect(composer).to_have_text("Unsent secretary draft")
                 page.get_by_role("button", name="事务", exact=True).click()
                 # Expanded and collapsed desktop rail keep the same top-level entry.
                 page.locator('[data-sidebar-toggle]:visible').click()
-                page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+                page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
                 page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
                 page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 page.locator('[data-sidebar-toggle]:visible').click()
                 page.set_viewport_size({"width": 390, "height": 844})
-                mode_button = page.get_by_role("button", name="切换使用模式，当前 Stella", exact=True)
+                mode_button = page.get_by_role("button", name="切换使用模式，当前 Alcor", exact=True)
                 # Real hit testing catches a visible button covered by the drawer.
                 page.locator('[data-sidebar-opener]').click()
-                expect(page.get_by_role('dialog', name='Stella 秘书导航', exact=True)).to_be_visible()
+                expect(page.get_by_role('dialog', name='Alcor 秘书导航', exact=True)).to_be_visible()
                 mode_button.click()
                 page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
                 page.get_by_text('DSH synthetic conversation passed.', exact=True).wait_for()
                 page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 mode_button.click()
-                page.get_by_role('menuitem', name='Stella', exact=True).press('Escape')
+                page.get_by_role('menuitem', name='Alcor', exact=True).press('Escape')
                 mode_button.focus()
                 mode_button.press("ArrowDown")
-                page.get_by_role("menuitem", name="Stella", exact=True).press("ArrowDown")
+                page.get_by_role("menuitem", name="Alcor", exact=True).press("ArrowDown")
                 page.get_by_role("menuitem", name="DeepSeek Harness", exact=True).press("Escape")
                 assert mode_button.evaluate("e => e === document.activeElement")
                 if directory := os.environ.get("STELLA_CHECK_ARTIFACTS"):
@@ -250,7 +253,7 @@ def main():
                     page.screenshot(path=str(Path(directory) / "dual-mode-desktop.png"))
                 assert page.locator("body").evaluate("e => e.scrollWidth <= e.clientWidth")
                 assert errors == [], errors
-                page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+                page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
                 page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
                 restart_port = int(re.search(r':(\d+)/', url).group(1))
                 page.close()
@@ -259,9 +262,9 @@ def main():
                     Path(directory).mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=str(Path(directory) / "web-failure.png"))
                 print("Browser errors:", errors)
-                print('Overview:', rpc(page, url, 'stellaSecretary/overview'))
-                print('Navigation:', page.evaluate('localStorage.getItem("stella.product-mode.v1")'))
-                print("Mode controls:", page.locator('.stella-mode-bar').inner_text() if page.locator('.stella-mode-bar').count() else 'missing')
+                print('Overview:', rpc(page, url, 'alcorSecretary/overview'))
+                print('Navigation:', page.evaluate('localStorage.getItem("alcor.product-mode.v1")'))
+                print("Mode controls:", page.locator('.alcor-mode-bar').inner_text() if page.locator('.alcor-mode-bar').count() else 'missing')
                 raise
             finally:
                 stop(process)
@@ -272,7 +275,7 @@ def main():
                 page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).wait_for()
                 page.get_by_text('DSH synthetic conversation passed.', exact=True).wait_for()
                 page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                page.get_by_role('menuitem', name='Stella', exact=True).click()
+                page.get_by_role('menuitem', name='Alcor', exact=True).click()
                 page.get_by_role("button", name="事务", exact=True).click()
                 page.get_by_role("heading", name="事务", exact=True).wait_for()
                 assert errors == [], errors
@@ -282,7 +285,7 @@ def main():
                     Path(directory).mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=str(Path(directory) / "web-failure.png"))
                 print("Browser errors:", errors)
-                print("Mode controls:", page.locator('.stella-mode-bar').inner_text() if page.locator('.stella-mode-bar').count() else 'missing')
+                print("Mode controls:", page.locator('.alcor-mode-bar').inner_text() if page.locator('.alcor-mode-bar').count() else 'missing')
                 raise
             finally:
                 stop(process)
@@ -291,10 +294,10 @@ def main():
             process, url = start(home, log)
             try:
                 page, errors = open_page(context, url)
-                result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/secretary', 'enabled': False})
+                result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/secretary', 'enabled': False})
                 assert result['application'] == 'applied', result
                 expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
-                expect(page.locator('.stella-mode-bar')).to_have_count(0)
+                expect(page.locator('.alcor-mode-bar')).to_have_count(0)
                 page.close()
             finally:
                 stop(process)

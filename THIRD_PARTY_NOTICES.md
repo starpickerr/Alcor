@@ -44,7 +44,7 @@ See [source and patch attribution](product/NOTICE.md), the retained
 [MIT license](product/DSH-LICENSE.txt), and [build and limitations](product/README.md).
 
 The optional secretary bundle incorporates Stella first-party business services;
-their origins are listed in [business provenance](packages/stella-secretary/business/README.md).
+their origins are listed in [business provenance](packages/alcor-secretary/business/README.md).
 It retains the Stella MIT license as `business/STELLA-LICENSE.txt`.
-The independent [Apple sync bundle](packages/stella-apple-sync/README.md) carries
+The independent [Apple sync bundle](packages/alcor-apple-sync/README.md) carries
 the adapted sync managers and EventKit bridge with its own retained MIT license.

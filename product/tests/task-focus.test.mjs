@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { focusedTaskRecords, taskCompletion } from '../../packages/stella-secretary/src/task-focus.js'
-import { taskMatches } from '../../packages/stella-secretary/src/presentation.js'
+import { focusedTaskRecords, taskCompletion } from '../../packages/alcor-secretary/src/task-focus.js'
+import { taskMatches } from '../../packages/alcor-secretary/src/presentation.js'
 
 test('one current local occurrence and a separate completion retain the editable series identity', () => {
   const series = { id: 'series', due: '2026-08-19', status: 'open', business: {

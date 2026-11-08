@@ -9,8 +9,8 @@ import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Workspace from '@deepseek-ai/dsh-workspace'
 import { scheduleDomain, createCronScheduleRecord } from '@deepseek-ai/dsh-schedule'
 import { importHistory, legacySession } from './migrate-legacy-history.mjs'
-import { recordSchema } from '../../packages/stella-organizer/src/records.js'
-import { jobSchema } from '../../packages/stella-organizer/src/remote.js'
+import { recordSchema } from '../../packages/alcor-organizer/src/records.js'
+import { jobSchema } from '../../packages/alcor-organizer/src/remote.js'
 import { z } from 'zod'
 
 export async function importHost(history, schedules, root, storageRoot, cwd) {

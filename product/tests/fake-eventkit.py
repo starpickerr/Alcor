@@ -10,7 +10,7 @@ from datetime import datetime,timedelta
 
 request = json.loads(sys.stdin.readline())
 op = request['op']
-state_file = os.environ.get('STELLA_EVENTKIT_STATE') or (str(Path(os.environ['DSH_HOME']) / 'fake-eventkit-state.json') if os.environ.get('DSH_HOME') else None)
+state_file = os.environ.get('ALCOR_EVENTKIT_STATE') or os.environ.get('STELLA_EVENTKIT_STATE') or (str(Path(os.environ['DSH_HOME']) / 'fake-eventkit-state.json') if os.environ.get('DSH_HOME') else None)
 defaults = [{'id':'a','title':'Synthetic source','writable':True,'immutable':False,'source_id':'account1','source':'Synthetic iCloud'}]
 state = {'calendar': list(defaults), 'reminders': list(defaults)}
 lock = None
@@ -44,8 +44,8 @@ elif op in ('rename', 'reminder_rename'):
     row.update({key: request[key] for key in ('title', 'color') if key in request})
     result = {'calendar' if kind == 'calendar' else 'list': row}
 elif op in ('events', 'lookup'):
-    event = dict(calendar_id='a', event_id='event', external_id='external', occurrence_date='2026-11-05T01:00:00Z',
-                 stella_id='', title='Synthetic Apple event', description='', location='',
+    event = dict(calendar_id='a', source_id='account1', event_id='event', external_id='external', occurrence_date='2026-11-05T01:00:00Z',
+                 alcor_id='', title='Synthetic Apple event', description='', location='',
                  start_at='2026-11-05T01:00:00Z', end_at='2026-11-05T02:00:00Z', all_day=False,
                  timezone='Asia/Shanghai', recurrence={'frequency': 'none'}, is_detached=False,
                  last_modified='2026-11-04T00:00:00Z', writable=True)
@@ -57,7 +57,7 @@ elif op in ('events', 'lookup'):
         found=next((row for row in rows if row['calendar_id']==request['calendar_id'] and (row['event_id']==request.get('event_id') or request.get('external_id') and row['external_id']==request['external_id'])),None)
         result={'event':found}
 elif op in ('reminders', 'reminder_lookup'):
-    reminder = dict(list_id='a', reminder_id='reminder', external_id='external', stella_id='',
+    reminder = dict(list_id='a', source_id='account1', reminder_id='reminder', external_id='external', alcor_id='',
                     title='Synthetic Apple task', notes='', due_on='2026-11-05', due_time=None,
                     timezone='Asia/Shanghai', planned_on=None, remind_at=None, alarm_count=0, priority=0,
                     completed=False, completed_at=None, recurrence={'frequency': 'none'},
@@ -81,7 +81,7 @@ elif op in ('upsert','reminder_upsert','delete','reminder_delete','reminder_comp
         result={'reminder':found}
     else:
         if found is None:
-            found={group:request[group],identity:str(uuid.uuid4()),'external_id':request.get('stella_id') or str(uuid.uuid4()),'stella_id':'','writable':True,'last_modified':datetime.now().astimezone().isoformat(),'timezone':'UTC','alarm_count':0}
+            found={group:request[group],identity:str(uuid.uuid4()),'external_id':request.get('alcor_id') or str(uuid.uuid4()),'alcor_id':'','writable':True,'last_modified':datetime.now().astimezone().isoformat(),'timezone':'UTC','alarm_count':0}
             rows.append(found)
         found.update({key:value for key,value in request.items() if key in ('title','notes','description','location','start_at','end_at','all_day','due_on','due_time','planned_on','remind_at','priority','completed','completed_at','timezone','url','alarms','floating',group)})
         if not reminder:

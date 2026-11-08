@@ -1,4 +1,0 @@
-- insert:
-    - id: stella-keychain
-      name: '@stella/privacy'
-      disabled: true

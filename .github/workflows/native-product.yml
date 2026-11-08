@@ -1,4 +1,4 @@
-name: Native Stella product
+name: Native Alcor product
 
 on:
   pull_request:

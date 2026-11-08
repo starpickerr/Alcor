@@ -3,18 +3,19 @@ import json
 import os
 import sys
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from datetime import datetime,timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from playwright.sync_api import expect,sync_playwright
 import official_desktop_check as desktop
 from web_check import open_secretary
-sys.path.insert(0,str(desktop.ROOT/'packages/stella-secretary'))
+sys.path.insert(0,str(desktop.ROOT/'packages/alcor-secretary'))
 from business.worker import Business
 
 
 def fixtures(profile):
-    owner=Business(profile/'stella/business');calendar=owner.calendar;tasks=owner.tasks
+    owner=Business(profile/'alcor/business');calendar=owner.calendar;tasks=owner.tasks
     today=datetime.now(ZoneInfo('Asia/Shanghai')).date();start=today-timedelta(days=(today.weekday()+1)%7)
     groups=[calendar.create_category({'name':name,'color':color}) for name,color in [('课程','#3698bc'),('工作','#8370bb'),('生活','#b58754')]]
     for group in groups[:2]:
@@ -51,28 +52,29 @@ def main():
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     baseline=os.environ.get('STELLA_CALENDAR_BASELINE')=='1'
     desktop.verify_release()
-    with tempfile.TemporaryDirectory(prefix='stella-calendar-layout-') as temporary,sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-calendar-layout-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True);(home/'documents').mkdir()
+        initialize_fresh(temporary, home / 'dsh', profile)
         (profile/'package.json').write_text(json.dumps({'name':'calendar-layout-review','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home,'calendar-layout-install','add',str(desktop.PACK),'--ignore-scripts')
         data=fixtures(profile)
         with desktop.desktop(playwright,home,'calendar-layout') as (page,errors):
             page.set_viewport_size({'width':1440,'height':1100});open_secretary(page)
-            business=lambda domain,method,args=None:desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
+            business=lambda domain,method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
             page.get_by_role('button',name='日程',exact=True).click()
-            main=page.locator('.stella-calendar-surface')
+            main=page.locator('.alcor-calendar-surface')
             expect(main.get_by_role('button',name='课程资料更新',exact=False)).to_be_visible()
             page.screenshot(path=str(artifacts/('00-before-month.png' if baseline else '02-calendar-month.png')),animations='disabled')
             page.get_by_role('tab',name='周',exact=True).click()
-            expect(main.locator('.stella-time-column .stella-timed-event').filter(has_text='Python 课程')).to_be_visible()
+            expect(main.locator('.alcor-time-column .alcor-timed-event').filter(has_text='Python 课程')).to_be_visible()
             page.screenshot(path=str(artifacts/('00-before-week.png' if baseline else '01-calendar-week.png')),animations='disabled')
             if baseline:return
-            sidebar=page.locator('.stella-calendar-sidebar')
+            sidebar=page.locator('.alcor-calendar-sidebar')
             sidebar_style=sidebar.evaluate('e=>({width:e.getBoundingClientRect().width,background:getComputedStyle(e).backgroundColor})')
             page.get_by_role('button',name='事务',exact=True).click()
-            task_sidebar=page.locator('.stella-task-sidebar')
+            task_sidebar=page.locator('.alcor-task-sidebar')
             assert task_sidebar.evaluate('e=>({width:e.getBoundingClientRect().width,background:getComputedStyle(e).backgroundColor})')==sidebar_style
             expect(task_sidebar.get_by_role('checkbox')).to_have_count(0)
             learning=task_sidebar.get_by_role('group',name='iCloud',exact=True).get_by_role('button',name='学习',exact=True)
@@ -84,34 +86,34 @@ def main():
             page.get_by_role('button',name='日程',exact=True).click()
             page.get_by_role('tab',name='周',exact=True).click()
             filters=page.get_by_role('navigation',name='日历筛选',exact=True)
-            assert sidebar.locator('.stella-month-compact').bounding_box()['height'] < 260
-            assert sidebar.locator('.stella-calendar-mini').bounding_box()['y'] > filters.bounding_box()['y']+filters.bounding_box()['height']-2
+            assert sidebar.locator('.alcor-month-compact').bounding_box()['height'] < 260
+            assert sidebar.locator('.alcor-calendar-mini').bounding_box()['y'] > filters.bounding_box()['y']+filters.bounding_box()['height']-2
             expect(filters.get_by_role('group',name='iCloud',exact=True).get_by_role('checkbox',name='课程',exact=True)).to_be_checked()
             expect(filters.get_by_role('group',name='其他',exact=True).get_by_role('checkbox',name='事务',exact=True)).to_be_checked()
-            expect(sidebar).to_be_visible();expect(main.locator('.stella-current-time')).to_have_count(1)
+            expect(sidebar).to_be_visible();expect(main.locator('.alcor-current-time')).to_have_count(1)
             filters.get_by_role('checkbox',name='课程',exact=True).uncheck()
-            expect(main.locator('.stella-time-column .stella-timed-event').filter(has_text='Python 课程')).to_have_count(0)
-            expect(main.locator('.stella-time-column .stella-timed-event').filter(has_text='课程答疑')).to_be_visible()
+            expect(main.locator('.alcor-time-column .alcor-timed-event').filter(has_text='Python 课程')).to_have_count(0)
+            expect(main.locator('.alcor-time-column .alcor-timed-event').filter(has_text='课程答疑')).to_be_visible()
             filters.get_by_role('checkbox',name='课程',exact=True).check()
             expect(filters.get_by_role('checkbox',name='中国大陆节假日',exact=True)).to_be_enabled()
-            event=main.locator(f'.stella-time-column [data-record-id="{data["event"]["id"]}"]')
-            overlap=main.locator(f'.stella-time-column [data-record-id="{data["overlapping"]["id"]}"]')
+            event=main.locator(f'.alcor-time-column [data-record-id="{data["event"]["id"]}"]')
+            overlap=main.locator(f'.alcor-time-column [data-record-id="{data["overlapping"]["id"]}"]')
             assert event.bounding_box()['x']!=overlap.bounding_box()['x']
             event.click(button='right');page.get_by_role('menuitem',name='显示简介',exact=True).click()
             inspector=page.get_by_role('region',name='日程详情',exact=True)
             expect(inspector).to_contain_text('保留原有课程备注');expect(inspector).to_contain_text('教学楼 A301')
             expect(page.get_by_role('dialog')).to_have_count(0)
-            panel_box=inspector.bounding_box();canvas_box=page.locator('.stella-calendar-page').bounding_box()
+            panel_box=inspector.bounding_box();canvas_box=page.locator('.alcor-calendar-page').bounding_box()
             assert panel_box['x'] >= canvas_box['x']+canvas_box['width']-1
             expect(inspector.get_by_role('button',name='关闭详情',exact=True)).to_be_focused()
             page.screenshot(path=str(artifacts/'03-calendar-inspector.png'),animations='disabled')
             inspector.get_by_role('button',name='关闭详情',exact=True).click()
-            readonly=main.locator(f'.stella-time-column [data-record-id="{data["readonly"]["id"]}"]')
+            readonly=main.locator(f'.alcor-time-column [data-record-id="{data["readonly"]["id"]}"]')
             readonly.click(button='right');expect(page.get_by_role('menuitem',name='编辑详情',exact=True)).to_be_disabled();page.keyboard.press('Escape')
             filters.get_by_role('button',name='隐藏全部日历',exact=True).click()
             filters.get_by_role('checkbox',name='事务',exact=True).check()
-            expect(main.locator('.stella-time-column .stella-timed-event').filter(has_text='Python 课程')).to_have_count(0)
-            task=main.locator(f'.stella-time-column [data-record-id="{data["task"]["id"]}"]')
+            expect(main.locator('.alcor-time-column .alcor-timed-event').filter(has_text='Python 课程')).to_have_count(0)
+            task=main.locator(f'.alcor-time-column [data-record-id="{data["task"]["id"]}"]')
             task.get_by_role('button',name='完成事务：提交课程练习',exact=True).click()
             expect(task).to_have_attribute('data-completed','true')
             assert business('tasks','get_todo',{'todo_id':data['task']['id']})['status']=='completed'
@@ -146,7 +148,7 @@ def main():
             editor.get_by_label('结束',exact=True).fill(f'{data["today"]}T08:00')
             editor.get_by_role('button',name='保存日程',exact=True).click()
             expect(panel).to_contain_text('end_at must not precede start_at')
-            alert=panel.locator('.stella-notice[role=alert]')
+            alert=panel.locator('.alcor-notice[role=alert]')
             expect(alert).to_contain_text('end_at must not precede start_at')
             assert alert.bounding_box()['height'] < 100
             expect(editor.get_by_role('button',name='保存日程',exact=True)).to_be_in_viewport()
@@ -170,19 +172,19 @@ def main():
             expect(panel).to_have_count(0)
             page.set_viewport_size({'width':1440,'height':1100})
             page.get_by_role('tab',name='周',exact=True).click()
-            main.locator(f'.stella-time-column [data-record-id="{data["event"]["id"]}"] .stella-calendar-open').click()
+            main.locator(f'.alcor-time-column [data-record-id="{data["event"]["id"]}"] .alcor-calendar-open').click()
             inspector.get_by_role('button',name='编辑详情',exact=True).click()
-            page.locator('.stella-business').evaluate('e=>e.scrollIntoView({block:"start"})')
+            page.locator('.alcor-business').evaluate('e=>e.scrollIntoView({block:"start"})')
             expect(editor.get_by_role('button',name='保存日程',exact=True)).to_be_in_viewport()
             page.screenshot(path=str(artifacts/'12-calendar-edit-desktop.png'),animations='disabled')
             page.emulate_media(color_scheme='dark');page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
             page.screenshot(path=str(artifacts/'13-calendar-panel-dark.png'),animations='disabled')
             page.emulate_media(color_scheme='light')
             panel.get_by_role('button',name='关闭详情',exact=True).click()
-            page.get_by_role('tab',name='年',exact=True).click();expect(main.locator('.stella-year-grid > section')).to_have_count(12)
+            page.get_by_role('tab',name='年',exact=True).click();expect(main.locator('.alcor-year-grid > section')).to_have_count(12)
             page.get_by_role('tab',name='周',exact=True).click()
             page.emulate_media(color_scheme='dark');page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
-            mini=sidebar.locator('.stella-calendar-mini').bounding_box()
+            mini=sidebar.locator('.alcor-calendar-mini').bounding_box()
             assert mini['y']+mini['height'] <= page.viewport_size['height']
             page.screenshot(path=str(artifacts/'06-calendar-dark.png'),animations='disabled')
             page.emulate_media(color_scheme='light');page.set_viewport_size({'width':390,'height':844})
@@ -195,7 +197,7 @@ def main():
             page.get_by_role('button',name='日历与日期',exact=False).click()
             filters.get_by_role('button',name='隐藏全部日历',exact=True).click();filters.get_by_role('checkbox',name='课程',exact=True).check()
             page.get_by_role('button',name='日历与日期',exact=False).click();expect(sidebar).not_to_be_visible()
-            expect(main.locator('.stella-calendar-task')).to_have_count(0)
+            expect(main.locator('.alcor-calendar-task')).to_have_count(0)
             page.get_by_role('tab',name='月',exact=True).click()
             assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')
             page.screenshot(path=str(artifacts/'08-calendar-month-narrow.png'),animations='disabled')

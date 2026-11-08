@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
-import KeychainCredentials from '../../packages/stella-privacy/src/index.js'
+import KeychainCredentials from '../../packages/alcor-privacy/src/index.js'
 
 const [operation, home, keychainPath] = process.argv.slice(2)
 assert.ok(home && keychainPath)

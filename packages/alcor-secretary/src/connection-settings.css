@@ -1,0 +1,10 @@
+:is(.alcor-school-connection,.alcor-mail-connection) { width:100%; max-width:520px; display:grid; gap:16px; }
+:is(.alcor-school-connection,.alcor-mail-connection) > form { display:grid; gap:16px; }
+:is(.alcor-school-connection,.alcor-mail-connection) .alcor-field { display:grid; gap:6px; margin:0; font-size:13px; }
+:is(.alcor-school-connection,.alcor-mail-connection) input[type=password]::placeholder { color:var(--dsw-alias-label-secondary); opacity:1; letter-spacing:2px; }
+:is(.alcor-school-connection,.alcor-mail-connection) .alcor-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+:is(.alcor-school-account-state,.alcor-mail-account-state) { color:var(--dsw-alias-label-secondary); font-size:12px; }
+:is(.alcor-school-test,.alcor-mail-test) { border-top:1px solid var(--dsw-alias-border-l3); padding-top:16px; }
+:is(.alcor-school-connection,.alcor-mail-connection) > p,.alcor-school-remove p { margin:0; font-size:13px; overflow-wrap:anywhere; }
+.alcor-school-remove { display:grid; gap:12px; }
+.alcor-mail-connection .alcor-source-grid { gap:16px 12px; }

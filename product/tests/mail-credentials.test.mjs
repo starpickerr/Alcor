@@ -9,15 +9,15 @@ import Authorization from '@deepseek-ai/dsh-authorization'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
 import * as Executor from '@deepseek-ai/dsh-tool-executor-native'
-import MailConnection from '../../packages/stella-mail/src/connection.js'
+import MailConnection from '../../packages/alcor-mail/src/connection.js'
 
 test('mail owns native credential lifecycle, preserves other mailboxes and revokes stale MCP connections', async t => {
-  const dir = await mkdtemp(join(tmpdir(), 'stella-mail-credentials-'))
+  const dir = await mkdtemp(join(tmpdir(), 'alcor-mail-credentials-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const filename = join(dir, '.credentials.yaml'); const command = join(dir, 'synthetic-mail')
   await writeFile(command, '#!' + process.execPath + '\n' + `
 import {createInterface} from 'node:readline';
-const accounts=JSON.parse(process.env.STELLA_EMAIL_CREDENTIAL).accounts;
+const accounts=JSON.parse(process.env.ALCOR_EMAIL_CREDENTIAL).accounts;
 for await (const line of createInterface({input:process.stdin})) {
  const r=JSON.parse(line); if(r.id===undefined) continue; let result;
  if(r.method==='initialize') result={protocolVersion:r.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'synthetic-mail',version:'1'}};
@@ -35,48 +35,48 @@ for await (const line of createInterface({input:process.stdin})) {
   }
   let ctx = await make(); t.after(() => ctx.fiber.dispose())
   const account = { host: 'imap.example.com', user: 'one@example.com', password: 'first-synthetic-secret', port: 993, folder: 'INBOX', enabled: true }
-  let state = await ctx.stellaMailConnection.state()
+  let state = await ctx.alcorMailConnection.state()
   assert.equal(state.configured, false)
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account })
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account })
   assert.equal(state.connected, true)
   assert.equal(state.accounts.length, 1)
   const first = state.accounts[0]
   assert(!JSON.stringify(state).includes(account.password))
   assert(!JSON.stringify(config).includes(account.password))
-  assert.equal((await ctx.stellaMailConnection.check({ id: first.id })).status, 'ready')
+  assert.equal((await ctx.alcorMailConnection.check({ id: first.id })).status, 'ready')
   // Every mailbox-reading tool must respect the same account switch, not only fetch_messages.
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', enabled: false } })
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', enabled: false } })
   for (const [name, args] of [['test_connection', { payload: { id: first.id } }], ['list_folders', { account_id: first.id }], ['get_cursors', { account_id: first.id }], ['fetch_messages', { account_id: first.id }]]) {
     const result = await ctx.tools.execute({ signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'disabled-' + name, name: 'mcp__email__' + name, arguments: JSON.stringify(args) }] })
     assert.equal(result.results[0].result.isError, true)
     assert(JSON.stringify(result).includes('邮箱未开启'))
   }
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', enabled: true } })
-  assert.equal((await ctx.stellaMailConnection.check({ id: first.id })).status, 'ready')
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', enabled: true } })
+  assert.equal((await ctx.alcorMailConnection.check({ id: first.id })).status, 'ready')
   for (const name of ['list_folders', 'get_cursors', 'fetch_messages']) {
     const result = await ctx.tools.execute({ signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'enabled-' + name, name: 'mcp__email__' + name, arguments: JSON.stringify({ account_id: first.id }) }] })
     assert.equal(result.results[0].result.isError, false)
   }
   const stale = state.revision
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account: { ...account, user: 'two@example.com', password: 'second-synthetic-secret', folder:'AuthFailure' } })
-  await assert.rejects(ctx.stellaMailConnection.save({ expectedRevision: stale, account }), /已变化/)
-  const failed=await ctx.stellaMailConnection.check({id:state.accounts.find(row=>row.user==='two@example.com').id})
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account: { ...account, user: 'two@example.com', password: 'second-synthetic-secret', folder:'AuthFailure' } })
+  await assert.rejects(ctx.alcorMailConnection.save({ expectedRevision: stale, account }), /已变化/)
+  const failed=await ctx.alcorMailConnection.check({id:state.accounts.find(row=>row.user==='two@example.com').id})
   assert.deepEqual(failed,{status:'query_failed',code:'auth_failed'})
   assert(!JSON.stringify(failed).includes('synthetic-secret'))
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', folder: 'Archive' } })
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account: { ...first, password: '', folder: 'Archive' } })
   assert.equal(state.accounts.length, 2)
   assert((await readFile(filename, 'utf8')).includes('first-synthetic-secret'))
   await ctx.fiber.dispose(); ctx = await make()
-  assert.equal((await ctx.stellaMailConnection.state()).connected, true)
-  state = await ctx.stellaMailConnection.state()
-  for (const row of [...state.accounts]) state = await ctx.stellaMailConnection.remove({ id: row.id, expectedRevision: state.revision })
+  assert.equal((await ctx.alcorMailConnection.state()).connected, true)
+  state = await ctx.alcorMailConnection.state()
+  for (const row of [...state.accounts]) state = await ctx.alcorMailConnection.remove({ id: row.id, expectedRevision: state.revision })
   assert.equal(state.connected, false)
   assert(!ctx.tools.executable('mcp__email__list_sources'))
   assert(!(await readFile(filename, 'utf8')).includes('synthetic-secret'))
-  state = await ctx.stellaMailConnection.save({ expectedRevision: state.revision, account })
+  state = await ctx.alcorMailConnection.save({ expectedRevision: state.revision, account })
   await ctx.fiber.dispose(); ctx = await make({ ...config, command: join(dir, 'missing-command') })
-  assert.equal((await ctx.stellaMailConnection.state()).configured, true)
-  assert.equal((await ctx.stellaMailConnection.state()).connected, false)
+  assert.equal((await ctx.alcorMailConnection.state()).configured, true)
+  assert.equal((await ctx.alcorMailConnection.state()).connected, false)
 })
 
 

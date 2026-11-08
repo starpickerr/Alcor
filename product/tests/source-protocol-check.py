@@ -12,10 +12,10 @@ from mcp.client.stdio import stdio_client
 
 async def main():
     for package, binary, env_key, value, names in [
-        ('elearning', 'elearning-mcp', 'STELLA_ELEARNING_CREDENTIAL', {'username': 'synthetic', 'password': 'synthetic-school-secret'}, {'list_courses', 'fetch', 'list_files'}),
-        ('mail', 'email-mcp', 'STELLA_EMAIL_CREDENTIAL', {'accounts': [{'id': 'synthetic', 'host': 'imap.example.com', 'user': 'test@example.com', 'password': 'synthetic-mail-secret', 'port': 993, 'folder': 'INBOX', 'enabled': True}]}, {'list_accounts', 'list_sources', 'get_cursors', 'fetch_messages', 'test_connection', 'list_folders'}),
+        ('elearning', 'elearning-mcp', 'ALCOR_ELEARNING_CREDENTIAL', {'username': 'synthetic', 'password': 'synthetic-school-secret'}, {'list_courses', 'fetch', 'list_files'}),
+        ('mail', 'email-mcp', 'ALCOR_EMAIL_CREDENTIAL', {'accounts': [{'id': 'synthetic', 'host': 'imap.example.com', 'user': 'test@example.com', 'password': 'synthetic-mail-secret', 'port': 993, 'folder': 'INBOX', 'enabled': True}]}, {'list_accounts', 'list_sources', 'get_cursors', 'fetch_messages', 'test_connection', 'list_folders'}),
     ]:
-        root = Path(sys.argv[1]) / f'@stella/{package}/server'
+        root = Path(sys.argv[1]) / f'@alcor/{package}/server'
         assert not any(path.is_symlink() for path in root.rglob('*'))
         with tempfile.TemporaryDirectory(prefix='source-protocol-') as data:
             parameters = StdioServerParameters(command=str(root / binary), args=['--data-dir', data, '--dsh-credentials'], cwd=data,

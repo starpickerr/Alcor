@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 from http.server import ThreadingHTTPServer
 
@@ -14,11 +15,12 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        with tempfile.TemporaryDirectory(prefix='stella-quick-chat-') as temporary, sync_playwright() as p:
+        with fresh_test_home(prefix='stella-quick-chat-') as temporary, sync_playwright() as p:
             home = Path(temporary)
             (home / '.stella-product.json').write_text('{"version":1,"kind":"web"}\n')
             profile = home / 'profiles/stella'
             profile.mkdir(parents=True)
+            initialize_fresh(temporary, home, profile)
             (home / 'documents').mkdir()
             (profile / 'cordis.patch.yml').write_text(f'''- id: workspace-controller
   config:
@@ -59,7 +61,7 @@ def main():
                     assert len(requests) == calls_before, 'Opening the inline composer must not call a model'
                     expect(chat.get_by_role('button', name='Synthetic model')).to_be_visible()
                     original = page.evaluate('localStorage.getItem("dsh.sessions.current")')
-                    composer.fill('Read stella_overview in the embedded task chat')
+                    composer.fill('Read alcor_overview in the embedded task chat')
                     composer.press('Enter')
                     chat.get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for(timeout=25000)
                     first_id = chat.locator('[data-conversation-session]').get_attribute('data-conversation-session')
@@ -91,7 +93,7 @@ def main():
                     page.get_by_role('button', name='日程', exact=True).click()
                     page.get_by_role('button', name='展开', exact=True).click()
                     calendar = page.get_by_role('region', name='日程快捷对话', exact=True)
-                    calendar.locator('[data-composer-input][contenteditable="true"]').fill('Read stella_overview in the calendar chat')
+                    calendar.locator('[data-composer-input][contenteditable="true"]').fill('Read alcor_overview in the calendar chat')
                     calendar.locator('[data-composer-input]').press('Enter')
                     calendar.get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for(timeout=25000)
                     assert calendar.locator('[data-conversation-session]').get_attribute('data-conversation-session') != first_id
@@ -108,7 +110,7 @@ def main():
                     assert not errors, errors
                 except Exception:
                     print('Browser errors:', errors)
-                    print('Navigation:', page.evaluate('localStorage.getItem("stella.product-mode.v1")'))
+                    print('Navigation:', page.evaluate('localStorage.getItem("alcor.product-mode.v1")'))
                     print('Buttons:', page.get_by_role('button').all_text_contents())
                     print('Page:', page.locator('body').inner_text()[-4000:])
                     raise

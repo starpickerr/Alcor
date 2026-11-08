@@ -1,0 +1,76 @@
+{
+  "name": "@alcor/apple-sync",
+  "version": "0.1.17",
+  "description": "Apple 同步：连接系统日历与提醒事项，共用 Alcor 事务和日程。",
+  "type": "module",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "lib",
+    "skills",
+    "python",
+    "!python/**/__pycache__",
+    "!**/* 2.*",
+    "!python/apple_sync/Stella Apple Sync.app",
+    "!python/apple_sync/StellaCalendarBridge",
+    "!python/apple_sync/AlcorCalendarBridge",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE.txt",
+    "DSH-LICENSE.txt"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "react": "*",
+    "@deepseek-ai/dsh-typert-protocol": "*",
+    "@deepseek-ai/dsh-home-paths": "*",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "*",
+    "@deepseek-ai/dsh-skill-filesystem": "*"
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-home-paths": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-workspace-dependencies": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    }
+  }
+}
