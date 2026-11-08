@@ -1,24 +1,16 @@
 # Alcor 原生 DSH 功能包
 
-Alcor 原名 Stella。当前个人 Profile 已迁入 Alcor，历史会话使用的 Preset 和外部标识继续兼容。
-
-2026-11-09 已在官方 DSH Desktop 0.2.2-rc.1（macOS arm64）核验秘书 0.1.60、Apple 同步 0.1.17、eLearning 0.1.7、邮件 0.1.9 和 AgentHub 0.1.1。重启后恢复 Alcor 模式、事务层级和每日简报计划。Apple 删除与恢复使用隔离数据验证。个人迁移、备份和恢复材料另存于本机。
-
-**最终用户交付：下载官方 DSH 桌面客户端 → 在原生插件管理器安装 Alcor → 在同一个客户端进入当前 Alcor 界面。** 用户不应为此另行启动网页服务、克隆仓库、构建 DSH 或手工修改客户端。DSH 继续提供模型、会话、工作区、插件管理和桌面承载；Alcor 提供秘书界面与业务，可切回 DSH，停用或卸载时保留原有配置与数据。
-
-安装包包含 Alcor 原生 Host／Client 与必要的界面扩展，由 DSH 的原生 Bundle 在目标 Profile 中装配；官方 App 的签名文件与原始客户端资产不需要修改。当前版本的顶部模式按钮显示 **Alcor / DSH**，旧版仍显示 Stella。插件安装、启用、停用和卸载以退出后重新打开 DSH 生效；这些生命周期操作与日常模式切换是两个不同动作。
+Alcor（原 Stella）是一组 DeepSeek Harness 原生插件。秘书插件提供事务、日程、账单、简报和自动化；DSH 提供桌面窗口、模型、会话、工作区和插件管理。窗口顶部的模式菜单可以切换 Alcor 和 DSH。
 
 ## 桌面用户安装
 
-此前版本支持官方 DSH `0.2.2-alpha.3` 与 `0.2.2-rc.1`，macOS Apple Silicon；本机迁移验证使用 0.2.2-rc.1。可从[官方桌面发布产物](https://download.deepseek.com/dsh-desk/bin/mac-arm64/deepseek-harness-0.2.2-alpha.3-mac-arm64.dmg)安装 DSH。普通用户不需要源码、编译器、独立网页服务或额外 Python；模型与账号由 DSH 的原生设置管理。Apple 同步是可选的第二个原生插件，安装后由用户显式授权来源。
+桌面版面向 macOS Apple Silicon，已核对的 DSH 版本为 `0.2.2-alpha.3` 和 `0.2.2-rc.1`。在已初始化的 DSH Profile 中，通过原生插件管理器安装秘书插件的 `.tgz` 包，退出并重新打开客户端，再从顶部模式菜单进入 Alcor。Apple 同步、eLearning、邮件和 AgentHub 均可按需安装。旧 Stella Profile 须先完成迁移，避免同时启用新旧插件。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
 
 界面扩展保存在 Alcor 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
 ## 当前源码与默认入口
 
-新版源码已迁入常用工作区 `/Users/starpickerr/Desktop/Codes/Alcor/Alcor`。`packages/`、`product/` 和 `scripts/product/` 是当前产品入口；原 `/private/tmp/stella-dsh-workspace/Stella-Core` 作为迁移前副本保留。根目录 `npm run dev` / `make dev` 启动隔离的原生 DSH 开发预览，`npm test` / `make test` 执行原生包测试。首次开发先运行 `make setup` 安装依赖并运行下方构建命令；`make check` 执行新版构建与测试。新版客户端构建拒绝引用旧运行目录，CI 由 `.github/workflows/native-product.yml` 独立验证。`desktop/`、`agent/` 等保留代码不作为新版验收入口；旧 Python 测试显式使用 `make test-legacy`。
-
-这次迁移包含源码、构建及验证入口，不自动读取历史私人业务库、不重置个人 DSH Profile。Apple 分类／清单映射迁移沿用原生插件的 SQLite backup 与重启恢复流程。
+`packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试，`npm run dev` 启动独立 DSH Profile 的开发预览。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 运行时的测试入口为 `make test-legacy`。
 
 事务列表通过左侧清单导航、顶部视图和搜索筛选；任务行可进入详情，勾选完成和右侧菜单分别操作，并支持在当前清单快速添加。删除确认说明子事务或重复系列的影响，详情状态／日期／清单／优先级集中展示。检查项按当前设计从详情和编辑页面移除，既有数据保留，编辑其他任务字段不清空旧检查项。专项官方桌面验收入口：`product/tests/task-cards-check.py`。
 

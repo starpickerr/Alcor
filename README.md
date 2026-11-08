@@ -1,97 +1,43 @@
-<p align="center"><img src="docs/images/logo.jpg" alt="Alcor" width="160" /></p>
+<p align="center"><img src="packages/alcor-secretary/src/assets/alcor-avatar.svg" alt="Alcor" width="112" /></p>
 
 # Alcor
 
-Alcor, formerly Stella, runs as native DSH plugins. The existing personal profile has been migrated to Alcor on the official macOS arm64 desktop client 0.2.2-rc.1. Historical session identifiers remain available for compatibility.
-
-Current development targets the native DSH bundles in `packages/`. Start with `npm run dev`, test with `npm test`, and follow [the current product guide](product/README.md). The standalone Python/Electron implementation documented below is retained for migration and explicitly scoped legacy maintenance.
-
 [English](README.md) · [中文](docs/zh/README.md) · [繁體中文](docs/zh/README-Hant.md) · [日本語](docs/ja/README.md)
 
-**Alcor is a private desktop AI assistant** centered on intelligent chat, bringing tasks, calendars, bills, smart briefings, and automation together in one workspace.
+Alcor is a personal assistant for DeepSeek Harness (DSH). Its native plugins add task lists, a calendar, bills, briefings and automation to the desktop client. You can switch between Alcor and DSH in the same window and keep using the host’s models, conversations and workspaces.
 
-## Features
+## Desktop installation
 
-### Chat
+The supported desktop target is macOS on Apple Silicon. Use an official DSH release listed in the [compatibility manifest](product/desktop-release.lock.json).
 
-Talk with AI in natural language for questions, writing, information lookup, and complex tasks, with project and conversation management.
+1. Open the plugin manager in an initialized DSH profile and install the `@alcor/secretary` bundle from its `.tgz` file.
+2. Install any optional plugins you need from the table below.
+3. Quit and reopen DSH, then select **Alcor** in the mode menu at the top of the window.
 
-### Apps
+Existing Stella profiles need to be migrated before installing the renamed bundles. See the [native product guide](product/README.md) for installation and packaging details.
 
-| Module | Description |
-| ------ | ----------- |
-| **Tasks** | Manage personal tasks and nested subtasks with due dates, priorities, and reminders. Track progress and sync with Apple Reminders. |
-| **Calendar** | Manage schedules and time with calendar views, categories, and reminders. Sync with Apple Calendar. |
-| **Briefings** | Combine email, eLearning, calendar, and task information to surface important items, to-dos, and upcoming deadlines in a personalized briefing. |
-| **Bills** | Record income and expenses with categories, search, and basic analytics. |
-| **Scheduler** | Manage automation that runs at chosen times, review execution history, and deliver results through configured messaging channels. |
+| Plugin | What it adds |
+| --- | --- |
+| `@alcor/secretary` | Manage tasks and subtasks, view events, record bills, generate briefings and schedule updates. |
+| `@alcor/apple-sync` | Sync events and tasks with Apple Calendar and Reminders after selecting and authorizing sources. |
+| `@alcor/elearning` | Connect a Fudan eLearning account to read courses, assignments and announcements. |
+| `@alcor/mail` | Connect IMAP mailboxes for read-only queries and briefing sources. |
+| `@alcor/agent-hub` | Track development tasks and agent execution in the DSH workbench. |
 
-### Information
+## Local development
 
-| Module | Description |
-| ------ | ----------- |
-| **Memory** | Manage long-term AI memory for preferences and important context, enabling more personal interactions. |
-| **Knowledge** | Manage a personal knowledge base with storage, retrieval, and citation so AI can use your sources. |
+Use Node.js 24.9 or later and Python 3.9 or later. Building the macOS helpers also requires the Xcode Command Line Tools. From the repository root:
 
-### Channels
-
-Connect and manage external messaging platforms such as WeChat, Feishu, and Telegram for cross-platform chat and notifications.
-
-### System
-
-| Module | Description |
-| ------ | ----------- |
-| **Capabilities** | View and manage AI tools, Skills, and other extensions that improve information access and task execution. |
-| **Security** | Manage global, project, conversation, and background-task permissions. Control tool calls and sensitive actions, and review security activity. |
-| **Settings** | Configure AI model providers, custom models, capability assignment, Apple integrations, briefings, and other app settings. |
-| **Logs** | View runtime logs, errors, and execution records for troubleshooting and status checks. |
-
-## Get started
-
-### Download an installer
-
-Available installers are in [GitHub Releases](https://github.com/starpickerr/Alcor/releases). For installation, first-run setup, and everyday use, see the [user guide](docs/guide.md).
-
-### Run from source
-
-Requirements:
-
-- **Python 3.10+**
-- **Node.js 22.13+**
-- **macOS**: also install Xcode Command Line Tools with `xcode-select --install`.
-
-The commands below are for macOS. Windows commands are in the [user guide](docs/guide.md).
-
-Local development uses the Conda `Stella` environment (Python 3.12). Skip environment creation if it already exists.
-
-```bash
-git clone https://github.com/starpickerr/Alcor.git
-cd Alcor
-conda create -n Stella python=3.12
-conda activate Stella
-python -m pip install --upgrade pip setuptools
-python -m pip install -r requirements.txt
-npm --prefix desktop ci
-npm --prefix desktop run dev
+```sh
+npm ci --ignore-scripts
+npm run product:build
+npm test
+npm run dev
 ```
 
-For UI hot reload during development:
+The development preview uses an isolated DSH profile. To build the secretary plugin for desktop installation, run `npm run product:pack`. The tarball is written to `.local/artifacts/`. The school and mail bundles also require the adjacent MCP repositories and their pinned build dependencies. See the [connector guide](product/mcp-connections.md).
 
-```bash
-npm --prefix desktop run dev:hot
-```
-
-Browser setup and local data details are in the [user guide](docs/guide.md).
-
-Model calls may incur provider charges. Tools can access local files and external services; configure permissions before using them.
-
-## Documentation and development
-
-- [User guide](docs/guide.md): installation, configuration, and everyday use.
-- [Documentation index](docs/README.md): architecture, business modules, and security boundaries.
-- [Desktop development](desktop/README.md): builds and packaging.
-- [Contributing](CONTRIBUTING.md): development setup and checks. Develop from `develop`; `main` is for releases.
-- [Issues](https://github.com/starpickerr/Alcor/issues): remove credentials and personal data from logs before filing a report.
+Native plugin sources live under `packages/`, build scripts under `scripts/product/`, and integration tests under `product/tests/`. The earlier standalone Python/Electron application is documented in the [legacy guide](docs/guide.md).
 
 ## Source and license
 

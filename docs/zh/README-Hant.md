@@ -1,93 +1,43 @@
-<p align="center"><img src="../images/logo.jpg" alt="Alcor" width="160" /></p>
+<p align="center"><img src="../../packages/alcor-secretary/src/assets/alcor-avatar.svg" alt="Alcor" width="112" /></p>
 
 # Alcor
 
 [English](../../README.md) · [中文](README.md) · [繁體中文](README-Hant.md) · [日本語](../ja/README.md)
 
-**Alcor 是一款桌面端私人 AI 助理**，以智慧對話為核心，將事務、日程、帳單、智慧簡報和自動化任務集中在一個工作空間中。
+Alcor 是在 DeepSeek Harness（DSH）中執行的個人助理。透過原生外掛，你可以管理工作與行事曆、記錄帳單、產生簡報及設定自動化。Alcor 與 DSH 共用桌面視窗、模型、對話及工作區。
 
-## 主要功能
+## 桌面安裝
 
-### 對話
+目前的桌面目標為 Apple Silicon Mac。請使用[相容版本清單](../../product/desktop-release.lock.json)中列出的官方 DSH 用戶端。
 
-透過自然語言與 AI 互動，支援問題解答、內容創作、資訊檢索和複雜任務執行，並提供專案與會話管理。
+1. 在已初始化的 DSH Profile 中開啟外掛管理員，從 `.tgz` 檔案安裝 `@alcor/secretary`。
+2. 按需安裝下表中的選用外掛。
+3. 結束並重新開啟 DSH，在視窗頂端的模式選單中選擇 **Alcor**。
 
-### 應用
+舊 Stella Profile 需先完成遷移，再安裝更名後的外掛。安裝及打包步驟見[原生產品指南](../../product/README.md)。
 
-| 模組 | 功能說明 |
-| ---- | -------- |
-| **事務** | 管理個人事務及多級子事務，設定截止時間、優先級和提醒，追蹤進展，支援與 Apple 提醒事項同步。 |
-| **日程** | 管理日程與時間安排，提供日曆檢視、分類和提醒，支援與 Apple 日曆同步。 |
-| **簡報** | 彙總信箱、eLearning、日程和事務資訊，提取重要事項、待辦任務及臨近截止時間，產生個人化智慧簡報。 |
-| **帳單** | 記錄收入與支出，支援帳單分類、查詢和統計分析。 |
-| **定時** | 管理自動化任務，按指定時間執行，查看執行紀錄，並透過已設定的訊息通道推送結果。 |
+| 外掛 | 功能 |
+| --- | --- |
+| `@alcor/secretary` | 管理工作和子工作、檢視行程、記錄帳單、產生簡報及安排定時更新。 |
+| `@alcor/apple-sync` | 選擇來源並授權後，與 Apple 行事曆和提醒事項同步。 |
+| `@alcor/elearning` | 連接復旦 eLearning 帳號，讀取課程、作業和公告。 |
+| `@alcor/mail` | 連接 IMAP 信箱，以唯讀方式查詢郵件並提供簡報來源。 |
+| `@alcor/agent-hub` | 在 DSH 工作台追蹤開發工作與 Agent 執行記錄。 |
 
-### 資訊
+## 本機開發
 
-| 模組 | 功能說明 |
-| ---- | -------- |
-| **記憶** | 管理 AI 長期記憶，保存使用者偏好和重要上下文，支援個人化互動。 |
-| **知識** | 管理個人知識庫，支援知識儲存、檢索和引用，為 AI 提供知識來源。 |
+需要 Node.js 24.9 以上及 Python 3.9 以上。建置 macOS 輔助程式還需 Xcode Command Line Tools。請在儲存庫根目錄執行下列指令。
 
-### 通道
-
-連接和管理微信、飛書、Telegram 等外部訊息平台，支援跨平台互動與訊息通知。
-
-### 系統
-
-| 模組 | 功能說明 |
-| ---- | -------- |
-| **能力** | 查看和管理 AI 工具、Skills 等擴充能力，增強資訊取得與任務執行能力。 |
-| **安全** | 管理全域、專案、會話及背景任務權限，控制工具呼叫和敏感操作，查看安全活動。 |
-| **設定** | 設定 AI 模型廠商、自訂模型、模型能力分配、Apple 整合、簡報及其他應用設定。 |
-| **日誌** | 查看執行日誌、錯誤資訊和執行紀錄，輔助故障排除與執行狀態分析。 |
-
-## 開始使用
-
-### 下載安裝包
-
-可用安裝包見 [GitHub Releases](https://github.com/starpickerr/Alcor/releases)。安裝、首次設定及日常使用見[使用指南](guide-Hant.md)。
-
-### 從原始碼執行
-
-環境要求：
-
-- **Python 3.10+**
-- **Node.js 22.13+**
-- **macOS**：還需安裝 Xcode 命令列工具，執行 `xcode-select --install`。
-
-以下命令適用於 macOS；Windows 命令見[使用指南](guide-Hant.md)。
-
-本機開發統一使用 Conda 的 `Stella` 環境（Python 3.12）；已有環境時略過建立命令。
-
-```bash
-git clone https://github.com/starpickerr/Alcor.git
-cd Alcor
-conda create -n Stella python=3.12
-conda activate Stella
-python -m pip install --upgrade pip setuptools
-python -m pip install -r requirements.txt
-npm --prefix desktop ci
-npm --prefix desktop run dev
+```sh
+npm ci --ignore-scripts
+npm run product:build
+npm test
+npm run dev
 ```
 
-開發時啟用介面熱更新：
+開發預覽使用獨立的 DSH Profile。執行 `npm run product:pack` 可在 `.local/artifacts/` 產生可安裝的秘書外掛。建置學校及郵件外掛還需要相鄰的 MCP 儲存庫及指定版本的建置依賴，詳見 [MCP 接入指南](../../product/mcp-connections.md)。
 
-```bash
-npm --prefix desktop run dev:hot
-```
-
-瀏覽器準備和本機資料說明見[使用指南](guide-Hant.md)。
-
-模型呼叫可能產生廠商費用。工具可以存取本機檔案和外部服務，使用前請先設定權限。
-
-## 文件與開發
-
-- [使用指南](guide-Hant.md)：安裝、設定與日常使用。
-- [文件索引](../README.md)：架構、業務模組與安全邊界。
-- [桌面開發](../../desktop/README.md)：建置和打包。
-- [貢獻指南](../../CONTRIBUTING.md)：開發環境與檢查要求；開發以 `develop` 為基線，`main` 用於發布。
-- [問題回報](https://github.com/starpickerr/Alcor/issues)：提交問題前，請從日誌中刪除憑據和個人資訊。
+原生外掛位於 `packages/`，建置腳本位於 `scripts/product/`，整合測試位於 `product/tests/`。早期獨立 Python/Electron 應用程式的說明見[舊版指南](guide-Hant.md)。
 
 ## 專案來源與授權
 
