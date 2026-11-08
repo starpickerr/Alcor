@@ -1,23 +1,11 @@
-import { BearLogo } from './bear-logo.jsx'
 import mascotImage from './assets/alcor-mascot.svg'
-import React, { useState } from 'react'
-import { Button, IconChevronDownOutlineRegular, IconCheckOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import React from 'react'
+import { IconCheckOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { localDate, monthDays, eventOnDay } from './presentation.js'
 
 export const showTime = value => new Date(value).toLocaleString('zh-CN')
 export function Field({ label, children }) { return <label className="alcor-field"><span>{label}</span>{['select', 'textarea'].includes(children?.type) ? React.cloneElement(children, { 'aria-label': label }) : children}</label> }
 export function Empty({ title, description, icon, mascot = false }) { return <div className="alcor-empty">{mascot ? <img className="alcor-empty-mascot" src={mascotImage} width="124" height="121" alt="" aria-hidden="true" draggable={false} /> : icon && <div className="alcor-empty-icon" aria-hidden="true">{icon}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div> }
-export function AgentStrip({ kind, quickChat }) {
-  const [expanded, setExpanded] = useState(false)
-  const [opened, setOpened] = useState(false)
-  return <section className="alcor-agent-strip">
-    <div className="alcor-agent-identity"><span className="alcor-agent-avatar" aria-hidden="true"><BearLogo size={30} /></span><div><h2>Alcor Agent</h2></div></div>
-    <div className="alcor-actions"><Button variant="ghost" aria-expanded={expanded} onClick={() => { setOpened(true); setExpanded(!expanded) }}><IconChevronDownOutlineRegular size={16} />{expanded ? '收起' : '展开'}</Button></div>
-    {opened && <div className="alcor-agent-expanded" hidden={!expanded}>{quickChat(kind)}</div>}
-  </section>
-}
-
-
 const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 export function MonthGrid({ day, selected, records, select, compact = false, categories = {}, open, recordTrigger, recordSelected }) {
   const month = day.slice(0, 7)

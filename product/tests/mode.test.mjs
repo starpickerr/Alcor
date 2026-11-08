@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createModeController, readModeState, startSecretarySession, readQuickHistory, isSecretaryPreset, canonicalPanel, legacyPanelIds } from '../../packages/alcor-secretary/src/mode.js'
+import { createModeController, readModeState, startSecretarySession, canonicalPanel, legacyPanelIds } from '../../packages/alcor-secretary/src/mode.js'
 
 function fixture(initial = null) {
   let saved = initial
@@ -193,28 +193,6 @@ test('mode migration preserves legacy locations, custom data, and new-key preced
   assert.equal(storage.getItem('alcor.product-mode.v1'), preferred)
 })
 
-test('local storage copy failure and conflicts never remove old quick chat references', () => {
-  const legacy = JSON.stringify({ ids: ['old', 'old'], current: 'old', customTitle: '自定义名称' })
-  const oldKey = 'stella.quick-chat.task.v1', newKey = 'alcor.quick-chat.task.v1'
-  const storage = keyedStorage({ [oldKey]: legacy })
-  assert.deepEqual(readQuickHistory(storage, 'task'), { ids: ['old'], current: 'old', customTitle: '自定义名称' })
-  assert.equal(storage.getItem(newKey), legacy); assert.equal(storage.getItem(oldKey), legacy)
-  storage.setItem(newKey, JSON.stringify({ ids: ['new'], current: 'new' }))
-  assert.deepEqual(readQuickHistory(storage, 'task'), { ids: ['new'], current: 'new' })
-  storage.setItem(newKey, 'invalid')
-  assert.deepEqual(readQuickHistory(storage, 'task'), { ids: [], current: null })
-  assert.equal(storage.getItem(oldKey), legacy)
-  const failure = keyedStorage({ [oldKey]: legacy }); failure.setItem = () => { throw Error('quota') }
-  assert.equal(readQuickHistory(failure, 'task').current, 'old')
-  assert.equal(failure.getItem(oldKey), legacy); assert.equal(failure.getItem(newKey), null)
-  const modeFailure = keyedStorage({ 'stella.product-mode.v1': JSON.stringify({ mode: 'stella', locations: {} }) })
-  modeFailure.setItem = () => { throw Error('quota') }
-  assert.equal(readModeState(modeFailure).mode, 'alcor')
-  assert.ok(modeFailure.getItem('stella.product-mode.v1'))
-  assert.equal(isSecretaryPreset('alcor'), true); assert.equal(isSecretaryPreset('stella'), true)
-  assert.equal(isSecretaryPreset('owner-default'), false)
-})
-
 test('new and legacy presets register equivalent isolated compositions', async () => {
   const { readFile } = await import('node:fs/promises')
   const { parse } = await import('yaml')
@@ -235,46 +213,6 @@ test('a destination appearing during migration takes precedence', () => {
   const storage = { getItem: key => key.startsWith('alcor.') ? (++reads === 1 ? null : current) : legacy,
     setItem: () => { throw Error('Must not overwrite the new value') } }
   assert.equal(readModeState(storage).mode, 'dsh')
-})
-
-test('embedded conversation renders both old and new secretary presets', async () => {
-  const { build } = await import('esbuild')
-  const result = await build({ entryPoints: [new URL('../../packages/alcor-secretary/src/quick-chat.jsx', import.meta.url).pathname],
-    bundle: true, packages: 'external', platform: 'node', format: 'cjs', write: false })
-  const module = { exports: {} }
-  const React = { createElement: (type, props, ...children) => ({ type, props, children }),
-    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
-    useRef: initial => ({ current: initial }), useEffect: callback => { callback() } }
-  const mockRequire = name => name === 'react' ? React : name === '@deepseek-ai/dsh-client-ui-primitives' ? { Button() {} } : (() => { throw new Error(`Unexpected import: ${name}`) })()
-  new Function('module', 'exports', 'require', result.outputFiles[0].text)(module, module.exports, mockRequire)
-  const { QuickConversation } = module.exports
-  const render = preset => QuickConversation({
-    useSession: callback => callback({ openState: 'open' }), useProjection: () => preset,
-    renderFactorySlot: () => '会话内容',
-  })
-  assert.equal(render('stella'), '会话内容')
-  assert.equal(render('alcor'), '会话内容')
-  assert.notEqual(render('other'), '会话内容')
-  const legacy = JSON.stringify({ ids: ['old-session'], current: 'old-session', customTitle: '自定义名称' })
-  const storage = keyedStorage({ 'stella.quick-chat.task.v1': legacy })
-  const retained = [], created = []
-  globalThis.window = { localStorage: storage }
-  try {
-    const props = { kind: 'task', sessions: { retain: id => { retained.push(id); return { ready: Promise.resolve(), release() {} } },
-      create: async options => { created.push(options); return 'new-session' } }, getCurrentSession: () => 'old-session',
-      useSessions: fn => fn({ phase: 'ready', byId: { 'old-session': { id: 'old-session', projectionValues: { agentPreset: 'stella' } } } }),
-      useWorkspaces: fn => fn({ phase: 'ready', archivedSessionIds: [], items: [{ workspaceId: 'work', title: 'Work', sessionIds: ['old-session'] }] }),
-      SessionProvider() {}, renderSlot() {} }
-    module.exports.QuickChat(props)
-    await Promise.resolve()
-    assert.deepEqual(retained, ['old-session']); assert.deepEqual(created, [])
-    assert.equal(JSON.parse(storage.getItem('alcor.quick-chat.task.v1')).customTitle, '自定义名称')
-    assert.equal(storage.getItem('stella.quick-chat.task.v1'), legacy)
-    globalThis.window.localStorage = keyedStorage()
-    module.exports.QuickChat(props)
-    await Promise.resolve()
-    assert.deepEqual(created, [{ workspaceId: 'work', agentPreset: 'alcor' }])
-  } finally { delete globalThis.window }
 })
 
 test('every legacy owned panel maps once while unrelated host panels remain unchanged', () => {

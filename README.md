@@ -6,6 +6,8 @@
 
 Alcor is a personal assistant for DeepSeek Harness (DSH). Its native plugins add task lists, a calendar, bills, briefings and automation to the desktop client. You can switch between Alcor and DSH in the same window and keep using the host’s models, conversations and workspaces.
 
+On Alcor pages, hover over or click the bear to chat in your current workspace. Drag it to move it. Its settings are under **Settings → Alcor**.
+
 ## Desktop installation
 
 The supported desktop target is macOS on Apple Silicon. Use an official DSH release listed in the [compatibility manifest](product/desktop-release.lock.json).

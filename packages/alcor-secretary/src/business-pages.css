@@ -32,33 +32,7 @@
 .alcor-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
 .alcor-tab-count { font-size:10px; font-weight:400; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
 .alcor-task-tabs [aria-selected=true] .alcor-tab-count { color:var(--alcor-brand); }
-.alcor-task-main > .alcor-agent-strip { margin-top:28px; padding:10px 0 0; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; }
-.alcor-task-main .alcor-agent-identity h2 { font-size:12px; font-weight:500; }
-.alcor-agent-avatar { display:grid; place-items:center; width:34px; height:34px; }
-.alcor-agent-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
-.alcor-agent-identity { display:flex; gap:10px; align-items:center; }
-.alcor-agent-identity h2 { font-size:14px; line-height:22px; }
-.alcor-agent-identity > svg { color:var(--dsw-alias-label-secondary); flex-shrink:0; }
-.alcor-agent-strip button[aria-expanded=true] > svg { transform:rotate(180deg); }
-.alcor-agent-identity p { margin:2px 0 0; font-size:13px; color:var(--dsw-alias-label-secondary); }
-.alcor-agent-expanded { flex-basis:100%; min-width:0; border-top:1px solid var(--dsw-alias-border-l3); }
-.alcor-agent-expanded[hidden] { display:none; }
-.alcor-quick-chat { min-width:0; }
-.alcor-quick-chat-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 0; border-bottom:1px solid var(--dsw-alias-border-l3); }
-.alcor-quick-chat-toolbar label { display:flex; align-items:center; gap:8px; min-width:0; color:var(--dsw-alias-label-secondary); font-size:13px; }
-.alcor-quick-chat-toolbar select { max-width:220px; }
-.alcor-quick-chat-toolbar > button { margin-left:auto; }
-.alcor-quick-chat-body { display:flex; height:520px; max-height:75vh; min-height:320px; min-width:0; }
-.alcor-quick-chat-body > [data-slot] { display:contents; }
-.alcor-quick-chat-notice { padding:12px 0; }
-.alcor-quick-chat-note { margin:10px 0 0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:1.6; }
-@media (max-width:600px) {
-  .alcor-quick-chat-toolbar { gap:8px; }
-  .alcor-quick-chat-toolbar label { width:100%; }
-  .alcor-quick-chat-toolbar label > span { flex:0 0 56px; }
-  .alcor-quick-chat-toolbar select { flex:1; max-width:100%; }
-  .alcor-quick-chat-body { height:480px; min-height:300px; }
-}
+
 .alcor-task-filters { display:grid; grid-template-columns:minmax(120px,1fr) auto auto; gap:8px; margin:18px 0; }
 .alcor-task-filters select { font-size:12px; border-color:transparent; background:var(--dsw-alias-bg-layer-2); }
 .alcor-task-quick-add { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--dsw-alias-border-l3); border-bottom:1px solid var(--dsw-alias-border-l3); }
@@ -159,8 +133,6 @@
 .alcor-calendar-toolbar [role=tab] { font-size:12px; padding:0 13px; }
 .alcor-calendar-period { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
 .alcor-calendar-coverage,.alcor-calendar-loading { margin:0 0 12px; font-size:12px; color:var(--dsw-alias-label-secondary); }
-.alcor-calendar-main > .alcor-agent-strip { padding:10px 0 0; margin-top:16px; border:0; border-top:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; }
-.alcor-calendar-main .alcor-agent-identity h2 { font-size:12px; font-weight:500; }
 .alcor-time-scroll { overflow-x:auto; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
 .alcor-time-viewport { max-height:min(700px,calc(100dvh - 320px)); min-height:280px; overflow-y:auto; overscroll-behavior:contain; }
 .alcor-time-grid { position:relative; min-width:calc(56px + var(--alcor-day-count) * 88px); }
@@ -311,7 +283,6 @@
   .alcor-app-header h1 { font-size:22px; }
   .alcor-page-content { padding:20px; }
   .alcor-page-feedback { padding:0 20px; }
-  .alcor-agent-strip { padding:16px; gap:14px; }
   .alcor-task-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .alcor-task-filters > :first-child { grid-column:1 / -1; }
   .alcor-calendar-workspace { padding:16px; }
@@ -673,7 +644,6 @@
 .alcor-page-feedback .alcor-notice { margin:0; }
 .alcor-hub-feedback .alcor-notice { margin-bottom:12px; }
 .alcor-calendar-main > .alcor-notice { margin-bottom:12px; }
-.alcor-quick-chat > .alcor-notice { margin:12px 0; }
 .alcor-briefing-source-settings .alcor-notice { margin:12px 0; }
 .alcor-business > .alcor-notice { margin:16px 24px; }
 .alcor-mode-bar > .alcor-mode-notice { padding:3px 8px; font-size:11px; }

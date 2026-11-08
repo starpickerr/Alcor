@@ -2,18 +2,20 @@ import noticeStyle from './notice.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
 import { canonicalPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
 import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
 import { AutomationPage } from './automation.jsx'
-import { QuickChat, QuickConversation } from './quick-chat.jsx'
+import { BearOverlay, BearTimeline } from './bear.jsx'
+import { createBearState, installPresetFilter } from './bear-state.js'
+import bearStyle from './bear.css'
 import deskBaseStyle from './desk.css'
 import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + bearStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
 import { Button, Input, Menu, MenuItemButton, FishLogo, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -50,7 +52,8 @@ function Workbench({ startSession }) {
   </section>
 }
 
-function Preferences({ describe, update }) {
+function Preferences({ describe, update, bear }) {
+  const prefs = useSyncExternalStore(bear.subscribe, bear.getSnapshot)
   const [descriptor, setDescriptor] = useState()
   const [name, setName] = useState('')
   const [status, setStatus] = useState({message:'正在加载…',tone:'info'})
@@ -75,22 +78,27 @@ function Preferences({ describe, update }) {
       setDescriptor(result.value); setStatus({message:'已保存',tone:'success'})
     } catch { setStatus({message:'连接中断，请重新打开以确认保存结果。',tone:'error'}) }
   }
-  return <form className="alcor-preference-form" onSubmit={save}><h2>Alcor</h2><label htmlFor="alcor-display-name">助手名称</label>
+  return <><form className="alcor-preference-form" onSubmit={save}><h2>Alcor</h2><label htmlFor="alcor-display-name">助手名称</label>
     <Input id="alcor-display-name" value={name} maxLength={80} required disabled={!descriptor} onChange={e => setName(e.target.value)} />
     <Button type="submit" variant="outline" disabled={!descriptor || !name.trim()}>保存</Button>{status.message && <Notice tone={status.tone} role={status.tone === 'error' ? 'alert' : 'status'}>{status.message}</Notice>}</form>
+    <section className="alcor-bear-options"><h3>Alcor 小熊</h3>
+      <label><input type="checkbox" checked={prefs.enabled} onChange={e => bear.update({enabled:e.target.checked})} />显示 Alcor 小熊</label>
+      <label><input type="checkbox" checked={prefs.hover} disabled={!prefs.enabled} onChange={e => bear.update({hover:e.target.checked})} />悬停展开输入框</label>
+      <Button size="sm" variant="outline" disabled={prefs.position.every(n => n === 1)} onClick={() => bear.update({position:[1,1]})}>恢复默认位置</Button>
+    </section></>
 }
 
 export async function apply(ctx) {
-  ctx.slots.registerFactory({ name: 'alcor.quick-chat', scope: 'root',
-    children: { 'alcor.quick-chat.conversation': { kind: 'single', scope: 'session' } },
-    inject: () => ({ sessions: ctx.sessions, getCurrentSession: () => ctx.uiSession.adapter.current.getSnapshot().props.sessionId }),
-  }, QuickChat)
-  ctx.slots.inject('alcor.quick-chat.conversation', () => ctx.slots.register({ name: 'alcor.quick-chat.conversation' }, QuickConversation))
+  installPresetFilter(ctx)
+  let storage
+  try { storage = window.localStorage } catch { /* Settings remain available in memory. */ }
+  const state = createBearState(storage)
   ctx.effect(() => {
     const style = document.createElement('style')
     style.textContent = deskStyle
     document.head.append(style)
-    return () => style.remove()
+    window.addEventListener('storage', state.onStorage)
+    return () => {window.removeEventListener('storage', state.onStorage); style.remove()}
   })
   await ctx.remote.$mount(remote)
   await ctx.remote.$mount(organizerRemote)
@@ -106,7 +114,7 @@ export async function apply(ctx) {
       return workspace ? { workspaceId: workspace.workspaceId } : {}
     }
     ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({ name: 'plugins.detail.section', id: 'alcor-briefing-sources', inject: () => ({ api: ctx.remote.alcorOrganizer }) }, PluginBriefingSources))
-    const preferences = () => <div className="alcor-settings-content"><Preferences describe={describe} update={update} /></div>
+    const preferences = () => <div className="alcor-settings-content"><Preferences describe={describe} update={update} bear={state.preferences} /></div>
     const navigate = panel => { modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
@@ -130,10 +138,14 @@ export async function apply(ctx) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ startSession: () => ctx.uiWorkspace.startSession() }) }, Workbench))
     ctx.slots.inject('shell.top', () => {
-      let storage
-      try { storage = window.localStorage } catch { /* The controller reports unavailable persistence. */ }
       const controller = createModeController(ctx, storage)
       modeController = controller
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name:'shell.overlay', id:'alcor-bear',
+        children:{'alcor.bear.timeline':{kind:'single',scope:'session'}},
+        inject:() => ({state, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
+      }, BearOverlay))
+      ctx.slots.inject('alcor.bear.timeline', () => ctx.slots.register({name:'alcor.bear.timeline'}, BearTimeline))
       let releaseSidebar
       const syncSidebar = () => {
         if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {

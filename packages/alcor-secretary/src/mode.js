@@ -4,28 +4,6 @@ const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'ste
 export const legacyPanelIds = Object.keys(oldPanels)
 export const canonicalPanel = panel => Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
 const ownPanels = new Set(Object.values(oldPanels))
-export function readMigratedStorage(storage, key, legacyKey) {
-  const current = storage.getItem(key)
-  if (current !== null) return current
-  const legacy = storage.getItem(legacyKey)
-  if (legacy !== null) {
-    try {
-      const existing = storage.getItem(key)
-      if (existing !== null) return existing
-      storage.setItem(key, legacy)
-    } catch { /* Keep using the old value without deleting it. */ }
-  }
-  return legacy
-}
-export const quickHistoryKey = kind => `alcor.quick-chat.${kind}.v1`
-export const isSecretaryPreset = preset => preset === 'alcor' || preset === 'stella'
-export function readQuickHistory(storage, kind) {
-  try {
-    const value = JSON.parse(readMigratedStorage(storage, quickHistoryKey(kind), `stella.quick-chat.${kind}.v1`))
-    if (!Array.isArray(value?.ids) || !value.ids.every(id => typeof id === 'string' && id.length > 0)) return { ids: [], current: null }
-    return { ...value, ids: [...new Set(value.ids)], current: value.ids.includes(value.current) ? value.current : null }
-  } catch { return { ids: [], current: null } }
-}
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
     agentPreset: 'alcor',
