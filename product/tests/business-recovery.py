@@ -715,8 +715,8 @@ class Recovery(unittest.TestCase):
         self.business.due_reminders()
         self.assertEqual(len(self.business.tasks.list_todos()), 1)
         self.assertEqual(self.business.tasks.get_todo(target['id'])['due_on'], '2026-11-09')
-        windows = self.business.source_windows('2026-11-07', '2026-11-07T12:00:00Z', [{'source': 'elearning', 'accountId': 'test'}])
-        self.assertEqual(datetime.fromisoformat(windows[0]).astimezone(timezone.utc).isoformat(), '2026-11-06T12:00:00+00:00')
+        windows = self.business.source_windows('2026-11-07', '2026-11-07T12:00:00Z', [{'source': 'elearning', 'accountId': 'test'}], time_zone='Asia/Shanghai')
+        self.assertEqual(datetime.fromisoformat(windows[0].replace('Z','+00:00')).astimezone(timezone.utc).isoformat(), '2026-11-05T16:00:00+00:00')
         self.assertEqual(service.store.pending_projection_events(), [])
 
 

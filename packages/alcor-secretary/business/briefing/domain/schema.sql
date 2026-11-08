@@ -242,3 +242,9 @@ CREATE TABLE IF NOT EXISTS briefing_mail (
     snapshot TEXT NOT NULL,
     PRIMARY KEY (briefing_id, source_item_id)
 );
+
+-- A successful collection, including an unchanged day, owns exactly one checkpoint.
+CREATE TABLE IF NOT EXISTS briefing_collections (
+    request_id TEXT PRIMARY KEY, window_end TEXT NOT NULL, briefing_id TEXT NOT NULL,
+    revision INTEGER NOT NULL, receipt TEXT NOT NULL
+);

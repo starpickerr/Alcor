@@ -128,7 +128,7 @@ test('native MCP uses DSH policy directly while preserving personal turn and dis
   assert.equal((await call(secretary)).isError, true)
 })
 
-test('local automation tools deny delegated/unknown turns and reuse a daily briefing identity', async context => {
+test('local automation tools deny delegated/unknown turns and reuse a delivery identity within one turn', async context => {
   const ctx = new Context(); ctx.provide('agents', { turnBoundaryOf: () => ({ openTurnStartSeq: simulatedTurn, lastTurn: simulatedTurn }) }); let simulatedTurn = 0
   context.after(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, {})
@@ -155,14 +155,15 @@ test('local automation tools deny delegated/unknown turns and reuse a daily brie
   assert.equal((await call(agent, 'alcor_generate_briefing')).isError, false)
   assert.equal(saved.length, 2)
   assert.equal(saved[0].requestId, saved[1].requestId)
-  const hash = createHash('sha256').update(`stella-daily-briefing:${saved[0].date}`).digest('hex')
-  assert.equal(saved[0].requestId, `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`)
+  await turn(agent, 'schedule')
+  assert.equal((await call(agent, 'alcor_generate_briefing')).isError, false)
+  assert.notEqual(saved[0].requestId,saved[2].requestId)
   assert.deepEqual(saved[0].sources.map(source => source.source), ['alcor_tasks'])
   const child = { session: { header: { origin: 'subagent', parentSession: 'parent' } } }
   bindScopeParent(child, agent)
   await turn(child, 'user')
   for (const name of ['alcor_generate_briefing', 'alcor_review_tasks']) assert.equal((await call(child, name)).isError, true)
-  assert.equal(saved.length, 2)
+  assert.equal(saved.length, 3)
   await turn(agent, 'unknown')
   assert.equal((await call(agent, 'alcor_review_tasks')).isError, true)
   await turn(agent, 'user')
@@ -170,7 +171,7 @@ test('local automation tools deny delegated/unknown turns and reuse a daily brie
   assert.equal(started.isError, false)
   assert(JSON.stringify(started).includes('independent-root'))
   assert(!JSON.stringify(started).includes('\"saved\":true'))
-  assert.equal(saved.length, 2, 'Manual chat starts a task; only scheduled calls wait for business completion')
+  assert.equal(saved.length, 3, 'Manual chat starts a task; only scheduled calls wait for business completion')
   const result = await call(agent, 'alcor_review_tasks')
   assert.equal(result.isError, false)
   assert(JSON.stringify(result).includes('Synthetic task'))

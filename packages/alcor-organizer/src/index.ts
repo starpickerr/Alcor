@@ -346,7 +346,10 @@ export default class Organizer extends TypertRemoteService {
 
   private async businessRecords() {
     const current = await this.businessWorker.call('records')
-    return [...current, ...[...this.domain.table('records').entries()].map(([, value]) => value).filter(item => item.kind === 'briefing')]
+    const days = new Map()
+    for (const [,record] of this.domain.table('records').entries()) if (record.kind === 'briefing') days.set(record.date,record)
+    for (const record of current) if (record.kind === 'briefing') days.set(record.date,record)
+    return [...current.filter(record => record.kind !== 'briefing'), ...days.values()]
   }
 
   // Only the live explicit restore call may access these conditional owner methods.
@@ -454,7 +457,7 @@ export default class Organizer extends TypertRemoteService {
     }
     const sources = input.sources ?? await this.effectiveSources()
     return this.briefingGenerator.start({ record: buildBriefing([], input.date, input.notes, new Date().toISOString()), requestId: input.requestId,
-      parent, workspaceId: input.workspaceId, sources, authorize: this.briefingAuthorization(sources) })
+      parent, workspaceId: input.workspaceId, sources, trigger:input.trigger, authorize: this.briefingAuthorization(sources) })
   }
 
   @Remote

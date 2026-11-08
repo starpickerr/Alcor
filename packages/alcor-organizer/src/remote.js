@@ -12,7 +12,7 @@ const briefingSources = z.array(z.union([
   z.object({ source: z.string().regex(/^plugin:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9._:-]{1,80}$/), accountId: z.string().min(1).max(200), label: z.string().max(200).optional(), tool: z.string().regex(/^[A-Za-z0-9_-]{1,64}_briefing_fetch$/), method: z.literal('briefing_fetch'), arguments: z.object({ source_id: z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/) }).strict() }).strict().refine(value => value.source === `plugin:${value.tool.slice(0, -'_briefing_fetch'.length)}:${value.arguments.source_id}`),
 ])).max(20)
 
-const briefingRequest = z.object({ date, notes: z.string().max(12000), requestId: z.uuid(), parentSessionId: z.string().min(1).max(200).optional(), workspaceId: z.string().min(1).max(200).optional(), sources: briefingSources.optional() }).strict()
+const briefingRequest = z.object({ trigger:z.enum(['manual','scheduled']).optional(), date, notes: z.string().max(12000), requestId: z.uuid(), parentSessionId: z.string().min(1).max(200).optional(), workspaceId: z.string().min(1).max(200).optional(), sources: briefingSources.optional() }).strict()
 export const briefingRunSchema = z.object({ requestId: z.uuid(), date, phase: z.enum(['starting', 'collecting', 'model', 'completed', 'cancelled', 'failed', 'interrupted']), message: z.string(), sessionId: z.string().optional(), model: z.object({ provider: z.string(), model: z.string(), reasoningEffort: z.string().optional() }).strict().optional(), createdAt: z.string(), updatedAt: z.string(), briefingId: z.string().optional(), completedSources: z.number().int().nonnegative(), completedBatches: z.number().int().nonnegative() }).strict()
 
 export const schemas = {

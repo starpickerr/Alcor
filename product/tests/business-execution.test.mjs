@@ -180,16 +180,17 @@ test('desktop reminder outbox retries failures, suppresses acknowledged and canc
   await delivery.close()
 })
 
-test('model briefings collect MCP pages, validate complete decisions, retain partial errors and commit one revision', async context => {
+test('model briefings collect MCP pages, validate complete decisions, retry a failed source and commit one revision', async context => {
   const { worker, invoke } = await fixture(context)
   const date = new Date().toISOString().slice(0, 10)
   const stamp = new Date(Date.now() - 1000).toISOString()
   let modelCalls = 0
   const pages = []
+  let mailOffline = true
   const generator = new TestBriefingGenerator({ tools: { execute: async ({ calls }) => {
     const args = JSON.parse(calls[0].arguments)
     pages.push(args)
-    if (calls[0].name.includes('__email__')) return { results: [{ result: { isError: true, error: { message: 'Synthetic source unavailable' } } }] }
+    if (calls[0].name.includes('__email__')) return {results:[{result:mailOffline ? {isError:true,error:{message:'Synthetic source unavailable'}} : {value:{items:[],cursors:{}}}}]}
     return { results: [{ result: { isError: false, value: { structuredContent: { value: { source_items: [{ source_id: 'source-' + args.offset, title: 'Candidate ' + args.offset, snippet: 'Due tomorrow', occurred_at: stamp }], next_offset: args.offset === 0 ? 1 : null } } } } }] }
   } }, subagents: { startActivation: async ({ request }) => {
     assertObjectJsonSchema(request.outputSchema)
@@ -213,7 +214,12 @@ test('model briefings collect MCP pages, validate complete decisions, retain par
   ]
   await worker.call('source_settings', { sources })
   assert.deepEqual(await worker.call('source_settings'), sources)
-  const result = await generator.generate({ record, requestId, parent: {}, sources })
+  await assert.rejects(generator.generate({record,requestId,parent:{},sources}),/Synthetic source unavailable/)
+  assert.equal((await invoke('briefing','list_briefings')).length,0)
+  assert.equal(await invoke('briefing','get_cursor',{source:'elearning',account_id:'synthetic',cursor_key:'until'}),null)
+  mailOffline = false
+  await generator.resume(requestId,async()=>{})
+  const result = await generator.wait(requestId)
   assert.equal(result.body, '已核对两条来源，准备处理。')
   assert.equal(modelCalls, 1)
   const partial = new TestBriefingGenerator({ tools: { execute: async ({ calls }) => {
@@ -230,18 +236,19 @@ test('model briefings collect MCP pages, validate complete decisions, retain par
   assert.deepEqual(receivedCursors, {}, 'A different source method has a different cursor scope')
   assert.deepEqual(pages.filter(page => 'offset' in page).map(page => page.offset), [0, 1])
   const saved = await invoke('briefing', 'get_briefing', { briefing_id: result.business.briefingId })
-  assert.equal(saved.briefing.status, 'partial')
+  assert.equal(saved.briefing.status, 'completed')
   assert.equal(saved.mail.length, 2)
   assert.equal(saved.items.length, 2)
-  assert(saved.briefing.error_message.includes('Synthetic source unavailable'))
+  assert.equal(saved.briefing.error_message, '')
   assert.equal((await invoke('briefing', 'get_cursor', { source: 'elearning', account_id: 'synthetic', cursor_key: 'until' })).cursor_value, pages[0].until)
-  assert.equal(await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' }), null)
+  assert.equal((await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' })).cursor_value, pages[0].until)
   const same = await generator.generate({ record, requestId, parent: {}, sources })
   assert.equal(same.id, result.id)
   assert.equal(modelCalls, 1)
-  const invalid = await worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: stamp }], cursors: {} }], submissions: [] })
+  const inputStamp = new Date().toISOString()
+  const invalid = await worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: inputStamp }], cursors: {} }], submissions: [] })
   assert(invalid.model)
-  await assert.rejects(worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: stamp }], cursors: {} }], submissions: [{ decisions: [] }] }), /不能遗漏/)
+  await assert.rejects(worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: inputStamp }], cursors: {} }], submissions: [{ decisions: [] }] }), /不能遗漏/)
 })
 
 
@@ -375,14 +382,14 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   assert.equal(modelCalls,1,'No model call for an unchanged refresh')
   assert.equal(seen.at(-1).since,first.until)
   assert.equal(seen.at(-1).cursors.elearning_state,'v1')
-  const current=await invoke('briefing','get_briefing',{briefing_id:'brf-'+day})
+  const current=(await invoke('briefing','get_briefing',{briefing_id:(await invoke('briefing','list_briefings'))[0].id}))
   assert.equal(current.items.length,2,'Unchanged cards remain in the current day report')
   changed=true;empty=false
   await generate()
   assert.equal(modelCalls,3,'Only the changed item requires selection and writing')
   const beforeFailure=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   failure=true
-  await generate()
+  await assert.rejects(generate(),/Synthetic source failure/)
   assert.deepEqual(await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope}),beforeFailure)
   failure=false;scope.arguments.course_ids=['two']
   assert.deepEqual(await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope}),{},'Do not reuse another course selection cursor')
@@ -394,12 +401,12 @@ test('first source window ignores legacy history and empty selection has no impl
   const scope={source:'elearning',accountId:'school',tool:'mcp__elearning__fetch',method:'fetch',arguments:{}}
   const old=await invoke('briefing','start_briefing',{briefing_date:'2020-01-01'})
   await invoke('briefing','complete_briefing',{briefing_id:old.id,payload:{status:'completed',run_at:'2020-01-01T20:00:00Z',window_start:'1990-01-01T00:00:00Z',window_end:'2020-01-01T20:00:00Z',source_windows:{'elearning:school':{source:'elearning',account_id:'school',start:'1990-01-01T00:00:00Z',end:'2020-01-01T20:00:00Z'}}}})
-  const [start]=await worker.call('source_windows',{date:'2026-11-06',run_at:'2026-11-06T08:00:00Z',sources:[scope]})
-  assert(Date.parse(start)>=Date.parse('2026-11-04T20:00:00Z'),'First connection must use a bounded bootstrap window')
+  const [start]=await worker.call('source_windows',{date:'2026-11-06',run_at:'2026-11-06T08:00:00Z',sources:[scope],time_zone:'Asia/Shanghai'})
+  assert.equal(Date.parse(start),Date.parse('2026-11-04T16:00:00Z'),'Previous local midnight')
 })
 
 
-test('incremental reports isolate days and selections, invalidate changed rules and keep cursors on model failure', async context => {
+test('incremental reports isolate days and selections, apply changed rules only to new information and keep cursors on model failure', async context => {
   const {worker,invoke}=await fixture(context)
   const scope={source:'elearning',accountId:'school',tool:'mcp__elearning__fetch',method:'fetch',arguments:{course_ids:['one']}}
   const makeSource=(items,stamp)=>({source:'elearning',account_id:'school',items,cursors:{elearning_state:stamp,until:stamp},window_start:'2026-11-05T12:00:00Z'})
@@ -422,7 +429,7 @@ test('incremental reports isolate days and selections, invalidate changed rules 
   assert.equal(calls,1)
   await invoke('briefing','create_rule',{payload:{text:'Keep concrete deadlines',enabled:true,source:'*'}})
   await finish('2026-11-06','2026-11-06T09:00:00Z',makeSource([],'2026-11-06T09:00:00Z'))
-  assert.equal(calls,2,'New rules reconsider current day candidates')
+  assert.equal(calls,1,'New rules do not reanalyze existing candidates')
   const before=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   const changed={...item,snippet:'Changed',payload:{...item.payload,body:'Changed'}}
   const pending=await worker.call('generated_briefing',{record:buildBriefing([],'2026-11-06','','2026-11-06T10:00:00Z'),request_id:randomUUID(),sources:[makeSource([changed],'2026-11-06T10:00:00Z')],configurations:[scope],run_at:'2026-11-06T10:00:00Z'})
@@ -434,7 +441,7 @@ test('incremental reports isolate days and selections, invalidate changed rules 
   assert.notEqual(switched.body,'Report','Old narrative must not survive a changed course selection')
   const nextDay=await finish('2026-11-07','2026-11-07T08:00:00Z',makeSource([],'2026-11-07T08:00:00Z'),other)
   assert.equal(nextDay.business.snapshot.items.length,0,'Previous day candidates never enter the next day model')
-  assert.equal(calls,2,'Empty windows do not call a model')
+  assert.equal(calls,1,'Empty windows do not call a model')
   assert.deepEqual(await worker.call('source_cursors',{source:'elearning',account_id:'another-school',configuration:{...scope,accountId:'another-school'}}),{})
 })
 

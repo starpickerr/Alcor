@@ -27,27 +27,31 @@ export class BriefingGenerator {
     return state.run
   }
 
-  async collect(config, since, until, signal, authorize = async () => {}) {
+  async collect(config, since, until, signal, authorize = async () => {}, window = {}) {
     try {
-      if (config.source === 'calendar_agenda') return this.worker.call('calendar_agenda', { run_at: until })
-      if (['alcor_tasks', 'alcor_bills'].includes(config.source)) return this.worker.call('local_source', { source: config.source, run_at: until })
+      if (config.source === 'calendar_agenda') return this.worker.call('calendar_agenda', { run_at: until, since })
+      if (['alcor_tasks', 'alcor_bills'].includes(config.source)) return this.worker.call('local_source', { source: config.source, run_at: until, since })
       const rows = []
       const errors = []
       const cursors = {}
       const paged = ['fetch', 'briefing_fetch'].includes(config.method)
-      const saved = await this.worker.call('source_cursors', { source: config.source, account_id: config.accountId, configuration: config })
+      let saved = await this.worker.call('source_cursors', { source: config.source, account_id: config.accountId, configuration: config })
+      if (saved.until && window.floor && Date.parse(saved.until) < Date.parse(window.floor)) saved = {}
       let offset = 0
       const seen = new Set()
       while (true) {
         if (signal.aborted) throw signal.reason
         await authorize()
-        const value = await readBriefingSourcePage(this.ctx, config, { since, until, offset, cursors: saved, signal })
+        // eLearning uses an exclusive lower bound; include midnight on a fresh/clipped window.
+        const lower = config.method === 'fetch' && window.include_start ? new Date(Date.parse(since)-1).toISOString() : since
+        const value = await readBriefingSourcePage(this.ctx, config, { since:lower, until, offset, cursors: saved, signal })
         const items = value.items ?? value.source_items
         rows.push(...items)
         errors.push(...(value.errors ?? []))
         Object.assign(cursors, value.cursors)
         if (!paged || value.next_offset === null || value.next_offset === undefined) {
-          return { source: config.source, account_id: config.accountId, items: rows, cursors: { ...cursors, until }, errors, window_start: since }
+          if (value.truncated) throw new Error('来源响应被截断且没有下一页。')
+          return { source: config.source, account_id: config.accountId, pages:seen.size+1, items: rows, cursors: { ...cursors, until }, errors, window_start: since }
         }
         if (!Number.isSafeInteger(value.next_offset) || value.next_offset <= offset || seen.has(value.next_offset)) throw new Error('来源分页没有前进。')
         if (seen.size >= 1000) throw new Error('来源分页过多，请缩小范围后重试。')
@@ -59,7 +63,7 @@ export class BriefingGenerator {
     }
   }
 
-  async start({ record, requestId, parent, workspaceId, sources, resume = false, authorize = async () => {} }) {
+  async start({ record, requestId, parent, workspaceId, sources, trigger = 'manual', resume = false, authorize = async () => {} }) {
     if (this.closed) throw new Error('简报功能已停用。')
     if (this.current) throw new Error('简报正在生成，请等待完成或取消。')
     if (!sources.length && !record.notes.trim()) throw new Error('请选择简报来源，或填写补充材料。')
@@ -71,7 +75,7 @@ export class BriefingGenerator {
     try {
       await authorize()
       const selection = parent?.model?.current()
-      const context = { ...(workspaceId ? { workspaceId } : parent?.session?.header?.cwd ? { cwd: parent.session.header.cwd } : {}),
+      const context = { trigger, ...(workspaceId ? { workspaceId } : parent?.session?.header?.cwd ? { cwd: parent.session.header.cwd } : {}),
         ...(selection ? { model: selection } : {}) }
       state.run = await this.worker.call('briefing_run', { method: 'prepare', request_id: requestId, record, sources, context })
       if (state.run.phase === 'completed' || !resume && ['failed', 'cancelled', 'interrupted'].includes(state.run.phase)) { this.current = undefined; resolve(); return this.publicRun(state.run) }
@@ -94,7 +98,7 @@ export class BriefingGenerator {
 
   async resume(requestId, authorize) {
     const run = await this.worker.call('briefing_run', { method: 'get', request_id: requestId })
-    return this.start({ record: run.record, requestId, sources: run.sources, resume: true, authorize })
+    return this.start({ record: { ...run.record, date:run.requestedDate ?? run.date }, requestId, sources: run.sources, trigger:run.context.trigger, resume: true, authorize })
   }
 
   async wait(requestId) {
@@ -142,12 +146,14 @@ export class BriefingGenerator {
         await authorize()
         const config = run.sources[index]
         await this.checkpoint(state, { message: `正在采集 ${index + 1}/${run.sources.length}：${config.label || config.source}` })
-        const source = await this.collect(config, run.windows[index], run.runAt, signal, authorize)
+        const source = await this.collect(config, run.windows[index], run.runAt, signal, authorize, run.window)
         signal.throwIfAborted()
-        run = await this.checkpoint(state, { collected: [...run.collected, source] })
+        if (source.errors?.length) throw new Error('来源采集失败：' + source.errors.join('；'))
+        run = await this.checkpoint(state, { collected: [...run.collected, {...source, collected_at:new Date().toISOString()}] })
       }
-      const compose = (submissions, validateOnly = false) => this.worker.call('generated_briefing', { record: run.record, request_id: run.requestId,
-        sources: run.collected, configurations: run.sources, submissions, run_at: run.runAt, rules_snapshot: run.rules, baseline: run.baseline, validate_only: validateOnly })
+      const compose = (submissions, validateOnly = false) => this.worker.call('generated_briefing', {
+        request_id:run.requestId, submissions, validate_only:validateOnly,
+      })
       await authorize()
       signal.throwIfAborted()
       let result = await compose(run.submissions)

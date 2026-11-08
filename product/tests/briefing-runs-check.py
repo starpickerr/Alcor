@@ -1,7 +1,7 @@
 """Independent briefing lifecycle on the unchanged official Desktop; synthetic model/data only."""
 import json
 import os
-import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -73,11 +73,12 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        with tempfile.TemporaryDirectory(prefix='stella-briefing-independent-') as temporary, sync_playwright() as playwright:
+        with fresh_test_home(prefix='alcor-briefing-independent-') as temporary, sync_playwright() as playwright:
             home = Path(temporary)
             env = desktop.environment(home)
             profile = Path(env['DSH_HOME']) / 'profiles/desktop'
             profile.mkdir(parents=True)
+            initialize_fresh(temporary, home / 'dsh', profile)
             (profile / 'package.json').write_text(json.dumps({'name': 'briefing-run-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
             (profile / 'cordis.patch.yml').write_text(f'''- id: agent-default-model
   config:
@@ -108,6 +109,12 @@ def main():
                 business(page, 'configure_sources', {'sources': [{'source': 'plugin:synthetic:inbox', 'accountId': 'test-account', 'label': 'Synthetic inbox', 'tool': 'synthetic_briefing_fetch', 'method': 'briefing_fetch', 'arguments': {'source_id': 'inbox'}}]})
                 page.get_by_role('button', name='简报', exact=True).click()
                 page.get_by_role('heading', name='简报', exact=True).wait_for()
+                page.get_by_role('button', name='简报设置', exact=True).click()
+                page.get_by_label('简报时区').fill('Asia/Shanghai')
+                page.get_by_role('button',name='保存时区').click()
+                expect(page.get_by_role('button',name='保存时区')).to_be_disabled()
+                assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
+                page.get_by_role('button',name='返回简报').click()
                 page.get_by_role('button', name='生成今日简报', exact=True).click()
                 deadline = time.monotonic() + 35
                 while not Provider.waiting.is_set() and time.monotonic() < deadline and not Provider.failure:
@@ -140,6 +147,10 @@ def main():
                 expect(page.get_by_role('button', name='查看条目：Plugin item 0', exact=True)).to_be_visible(timeout=35000)
                 finished = business(page, 'generation_status')
                 assert finished['phase'] == 'completed' and finished['sessionId'] == run['sessionId']
+                expect(page.get_by_role('button',name='更新今日简报')).to_be_visible()
+                page.get_by_role('button',name='查看条目：Plugin item 0',exact=True).click()
+                expect(page.get_by_label('处理状态',exact=False)).to_have_count(0)
+                page.get_by_role('button',name='返回报告列表',exact=True).click()
                 assert finished['completedBatches'] == 1
                 assert Provider.batches == ['global', 'global']
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
@@ -158,6 +169,10 @@ def main():
                 assert scheduled['phase'] == 'completed' and scheduled['requestId'] != run['requestId'], scheduled
                 assert scheduled['sessionId'] != run['sessionId']
                 assert len(reads()) == 2, 'Scheduled local briefings must not read external sources'
+                saved = business(page,'get_briefing',{'briefing_id':scheduled['briefingId']})
+                assert any(item['source'].startswith('plugin:') for item in saved['items']), 'Local updates must preserve earlier external cards'
+                assert saved['revisions'][0]['trigger'] == 'scheduled'
+                assert len(business(page,'list_briefings')) == 1
                 page.set_viewport_size({'width': 430, 'height': 900})
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()

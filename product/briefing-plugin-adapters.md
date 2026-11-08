@@ -33,7 +33,7 @@
 {"source_id":"inbox","account_id":"stable-account-id","items":[{"source_id":"document-123","title":"标题","occurred_at":"2026-11-04T12:00:00Z","snippet":"内容摘要","url":"https://example.com/item/123"}],"next_offset":null,"errors":[]}
 ```
 
-每页最多 100 项。条目 `source_id` 必须在该账号和资源范围内稳定，`occurred_at` 为带时区的 ISO 时间；可选 `sender`、`payload` 对象。`next_offset` 为前进的整数偏移，结束必须为 null；错误不得伪装为空来源成功，部分失败在 `errors` 中报告。适配层限制分页次数，拒绝格式错误、账号或资源不一致。工具返回原生对象；MCP 包装使用 `structuredContent.value` 中的同一对象。
+每页最多 100 项。条目 `source_id` 必须在该账号和资源范围内稳定，`occurred_at` 为带时区的 ISO 时间；可选 `thread_id`、`sender`、`payload`、`published_at` 和 `source_updated_at`。请提供原始的发布时间或实际更新时间，截止时间和采集时间分别保存在对应字段。成功提交的窗口为左开右闭；首次采集或跨过回溯下限时包含前一日零点。一个来源返回错误会保留前次检查点，重试复用已完成来源。`next_offset` 为前进的整数偏移，结束必须为 null；错误不得伪装为空来源成功，部分失败在 `errors` 中报告。适配层限制分页次数，拒绝格式错误、账号或资源不一致。工具返回原生对象；MCP 包装使用 `structuredContent.value` 中的同一对象。
 
 Alcor 将来源保存为 `plugin:<prefix>:<id>`、原账号和工具名，并保留所选范围。插件改名或改变稳定 ID 后，需要用户重新选择；不会猜测迁移到其他账号。插件内部秘密、私有对象和业务库不作为适配层依赖。
 

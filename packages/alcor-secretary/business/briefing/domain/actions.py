@@ -25,7 +25,7 @@ class AdapterUnavailable(RuntimeError):
     """Todo/calendar adapters are host-side; the plugin worker cannot reach them."""
 
 
-DEFAULT_PREFERENCES = {'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': []}
+DEFAULT_PREFERENCES = {'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': []}
 
 
 def _now():
@@ -206,6 +206,15 @@ class BriefingActions:
                     raise ValueError('invalid preference option')
                 if 'important_types' in payload and (not isinstance(payload['important_types'], list) or any(not isinstance(v, str) or len(v)>100 for v in payload['important_types'])):
                     raise ValueError('important_types must be strings')
+                if 'time_zone' in payload:
+                    zone = payload['time_zone']
+                    if not isinstance(zone,str) or len(zone)>100:
+                        raise ValueError('无效的简报时区。')
+                    if zone:
+                        try:
+                            ZoneInfo(zone)
+                        except (ValueError,KeyError) as error:
+                            raise ValueError('无效的简报时区。') from error
                 current.update(payload)
                 db.execute('INSERT OR REPLACE INTO briefing_preferences VALUES (1,?)', (_json(current),))
             return current

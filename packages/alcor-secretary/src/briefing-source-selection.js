@@ -3,7 +3,7 @@ export const sourceKey = source => `${canonicalSource(source.source)}:${source.a
 export const sourceName = source => source.label || ({ email: '邮箱', elearning: 'eLearning', calendar_agenda: 'Alcor 日程', alcor_tasks: 'Alcor 事务', alcor_bills: 'Alcor 账单' })[canonicalSource(source.source)] || source.source
 export function briefingScope(source) {
   if (source.source === 'elearning') return source.arguments?.course_ids?.length ? `已选择 ${source.arguments.course_ids.length} 门课程` : '全部可访问课程'
-  return ({ email: '当前邮箱文件夹', calendar_agenda: '未来 24 小时日程', alcor_tasks: '未归档事务', alcor_bills: '未归档账单' })[canonicalSource(source.source)] || '由连接插件提供'
+  return ({ email: '当前邮箱文件夹', calendar_agenda: '窗口内新增或更新的日程', alcor_tasks: '未归档事务', alcor_bills: '未归档账单' })[canonicalSource(source.source)] || '由连接插件提供'
 }
 export function mergeSources(saved, discovered) {
   return [...new Map([...discovered, ...saved].map(source => [sourceKey(source), source])).values()]

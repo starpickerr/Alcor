@@ -25,7 +25,6 @@ R, W = "briefing.read", "briefing.write"
 
 # name -> (effect, permission, idempotent, ordered parameter names)
 METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
-    # --- Application _METHODS["briefing"] (25) ---
     "list_briefings": ("query", R, False, ("status",)),
     "get_briefing": ("query", R, False, ("briefing_id",)),
     "get_revision": ("query", R, False, ("briefing_id", "number")),
@@ -41,7 +40,6 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "start_briefing": ("domainWrite", W, True, ("briefing_date", "title")),
     "complete_briefing": ("domainWrite", W, True, ("briefing_id", "payload")),
     "run_pipeline": ("domainWrite", W, False, ("briefing_date", "operation", "trigger", "sources", "draft", "run_at")),
-    "update_item_status": ("domainWrite", W, True, ("item_id", "status")),
     "upsert_source_item": ("domainWrite", W, True, ("payload",)),
     "create_rule": ("domainWrite", W, True, ("payload",)),
     "update_rule": ("domainWrite", W, True, ("rule_id", "payload")),
@@ -62,7 +60,6 @@ METHODS: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
     "dispatch_outbox": ("domainWrite", W, False, ("limit",)),
 }
 
-BRIEFING_APPLICATION_METHODS = tuple(list(METHODS)[:25])
 
 OPERATION_OVERRIDES = {'delete_rule': 'delete', 'delete_action_rule': 'delete', 'delete_briefing': 'delete', 'revoke_authorization': 'delete'}
 
@@ -139,6 +136,9 @@ def _accounts(accounts) -> list[tuple[str, str]]:
 
 def _dispatch(svc: BriefingService, method: str, params: dict[str, Any], invoke_params: dict[str, Any]) -> Any:
     store = svc.store
+    if method == "get_briefing":
+        from business.briefing.domain.incremental import bounded_view
+        return bounded_view(_jsonable(svc.get_briefing(params['briefing_id'])))
     if method == "upsert_source_item" or method == "build_source_item":
         return _pair(getattr(svc, method)(**params))
     if method in {"delete_rule", "delete_action_rule"}:
