@@ -31,7 +31,7 @@ const localTime = value => { const date = new Date(value); return `${localDate(d
 const kindFor = { 'alcor-tasks': 'task', 'alcor-calendar': 'event', 'alcor-briefing': 'briefing', 'alcor-bills': 'bill' }
 const titles = { task: '事务', event: '日程', bill: '账单' }
 
-export function BusinessDesk({ view, api, currentSession, startSession, openSession, quickChat }) {
+export function BusinessDesk({ view, api, currentSession, startSession, openSession }) {
   const [data, setData] = useState({ records: [], jobs: [], schedules: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -168,10 +168,11 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       {error && <Notice tone="error">{error}</Notice>}
   </>
   const panelOpen = ['event','task'].includes(kind) && (details !== null || editor !== null)
-  const taskPageProps = {commitDelete,records,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args) => mutate('tasks',method,args,method === 'delete_todo' ? '已删除' : '已保存'),api,reloadKey,busy,loading,quickChat,error}
+  const taskPageProps = {commitDelete,records,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args) => mutate('tasks',method,args,method === 'delete_todo' ? '已删除' : '已保存'),api,reloadKey,busy,loading,error}
   const taskDetail = details?.record.kind === 'task' ? data.records.find(item => item.kind === 'task' && item.id === recordId(details.record)) ?? details.record : null
   const panelTitle = editor !== null ? `${editor.id ? '编辑' : '新增'}${titles[editorKind]}` : details?.record.kind === 'task' ? '事务详情' : '日程详情'
-  return <div className={`alcor-business${kind === 'bill' ? ' alcor-bills-page' : kind === 'task' ? ' alcor-task-business' : ''}`}>
+  const focused = editor ?? details?.record
+  return <div data-alcor-bear-page={view} data-alcor-bear-record={focused?.id ? recordId(focused) : undefined} className={`alcor-business${kind === 'bill' ? ' alcor-bills-page' : kind === 'task' ? ' alcor-task-business' : ''}`}>
     <header className="alcor-app-header"><div><h1>{current.label}</h1></div><div className="alcor-actions">
       <Button variant="outline" aria-label="刷新" title="刷新" onClick={() => { setError(''); void refresh() }}><IconRefreshOutlineRegular size={16} /></Button>
       {['event','task'].includes(kind) && <Button variant="outline" disabled={busy} onClick={openRecoveries}>恢复同步移除记录</Button>}
@@ -183,7 +184,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
     <div className="alcor-page-feedback">{loading && <Notice role="status">正在读取已保存记录…</Notice>}{error && <Notice tone="error" role="alert" className="alcor-error">{error}</Notice>}{notice && <Notice tone="success" role="status">{notice}</Notice>}</div>
     {['event','task'].includes(kind) && <div className={`alcor-calendar-split${kind === 'task' ? ' alcor-task-split' : ''}`} data-panel-open={panelOpen || undefined}>
       {kind === 'task' && <div className="alcor-task-workspace"><TasksPage {...taskPageProps} selectedRecord={editor ?? details?.record} /></div>}
-      {kind === 'event' && <CalendarPage commitDelete={commitDelete} selectedRecord={editor ?? details?.record} archive={toggleArchive} archived={false} templates={data.records.filter(item => ['event', 'task'].includes(item.kind))} taskCategories={taskCategories} toggle={completeRecord} edit={editRecord} inspect={inspect} copy={copyRecord} move={moveRecord} taskMutate={(method,args) => mutate('tasks',method,args)} create={create} busy={busy} loading={loading} quickChat={quickChat} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
+      {kind === 'event' && <CalendarPage commitDelete={commitDelete} selectedRecord={editor ?? details?.record} archive={toggleArchive} archived={false} templates={data.records.filter(item => ['event', 'task'].includes(item.kind))} taskCategories={taskCategories} toggle={completeRecord} edit={editRecord} inspect={inspect} copy={copyRecord} move={moveRecord} taskMutate={(method,args) => mutate('tasks',method,args)} create={create} busy={busy} loading={loading} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
       {panelOpen && <OrganizerRecordPanel title={panelTitle} focusKey={`${editor ? 'edit' : 'view'}:${editor?.id ?? details?.record.id ?? 'new'}`} trigger={panelTrigger} editing={editor !== null} busy={busy} close={() => requestPanel(() => {setEditor(null);setDetails(null)})}>
         {editor !== null ? <div className="alcor-calendar-panel-editor">{editorContent}</div> : kind === 'task' ? <TasksPage {...taskPageProps} detailRecord={taskDetail} /> : <OrganizerDetails inline value={details} groups={details?.record.kind === 'task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
       </OrganizerRecordPanel>}

@@ -8,7 +8,7 @@ import { canonicalPanel } from './mode.js'
 
 export const deskViews = applicationViews
 
-export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view = 'alcor-tasks', business, currentSession, briefingContext, openPlugins, renderFactorySlot }) {
+export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view = 'alcor-tasks', business, currentSession, briefingContext, openPlugins }) {
   const [startError, setStartError] = useState('')
   async function begin(prompt) {
     setStartError('')
@@ -24,7 +24,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
       <Button variant="outline" className="alcor-heading-chat" onClick={() => begin()}><IconNewChatOutlineRegular size={16} />开始 Alcor 对话</Button></div></>}
     {startError && <Notice tone="error" role="alert" className="alcor-error">{startError}</Notice>}
     {view === 'alcor-briefing' && <BriefingWorkspace api={business} briefingContext={briefingContext} openSession={openSession} openPlugins={openPlugins} />}
-    {application && view !== 'alcor-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} quickChat={kind => renderFactorySlot('alcor.quick-chat', { kind })} />}
+    {application && view !== 'alcor-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} />}
     {!hasModeSwitch && <Notice role="status" className="alcor-muted">当前版本暂不支持模式切换。</Notice>}
   </section>
 }

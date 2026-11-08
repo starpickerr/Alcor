@@ -5,7 +5,7 @@ import { Button, Checkbox, Modal, SegmentedControl, IconChevronLeftOutlineRegula
 import { Categories } from './category-manager.jsx'
 import { OrganizerContextMenu, useRecordContextMenu } from './organizer-details.jsx'
 import { recordId, recordPermissions, taskDeleteMessage } from './organizer-actions.js'
-import { AgentStrip, Empty, Field, MonthGrid } from './business-pages.jsx'
+import { Empty, Field, MonthGrid } from './business-pages.jsx'
 import { addDays, localDate, monthDays, eventOnDay, calendarFocusMinute, calendarOrder, calendarSources, calendarWeekLabel } from './presentation.js'
 import { calendarRecord, calendarTaskRecord, dayInZone, eventLanes } from './organizer-forms.js'
 
@@ -21,7 +21,7 @@ function range(day, view) {
   return [days[0], addDays(days.at(-1), 1)]
 }
 
-export function CalendarPage({ commitDelete, selectedRecord, templates, edit, create, archive, archived, busy, loading, quickChat, api, mutate, categories, reloadKey, manage, setManage, taskCategories = [], toggle, inspect, copy, move, taskMutate }) {
+export function CalendarPage({ commitDelete, selectedRecord, templates, edit, create, archive, archived, busy, loading, api, mutate, categories, reloadKey, manage, setManage, taskCategories = [], toggle, inspect, copy, move, taskMutate }) {
   const [view, setView] = useState('month')
   const context = useRecordContextMenu()
   const timeViewport = useRef(null)
@@ -115,7 +115,7 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
   const today = localDate(now)
   const todayStart = new Date(`${today}T00:00`).getTime()
   const tomorrowStart = new Date(`${addDays(today,1)}T00:00`).getTime()
-  return <div className="alcor-calendar-page">
+  return <div className="alcor-calendar-page" data-alcor-bear-date={selected}>
     <div className="alcor-calendar-workspace">
       <div className="alcor-calendar-sidebar-frame">
         <Button ref={sidebarToggle} className="alcor-calendar-sidebar-toggle" variant="outline" aria-controls="calendar-sidebar" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)}>日历与日期{hiddenCount>0 && ` · 已隐藏 ${hiddenCount} 项`}<IconChevronDownOutlineRegular size={15} /></Button>
@@ -156,7 +156,6 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
             {view === 'list' && <>{[...new Set(filtered.map(item => item.allDay ? item.start : localDate(new Date(item.start))))].sort().map(day => <section className="alcor-agenda-date" key={day}><h3>{dateTitle(day)}</h3><ul className="alcor-agenda-list">{filtered.filter(item => (item.allDay ? item.start : localDate(new Date(item.start))) === day).map(item => entry(item))}</ul></section>)}{!filtered.length && !fetching && <Empty mascot={!error && !records.length} title="本年暂无日程" />}</>}
           </div>
         </div>
-        <AgentStrip kind="event" quickChat={quickChat} />
       </div>
     </div>
     <OrganizerContextMenu context={context} groups={context.target?.record.kind==='task' ? taskCategories : categories} busy={busy} inspect={open} edit={edit} complete={toggle} move={move} copy={copy} remove={requestDelete} />

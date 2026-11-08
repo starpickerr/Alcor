@@ -8,14 +8,14 @@ import { priorityLabels, recordId, recordPermissions, taskDeleteMessage } from '
 import { focusedTaskRecords } from './task-focus.js'
 import { taskKey, taskTree } from './task-tree.js'
 import { arrayValue } from './organizer-forms.js'
-import { AgentStrip, Empty } from './business-pages.jsx'
+import { Empty } from './business-pages.jsx'
 import { taskMatches, taskGroup, localDate, addDays, categorySources } from './presentation.js'
 
 export const taskStatuses = { todo: '未完成', in_progress: '未完成', waiting: '未完成', blocked: '未完成', completed: '已完成', cancelled: '已取消' }
 const views = [['all', '全部事务'], ['pending', '待办'], ['upcoming', '即将到期'], ['overdue', '逾期'], ['completed', '已完成']]
 const groups = { overdue: '含逾期事务', today: '含今天到期事务', upcoming: '含即将到期事务', later: '含后续事务', noDate: '无日期', completed: '已完成', cancelled: '已取消' }
 
-export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, reloadKey, busy, loading, quickChat, categories = [], select, detailRecord, selectedRecord, copy, move, error }) {
+export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, reloadKey, busy, loading, categories = [], select, detailRecord, selectedRecord, copy, move, error }) {
   const [removing, setRemoving] = useState(null)
   const [removeError, setRemoveError] = useState('')
   const deletePreview = useDeletePreview(api, 'tasks', 'item', removing?.id)
@@ -133,7 +133,6 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
       <div className="alcor-task-filters"><Input icon={<IconSearchOutlineRegular size={16} />} aria-label="搜索事务" placeholder="搜索事务" value={search} onChange={event => setSearch(event.target.value)} /><select aria-label="标签筛选" value={tag} onChange={event => setTag(event.target.value)}><option value="all">全部标签</option>{[...new Set(records.flatMap(tags))].map(name => <option key={name}>{name}</option>)}</select><select aria-label="事务排序" value={sort} onChange={event => setSort(event.target.value)}><option value="date">按日期</option><option value="title">按名称</option><option value="created">按创建时间</option></select></div>
       <form className="alcor-task-quick-add" aria-label="快速添加事务" onSubmit={async event => {event.preventDefault(); if (!quickTitle.trim() || busy || listBlocked) return; const saved = await mutate('create_todo',{payload:{title:quickTitle.trim(),...(selectedList ? {category_id:selectedList.id} : {})}}); if (saved) setQuickTitle('')}}><Input icon={<IconPlusOutlineRegular size={17} />} aria-label="快速添加事务" placeholder={listBlocked ? selectedList?.apple_pending?.length ? '清单有待处理操作' : '此清单只读，请在 Apple 中编辑' : '添加事务…'} value={quickTitle} onChange={event => setQuickTitle(event.target.value)} disabled={busy || listBlocked} /><Button type="submit" variant="ghost" size="sm" disabled={busy || !quickTitle.trim() || listBlocked}>添加事务</Button></form>
       <div id={`task-view-${view}-panel`} role="tabpanel" aria-labelledby={`task-view-${view}`}>{Object.entries(groups).map(([group, label]) => { const rows = tree.filter(node => node.group === group); return rows.length > 0 && <section className="alcor-task-group" data-group={group} key={group}><h2>{label} <small>{rows.length} 组</small></h2><ul className="alcor-task-list">{rows.map(node => treeRow(node))}</ul></section> })}{!loading && !filtered.length && <Empty mascot={!error && !records.length} icon={<IconCheckOutlineRegular size={26} />} title={records.length ? view === 'pending' && !search && list === 'all' && tag === 'all' ? '暂无待办' : '没有符合条件的事务' : '还没有事务'} />}</div>
-      <AgentStrip kind="task" quickChat={quickChat} />
     </div>
     {contextMenu}{removeDialog}
   </div>
