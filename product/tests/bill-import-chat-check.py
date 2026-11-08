@@ -25,8 +25,8 @@ class Provider(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         names = {tool['function']['name'] for tool in payload.get('tools', [])}
         delta, finish = {'content': 'Synthetic title'}, 'stop'
-        if 'stella_overview' in names:
-            assert 'stella_import_bills' in names, names
+        if 'alcor_overview' in names:
+            assert 'alcor_import_bills' in names, names
             if payload['messages'][-1]['role'] == 'tool':
                 result = json.loads(payload['messages'][-1]['content'])
                 assert result['imported'] == (3 if self.calls == 1 else 0), result
@@ -34,7 +34,7 @@ class Provider(BaseHTTPRequestHandler):
                 delta = {'content': '账单导入完成。'}
             else:
                 type(self).calls += 1
-                delta = {'tool_calls': [{'index': 0, 'id': 'import-bills', 'type': 'function', 'function': {'name': 'stella_import_bills', 'arguments': json.dumps({'paths': self.paths})}}]}
+                delta = {'tool_calls': [{'index': 0, 'id': 'import-bills', 'type': 'function', 'function': {'name': 'alcor_import_bills', 'arguments': json.dumps({'paths': self.paths})}}]}
                 finish = 'tool_calls'
         self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()
         for choice in [{'delta': {'role': 'assistant'}, 'finish_reason': None}, {'delta': delta, 'finish_reason': None}, {'delta': {}, 'finish_reason': finish}]:
@@ -119,7 +119,7 @@ def main():
                 for expected in (1, 2):
                     if expected == 1:
                         previous_sessions = set(page.locator('[data-row-key^="session:"]').evaluate_all('rows => rows.map(row => row.dataset.rowKey)'))
-                        page.locator('.stella-sidebar-chat').click()
+                        page.locator('.alcor-sidebar-chat').click()
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
                     composer.fill('请导入账单：' + '，'.join(Provider.paths)); composer.press('Enter')
                     if expected == 1:
@@ -135,13 +135,13 @@ def main():
                     assert Provider.completed == expected, f'Model result missing: turn={expected}, calls={Provider.calls}, completed={Provider.completed}'
                     expect(page.get_by_text('账单导入完成。', exact=True)).to_have_count(expected, timeout=10000)
                     assert Provider.calls == expected
-                    rows = query('stellaOrganizer/business', {'request': {'domain': 'bills', 'method': 'list_ledger', 'arguments': {'year': 2026, 'month': 11}}})
+                    rows = query('alcorOrganizer/business', {'request': {'domain': 'bills', 'method': 'list_ledger', 'arguments': {'year': 2026, 'month': 11}}})
                     assert len(rows) == 3
                 page.get_by_role('button', name='账单', exact=True).click()
                 page.get_by_label('账单年份', exact=True).select_option('2026')
                 page.get_by_label('账单月份', exact=True).select_option('11')
-                expect(page.locator('.stella-ledger-list > li')).to_have_count(3)
-                expect(page.locator('.stella-bills-content')).to_contain_text('车票,返程')
+                expect(page.locator('.alcor-ledger-list > li')).to_have_count(3)
+                expect(page.locator('.alcor-bills-content')).to_contain_text('车票,返程')
                 page.screenshot(path=str(artifacts / 'imported-ledger.png'))
                 assert not errors, errors
         print('PASS: model calls bill tool, reads both files via DSH, imports directly without page confirmation, retries without duplicates, and ledger page shows all records')

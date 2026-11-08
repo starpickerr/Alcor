@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
@@ -15,18 +16,19 @@ def main():
     desktop.ARTIFACTS = artifacts
     desktop.PACK = Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK', str(desktop.PACK)))
     desktop.verify_release()
-    with tempfile.TemporaryDirectory(prefix='stella-panel-layout-') as temporary, sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-panel-layout-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         desktop.environment(home)
         profile = home / 'dsh/profiles/desktop'
         profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'panel-layout-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         (profile / 'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home, 'panel-install', 'add', str(desktop.PACK), '--ignore-scripts')
         with desktop.desktop(playwright, home, 'panel-layout') as (page, errors):
             page.set_viewport_size({'width': 1440, 'height': 900})
-            business = lambda domain, method, args=None: desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
+            business = lambda domain, method, args=None: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
             for index in range(18):
                 business('tasks', 'create_todo', {'payload': {'title': f'面板事务 {index:02d}', 'notes': '这是用于验证面板滚动的说明。'}})
             today = page.evaluate('new Date().toLocaleDateString("sv-SE")')
@@ -38,18 +40,18 @@ def main():
             def check(name, action):
                 panel = page.get_by_role('region', name=name, exact=True)
                 expect(panel).to_be_visible()
-                page.wait_for_function('''() => {const p=document.querySelector('.stella-calendar-record-panel'), d=document.querySelector('.stella-desk'); if (!p || !d) return false; const a=p.getBoundingClientRect(),b=d.getBoundingClientRect(),s=getComputedStyle(p),gap=s.position==='fixed'?8:12; return Math.abs(a.bottom-Math.min(innerHeight,b.bottom)+gap)<2 && a.top>=b.top && parseFloat(s.borderTopLeftRadius)>=12}''')
+                page.wait_for_function('''() => {const p=document.querySelector('.alcor-calendar-record-panel'), d=document.querySelector('.alcor-desk'); if (!p || !d) return false; const a=p.getBoundingClientRect(),b=d.getBoundingClientRect(),s=getComputedStyle(p),gap=s.position==='fixed'?8:12; return Math.abs(a.bottom-Math.min(innerHeight,b.bottom)+gap)<2 && a.top>=b.top && parseFloat(s.borderTopLeftRadius)>=12}''')
                 expect(panel.get_by_role('button', name=action, exact=True)).to_be_in_viewport()
                 assert panel.evaluate('e=>getComputedStyle(e).overflow') == 'hidden'
                 return panel
 
             task = check('事务详情', '编辑详情')
             page.screenshot(path=str(artifacts / 'task-initial.png'), animations='disabled')
-            desk = page.locator('.stella-desk')
+            desk = page.locator('.alcor-desk')
             desk.evaluate('e=>e.scrollTop=250')
-            page.wait_for_function("document.querySelector('.stella-desk').scrollTop>0")
+            page.wait_for_function("document.querySelector('.alcor-desk').scrollTop>0")
             task = check('事务详情', '编辑详情')
-            task.locator('.stella-inspector-body').evaluate('e=>e.scrollTop=e.scrollHeight')
+            task.locator('.alcor-inspector-body').evaluate('e=>e.scrollTop=e.scrollHeight')
             check('事务详情', '编辑详情')
             page.screenshot(path=str(artifacts / 'task-outer-inner-scroll.png'), animations='disabled')
             desk.evaluate('e=>e.scrollTop=e.scrollHeight')
@@ -57,7 +59,7 @@ def main():
             desk.evaluate('e=>e.scrollTop=250')
             check('事务详情', '编辑详情')
             task.get_by_role('button', name='标为已完成', exact=True).click()
-            expect(page.locator('.stella-page-feedback')).to_contain_text('事务状态已更新')
+            expect(page.locator('.alcor-page-feedback')).to_contain_text('事务状态已更新')
             check('事务详情', '编辑详情')
             page.set_viewport_size({'width': 1280, 'height': 720})
             check('事务详情', '编辑详情')
@@ -87,7 +89,7 @@ def main():
             page.set_viewport_size({'width': 1440, 'height': 900})
             page.get_by_role('button', name='关闭详情', exact=True).click()
             page.get_by_role('button', name='日程', exact=True).click()
-            page.locator(f'.stella-calendar-chip[data-record-id="{event["id"]}"]').first.click()
+            page.locator(f'.alcor-calendar-chip[data-record-id="{event["id"]}"]').first.click()
             calendar = check('日程详情', '编辑详情')
             page.screenshot(path=str(artifacts / 'calendar-details.png'), animations='disabled')
             calendar.get_by_role('button', name='编辑详情', exact=True).click()
@@ -98,7 +100,7 @@ def main():
             check('新增日程', '保存日程')
             page.get_by_role('form', name='新增日程').get_by_role('button', name='取消编辑').click()
             page.get_by_role('button', name='简报', exact=True).click()
-            expect(page.locator('.stella-briefing-layout')).to_be_visible()
+            expect(page.locator('.alcor-briefing-layout')).to_be_visible()
             page.screenshot(path=str(artifacts / 'briefing.png'), animations='disabled')
             assert not errors, errors
     print('PASS: task/calendar detail/create/edit panel geometry, outer/inner scroll, feedback, resize, reopen, keyboard, dark/narrow and briefing')

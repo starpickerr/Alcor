@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { minorUnits, recordSchema, buildBriefing } from '../../packages/stella-organizer/src/records.js'
+import { minorUnits, recordSchema, buildBriefing } from '../../packages/alcor-organizer/src/records.js'
 
 const base = () => ({ id: randomUUID(), revision: 1, createdAt: '2026-11-04T00:00:00.000Z', updatedAt: '2026-11-04T00:00:00.000Z', archived: false, title: 'Test', details: '' })
 test('money stays exact and rejects amounts that violate currency precision', () => {

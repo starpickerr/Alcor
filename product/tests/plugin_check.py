@@ -17,8 +17,8 @@ from apps_check import check_apps
 ROOT = Path(__file__).resolve().parents[2]
 CLI = Path(os.environ.get('STELLA_CHECK_CLI', str(ROOT / '.local/official-cli/node_modules/@deepseek-ai/dsh/lib/bin.js')))
 CLIENT_COMPAT = os.environ.get('STELLA_CHECK_CLIENT_COMPAT') == '1'
-VERSION = json.loads((ROOT / 'packages/stella-secretary/package.json').read_text())['version']
-PACK = ROOT / f'.local/artifacts/stella-secretary-{VERSION}.tgz'
+VERSION = json.loads((ROOT / 'packages/alcor-secretary/package.json').read_text())['version']
+PACK = ROOT / f'.local/artifacts/alcor-secretary-{VERSION}.tgz'
 
 
 class NativeProvider(Provider):
@@ -59,10 +59,10 @@ class NativeProvider(Provider):
 def launch(environment, log, port=0, profile='compatibility'):
     directory = Path(environment['DSH_HOME']) / 'profiles' / profile
     manifest = json.loads((directory / 'package.json').read_text())
-    if '@stella/secretary' in manifest.get('dependencies', {}):
+    if '@alcor/secretary' in manifest.get('dependencies', {}):
         module = CLI.parents[2] / 'dsh-app-boot/lib/index.js'
         script = f'''import {{resolveBundleDir}} from {json.dumps(module.as_uri())};
-          console.log(resolveBundleDir('dsh', '@stella/secretary', {json.dumps(str(CLI.parents[1] / 'package.json'))}, {json.dumps(str(directory))}));'''
+          console.log(resolveBundleDir('dsh', '@alcor/secretary', {json.dumps(str(CLI.parents[1] / 'package.json'))}, {json.dumps(str(directory))}));'''
         resolved = Path(subprocess.check_output(['node', '--input-type=module', '-e', script], cwd=directory, env=environment, text=True).strip()).resolve()
         assert resolved.is_relative_to(directory.resolve()), 'DSH resolved Stella outside the test profile; use a standalone official CLI outside any Stella workspace'
     process = subprocess.Popen(['node', str(CLI), '--profile', profile, '--no-open', '--port', str(port)],
@@ -208,29 +208,29 @@ def main():
                     assert next(preset['id'] for preset in rpc(page, url, 'agentPresets/list')['presets'] if preset['isDefault']) == 'owner-default'
                     requests_before = len(requests)
                     page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                    page.get_by_role('menuitem', name='Stella', exact=True).click()
+                    page.get_by_role('menuitem', name='Alcor', exact=True).click()
                     page.get_by_role('heading', name='事务', exact=True).wait_for()
                     limitation = page.get_by_text('当前版本可使用秘书页面与对话，顶部模式切换尚待 DSH 支持。原有对话与设置保持不变。', exact=True)
                     expect(limitation).to_have_count(0)
                     assert len(requests) == requests_before
-                    expect(page.locator('.stella-sidebar')).to_be_visible()
+                    expect(page.locator('.alcor-sidebar')).to_be_visible()
                     expect(page.get_by_role('button', name='今天', exact=True)).to_have_count(0)
                     expect(page.get_by_role('button', name='返回 DSH 工作台', exact=True)).to_have_count(0)
-                    expect(page.locator('.stella-sidebar-chat')).to_have_text('新对话')
-                    expect(page.locator('.stella-sidebar-workspaces')).to_be_visible()
-                    expect(page.locator('.stella-sidebar-workspaces').get_by_role('button', name='View options', exact=True)).to_be_visible()
-                    assert page.locator('.stella-sidebar nav').bounding_box()['y'] < page.locator('.stella-sidebar-workspaces').bounding_box()['y']
-                    expect(page.locator('.stella-nav-group')).to_have_count(1)
-                    expect(page.locator('.stella-sidebar nav button[aria-current="page"]')).to_have_accessible_name('事务')
-                    expect(page.locator('.stella-sidebar nav button > svg')).to_have_count(7)
+                    expect(page.locator('.alcor-sidebar-chat')).to_have_text('新对话')
+                    expect(page.locator('.alcor-sidebar-workspaces')).to_be_visible()
+                    expect(page.locator('.alcor-sidebar-workspaces').get_by_role('button', name='View options', exact=True)).to_be_visible()
+                    assert page.locator('.alcor-sidebar nav').bounding_box()['y'] < page.locator('.alcor-sidebar-workspaces').bounding_box()['y']
+                    expect(page.locator('.alcor-nav-group')).to_have_count(1)
+                    expect(page.locator('.alcor-sidebar nav button[aria-current="page"]')).to_have_accessible_name('事务')
+                    expect(page.locator('.alcor-sidebar nav button > svg')).to_have_count(7)
                     expect(page.get_by_role('button', name='Account menu', exact=True)).to_be_in_viewport()
                     page.locator('[data-sidebar-toggle]:visible').click()
-                    expect(page.locator('.stella-sidebar')).to_have_attribute('data-collapsed', 'true')
+                    expect(page.locator('.alcor-sidebar')).to_have_attribute('data-collapsed', 'true')
                     expect(page.get_by_role('button', name='设置', exact=True)).to_have_count(0)
                     expect(page.get_by_role('button', name='Account menu', exact=True)).to_be_in_viewport()
-                    rail = page.locator('.stella-sidebar').bounding_box()
+                    rail = page.locator('.alcor-sidebar').bounding_box()
                     assert rail['width'] == 56
-                    for button in page.locator('.stella-sidebar > .stella-sidebar-brand button, .stella-sidebar-chat, .stella-sidebar nav button, .stella-sidebar-workspaces button, .stella-sidebar footer button').all():
+                    for button in page.locator('.alcor-sidebar > .alcor-sidebar-brand button, .alcor-sidebar-chat, .alcor-sidebar nav button, .alcor-sidebar-workspaces button, .alcor-sidebar footer button').all():
                         if not button.is_visible(): continue
                         rect = button.bounding_box()
                         assert abs(rect['x'] + rect['width'] / 2 - (rail['x'] + rail['width'] / 2)) < 2, rect
@@ -246,16 +246,16 @@ def main():
                     page.get_by_role('button', name='账单', exact=True).click()
                     page.get_by_role('heading', name='账单', exact=True).wait_for()
                     page.locator('[data-sidebar-toggle]:visible').click()
-                    expect(page.locator('.stella-sidebar')).not_to_have_attribute('data-collapsed', 'true')
+                    expect(page.locator('.alcor-sidebar')).not_to_have_attribute('data-collapsed', 'true')
                     selected_before_plugins = page.evaluate('localStorage.getItem("dsh.sessions.current")')
                     page.get_by_role('button', name='插件', exact=True).click()
                     page.get_by_role('heading', name='Plugins', exact=True).wait_for()
-                    expect(page.locator('.stella-sidebar nav button[aria-current="page"]')).to_have_accessible_name('插件')
-                    expect(page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True)).to_be_visible()
+                    expect(page.locator('.alcor-sidebar nav button[aria-current="page"]')).to_have_accessible_name('插件')
+                    expect(page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True)).to_be_visible()
                     expect(page.get_by_role('button', name='Refresh', exact=True)).to_be_enabled()
                     expect(page.locator('[data-plugin-body]')).to_be_visible()
                     assert page.evaluate('localStorage.getItem("dsh.sessions.current")') == selected_before_plugins
-                    page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+                    page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
                     page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
                     page.get_by_role('button', name='Plugins', exact=True).click()
                     page.get_by_role('heading', name='Plugins', exact=True).wait_for()
@@ -263,9 +263,9 @@ def main():
                     page.locator(f'[data-row-key="session:{owner_session_id}"]').click()
                     expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_text('Owner unsent draft')
                     page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                    page.get_by_role('menuitem', name='Stella', exact=True).click()
+                    page.get_by_role('menuitem', name='Alcor', exact=True).click()
                     page.get_by_role('heading', name='Plugins', exact=True).wait_for()
-                    expect(page.locator('.stella-sidebar nav button[aria-current="page"]')).to_have_accessible_name('插件')
+                    expect(page.locator('.alcor-sidebar nav button[aria-current="page"]')).to_have_accessible_name('插件')
                     if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
                         Path(directory).mkdir(parents=True, exist_ok=True)
                         page.screenshot(path=str(Path(directory) / 'stella-native-plugins-desktop.png'), animations='disabled')
@@ -274,13 +274,14 @@ def main():
                     expect(page.get_by_role('button', name='秘书对话', exact=True)).to_have_count(0)
                     expect(page.get_by_role('button', name='待你确认', exact=True)).to_have_count(0)
                     settings(page)
+                    expect(page.get_by_text('Alcor 对话工具', exact=True)).to_have_count(0)
                     expect(page.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
                     expect(page.get_by_text('使用 DSH 访问模式', exact=True)).to_be_visible()
                     expect(page.get_by_label('学工号', exact=True)).to_have_count(0)
-                    assert rpc(page, url, 'stellaSecretary/checkElearning', {'request': {}}) == {'status': 'disconnected'}
+                    assert rpc(page, url, 'alcorSecretary/checkElearning', {'request': {}}) == {'status': 'disconnected'}
                     page.get_by_role('dialog', name='Settings', exact=True).get_by_role('button', name='Close', exact=True).click()
                     open_secretary(page)
-                    installed_at = rpc(page, url, 'stellaSecretary/overview')['installedAt']
+                    installed_at = rpc(page, url, 'alcorSecretary/overview')['installedAt']
                     if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
                         Path(directory).mkdir(parents=True, exist_ok=True)
                         page.screenshot(path=str(Path(directory) / 'native-secretary-desktop.png'))
@@ -292,7 +293,7 @@ def main():
                         expect(page.get_by_role('heading', name='事务', exact=True)).to_be_in_viewport(ratio=1)
                         assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
                         page.locator('[data-sidebar-opener]').click()
-                        expect(page.get_by_role('dialog', name='Stella 秘书导航', exact=True)).to_be_visible()
+                        expect(page.get_by_role('dialog', name='Alcor 秘书导航', exact=True)).to_be_visible()
                         expect(page.get_by_role('button', name='Account menu', exact=True)).to_be_in_viewport()
                         page.screenshot(path=str(Path(directory) / 'native-secretary-drawer.png'), animations='disabled')
                         page.get_by_role('button', name='插件', exact=True).click()
@@ -313,15 +314,15 @@ def main():
                         page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
                         if page.locator('[data-sidebar-opener]').is_visible():
                             page.locator('[data-sidebar-opener]').click()
-                        page.locator('.stella-sidebar nav').get_by_role('button',name='插件',exact=True).click()
+                        page.locator('.alcor-sidebar nav').get_by_role('button',name='插件',exact=True).click()
                         expect(page.get_by_role('heading', name='Plugins', exact=True)).to_be_in_viewport()
                         expect(page.locator('[data-sidebar-drawer]')).to_have_attribute('data-sidebar-collapsed', 'true')
                         page.locator('[data-sidebar-opener]').click()
                         open_secretary(page)
                         page.set_viewport_size({'width': 1280, 'height': 850})
                     apps = check_apps(page, url, True)
-                    assert (profile / 'stella/business/tasks.sqlite3').is_file(), 'Business data must belong to the selected profile'
-                    assert not (home / 'stella/business/tasks.sqlite3').exists(), 'Business data must not fall back to a global owner'
+                    assert (profile / 'alcor/business/tasks.sqlite3').is_file(), 'Business data must belong to the selected profile'
+                    assert not (home / 'alcor/business/tasks.sqlite3').exists(), 'Business data must not fall back to a global owner'
                     page.close()
                     stop(process)
                     with (home / 'apps-restart.log').open('w') as restart_log:
@@ -330,7 +331,7 @@ def main():
                     page.on('pageerror', lambda error: errors.append(str(error)))
                     page.goto(url)
                     wait_secretary(page)
-                    persisted = rpc(page, url, 'stellaOrganizer/read', {'request': {}})
+                    persisted = rpc(page, url, 'alcorOrganizer/read', {'request': {}})
                     assert any(record['id'] == apps['recordId'] for record in persisted['records'])
                     assert any(item['id'] == apps['scheduleId'] and item['status'] == 'active' for item in persisted['schedules']), persisted['schedules']
                     open_secretary(page)
@@ -338,27 +339,27 @@ def main():
                     page.get_by_label('助手名称', exact=True).fill('Packed secretary')
                     page.get_by_role('button', name='保存', exact=True).click()
                     page.get_by_text('已保存', exact=True).wait_for()
-                    assert rpc(page, url, 'stellaSecretary/overview')['displayName'] == 'Packed secretary', (
-                        [entry for entry in rpc(page, url, 'settings/describe')['namespaces'] if entry['ns'] == 'stella-secretary'],
+                    assert rpc(page, url, 'alcorSecretary/overview')['displayName'] == 'Packed secretary', (
+                        [entry for entry in rpc(page, url, 'settings/describe')['namespaces'] if entry['ns'] == 'alcor-secretary'],
                         (profile / 'cordis.patch.yml').read_text()[-800:],
                         re.sub(r'token=\S+', 'token=[redacted]', Path(log.name).read_text())[-2500:])
                     page.get_by_role('button', name='Close', exact=True).click()
                     start_secretary_chat(page)
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
-                    composer.fill('Call stella_overview')
+                    composer.fill('Call alcor_overview')
                     composer.press('Enter')
                     page.get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for(timeout=25000)
                     composer.fill('Secretary unsent draft')
-                    page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+                    page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
                     page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
                     expect(composer).to_have_text('Owner unsent draft')
                     page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).click()
-                    page.get_by_role('menuitem', name='Stella', exact=True).click()
+                    page.get_by_role('menuitem', name='Alcor', exact=True).click()
                     page.get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for()
                     expect(composer).to_have_text('Secretary unsent draft')
-                    page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+                    page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
                     page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
-                    expect(page.locator('.stella-sidebar')).to_have_count(0)
+                    expect(page.locator('.alcor-sidebar')).to_have_count(0)
                     expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
                     expect(composer).to_have_text('Owner unsent draft')
                     previous = page.evaluate('localStorage.getItem("dsh.sessions.current")')
@@ -371,16 +372,17 @@ def main():
                     owner_requests = [request for request in requests if any(message.get('content') == 'Owner configuration after using Stella' for message in request.get('messages', []))]
                     assert owner_requests and 'Owner workspace configuration' in json.dumps(owner_requests, ensure_ascii=False)
                     assert '你是 Stella' not in json.dumps(owner_requests, ensure_ascii=False)
+                    assert '你是 Alcor' not in json.dumps(owner_requests, ensure_ascii=False)
                     assert 'WORKSPACE_USER_SENTINEL' not in json.dumps(owner_requests)
                     owner_automation = rpc(page, url, 'schedule/create', {'request': {'title': 'Unrelated owner task', 'prompt': 'Owner task', 'timing': {'kind': 'every', 'every_seconds': 86400}, 'target': {'kind': 'new_once'}}})
-                    result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/secretary', 'enabled': False})
+                    result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/secretary', 'enabled': False})
                     native_tasks = rpc(page, url, 'schedule/catalog')
                     assert next(item for item in native_tasks if item['id'] == apps['scheduleId'])['status'] == 'paused'
                     assert next(item for item in native_tasks if item['id'] == owner_automation['id'])['status'] == 'active'
                     assert result['application'] == 'applied', result
                     expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
                     assert not any(preset['id'] == 'stella' for preset in rpc(page, url, 'agentPresets/list')['presets'])
-                    unavailable = page.request.post(url.split('/?')[0] + '/api/stellaSecretary/overview', data={})
+                    unavailable = page.request.post(url.split('/?')[0] + '/api/alcorSecretary/overview', data={})
                     assert unavailable.status == 404 or not unavailable.json().get('result', {}).get('ok', False)
                     assert not errors, errors
                     page.close()
@@ -393,23 +395,24 @@ def main():
                     page.goto(url)
                     page.get_by_role('button', name='Account menu', exact=True).wait_for()
                     assert page.get_by_role('button', name='事务', exact=True).count() == 0
-                    result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/secretary', 'enabled': True})
+                    result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/secretary', 'enabled': True})
                     assert result['application'] == 'applied', result
                     # Official client modules may require a reload after activation.
                     page.reload()
                     wait_secretary(page)
-                    value = rpc(page, url, 'stellaSecretary/overview')
+                    value = rpc(page, url, 'alcorSecretary/overview')
                     assert value['displayName'] == 'Packed secretary' and value['installedAt'] == installed_at, value
                     assert next(item for item in rpc(page, url, 'schedule/catalog') if item['id'] == owner_automation['id'])['status'] == 'active'
-                    business = rpc(page, url, 'stellaOrganizer/read', {'request': {}})
+                    business = rpc(page, url, 'alcorOrganizer/read', {'request': {}})
                     assert any(record['id'] == apps['recordId'] for record in business['records'])
                     assert any(item['id'] == apps['scheduleId'] and item['status'] == 'paused' for item in business['schedules']), business['schedules']
-                    result = rpc(page, url, 'pluginManager/removeBundle', {'name': '@stella/secretary'})
+                    result = rpc(page, url, 'pluginManager/removeBundle', {'name': '@alcor/secretary'})
                     assert result['application'] == 'applied', result
                     expect(page.get_by_role('button', name='事务', exact=True)).to_have_count(0)
                     manifest = json.loads((profile / 'package.json').read_text())
-                    assert '@stella/secretary' not in manifest.get('dependencies', {})
-                    assert '@stella/secretary' not in manifest['dsh']['profile']['bundles']
+                    for name in ('@alcor/secretary', '@stella/secretary'):
+                        assert name not in manifest.get('dependencies', {})
+                        assert name not in manifest['dsh']['profile']['bundles']
                     assert next(preset['id'] for preset in rpc(page, url, 'agentPresets/list')['presets'] if preset['isDefault']) == 'owner-default'
                     previous = page.evaluate('localStorage.getItem("dsh.sessions.current")')
                     page.get_by_role('button', name='New session', exact=True).last.click()
@@ -429,9 +432,9 @@ def main():
                     page = context.new_page()
                     page.goto(url)
                     wait_secretary(page)
-                    value = rpc(page, url, 'stellaSecretary/overview')
+                    value = rpc(page, url, 'alcorSecretary/overview')
                     assert value['displayName'] == 'Packed secretary' and value['installedAt'] == installed_at, value
-                    assert any(record['id'] == apps['recordId'] for record in rpc(page, url, 'stellaOrganizer/read', {'request': {}})['records'])
+                    assert any(record['id'] == apps['recordId'] for record in rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records'])
                     assert next(preset['id'] for preset in rpc(page, url, 'agentPresets/list')['presets'] if preset['isDefault']) == 'owner-default'
                     page.close()
                 finally:

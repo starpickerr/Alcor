@@ -1,0 +1,13 @@
+.alcor-source-settings { padding:20px; font:14px/1.6 var(--dsw-font-family); color:var(--dsw-alias-label-primary); }
+.alcor-source-settings h2 { font-size:16px; margin:0 0 16px; font-weight:500; }
+.alcor-source-settings p,.alcor-source-settings summary { font-size:13px; }
+.alcor-source-settings details { margin:12px 0; }
+.alcor-source-settings summary { cursor:pointer; }
+.alcor-source-settings .alcor-field { display:flex; flex-direction:column; gap:5px; margin:12px 0; font-size:13px; }
+.alcor-source-settings .alcor-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.alcor-source-settings select { height:32px; max-width:100%; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); padding:0 8px; font:inherit; color:inherit; background:var(--dsw-alias-bg-layer-1); }
+.alcor-source-settings [role=alert] { color:var(--dsw-alias-state-error-primary); overflow-wrap:anywhere; }
+.alcor-source-account { border-bottom:1px solid var(--dsw-alias-border-l3); padding:16px 0; overflow-wrap:anywhere; }
+.alcor-source-account h3 { font-size:14px; margin:0; font-weight:500; }
+.alcor-source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+@media(max-width:500px) { .alcor-source-grid { grid-template-columns:minmax(0,1fr); } }

@@ -1,10 +1,10 @@
-<p align="center"><img src="../images/logo.jpg" alt="Stella" width="160" /></p>
+<p align="center"><img src="../images/logo.jpg" alt="Alcor" width="160" /></p>
 
-# Stella
+# Alcor
 
 [English](../../README.md) · [中文](../zh/README.md) · [繁體中文](../zh/README-Hant.md) · [日本語](README.md)
 
-**Stella はデスクトップ向けのプライベート AI アシスタント**です。対話を中心に、タスク、予定、請求、スマートブリーフィング、自動化を一つのワークスペースにまとめます。
+**Alcor はデスクトップ向けのプライベート AI アシスタント**です。対話を中心に、タスク、予定、請求、スマートブリーフィング、自動化を一つのワークスペースにまとめます。
 
 ## 主な機能
 
@@ -46,7 +46,7 @@ WeChat、Feishu、Telegram などの外部メッセージ基盤を接続・管�
 
 ### インストーラーを入手
 
-公開済みのインストーラーは [GitHub Releases](https://github.com/starpickerr/Stella/releases) を参照してください。インストール、初回設定、日常の操作は[利用ガイド](guide.md)を参照してください。
+公開済みのインストーラーは [GitHub Releases](https://github.com/starpickerr/Alcor/releases) を参照してください。インストール、初回設定、日常の操作は[利用ガイド](guide.md)を参照してください。
 
 ### ソースから実行
 
@@ -61,8 +61,8 @@ WeChat、Feishu、Telegram などの外部メッセージ基盤を接続・管�
 ローカル開発には Conda の `Stella` 環境（Python 3.12）を使用します。既存の環境がある場合、作成コマンドは省略してください。
 
 ```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
+git clone https://github.com/starpickerr/Alcor.git
+cd Alcor
 conda create -n Stella python=3.12
 conda activate Stella
 python -m pip install --upgrade pip setuptools
@@ -87,14 +87,14 @@ npm --prefix desktop run dev:hot
 - [ドキュメント一覧](../README.md)：構成、業務モジュール、権限の境界。
 - [デスクトップ開発](../../desktop/README.md)：ビルドとパッケージ化。
 - [コントリビューション](../../CONTRIBUTING.md)：開発環境と検証。開発の基線は `develop`、`main` はリリース用。
-- [Issue](https://github.com/starpickerr/Stella/issues)：提出前にログから認証情報と個人情報を削除してください。
+- [Issue](https://github.com/starpickerr/Alcor/issues)：提出前にログから認証情報と個人情報を削除してください。
 
 ## 出典とライセンス
 
-Stella は zhayujie とコントリビューターによる [CowAgent](https://github.com/zhayujie/CowAgent)（旧 `chatgpt-on-wechat`）を基に独自開発されています。上流の Agent、モデル、ツール、Skill、記憶、メッセージ連携を利用し、デスクトップ操作とタスク、カレンダー、請求、ブリーフィング、権限管理の共通サービスを追加しています。
+Alcor は zhayujie とコントリビューターによる [CowAgent](https://github.com/zhayujie/CowAgent)（旧 `chatgpt-on-wechat`）を基に独自開発されています。上流の Agent、モデル、ツール、Skill、記憶、メッセージ連携を利用し、デスクトップ操作とタスク、カレンダー、請求、ブリーフィング、権限管理の共通サービスを追加しています。
 
 出典と著作権は[第三者表示](../../THIRD_PARTY_NOTICES.md)、ライセンス条項は [MIT ライセンス](../../LICENSE) を参照してください。
 
 ## 作者より
 
-これは私が初めて一人で完成させたオープンソースプロジェクトです。開発中の Codex と Cursor の助けに感謝します。まだ改善の余地がありますので、[Issue](https://github.com/starpickerr/Stella/issues) から提案や不具合報告を歓迎します。
+これは私が初めて一人で完成させたオープンソースプロジェクトです。開発中の Codex と Cursor の助けに感謝します。まだ改善の余地がありますので、[Issue](https://github.com/starpickerr/Alcor/issues) から提案や不具合報告を歓迎します。

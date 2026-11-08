@@ -77,7 +77,7 @@ def main():
                 try:
                     page.goto(url)
                     page.get_by_role('button', name='Account menu', exact=True).wait_for()
-                    page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).or_(page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True)).wait_for()
+                    page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).or_(page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True)).wait_for()
                     open_secretary(page)
                     check_briefing_sources(page, lambda endpoint, args: rpc(page, url, endpoint, args), artifacts)
                     reads_file = profile / 'node_modules/@stella-test/briefing-source/reads.jsonl'
@@ -109,13 +109,13 @@ def main():
                     assert [item['offset'] for item in fetched] == [0, 1]
                     assert all(item['source_id'] == 'inbox' for item in fetched)
                     page.get_by_role('button', name='查看条目：Plugin item 0', exact=True).click()
-                    expect(page.locator('.stella-report')).to_contain_text('Synthetic source report')
-                    expect(page.locator('.stella-report h2')).to_have_text('Synthetic source report')
-                    expect(page.locator('.stella-report strong')).to_have_text('Important')
-                    expect(page.locator('.stella-report a')).to_have_attribute('href', 'https://example.com/reference')
-                    expect(page.locator('.stella-report pre')).to_contain_text('print(1)')
+                    expect(page.locator('.alcor-report')).to_contain_text('Synthetic source report')
+                    expect(page.locator('.alcor-report h2')).to_have_text('Synthetic source report')
+                    expect(page.locator('.alcor-report strong')).to_have_text('Important')
+                    expect(page.locator('.alcor-report a')).to_have_attribute('href', 'https://example.com/reference')
+                    expect(page.locator('.alcor-report pre')).to_contain_text('print(1)')
                     assert not page.evaluate('Boolean(window.__briefingUnsafe)')
-                    expect(page.locator('.stella-report img')).to_have_count(0)
+                    expect(page.locator('.alcor-report img')).to_have_count(0)
 
 
                     page.get_by_role('button', name='转为事务', exact=True).first.click()
@@ -127,22 +127,22 @@ def main():
                     page.get_by_role('button', name='建立事务', exact=False).click()
                     expect(page.get_by_role('button', name='建立事务', exact=False)).to_be_disabled()
                     page.get_by_text('来源与时间窗口', exact=True).click()
-                    groups = page.locator('.stella-briefing-source-group')
+                    groups = page.locator('.alcor-briefing-source-group')
                     expect(groups).not_to_have_count(0)
                     for group in groups.all():
-                        expect(group.locator('.stella-briefing-source-window time')).to_have_count(2)
-                        assert group.locator('.stella-briefing-source-window').evaluate('e => Math.abs(e.getBoundingClientRect().right - e.lastElementChild.getBoundingClientRect().right) < 2'), 'Time must align to the right edge'
-                    expect(page.locator('.stella-source-summary > p')).to_have_count(0)
+                        expect(group.locator('.alcor-briefing-source-window time')).to_have_count(2)
+                        assert group.locator('.alcor-briefing-source-window').evaluate('e => Math.abs(e.getBoundingClientRect().right - e.lastElementChild.getBoundingClientRect().right) < 2'), 'Time must align to the right edge'
+                    expect(page.locator('.alcor-source-summary > p')).to_have_count(0)
                     page.screenshot(path=str(artifacts / 'briefing-source-windows.png'))
 
                     page.get_by_role('button', name='plugin:synthetic:inbox · 候选信息', exact=True).click()
                     expect(page.get_by_role('button', name='返回 AI 报告', exact=True)).to_be_visible()
                     page.get_by_role('button', name='返回 AI 报告', exact=True).click()
                     page.get_by_role('button', name='更新今日简报', exact=True).click()
-                    expect(page.locator('.stella-briefing-revisions [data-revision]')).to_have_count(2, timeout=30000)
-                    expect(page.locator('.stella-briefing-history > button')).to_have_count(1)
+                    expect(page.locator('.alcor-briefing-revisions [data-revision]')).to_have_count(2, timeout=30000)
+                    expect(page.locator('.alcor-briefing-history > button')).to_have_count(1)
                     expect(page.get_by_role('button', name='更新今日简报', exact=True)).to_be_enabled(timeout=10000)
-                    page.locator('.stella-briefing-revisions [data-revision]').last.click()
+                    page.locator('.alcor-briefing-revisions [data-revision]').last.click()
                     expect(page.get_by_text('历史版本 1', exact=False)).to_be_visible()
                     page.get_by_role('button', name='当前版本', exact=False).click()
                     page.screenshot(path=str(artifacts / 'briefing-desktop.png'))
@@ -152,31 +152,31 @@ def main():
                         assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
                         page.screenshot(path=str(artifacts / f'briefing-{theme}-narrow.png'))
                     page.reload()
-                    expect(page.locator('.stella-briefing-revisions [data-revision]')).to_have_count(2)
-                    result = rpc(page, url, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_briefings'}})
+                    expect(page.locator('.alcor-briefing-revisions [data-revision]')).to_have_count(2)
+                    result = rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_briefings'}})
                     assert len(result) == 1
-                    auto = lambda action, request: rpc(page, url, 'stellaOrganizer/automation', {'request': {'scope': 'stella', 'action': action, 'request': request}})
-                    rpc(page, url, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'stella_tasks', 'accountId': 'local'}]}}})
+                    auto = lambda action, request: rpc(page, url, 'alcorOrganizer/automation', {'request': {'scope': 'alcor', 'action': action, 'request': request}})
+                    rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'alcor_tasks', 'accountId': 'local'}]}}})
                     job = auto('create', {'title': 'Synthetic daily integration', 'prompt': '整理本机今日事务、日程和待处理账单，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}})
-                    before = len(rpc(page, url, 'stellaOrganizer/read', {'request': {}})['records'])
+                    before = len(rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records'])
                     external_before = len([item for item in reads() if item['type'] == 'fetch'])
                     auto('run', {'id': job['id']})
                     deadline = time.monotonic() + 30
                     while time.monotonic() < deadline:
-                        records = rpc(page, url, 'stellaOrganizer/read', {'request': {}})['records']
+                        records = rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records']
                         if len(records) > before: break
                         page.wait_for_timeout(100)
                     assert len([item for item in reads() if item['type'] == 'fetch']) == external_before, 'Scheduled template must not inherit external source permission'
                     assert len(records) == before + 1, 'Scheduled briefing must use the same model pipeline and save a result'
                     auto('edit', {'id': job['id'], 'action': 'update', 'patch': {'active': False}})
                     # Exercise the no-items body path independently of per-item reports.
-                    business = lambda method, args: rpc(page, url, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
+                    business = lambda method, args: rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
                     empty = business('start_briefing', {'briefing_date': '2026-10-01', 'title': 'Preview test'})
                     business('complete_briefing', {'briefing_id': empty['id'], 'payload': {'body': '## Empty briefing preview\n\n- **No pending items**', 'items': []}})
                     page.get_by_role('button', name='刷新简报', exact=True).click()
-                    page.locator('.stella-briefing-history > button').filter(has_text='Preview test').click()
-                    expect(page.locator('.stella-report h2')).to_have_text('Empty briefing preview')
-                    expect(page.locator('.stella-report strong')).to_have_text('No pending items')
+                    page.locator('.alcor-briefing-history > button').filter(has_text='Preview test').click()
+                    expect(page.locator('.alcor-report h2')).to_have_text('Empty briefing preview')
+                    expect(page.locator('.alcor-report strong')).to_have_text('No pending items')
                     assert not errors, errors
                 finally:
                     page.screenshot(path=str(artifacts / 'final.png'))

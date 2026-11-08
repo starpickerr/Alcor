@@ -64,7 +64,7 @@ class Provider(NativeProvider):
 
 
 def business(page, method, arguments=None):
-    return desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': arguments or {}}})
+    return desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': arguments or {}}})
 
 
 def main():
@@ -145,9 +145,9 @@ def main():
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed.png'))
                 # Schedule receipt is distinct from completion: use the real DSH scheduler and wait for the saved report.
-                business(page, 'configure_sources', {'sources': [{'source': 'stella_tasks', 'accountId': 'local'}]})
-                desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo', 'arguments': {'payload': {'title': 'Scheduled local task'}}}})
-                auto = lambda action, request: desktop.rpc(page, 'stellaOrganizer/automation', {'request': {'action': action, 'scope': 'stella', 'request': request}})
+                business(page, 'configure_sources', {'sources': [{'source': 'alcor_tasks', 'accountId': 'local'}]})
+                desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo', 'arguments': {'payload': {'title': 'Scheduled local task'}}}})
+                auto = lambda action, request: desktop.rpc(page, 'alcorOrganizer/automation', {'request': {'action': action, 'scope': 'alcor', 'request': request}})
                 job = auto('create', {'title': 'Independent scheduled briefing', 'prompt': '整理本机今日事务，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}})
                 auto('run', {'id': job['id']})
                 deadline = time.monotonic() + 35
@@ -159,7 +159,7 @@ def main():
                 assert scheduled['sessionId'] != run['sessionId']
                 assert len(reads()) == 2, 'Scheduled local briefings must not read external sources'
                 page.set_viewport_size({'width': 430, 'height': 900})
-                expect(page.locator('.stella-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
+                expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
                 assert not errors, errors

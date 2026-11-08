@@ -20,9 +20,10 @@ def main():
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True);(home/'documents').mkdir()
         (profile/'package.json').write_text(json.dumps({'name':'apple-review','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
-        pack=Path(os.environ.get('STELLA_APPLE_REVIEW_PACK',str(artifacts/'stella-apple-sync-0.1.15.tgz')))
+        apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+        pack=Path(os.environ.get('STELLA_APPLE_REVIEW_PACK',str(desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz')))
         desktop.native_cli(home,'review-install','add',str(desktop.PACK),str(pack),'--ignore-scripts')
-        worker=profile/'node_modules/@stella/apple-sync/python/worker.py'
+        worker=profile/'node_modules/@alcor/apple-sync/python/worker.py'
         worker.unlink()
         worker.write_text((Path(__file__).parent/'fixtures/apple-review-worker.py').read_text())
         state_file=worker.parent/'review-state.json'
@@ -38,7 +39,7 @@ def main():
             page.set_viewport_size({'width':1440,'height':1100})
             open_secretary(page)
             page.get_by_role('button',name='Plugins',exact=True).or_(page.get_by_role('button',name='插件',exact=True)).click()
-            page.get_by_text('@stella/apple-sync',exact=True).click()
+            page.get_by_text('@alcor/apple-sync',exact=True).click()
             settings=page.locator('.apple-sync-settings');expect(settings).to_be_visible()
             calendar=page.get_by_role('region',name='Apple 日历',exact=True);reminders=page.get_by_role('region',name='Apple 提醒事项',exact=True)
             expect(calendar.get_by_text('每周项目回顾',exact=True)).to_be_visible()
@@ -59,7 +60,7 @@ def main():
             dialog.get_by_label('重新关联到',exact=False).check()
             dialog.screenshot(path=str(artifacts/'03-missing-source.png'),animations='disabled')
             dialog.get_by_label('确认 Apple 已删除此来源',exact=False).check();dialog.get_by_role('button',name='继续…').click()
-            deletion=page.get_by_role('dialog',name='删除 Stella 日历？',exact=True)
+            deletion=page.get_by_role('dialog',name='删除 Alcor 日历？',exact=True)
             expect(deletion).to_contain_text('其中全部日程')
             expect(deletion.get_by_role('button',name='返回',exact=True)).to_be_focused()
             deletion.screenshot(path=str(artifacts/'04-delete-confirmation.png'),animations='disabled')
@@ -70,7 +71,7 @@ def main():
             receipt.get_by_role('button',name='取消此次操作').click();expect(receipt).to_have_count(0)
             assert calls()[-1]['method']=='cancel_operation' and calls()[-1]['arguments']['operation_id']=='pending-1'
             reminders.get_by_role('button',name='完成 Python 练习',exact=False).click()
-            dialog.get_by_label('保留 Stella',exact=False).check()
+            dialog.get_by_label('保留 Alcor',exact=False).check()
             dialog.screenshot(path=str(artifacts/'06-record-conflict.png'),animations='disabled')
             page.set_viewport_size({'width':390,'height':844})
             assert dialog.evaluate('e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}')
@@ -79,11 +80,11 @@ def main():
             page.emulate_media(color_scheme='dark');page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
             dialog.screenshot(path=str(artifacts/'08-dark.png'),animations='disabled')
             dialog.get_by_role('button',name='确认并同步').click();expect(dialog).to_have_count(0)
-            assert calls()[-1]['arguments']=={'kind':'reminders','todo_id':'task-1','choice':'keep_stella'}
+            assert calls()[-1]['arguments']=={'kind':'reminders','todo_id':'task-1','choice':'keep_alcor'}
             page.set_viewport_size({'width':1440,'height':1100});page.emulate_media(color_scheme='light')
-            calendar.get_by_role('button',name='课程',exact=False).click();dialog.get_by_label('保留 Stella，重建',exact=False).check()
+            calendar.get_by_role('button',name='课程',exact=False).click();dialog.get_by_label('保留 Alcor，重建',exact=False).check()
             expect(dialog.get_by_role('combobox')).to_have_value('icloud');dialog.get_by_role('button',name='确认并同步').click()
-            assert calls()[-1]['arguments']=={'kind':'calendar','apple_id':'old-course','choice':'keep_stella','source_id':'icloud'}
+            assert calls()[-1]['arguments']=={'kind':'calendar','apple_id':'old-course','choice':'keep_alcor','source_id':'icloud'}
             expect(page.get_by_role('dialog')).to_have_count(0)
             states=json.loads(state_file.read_text())
             states['calendar']=dict(supported=True,authorization='denied',connected=False)
@@ -97,7 +98,7 @@ def main():
             expect(calendar.get_by_text('自动同步已开启',exact=True)).to_be_visible()
             expect(reminders.get_by_text('部分同步 · 含只读内容',exact=True)).to_be_visible()
             settings.screenshot(path=str(artifacts/'10-connected.png'),animations='disabled')
-            states['calendar']['category_conflicts']=[{'apple_id':'work','stella_id':'work-local','kind':'color','reason':'Apple 与 Stella 同时修改颜色'}]
+            states['calendar']['category_conflicts']=[{'apple_id':'work','alcor_id':'work-local','kind':'color','reason':'Apple 与 Stella 同时修改颜色'}]
             states['calendar']['calendars'][0]['color']='#28b8d4'
             write_states(states);page.wait_for_timeout(5200)
             calendar.get_by_role('button',name='工作',exact=False).click()
@@ -106,7 +107,7 @@ def main():
             assert calls()[-1]['arguments']['field']=='color'
             expect(page.get_by_role('dialog')).to_have_count(0)
             states=json.loads(state_file.read_text())
-            states['calendar']['category_conflicts']=[{'apple_id':'work','stella_id':'work-local','kind':'legacy_retained','reason':'旧内容已保留'}]
+            states['calendar']['category_conflicts']=[{'apple_id':'work','alcor_id':'work-local','kind':'legacy_retained','reason':'旧内容已保留'}]
             write_states(states);page.wait_for_timeout(5200)
             calendar.get_by_role('button',name='工作',exact=False).click();dialog.get_by_role('button',name='确认保留',exact=True).click()
             assert calls()[-1]['arguments']['choice']=='acknowledge'

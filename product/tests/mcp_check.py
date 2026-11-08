@@ -22,9 +22,9 @@ class McpProvider(BaseHTTPRequestHandler):
         assert self.headers.get('Authorization') == 'Bearer synthetic-test-key'
         names = {tool['function']['name'] for tool in payload.get('tools', [])}
         delta, reason = {'content': 'Synthetic title'}, 'stop'
-        if 'stella_overview' in names:
+        if 'alcor_overview' in names:
             self.observed.append(payload)
-            assert {'stella_overview', 'stella_business', 'stella_generate_briefing', 'stella_review_tasks', 'stella_import_bills', 'stella_import_dates', 'stella_export_bills', 'mcp__elearning__list_courses'} <= names, names
+            assert {'alcor_overview', 'alcor_business', 'alcor_generate_briefing', 'alcor_review_tasks', 'alcor_import_bills', 'alcor_import_dates', 'alcor_export_bills', 'mcp__elearning__list_courses'} <= names, names
             completed = any(message['role'] == 'tool' for message in payload['messages'])
             if completed:
                 assert 'synthetic-course' in json.dumps(payload)
@@ -96,14 +96,15 @@ def main():
                 process, url = start(home, log)
                 try:
                     page, errors = open_page(context, url)
-                    assert rpc(page, url, 'stellaSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
+                    assert rpc(page, url, 'alcorSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
                     open_secretary(page)
                     settings(page)
                     dialog = page.get_by_role('dialog', name='Settings', exact=True)
+                    expect(dialog.get_by_text('Alcor 对话工具', exact=True)).to_have_count(0)
                     expect(dialog.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
                     expect(dialog.get_by_text('权限与安全', exact=True)).to_have_count(0)
                     dialog.get_by_role('button', name='Close', exact=True).click()
-                    page.locator('.stella-sidebar-chat').click()
+                    page.locator('.alcor-sidebar-chat').click()
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
                     composer.fill('请使用 eLearning 查询我可以访问的课程。')
                     composer.press('Enter')
@@ -118,7 +119,7 @@ def main():
                 process, url = start(home, log)
                 try:
                     page, errors = open_page(context, url)
-                    assert rpc(page, url, 'stellaSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
+                    assert rpc(page, url, 'alcorSecretary/checkElearning', {'request': {}}) == {'status': 'ready', 'courseCount': 1}
                     assert legacy_grants.read_bytes() == legacy_before
                     assert not errors, errors
                 finally:

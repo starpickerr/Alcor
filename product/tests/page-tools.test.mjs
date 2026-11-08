@@ -1,16 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { callAutomation } from '../../packages/stella-organizer/src/page-tools.js'
-import { readDateFile, writeBillCsv } from '../../packages/stella-secretary/src/page-files.js'
+import { callAutomation } from '../../packages/alcor-organizer/src/page-tools.js'
+import { readDateFile, writeBillCsv } from '../../packages/alcor-secretary/src/page-files.js'
 
 test('automation tool routing uses the page contract and cannot escape Stella ownership', async () => {
   const calls = []
   const owner = { automation: async request => { calls.push(request); return { id: 'job' } } }
-  assert((await callAutomation(owner, 'catalog', {})).some(row => row.name === 'create'))
+  const catalog = await callAutomation(owner, 'catalog', {})
+  assert(catalog.some(row => row.name === 'create'))
+  assert.equal(catalog.find(row => row.name === 'list').description, '列出 Alcor 自动化及其状态')
+  assert.equal(catalog.find(row => row.name === 'deleteInactive').description, '清理暂不可用；不会删除或自动暂停任务')
   await callAutomation(owner, 'list', { scope: 'all' })
-  assert.deepEqual(calls.pop(), { scope: 'stella', action: 'catalog' })
+  assert.deepEqual(calls.pop(), { scope: 'alcor', action: 'catalog' })
   await callAutomation(owner, 'create', { title: '回顾', prompt: '回顾事务', timing: { kind: 'daily', daily: { time: '08:00', time_zone: 'Asia/Shanghai' } } })
-  assert.equal(calls.at(-1).scope, 'stella')
+  assert.equal(calls.at(-1).scope, 'alcor')
   await assert.rejects(callAutomation(owner, 'create', { scope: 'all', title: 'bad' }))
   await assert.rejects(callAutomation(owner, 'unknown', {}))
   owner.automation = async () => ({ code: 'conflict' })

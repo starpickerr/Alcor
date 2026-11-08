@@ -1,12 +1,14 @@
-<p align="center"><img src="docs/images/logo.jpg" alt="Stella" width="160" /></p>
+<p align="center"><img src="docs/images/logo.jpg" alt="Alcor" width="160" /></p>
 
-# Stella
+# Alcor
+
+Alcor, formerly Stella, runs as native DSH plugins. The existing personal profile has been migrated to Alcor on the official macOS arm64 desktop client 0.2.2-rc.1. Historical session identifiers remain available for compatibility.
 
 Current development targets the native DSH bundles in `packages/`. Start with `npm run dev`, test with `npm test`, and follow [the current product guide](product/README.md). The standalone Python/Electron implementation documented below is retained for migration and explicitly scoped legacy maintenance.
 
 [English](README.md) · [中文](docs/zh/README.md) · [繁體中文](docs/zh/README-Hant.md) · [日本語](docs/ja/README.md)
 
-**Stella is a private desktop AI assistant** centered on intelligent chat, bringing tasks, calendars, bills, smart briefings, and automation together in one workspace.
+**Alcor is a private desktop AI assistant** centered on intelligent chat, bringing tasks, calendars, bills, smart briefings, and automation together in one workspace.
 
 ## Features
 
@@ -48,7 +50,7 @@ Connect and manage external messaging platforms such as WeChat, Feishu, and Tele
 
 ### Download an installer
 
-Available installers are in [GitHub Releases](https://github.com/starpickerr/Stella/releases). For installation, first-run setup, and everyday use, see the [user guide](docs/guide.md).
+Available installers are in [GitHub Releases](https://github.com/starpickerr/Alcor/releases). For installation, first-run setup, and everyday use, see the [user guide](docs/guide.md).
 
 ### Run from source
 
@@ -63,8 +65,8 @@ The commands below are for macOS. Windows commands are in the [user guide](docs/
 Local development uses the Conda `Stella` environment (Python 3.12). Skip environment creation if it already exists.
 
 ```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
+git clone https://github.com/starpickerr/Alcor.git
+cd Alcor
 conda create -n Stella python=3.12
 conda activate Stella
 python -m pip install --upgrade pip setuptools
@@ -89,14 +91,14 @@ Model calls may incur provider charges. Tools can access local files and externa
 - [Documentation index](docs/README.md): architecture, business modules, and security boundaries.
 - [Desktop development](desktop/README.md): builds and packaging.
 - [Contributing](CONTRIBUTING.md): development setup and checks. Develop from `develop`; `main` is for releases.
-- [Issues](https://github.com/starpickerr/Stella/issues): remove credentials and personal data from logs before filing a report.
+- [Issues](https://github.com/starpickerr/Alcor/issues): remove credentials and personal data from logs before filing a report.
 
 ## Source and license
 
-Stella is independently developed from [CowAgent](https://github.com/zhayujie/CowAgent) (formerly `chatgpt-on-wechat`) by zhayujie and contributors. It reuses the upstream Agent, model, tool, skill, memory, and messaging foundations, and adds desktop workflows plus shared business services for tasks, calendars, bills, briefings, and security management.
+Alcor is independently developed from [CowAgent](https://github.com/zhayujie/CowAgent) (formerly `chatgpt-on-wechat`) by zhayujie and contributors. It reuses the upstream Agent, model, tool, skill, memory, and messaging foundations, and adds desktop workflows plus shared business services for tasks, calendars, bills, briefings, and security management.
 
 See [third-party notices](THIRD_PARTY_NOTICES.md) for source attribution and the [MIT license](LICENSE) for license terms.
 
 ## A note from the author
 
-This is the first open-source project I completed on my own. Thanks to Codex and Cursor for help during development. There is still work to do; suggestions and bug reports through [Issues](https://github.com/starpickerr/Stella/issues) are welcome.
+This is the first open-source project I completed on my own. Thanks to Codex and Cursor for help during development. There is still work to do; suggestions and bug reports through [Issues](https://github.com/starpickerr/Alcor/issues) are welcome.

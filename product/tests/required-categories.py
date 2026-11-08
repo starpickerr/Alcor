@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/stella-secretary'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-secretary'))
 from business.worker import Business
 
 
@@ -70,15 +70,22 @@ class RequiredCategories(unittest.TestCase):
         calendar, tasks = self.business.calendar, self.business.tasks
         group = calendar.create_category({'name':'Delete calendar'})
         event = calendar.create_event({'title':'Recurring', 'category_id':group['id'], 'start_at':'2026-11-07T01:00:00Z', 'end_at':'2026-11-07T02:00:00Z', 'repeat_frequency':'daily'}, _briefing_key='briefing-deleted-category')
-        calendar.exclude_occurrence(event['id'], '2026-11-08')
-        calendar.delete_category(group['id'])
+        op = 'a' * 64
+        args = (event['id'], '2026-11-08', 'this')
+        plan = calendar.prepare_local_occurrence_delete(*args, operation_id=op)
+        calendar.commit_local_occurrence_delete(*args, snapshot=plan['snapshot'], operation_id=op)
+        op = 'b' * 64
+        plan = calendar.prepare_local_category_delete(group['id'], operation_id=op)
+        calendar.commit_local_category_delete(group['id'], snapshot=plan['snapshot'], operation_id=op)
         with self.assertRaises(KeyError):
             calendar.get_event(event['id'])
         self.assertTrue(calendar.has_source_tombstone(['briefing-deleted-category']))
         group = tasks.create_category({'name':'Delete list'})
         task = tasks.create_todo({'title':'Task', 'category_id':group['id'], 'remind_at':'2099-12-25T05:00:00Z'}, _briefing_key='task-deleted-category')
         child = tasks.add_subtask(task['id'], {'title':'Child'})
-        tasks.delete_category(group['id'])
+        op = 'b' * 64
+        plan = tasks.prepare_local_category_delete(group['id'], operation_id=op)
+        tasks.commit_local_category_delete(group['id'], snapshot=plan['snapshot'], operation_id=op)
         for row in [task, child]:
             with self.assertRaises(KeyError):
                 tasks.get_todo(row['id'])

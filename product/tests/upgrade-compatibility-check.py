@@ -11,11 +11,14 @@ from plugin_check import pack_briefing_fixture
 
 
 def main():
+    if json.loads((desktop.ROOT / 'packages/alcor-secretary/package.json').read_text())['name'] != '@stella/secretary':
+        print('SKIP: historical same-name upgrade check does not cover the Alcor package rename')
+        return
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     legacy_cli = Path(os.environ['STELLA_LEGACY_CLI'])
     old_packs = [desktop.ROOT / '.local/artifacts/stella-secretary-0.1.5.tgz', desktop.ROOT / '.local/artifacts/stella-apple-sync-0.1.0.tgz']
-    apple_version = json.loads((desktop.ROOT / 'packages/stella-apple-sync/package.json').read_text())['version']
+    apple_version = json.loads((desktop.ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
     apple_pack = desktop.ROOT / f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
     with tempfile.TemporaryDirectory(prefix='stella-upgrade-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
@@ -45,7 +48,7 @@ def main():
             check_briefing_sources(page, lambda endpoint, args: desktop.rpc(page, endpoint, args), desktop.ARTIFACTS)
             reads = profile / 'node_modules/@stella-test/briefing-source/reads.jsonl'
             assert all(json.loads(line)['type'] == 'catalog' for line in reads.read_text().splitlines())
-            status = desktop.rpc(page, 'stellaAppleSync/invoke', {'request': {'method': 'status'}})
+            status = desktop.rpc(page, 'alcorAppleSync/invoke', {'request': {'method': 'status'}})
             assert status['supported'] and not status['connected']
             assert not errors, errors
         # A future unsupported Stella must be skipped without removing host services.

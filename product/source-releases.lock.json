@@ -1,12 +1,13 @@
 {
   "sources": [
     {
-      "repo": "fudan-elearning-mcp",
+      "repo": "dsh-fudan-elearning",
       "module": "elearning_mcp",
-      "package": "stella-elearning",
+      "package": "alcor-elearning",
       "binary": "elearning-mcp",
       "version": "1.0.7",
-      "sourceSha256": "cdfd628505fdfe3e0d0e8c10df9bd89736f81126d5b1ddc72813f76deda65320",
+      "sourceState": "local-uncommitted-candidate",
+      "sourceSha256": "3077f026dd6f44df76eb0e95b2acd29ff60e2b9bf7b7cd18b83fb5c0c551592b",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",
@@ -14,12 +15,13 @@
       }
     },
     {
-      "repo": "email-mcp",
+      "repo": "dsh-email",
       "module": "email_mcp",
-      "package": "stella-mail",
+      "package": "alcor-mail",
       "binary": "email-mcp",
       "version": "1.0.6",
-      "sourceSha256": "fcbd088cf71b3a99f37d98df5570ea0fce17743fb891e0c3d887c22bf07af38b",
+      "sourceRevision": "7bb82f44f8c16d9b5494ed2748994a3ded4d98c2",
+      "sourceSha256": "7409f8d2100f7bd8bcb99bced4ea92960487efc4c71202ad2bc7a8b4c1a0fa70",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3"

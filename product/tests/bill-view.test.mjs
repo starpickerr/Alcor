@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { money, periodRange, periodStatus, billValues, billPayload } from '../../packages/stella-secretary/src/bill-view.js'
+import { money, periodRange, periodStatus, billValues, billPayload } from '../../packages/alcor-secretary/src/bill-view.js'
 
 test('bill display keeps exact large amounts, currency scales, periods and historical time precision', () => {
   assert.equal(money('9007199254741091', 'CNY'), '¥90,071,992,547,410.91')
@@ -23,7 +23,7 @@ test('bill display keeps exact large amounts, currency scales, periods and histo
 })
 
 test('donut arcs draw separate hit targets, including a complete single-category ring', async () => {
-  const { donutArc } = await import('../../packages/stella-secretary/src/bill-view.js')
+  const { donutArc } = await import('../../packages/alcor-secretary/src/bill-view.js')
   assert.equal(donutArc(0, 0), '')
   const quarter = donutArc(0, 25).split(' ').map(value => Number(value))
   assert.equal(quarter[1], 80)

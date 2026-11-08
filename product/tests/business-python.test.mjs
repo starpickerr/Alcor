@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { BusinessWorker, resolveBusinessPython } from '../../packages/stella-organizer/src/business.js'
+import { BusinessWorker, resolveBusinessPython } from '../../packages/alcor-organizer/src/business.js'
 
 test('business imports never create bytecode in the interpreter or plugin payload', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-python-readonly-'))
@@ -38,6 +38,9 @@ test('official Desktop uses its validated payload without requiring Python on PA
 
 test('explicit development override and non-Desktop behavior remain compatible', async () => {
   const argv = ['node', '/official/@deepseek-ai/dsh-desktop-host/lib/index.js']
-  assert.equal(await resolveBusinessPython(argv, { STELLA_BUSINESS_PYTHON: '/explicit/python' }), '/explicit/python')
+  assert.equal(await resolveBusinessPython(argv, { ALCOR_BUSINESS_PYTHON: '/explicit/python' }), '/explicit/python')
+  assert.equal(await resolveBusinessPython(argv, { STELLA_BUSINESS_PYTHON: '/legacy/python' }), '/legacy/python')
+  assert.equal(await resolveBusinessPython(argv, { ALCOR_BUSINESS_PYTHON: '/same', STELLA_BUSINESS_PYTHON: '/same' }), '/same')
+  await assert.rejects(resolveBusinessPython(argv, { ALCOR_BUSINESS_PYTHON: '/new', STELLA_BUSINESS_PYTHON: '/old' }), /配置冲突/)
   assert.equal(await resolveBusinessPython(['node', '/cli/dsh.js'], {}), 'python3')
 })

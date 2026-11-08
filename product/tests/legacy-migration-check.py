@@ -12,7 +12,7 @@ spec.loader.exec_module(migration)
 
 with tempfile.TemporaryDirectory() as temporary:
     source, target = [Path(temporary)/name for name in ('old.db','native.db')]
-    schema = (ROOT/'packages/stella-secretary/business/calendar/domain/schema.sql').read_text()
+    schema = (ROOT/'packages/alcor-secretary/business/calendar/domain/schema.sql').read_text()
     for path in (source,target):
         with closing(sqlite3.connect(path)) as db, db: db.executescript(schema)
     def event(db, identifier, title, source_type=None, source_key=None):
@@ -43,7 +43,7 @@ print('PASS: synthetic migration preserves current edits and deletions, excludes
 
 with tempfile.TemporaryDirectory() as temporary:
     source,target=[Path(temporary)/name for name in ('old.db','native.db')]
-    schema=(ROOT/'packages/stella-secretary/business/bills/domain/schema.sql').read_text()
+    schema=(ROOT/'packages/alcor-secretary/business/bills/domain/schema.sql').read_text()
     for path in (source,target):
         with closing(sqlite3.connect(path)) as db, db:db.executescript(schema)
     for path,identifiers in [(source,['old-a','old-b']),(target,['current'])]:

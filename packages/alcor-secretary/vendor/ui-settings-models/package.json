@@ -1,0 +1,33 @@
+{
+  "name": "@deepseek-ai/dsh-client-ui-settings-models",
+  "version": "0.2.2-alpha.3-alcor.1",
+  "private": true,
+  "description": "Alcor-maintained MIT derivative of @deepseek-ai/dsh-client-ui-settings-models; not an official DSH package release",
+  "type": "module",
+  "license": "MIT",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  },
+  "alcor": {
+    "upstream": {
+      "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+      "tag": "dsh-v0.2.2-alpha.3",
+      "commit": "05b1cae8db6e674c5685101494d4eec24652424a",
+      "version": "0.2.2-alpha.3"
+    }
+  }
+}

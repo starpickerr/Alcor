@@ -1,10 +1,10 @@
-# Stella 使用指南
+# Alcor 使用指南
 
 [English](../guide.md) · [中文](guide.md) · [繁體中文](guide-Hant.md) · [日本語](../ja/guide.md)
 
 ## 安装与启动
 
-可用安装包见 [GitHub Releases](https://github.com/starpickerr/Stella/releases)。桌面安装包会自动启动内置后端。从源码运行需要 Python 3.10+、Node.js 22.13+；macOS 还需要 Xcode 命令行工具（`xcode-select --install`）。
+可用安装包见 [GitHub Releases](https://github.com/starpickerr/Alcor/releases)。桌面安装包会自动启动内置后端。从源码运行需要 Python 3.10+、Node.js 22.13+；macOS 还需要 Xcode 命令行工具（`xcode-select --install`）。
 
 克隆仓库后，在仓库根目录运行：
 

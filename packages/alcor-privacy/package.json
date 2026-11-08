@@ -1,0 +1,52 @@
+{
+  "name": "@alcor/privacy",
+  "version": "0.0.2",
+  "type": "module",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "lib",
+    "native/keychain-bridge",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-alpha.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-atomic-write": "*",
+    "@deepseek-ai/dsh-credentials": "*",
+    "@deepseek-ai/dsh-home-paths": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "dependencies": {},
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-atomic-write": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-home-paths": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}

@@ -17,7 +17,7 @@ def check(page, call, artifacts):
     page.get_by_role('button', name='账单', exact=True).click()
     page.get_by_role('button', name='刷新', exact=True).click()
     page.get_by_role('tab', name='月账单', exact=True).click()
-    cards = page.locator('.stella-bill-period-list > button')
+    cards = page.locator('.alcor-bill-period-list > button')
     expect(cards).to_have_count(3)
     for card in cards.all():
         box = card.bounding_box()
@@ -25,7 +25,7 @@ def check(page, call, artifacts):
         assert card.evaluate('e => e.scrollWidth <= e.clientWidth')
     boxes = [card.bounding_box() for card in cards.all()]
     assert all(boxes[i + 1]['y'] > boxes[i]['y'] + boxes[i]['height'] and abs(boxes[i + 1]['x'] - boxes[i]['x']) < 1 for i in range(len(boxes) - 1))
-    assert page.locator('.stella-bill-period-list').evaluate('e => { const r = e.getBoundingClientRect(); const p = e.closest(".stella-bills-content").getBoundingClientRect(); return r.left > p.left + 24 && r.right < p.right - 24 && Math.abs(r.left + r.width / 2 - p.left - p.width / 2) < 2 }')
+    assert page.locator('.alcor-bill-period-list').evaluate('e => { const r = e.getBoundingClientRect(); const p = e.closest(".alcor-bills-content").getBoundingClientRect(); return r.left > p.left + 24 && r.right < p.right - 24 && Math.abs(r.left + r.width / 2 - p.left - p.width / 2) < 2 }')
     expect(page.get_by_role('button', name='查看2026年9月账单', exact=True)).to_contain_text('¥300.00')
     page.screenshot(path=str(artifacts / 'statements-month-desktop.png'), animations='disabled')
     page.get_by_role('tab', name='年账单', exact=True).click()
@@ -92,7 +92,7 @@ def main():
         baseline = (profile / 'cordis.patch.yml').read_bytes()
         desktop.native_cli(home, 'statement-timeline-install', 'add', str(desktop.PACK), '--ignore-scripts')
         with desktop.desktop(playwright, home, 'statement-timeline') as (page, errors):
-            call = lambda domain, method, args: desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args}})
+            call = lambda domain, method, args: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args}})
             check(page, call, artifacts)
             assert not errors, errors
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline

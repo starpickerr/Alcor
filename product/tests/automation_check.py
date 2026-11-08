@@ -14,15 +14,15 @@ from web_check import Provider, requests, rpc, start, stop, open_page, open_secr
 
 
 def check_automation(page, url):
-    def auto(action, request=None, scope='stella'):
-        return rpc(page, url, 'stellaOrganizer/automation', {'request': {'scope': scope, 'action': action, **({} if request is None else {'request': request})}})
+    def auto(action, request=None, scope='alcor'):
+        return rpc(page, url, 'alcorOrganizer/automation', {'request': {'scope': scope, 'action': action, **({} if request is None else {'request': request})}})
 
     future = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
     owner = auto('create', {'title': 'Owner automation only', 'prompt': 'Owner synthetic instruction', 'timing': {'kind': 'at', 'at': future}}, 'all')
     task = auto('create', {'title': 'Shared Stella automation', 'prompt': 'Stella synthetic instruction', 'timing': {'kind': 'at', 'at': future}})
-    assert task['target']['create']['agentPreset'] == 'stella'
+    assert task['target']['create']['agentPreset'] == 'alcor'
     assert {item['id'] for item in auto('catalog')} == {task['id']}
-    assert {item['id']: item['sourceLabel'] for item in auto('catalog', scope='all')} == {owner['id']: 'DSH', task['id']: 'Stella'}
+    assert {item['id']: item['sourceLabel'] for item in auto('catalog', scope='all')} == {owner['id']: 'DSH', task['id']: 'Alcor'}
     open_secretary(page)
     page.get_by_role('button', name='自动化', exact=True).click()
     manager = page.get_by_test_id('task-manager-page')
@@ -36,19 +36,19 @@ def check_automation(page, url):
     # A stale edit must not overwrite the new title.
     stale = auto('edit', {'id': task['id'], 'action': 'update', 'patch': {'title': 'Stale edit'}, 'expectedUpdatedAt': '2000-01-01T00:00:00.000Z'})
     assert stale['code'] == 'schedule_conflict'
-    page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).click()
+    page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True).click()
     page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
     page.get_by_role('button', name='Automation tasks', exact=True).click()
     expect(manager.get_by_role('button', name=owner['title'], exact=True)).to_be_visible()
     expect(manager.get_by_role('button', name='Edited in Stella', exact=True)).to_be_visible()
-    expect(manager.get_by_text('Stella', exact=True)).to_be_visible()
+    expect(manager.get_by_text('Alcor', exact=True)).to_be_visible()
     manager.get_by_role('button', name='Edited in Stella', exact=True).click()
     page.get_by_label('Automation task name', exact=True).fill('Edited in DSH')
     page.get_by_role('button', name='Save changes', exact=True).click()
     expect(manager.get_by_role('button', name='Edited in DSH', exact=True)).to_be_visible()
     # Both new-session modes retain Stella even if a caller supplied a different preset.
     changed = auto('edit', {'id': task['id'], 'action': 'update', 'patch': {'target': {'kind': 'new', 'create': {'agentPreset': 'default'}}}}, 'all')
-    assert changed['target']['create']['agentPreset'] == 'stella'
+    assert changed['target']['create']['agentPreset'] == 'alcor'
     open_secretary(page)
     page.get_by_role('button', name='自动化', exact=True).click()
     expect(manager.get_by_role('button', name='Edited in DSH', exact=True)).to_be_visible()
@@ -82,7 +82,7 @@ def check_automation(page, url):
     expect(manager.get_by_role('button', name='Synthetic daily briefing', exact=True)).to_be_visible()
     assert len(requests) == before, 'Viewing, editing and saving must not call a model'
     daily = next(item for item in auto('catalog') if item['title'] == 'Synthetic daily briefing')
-    assert daily['target']['create']['agentPreset'] == 'stella'
+    assert daily['target']['create']['agentPreset'] == 'alcor'
     if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
         Path(directory).mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(Path(directory) / 'automation-desktop.png'), animations='disabled')
@@ -92,11 +92,11 @@ def check_automation(page, url):
     if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
         page.screenshot(path=str(Path(directory) / 'automation-mobile.png'), animations='disabled')
     page.set_viewport_size({'width': 1280, 'height': 850})
-    records_before = len(rpc(page, url, 'stellaOrganizer/read', {'request': {}})['records'])
+    records_before = len(rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records'])
     auto('run', {'id': daily['id']})
     deadline = time.monotonic() + 25
     while time.monotonic() < deadline:
-        data = rpc(page, url, 'stellaOrganizer/read', {'request': {}})
+        data = rpc(page, url, 'alcorOrganizer/read', {'request': {}})
         if len(data['records']) > records_before:
             break
         page.wait_for_timeout(100)
@@ -111,7 +111,7 @@ def check_automation(page, url):
     expect(manager.get_by_role('button', name='Retained weekly draft', exact=True)).to_be_visible()
     weekly = next(item for item in auto('catalog') if item['title'] == 'Retained weekly draft')
     assert 'FREQ=WEEKLY' in weekly['rrule'] and 'BYDAY=MO' in weekly['rrule']
-    assert weekly['target']['create']['agentPreset'] == 'stella'
+    assert weekly['target']['create']['agentPreset'] == 'alcor'
     auto('run', {'id': weekly['id']})
     deadline = time.monotonic() + 25
     while time.monotonic() < deadline:
@@ -120,9 +120,10 @@ def check_automation(page, url):
         page.wait_for_timeout(100)
     else:
         raise AssertionError('Scheduled weekly review must return the local task summary')
-    assert len(rpc(page, url, 'stellaOrganizer/read', {'request': {}})['records']) == records_before + 1
+    assert len(rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records']) == records_before + 1
     # Removing in DSH removes the same task in Stella; unrelated tasks survive.
-    auto('edit', {'id': task['id'], 'action': 'delete'}, 'all')
+    latest = next(item for item in auto('catalog', scope='all') if item['id'] == task['id'])
+    auto('edit', {'id': task['id'], 'action': 'delete', 'expectedUpdatedAt': latest.get('updatedAt')}, 'all')
     assert all(item['id'] != task['id'] for item in auto('catalog'))
     assert any(item['id'] == owner['id'] for item in auto('catalog', scope='all'))
     return daily['id'], owner['id']

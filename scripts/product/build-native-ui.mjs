@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { renamedEnv } from './env.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const clients = {
@@ -14,7 +15,7 @@ const clients = {
 }
 const modelsHost = join(root, 'scripts/product/native-ui-models-host.mjs')
 const welcomeNamespace = 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";'
-const bundledWelcomeNamespace = 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "stella-ui-settings-general";'
+const bundledWelcomeNamespace = 'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "alcor-ui-settings-general";'
 
 export function adaptModelsClient(client) {
   if (client.split(welcomeNamespace).length !== 2) throw new Error('Unexpected DSH welcome settings namespace')
@@ -24,7 +25,7 @@ const patches = ['0002-client-product-entry.patch', '0004-workspace-browser-fact
 const hash = value => createHash('sha256').update(value).digest('hex')
 const readJson = async path => JSON.parse(await readFile(path, 'utf8'))
 
-export async function verifyNativeUi(directory = join(root, 'packages/stella-secretary/vendor')) {
+export async function verifyNativeUi(directory = join(root, 'packages/alcor-secretary/vendor')) {
   const lock = await readJson(join(root, 'product/upstream.lock.json'))
   const provenance = await readJson(join(directory, 'NATIVE-UI-PROVENANCE.json'))
   if (provenance.format !== 1 || provenance.repository !== lock.repository || provenance.tag !== lock.tag
@@ -43,10 +44,10 @@ export async function verifyNativeUi(directory = join(root, 'packages/stella-sec
     const manifest = await readJson(join(target, 'package.json'))
     const identity = '@deepseek-ai/dsh-client-' + name
     const entry = provenance.clients[name]
-    if (manifest.name !== identity || manifest.version !== lock.npmVersion + '-stella.1'
+    if (manifest.name !== identity || manifest.version !== lock.npmVersion + '-alcor.1'
       || manifest.private !== true || manifest.license !== 'MIT' || !manifest.description?.includes('not an official DSH package release')
       || manifest.exports?.['./client'] !== './lib/client.js' || manifest.dsh?.client?.platform !== 'web'
-      || manifest.stella?.upstream?.commit !== lock.commit || entry.module !== identity) throw new Error('Native UI derivative manifest is invalid: ' + name)
+      || manifest.alcor?.upstream?.commit !== lock.commit || entry.module !== identity) throw new Error('Native UI derivative manifest is invalid: ' + name)
     const client = await readFile(join(target, 'lib/client.js'))
     if (entry.client !== hash(client) || entry.host !== hash(await readFile(join(target, 'lib/index.js')))
       || !client.includes(marker) || !client.includes('id: "' + identity + '"')) throw new Error('Native UI artifact changed; rebuild native UI: ' + name)
@@ -63,7 +64,7 @@ export async function verifyNativeUi(directory = join(root, 'packages/stella-sec
   return provenance
 }
 
-export async function buildNativeUi(source = process.env.STELLA_UPSTREAM_DIR || join(root, '.local/upstream')) {
+export async function buildNativeUi(source = renamedEnv('ALCOR_UPSTREAM_DIR', 'STELLA_UPSTREAM_DIR') || join(root, '.local/upstream')) {
   const upstream = await realpath(resolve(source))
   if (upstream.split(sep).includes('references')) throw new Error('Native UI builds must not use references/')
   const lock = await readJson(join(root, 'product/upstream.lock.json'))
@@ -77,9 +78,9 @@ export async function buildNativeUi(source = process.env.STELLA_UPSTREAM_DIR || 
     patchHashes[name] = hash(await readFile(path))
   }
 
-  const destination = join(root, 'packages/stella-secretary/vendor')
-  await mkdir(join(root, 'packages/stella-secretary'), { recursive: true })
-  const temporary = await mkdtemp(join(root, 'packages/stella-secretary/.native-ui-'))
+  const destination = join(root, 'packages/alcor-secretary/vendor')
+  await mkdir(join(root, 'packages/alcor-secretary'), { recursive: true })
+  const temporary = await mkdtemp(join(root, 'packages/alcor-secretary/.native-ui-'))
   const staged = join(temporary, 'vendor')
   const backup = join(temporary, 'previous')
   const provenance = { format: 1, repository: lock.repository, tag: lock.tag, commit: lock.commit, version: lock.npmVersion, patches: patchHashes, clients: {} }
@@ -96,14 +97,14 @@ export async function buildNativeUi(source = process.env.STELLA_UPSTREAM_DIR || 
       // Keep the original module identity so existing DSH consumers resolve the same public services.
       const manifest = {
         name: original.name,
-        version: lock.npmVersion + '-stella.1',
+        version: lock.npmVersion + '-alcor.1',
         private: true,
-        description: 'Stella-maintained MIT derivative of ' + original.name + '; not an official DSH package release',
+        description: 'Alcor-maintained MIT derivative of ' + original.name + '; not an official DSH package release',
         type: 'module', license: 'MIT',
         main: './lib/index.js',
         exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json', './locale/*.json': './locale/*.json' },
         dsh: { client: original.dsh.client },
-        stella: { upstream: { repository: lock.repository, tag: lock.tag, commit: lock.commit, version: lock.npmVersion } },
+        alcor: { upstream: { repository: lock.repository, tag: lock.tag, commit: lock.commit, version: lock.npmVersion } },
       }
       await writeFile(join(target, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
       for (const file of await readdir(join(directory, 'lib'))) {

@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'packages/stella-secretary'))
+sys.path.insert(0, str(ROOT / 'packages/alcor-secretary'))
 from business.briefing.domain.models import SourceItem, EmailMessage, FilterRule
 
 
@@ -133,7 +133,7 @@ def main():
     args = parser.parse_args()
     fixture = json.loads((ROOT / 'product/tests/fixtures/briefing-prompts.json').read_text())
     baseline = load(args.baseline, 'baseline_briefing_generator')
-    candidate = load(ROOT / 'packages/stella-secretary/business/briefing/domain/generator.py', 'candidate_briefing_generator')
+    candidate = load(ROOT / 'packages/alcor-secretary/business/briefing/domain/generator.py', 'candidate_briefing_generator')
     report = {'method': 'DSH UTF-16 chars/4 heuristic; input prompt + schema only; not provider usage',
               'quality_scope': 'Fixed-output replay and lossless source/plan checks, not an LLM quality proof', 'scenarios': {}}
     for name, data in scenarios(fixture):

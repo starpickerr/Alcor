@@ -1,6 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readHubDraft, jobRunning, filterHubJobs, canRetryStep } from '../../packages/stella-agent-hub/src/agent-hub.js'
+import { readHubDraft, readHubMessage, clearHubDraft, hubDraftKey, hubMessageKey, jobRunning, filterHubJobs, canRetryStep } from '../../packages/alcor-agent-hub/src/agent-hub.js'
+
+test('Hub migrates browser drafts without overwriting new content or reviving cleared drafts', () => {
+  const values = new Map()
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+  const old = { id: 'old', title: 'Old', prompt: 'unfinished' }
+  values.set('stella.agent-hub.draft.v1', JSON.stringify(old))
+  assert.deepEqual(readHubDraft(storage), old)
+  assert.equal(values.get(hubDraftKey), JSON.stringify(old))
+  const current = { id: 'new', title: 'New', prompt: 'keep' }
+  values.set(hubDraftKey, JSON.stringify(current))
+  assert.deepEqual(readHubDraft(storage), current)
+  clearHubDraft(storage)
+  assert.equal(readHubDraft(storage), null)
+  const message = { body: 'unfinished', intent: 'message', recipientIds: [], requestId: '01234567-89ab-cdef-0123-456789abcdef' }
+  values.set('stella.agent-hub.message.v1:job', JSON.stringify(message))
+  assert.deepEqual(readHubMessage(storage, 'job'), message)
+  assert.equal(values.get(hubMessageKey('job')), JSON.stringify(message))
+})
 
 test('hub drafts survive navigation, reject corrupt browser state, and never become running jobs', () => {
   const draft = { id: 'draft-1', title: 'Research', prompt: '<untrusted material>', injected: 'ignored' }

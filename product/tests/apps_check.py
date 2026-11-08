@@ -41,10 +41,10 @@ def check_app_theme(page):
 
 def check_apps(page, url, compatible):
     def call(method, args=None):
-        return rpc(page, url, 'stellaOrganizer/' + method, {'request': args or {}})
+        return rpc(page, url, 'alcorOrganizer/' + method, {'request': args or {}})
     def rejects(method, args):
-        response = page.request.post(url.split('/?')[0] + '/api/stellaOrganizer/' + method, data={
-            'type': 'client-request', 'rpcId': str(uuid4()), 'method': 'stellaOrganizer/' + method, 'payload': {'args': {'request': args}}})
+        response = page.request.post(url.split('/?')[0] + '/api/alcorOrganizer/' + method, data={
+            'type': 'client-request', 'rpcId': str(uuid4()), 'method': 'alcorOrganizer/' + method, 'payload': {'args': {'request': args}}})
         assert not response.ok or not response.json()['result']['ok']
     initial = call('read')
     assert initial == {'records': [], 'jobs': [], 'schedules': []}, initial
@@ -114,11 +114,11 @@ def check_apps(page, url, compatible):
         page.get_by_role('tab', name='列表', exact=True).click()
         page.get_by_role('heading', name='UI calendar event', exact=True).wait_for()
         page.get_by_role('button', name='账单', exact=True).click()
-        expect(page.locator('.stella-bill-totals-cards')).to_contain_text('¥0.30')
+        expect(page.locator('.alcor-bill-totals-cards')).to_contain_text('¥0.30')
         for label, period in [('月账单', '2026年11月'), ('年账单', '2026年')]:
             page.get_by_role('tab', name=label, exact=True).click()
             page.get_by_role('button', name=f'查看{period}账单', exact=True).click()
-            expect(page.locator('.stella-bill-report .stella-bill-totals')).to_contain_text('¥0.30')
+            expect(page.locator('.alcor-bill-report .alcor-bill-totals')).to_contain_text('¥0.30')
             expect(page.get_by_role('heading', name='分类构成', exact=True)).to_be_visible()
         page.get_by_role('tab', name='明细', exact=True).click()
         page.get_by_role('button', name='编辑账单：Bill CNY 0.1', exact=True).wait_for()
@@ -140,10 +140,10 @@ def check_apps(page, url, compatible):
         page.get_by_text('补充材料', exact=True).click()
         page.get_by_label('本次补充材料', exact=True).fill('UI report material')
         page.get_by_role('button', name='生成今日简报', exact=True).or_(page.get_by_role('button', name='更新今日简报', exact=True)).click()
-        expect(page.locator('.stella-report')).to_contain_text('Synthetic structured briefing saved through DSH.', timeout=30000)
+        expect(page.locator('.alcor-report')).to_contain_text('Synthetic structured briefing saved through DSH.', timeout=30000)
         page.get_by_role('button', name='更新今日简报', exact=True).wait_for()
-        page.locator('.stella-briefing-history > button').last.click()
-        expect(page.locator('.stella-report')).to_contain_text('Synthetic report material')
+        page.locator('.alcor-briefing-history > button').last.click()
+        expect(page.locator('.alcor-report')).to_contain_text('Synthetic report material')
         for label in ['事务', '日程', '简报', '账单', '自动化']:
             page.get_by_role('button', name=label, exact=True).click()
             expect(page.get_by_text('更多操作', exact=True)).to_have_count(0)
@@ -159,7 +159,7 @@ def check_apps(page, url, compatible):
             page.set_viewport_size({'width': 390, 'height': 844})
             page.locator('[data-sidebar-opener]').wait_for()
             page.locator('[data-sidebar-opener]').click()
-            page.get_by_role('dialog', name='Stella 秘书导航', exact=True).get_by_role('button', name='事务', exact=True).click()
+            page.get_by_role('dialog', name='Alcor 秘书导航', exact=True).get_by_role('button', name='事务', exact=True).click()
             expect(page.locator('[data-sidebar-drawer]')).to_have_attribute('data-sidebar-collapsed', 'true')
             page.get_by_role('button', name='新建事务', exact=True).click()
             page.get_by_label('标题', exact=True).fill('Mobile synthetic task')

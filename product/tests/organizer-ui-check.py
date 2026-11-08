@@ -10,14 +10,14 @@ from web_check import rpc, stop, open_secretary
 
 
 def main():
-    apple_version = json.loads((ROOT / 'packages/stella-apple-sync/package.json').read_text())['version']
-    apple_pack = ROOT / f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
+    apple_version = json.loads((ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_pack = ROOT / f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/stella-organizer-plugin-artifacts'))
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='stella-organizer-native-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         environment = {key: value for key, value in os.environ.items() if key in ('PATH', 'USER', 'LOGNAME', 'TMPDIR')}
-        environment.update(HOME=str(home), DSH_HOME=str(home), DSH_TELEMETRY_DISABLED='1', STELLA_EVENTKIT_HELPER=str(ROOT / 'product/tests/fake-eventkit.py'))
+        environment.update(HOME=str(home), DSH_HOME=str(home), DSH_TELEMETRY_DISABLED='1', ALCOR_EVENTKIT_HELPER=str(ROOT / 'product/tests/fake-eventkit.py'))
         profile = home / 'profiles/compatibility'
         profile.mkdir(parents=True)
         manifest = {'name': 'stella-apple-fixture', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}
@@ -44,12 +44,12 @@ def main():
                 try:
                     page.goto(url)
                     page.get_by_role('button', name='Account menu', exact=True).wait_for()
-                    call = lambda method, args=None: rpc(page, url, 'stellaAppleSync/invoke', {'request': {'method': method, 'arguments': args or {}}})
-                    business = lambda domain, method, args=None: rpc(page, url, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
+                    call = lambda method, args=None: rpc(page, url, 'alcorAppleSync/invoke', {'request': {'method': method, 'arguments': args or {}}})
+                    business = lambda domain, method, args=None: rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
                     if phase == 'first':
                         assert not call('status')['connected']
                         assert call('status')['supported']
-                        page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).or_(page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True)).wait_for()
+                        page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).or_(page.get_by_role('button', name='切换使用模式，当前 Alcor', exact=True)).wait_for()
                         open_secretary(page)
                         page.get_by_role('button', name='Account menu', exact=True).click()
                         page.get_by_role('menuitem', name='Settings', exact=False).click()
@@ -59,7 +59,7 @@ def main():
                         plugins = page.get_by_role('button', name='插件', exact=True)
                         (plugins if plugins.count() else page.get_by_role('button', name='Plugins', exact=True)).click()
                         page.get_by_role('heading', name='Plugins', exact=True).wait_for()
-                        page.get_by_text('@stella/apple-sync', exact=True).click()
+                        page.get_by_text('@alcor/apple-sync', exact=True).click()
                         page.get_by_role('heading', name='Apple 同步', exact=True).wait_for()
                         calendar = page.get_by_role('region', name='Apple 日历', exact=True)
                         reminders = page.get_by_role('region', name='Apple 提醒事项', exact=True)
@@ -96,7 +96,7 @@ def main():
                         if not page.get_by_role('heading', name='Plugins', exact=True).count():
                             plugins = page.get_by_role('button', name='插件', exact=True)
                             (plugins if plugins.count() else page.get_by_role('button', name='Plugins', exact=True)).click()
-                        page.get_by_text('@stella/apple-sync', exact=True).click()
+                        page.get_by_text('@alcor/apple-sync', exact=True).click()
                         for region in (calendar, reminders):
                             expect(region.get_by_role('button', name='暂停同步', exact=True)).to_be_enabled()
                             expect(region.get_by_text('分类：Synthetic source', exact=True)).to_have_count(0)
@@ -115,14 +115,14 @@ def main():
                         assert business('calendar', 'get_category', {'id': business('calendar', 'list_events')[0]['category_id']})['name'] == 'Synthetic source'
                         check_tasks(page, business, artifacts)
                         check_calendar(page, business, artifacts)
-                        result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/apple-sync', 'enabled': False})
+                        result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/apple-sync', 'enabled': False})
                         assert result['application'] in ('applied', 'restart-required'), result
                         print('Apple disable:', result['application'], flush=True)
                     elif phase in ('apple-disabled', 'secretary-disabled'):
-                        response = page.request.post(url.split('/?')[0] + '/api/stellaAppleSync/invoke', data={'request': {'method': 'status'}})
+                        response = page.request.post(url.split('/?')[0] + '/api/alcorAppleSync/invoke', data={'request': {'method': 'status'}})
                         assert response.status == 404 or not response.json().get('result', {}).get('ok', False)
                         if phase == 'apple-disabled':
-                            result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/apple-sync', 'enabled': True})
+                            result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/apple-sync', 'enabled': True})
                             assert result['application'] in ('applied', 'restart-required'), result
                     elif phase == 'apple-enabled':
                         assert call('status')['connected']
@@ -137,13 +137,13 @@ def main():
                         assert len([row for row in business('tasks', 'list_todos') if row['title'] == 'Synthetic Apple task']) == 1
                         call('disconnect')
                         assert not call('status')['connected']
-                        result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@stella/apple-sync', 'enabled': False})
+                        result = rpc(page, url, 'pluginManager/setBundleEnabled', {'name': '@alcor/apple-sync', 'enabled': False})
                         assert result['application'] in ('applied', 'restart-required'), result
                     elif phase == 'remove':
-                        result = rpc(page, url, 'pluginManager/removeBundle', {'name': '@stella/apple-sync'})
+                        result = rpc(page, url, 'pluginManager/removeBundle', {'name': '@alcor/apple-sync'})
                         assert result['application'] in ('applied', 'restart-required'), result
                         assert any(row['title'] == 'Synthetic Apple task' for row in business('tasks', 'list_todos'))
-                        assert (profile / 'stella/apple-sync/apple-calendar.sqlite3').exists()
+                        assert (profile / 'alcor/apple-sync/apple-calendar.sqlite3').exists()
                     else:
                         assert not call('status')['connected']
                         assert len([row for row in business('tasks', 'list_todos') if row['title'] == 'Synthetic Apple task']) == 1
@@ -166,7 +166,7 @@ def main():
                   const directory={json.dumps(str(profile))};
                   const manifest=readProfileManifest('dsh', directory);
                   const previous=manifest.dsh.profile.bundles;
-                  const name='@stella/secretary';
+                  const name='@alcor/secretary';
                   const bundles={str(phase == 'secretary-disabled').lower()} ? [...new Set([...previous,name])] : previous.filter(item => item!==name);
                   writeProfileBundles(directory, manifest, bundles);'''
                 with (home / 'bundle-selection.log').open('w') as log:
@@ -180,7 +180,7 @@ def check_tasks(page, business, artifacts):
     open_secretary(page)
     page.get_by_role('button', name='新建事务', exact=True).click()
     form = page.get_by_role('form', name='新增事务', exact=True)
-    assert form.locator('.stella-field > span:first-child').all_text_contents()[:8] == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
+    assert form.locator('.alcor-field > span:first-child').all_text_contents()[:8] == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
     for label in ['事务时区', '计划日期', '提醒时间', '清单', '重复频率', '标记为重要']:
         expect(form.get_by_label(label, exact=True)).to_have_count(0)
     expect(form.get_by_text('提醒时间使用本机时区', exact=False)).to_have_count(0)
@@ -205,15 +205,15 @@ def check_tasks(page, business, artifacts):
     trash = card.get_by_role('button', name='更多操作：Project parent', exact=True)
     assert not trash.inner_text().strip() and trash.locator('svg').count() == 1
     assert card.evaluate('e => getComputedStyle(e).borderBottomStyle !== "none"')
-    assert page.locator('.stella-task-tabs').evaluate('e => Math.abs(e.getBoundingClientRect().right - document.querySelector(".stella-agent-strip").getBoundingClientRect().right) < 2')
+    assert page.locator('.alcor-task-tabs').evaluate('e => Math.abs(e.getBoundingClientRect().right - document.querySelector(".alcor-agent-strip").getBoundingClientRect().right) < 2')
     page.screenshot(path=str(artifacts / 'tasks-list-desktop.png'), animations='disabled')
     card.click(position={'x': card.bounding_box()['width'] * .65, 'y': 18})
-    expect(page.locator('.stella-task-description')).to_have_text('Read requirements, prepare the proposal and bring the final document.')
+    expect(page.locator('.alcor-task-description')).to_have_text('Read requirements, prepare the proposal and bring the final document.')
     expect(page.get_by_role('heading', name='前置事务', exact=True)).to_have_count(0)
     expect(page.get_by_label('选择前置事务', exact=True)).to_have_count(0)
     expect(page.get_by_role('heading', name='检查清单', exact=True)).to_have_count(0)
     expect(page.get_by_label('Legacy checklist retained', exact=True)).to_have_count(0)
-    expect(page.locator('.stella-task-detail-summary .stella-task-badge[data-status]')).to_have_count(0)
+    expect(page.locator('.alcor-task-detail-summary .alcor-task-badge[data-status]')).to_have_count(0)
     expect(page.get_by_role('region', name='事务详情', exact=True)).to_contain_text('2026年12月25日')
     expect(page.get_by_role('region', name='事务详情', exact=True)).to_contain_text('14:00')
     page.get_by_role('button', name='编辑详情', exact=True).click()
@@ -244,7 +244,7 @@ def check_tasks(page, business, artifacts):
     expect(page.get_by_role('navigation', name='事务路径')).to_contain_text('Project parent')
     page.get_by_role('navigation', name='事务路径').get_by_role('button', name='Project parent', exact=True).click()
     expect(page.get_by_role('heading', name='检查清单', exact=True)).to_have_count(0)
-    page.locator('.stella-task-children').get_by_role('button', name='完成事务', exact=True).click()
+    page.locator('.alcor-task-children').get_by_role('button', name='完成事务', exact=True).click()
     page.get_by_text('子事务进度 1/1', exact=False).wait_for()
     page.screenshot(path=str(artifacts / 'tasks-desktop.png'), full_page=True, animations='disabled')
     mobile(page)
@@ -271,7 +271,7 @@ def check_tasks(page, business, artifacts):
     expect(dialog).to_contain_text('子事务')
     dialog.get_by_role('button', name='取消', exact=True).click()
     expect(card).to_be_visible()
-    expect(page.locator('.stella-task-detail')).to_have_count(0)
+    expect(page.locator('.alcor-task-detail')).to_have_count(0)
     trash.click()
     page.get_by_role('menuitem', name='删除事务', exact=True).click()
     dialog.get_by_role('button', name='确认删除', exact=True).click()
@@ -316,7 +316,7 @@ def check_tasks(page, business, artifacts):
     expect(page.get_by_role('tab', name=re.compile(r'^全部事务'))).to_have_attribute('aria-selected', 'true')
     expect(page.get_by_role('button', name='Daily study', exact=True)).to_have_count(3)
     expect(page.locator('.stella-task-history')).to_have_count(0)
-    expect(page.locator('.stella-tasks-page details')).to_have_count(0)
+    expect(page.locator('.alcor-tasks-page details')).to_have_count(0)
     daily_id = daily['id']
     daily_card = page.locator(f'[data-task-id="{daily_id}"]:visible').filter(has=page.get_by_role('button', name='完成本次', exact=True))
     daily_card.get_by_role('button', name='完成本次', exact=True).click()
@@ -361,7 +361,7 @@ def check_calendar(page, business, artifacts):
     form.get_by_role('button', name='保存日程', exact=True).click()
     expect(form).not_to_be_visible()
     page.get_by_role('tab', name='列表', exact=True).click()
-    page.locator('.stella-agenda-date').filter(has_text='Repeated lesson').first.wait_for()
+    page.locator('.alcor-agenda-date').filter(has_text='Repeated lesson').first.wait_for()
     assert page.get_by_role('button', name='跳过本次', exact=True).count() == 3
     page.get_by_role('button', name='跳过本次', exact=True).first.click()
     page.get_by_role('button', name='确认跳过', exact=True).click()
@@ -380,12 +380,12 @@ def check_calendar(page, business, artifacts):
         page.locator(f'#calendar-view-{slug}-panel').wait_for()
         expect(page.get_by_text('正在读取日程…', exact=True)).to_have_count(0)
         page.get_by_role('button', name={'day': '今天', 'week': '本周', 'month': '本月', 'year': '今年', 'list': '今年'}[slug], exact=True).wait_for()
-        expect(page.locator('.stella-calendar-sidebar')).to_be_visible()
+        expect(page.locator('.alcor-calendar-sidebar')).to_be_visible()
         if slug in ('day', 'week'):
-            viewport = page.locator('.stella-time-viewport')
+            viewport = page.locator('.alcor-time-viewport')
             expect(viewport).to_be_visible()
             assert viewport.evaluate('element => element.scrollTop') > 0
-            lesson = page.locator('.stella-time-column .stella-timed-event').filter(has_text='Repeated lesson').first
+            lesson = page.locator('.alcor-time-column .alcor-timed-event').filter(has_text='Repeated lesson').first
             assert lesson.evaluate("element => element.querySelector('strong').getBoundingClientRect().top - element.getBoundingClientRect().top") < 12
             assert lesson.evaluate("element => getComputedStyle(element).borderLeftColor") == 'rgb(0, 170, 204)'
             assert lesson.evaluate("element => getComputedStyle(element).backgroundColor") != 'rgb(255, 255, 255)'
@@ -396,22 +396,22 @@ def check_calendar(page, business, artifacts):
             assert viewport.evaluate('element => element.scrollTop') > 0
             page.get_by_role('button', name='显示全部日历', exact=True).click()
         if slug == 'month':
-            chip = page.locator('.stella-calendar-chip').filter(has_text='Repeated lesson').first
+            chip = page.locator('.alcor-calendar-chip').filter(has_text='Repeated lesson').first
             assert chip.evaluate("element => getComputedStyle(element).borderLeftColor") == 'rgb(0, 170, 204)'
         page.screenshot(path=str(artifacts / f'calendar-{slug}-desktop.png'), full_page=True, animations='disabled')
     page.get_by_role('tab', name='月', exact=True).click()
-    page.locator('.stella-calendar-surface').get_by_role('button', name='2026-11-06', exact=True).click()
+    page.locator('.alcor-calendar-surface').get_by_role('button', name='2026-11-06', exact=True).click()
     expect(page.get_by_role('tab', name='日', exact=True)).to_have_attribute('aria-selected', 'true')
     page.get_by_role('tab', name='周', exact=True).click()
     page.set_viewport_size({'width': 1028, 'height': 900})
-    expect(page.locator('.stella-time-scroll')).to_have_js_property('scrollLeft', 0)
+    expect(page.locator('.alcor-time-scroll')).to_have_js_property('scrollLeft', 0)
     mobile(page)
     assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
-    assert page.locator('.stella-time-scroll').evaluate('element => element.scrollLeft') > 0
-    page.locator('.stella-time-head > button').first.click()
-    expect(page.locator('.stella-time-scroll')).to_have_js_property('scrollLeft', 0)
-    page.locator('.stella-time-head > button').nth(5).click()
-    assert page.locator('.stella-time-scroll').evaluate('element => element.scrollLeft') > 0
+    assert page.locator('.alcor-time-scroll').evaluate('element => element.scrollLeft') > 0
+    page.locator('.alcor-time-head > button').first.click()
+    expect(page.locator('.alcor-time-scroll')).to_have_js_property('scrollLeft', 0)
+    page.locator('.alcor-time-head > button').nth(5).click()
+    assert page.locator('.alcor-time-scroll').evaluate('element => element.scrollLeft') > 0
     page.screenshot(path=str(artifacts / 'calendar-week-mobile.png'), full_page=True, animations='disabled')
     page.get_by_role('tab', name='月', exact=True).click()
     assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
@@ -426,7 +426,7 @@ def check_calendar(page, business, artifacts):
 def mobile(page):
     page.set_viewport_size({'width': 390, 'height': 844})
     page.locator('[data-sidebar-opener]').wait_for(state='visible')
-    drawer = page.get_by_role('dialog', name='Stella 秘书导航', exact=True)
+    drawer = page.get_by_role('dialog', name='Alcor 秘书导航', exact=True)
     if drawer.is_visible():
         page.keyboard.press('Escape')
         expect(drawer).not_to_be_visible()

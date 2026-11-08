@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { recordPermissions, recordMenuEntries, recordEditTarget, recordClipboardText, recordRepeatLabel, recordAlarms, recordId, taskDeleteMessage } from '../../packages/stella-secretary/src/organizer-actions.js'
+import { recordPermissions, recordMenuEntries, recordEditTarget, recordClipboardText, recordRepeatLabel, recordAlarms, recordId, taskDeleteMessage } from '../../packages/alcor-secretary/src/organizer-actions.js'
 
 test('viewing and copying remain available while Apple controls edits and deletion independently', () => {
   const record = {id:'read',kind:'event',business:{apple:{can_modify:false,can_delete:true}}}

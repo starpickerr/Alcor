@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     assert sys.platform == 'darwin', 'This check requires macOS Security.framework'
-    assert (ROOT / 'packages/stella-privacy/native/keychain-bridge').exists(), 'Build the privacy package first'
+    assert (ROOT / 'packages/alcor-privacy/native/keychain-bridge').exists(), 'Build the privacy package first'
     security = ctypes.CDLL('/System/Library/Frameworks/Security.framework/Security')
     foundation = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
     signatures = {

@@ -1,0 +1,101 @@
+.alcor-bear-logo { display:block; flex:none; object-fit:contain; }
+body[data-ds-dark-theme] :is(.alcor-bear-logo,.alcor-empty-mascot) { filter:brightness(0) invert(.92); }
+
+/* Scope the palette to the active Alcor shell, including native dialogs and chat. */
+body:has(.alcor-sidebar) {
+  --alcor-canvas:#fafafa;
+  --alcor-surface:#ffffff;
+  --alcor-surface-soft:#f2f2f4;
+  --alcor-sidebar:#f4f4f5;
+  --alcor-brand:#3966bf;
+  --alcor-brand-hover:#2d54a3;
+  --alcor-brand-soft:#edf2fc;
+  --alcor-ink:#242428;
+  --alcor-secondary:#575760;
+  --alcor-muted:#6b6b76;
+  --alcor-line:#e3e3e8;
+  --alcor-line-strong:#bdbdc8;
+  --alcor-success:#6556a1;
+  --alcor-warning:#94651d;
+  --alcor-danger:#b84d59;
+  --alcor-shadow:0 2px 8px #18181b09,0 12px 32px #18181b04;
+  --dsw-alias-bg-base:var(--alcor-canvas);
+  --dsw-alias-bg-layer-1:var(--alcor-surface);
+  --dsw-alias-bg-layer-2:var(--alcor-surface-soft);
+  --dsw-alias-bg-layer-3:var(--alcor-surface);
+  --dsw-alias-bg-overlay:var(--alcor-surface);
+  --dsw-alias-bg-module-platform:var(--alcor-surface-soft);
+  --dsw-alias-label-primary:var(--alcor-ink);
+  --dsw-alias-label-primary-bluish:var(--alcor-ink);
+  --dsw-alias-label-secondary:var(--alcor-secondary);
+  --dsw-alias-label-tertiary:var(--alcor-muted);
+  --dsw-alias-border-l1:var(--alcor-line);
+  --dsw-alias-border-l2:var(--alcor-line);
+  --dsw-alias-border-l3:var(--alcor-line);
+  --dsw-alias-border-l4:var(--alcor-line-strong);
+  --dsw-alias-button-primary-fill:var(--alcor-brand);
+  --dsw-alias-button-primary-hover:var(--alcor-brand-hover);
+  --dsw-alias-button-elevated-fill:var(--alcor-surface);
+  --dsw-alias-button-floating-fill:var(--alcor-surface);
+  --dsw-alias-button-floating-hover:var(--alcor-brand-soft);
+  --dsw-alias-interactive-bg-hover:var(--alcor-surface-soft);
+  --dsw-alias-interactive-bg-active:var(--alcor-brand-soft);
+  --dsw-alias-interactive-bg-hover-accent:var(--alcor-brand-soft);
+  --dsw-alias-state-business-primary:var(--alcor-brand);
+  --dsw-alias-state-success-primary:var(--alcor-success);
+  --dsw-alias-state-error-primary:var(--alcor-danger);
+  --dsw-alias-state-warn-primary:var(--alcor-warning);
+  --dsw-alias-link:var(--alcor-brand);
+  --dsw-alias-text-link:var(--alcor-brand);
+  --dsw-specific-sidebar-fill:var(--alcor-sidebar);
+  --dsw-specific-sidebar-nav-item-active:var(--alcor-brand-soft);
+  --dsw-specific-input-major:var(--alcor-surface);
+  --dsw-focus-ring-color:var(--alcor-brand);
+}
+
+body[data-ds-dark-theme]:has(.alcor-sidebar) {
+  --alcor-canvas:#141416;
+  --alcor-surface:#1d1d20;
+  --alcor-surface-soft:#26262b;
+  --alcor-sidebar:#18181b;
+  --alcor-brand:#91b4ff;
+  --alcor-brand-hover:#b3cbff;
+  --alcor-brand-soft:#252f45;
+  --alcor-ink:#ededf1;
+  --alcor-secondary:#bdbdc7;
+  --alcor-muted:#9898a5;
+  --alcor-line:#33333b;
+  --alcor-line-strong:#595965;
+  --alcor-success:#b3a3e6;
+  --alcor-warning:#e0bb78;
+  --alcor-danger:#f09da7;
+  --alcor-shadow:0 2px 8px #0002,0 12px 32px #0001;
+}
+
+body:has(.alcor-sidebar) .alcor-mode-bar {
+  background:var(--alcor-sidebar);
+  border-bottom:1px solid var(--alcor-line);
+}
+
+body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-agenthub) {
+  background:var(--alcor-canvas);
+}
+
+body:has(.alcor-sidebar) :is(.alcor-editor-dialog,.alcor-settings-content) {
+  color:var(--alcor-ink);
+}
+
+body:has(.alcor-sidebar) :is(input,textarea)::placeholder { color:var(--alcor-muted); opacity:1; }
+
+body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) {
+  transition:background-color 160ms ease,border-color 160ms ease,box-shadow 160ms ease,color 160ms ease;
+}
+
+body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary):focus-visible {
+  outline:2px solid var(--alcor-brand);
+  outline-offset:3px;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) { transition:none; }
+}

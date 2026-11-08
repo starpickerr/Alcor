@@ -1,10 +1,10 @@
-# Stella user guide
+# Alcor user guide
 
 [English](guide.md) · [中文](zh/guide.md) · [繁體中文](zh/guide-Hant.md) · [日本語](ja/guide.md)
 
 ## Install and launch
 
-Available packaged builds are listed in [GitHub Releases](https://github.com/starpickerr/Stella/releases). A packaged desktop app starts its bundled backend automatically. For source builds, install Python 3.10+ and Node.js 22.13+; on macOS also install Xcode Command Line Tools (`xcode-select --install`).
+Available packaged builds are listed in [GitHub Releases](https://github.com/starpickerr/Alcor/releases). A packaged desktop app starts its bundled backend automatically. For source builds, install Python 3.10+ and Node.js 22.13+; on macOS also install Xcode Command Line Tools (`xcode-select --install`).
 
 Clone the repository, enter its root, and run:
 

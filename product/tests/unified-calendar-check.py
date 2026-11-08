@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 import official_desktop_check as desktop
@@ -14,21 +15,22 @@ def main():
     desktop.ARTIFACTS = artifacts
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
-    apple_version = json.loads((desktop.ROOT / 'packages/stella-apple-sync/package.json').read_text())['version']
-    apple_pack = desktop.ROOT / f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
-    with tempfile.TemporaryDirectory(prefix='stella-unified-calendar-') as temporary, sync_playwright() as playwright:
+    apple_version = json.loads((desktop.ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_pack = desktop.ROOT / f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
+    with fresh_test_home(prefix='stella-unified-calendar-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         desktop.environment(home)
         profile = home / 'dsh/profiles/desktop'
         profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'unified-calendar-check', 'private': True,
             'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         (profile / 'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home, 'unified-install', 'add', str(desktop.PACK), str(apple_pack), '--ignore-scripts')
         with desktop.desktop(playwright, home, 'unified-calendar') as (page, errors):
-            business = lambda domain, method, args=None: desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
-            apple = lambda method, args=None: desktop.rpc(page, 'stellaAppleSync/invoke', {'request': {'method': method, 'arguments': args or {}}})
+            business = lambda domain, method, args=None: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
+            apple = lambda method, args=None: desktop.rpc(page, 'alcorAppleSync/invoke', {'request': {'method': method, 'arguments': args or {}}})
             group = business('tasks', 'create_category', {'payload': {'name': 'planA', 'color': '#3B97F0'}})
             for kind in ['calendar', 'reminders']:
                 result = apple('start_sync', {'kind': kind})
@@ -93,8 +95,8 @@ def main():
             toolbar.get_by_role('button', name='隐藏全部日历', exact=True).click()
             toolbar.get_by_role('checkbox', name='事务', exact=True).check()
             page.get_by_role('tab', name='周', exact=True).click()
-            expect(page.locator('.stella-time-column .stella-calendar-open').filter(has_text='Calendar appointment')).to_have_count(0)
-            card = page.locator('.stella-time-column .stella-calendar-task').filter(has_text='Calendar reminder')
+            expect(page.locator('.alcor-time-column .alcor-calendar-open').filter(has_text='Calendar appointment')).to_have_count(0)
+            card = page.locator('.alcor-time-column .alcor-calendar-task').filter(has_text='Calendar reminder')
             expect(card).to_be_visible()
             card.get_by_role('button', name='完成事务：Calendar reminder', exact=True).click()
             expect(card.get_by_role('button', name='重新打开：Calendar reminder', exact=True)).to_have_attribute('aria-pressed', 'true')
@@ -104,18 +106,18 @@ def main():
             page.screenshot(path=str(artifacts / 'calendar-week-desktop.png'), animations='disabled')
             page.get_by_role('navigation', name='日历筛选', exact=True).get_by_role('button', name='显示全部日历', exact=True).click()
             page.get_by_role('tab', name='月', exact=True).click()
-            expect(page.locator('.stella-calendar-chip').filter(has_text='Calendar reminder')).to_be_visible()
+            expect(page.locator('.alcor-calendar-chip').filter(has_text='Calendar reminder')).to_be_visible()
             page.get_by_role('tab', name='年', exact=True).click()
-            expect(page.locator('.stella-year-grid .stella-calendar-dots').first).to_be_visible()
+            expect(page.locator('.alcor-year-grid .alcor-calendar-dots').first).to_be_visible()
             page.get_by_role('tab', name='列表', exact=True).click()
-            page.locator('.stella-calendar-surface').get_by_role('button', name='Calendar reminder', exact=False).filter(has=page.locator('h3')).click()
+            page.locator('.alcor-calendar-surface').get_by_role('button', name='Calendar reminder', exact=False).filter(has=page.locator('h3')).click()
             page.get_by_role('region',name='事务详情',exact=True).get_by_role('button',name='编辑详情',exact=True).click()
             edit = page.get_by_role('form', name='编辑事务', exact=True)
             expect(edit.get_by_label('事务清单', exact=True)).to_have_value(group['id'])
             edit.get_by_label('截止时间', exact=True).fill('06:30')
             edit.get_by_role('button', name='保存事务', exact=True).click()
             page.get_by_role('tab', name='日', exact=True).click()
-            expect(page.locator('.stella-time-column .stella-calendar-task').filter(has_text='Calendar reminder')).to_be_visible()
+            expect(page.locator('.alcor-time-column .alcor-calendar-task').filter(has_text='Calendar reminder')).to_be_visible()
             page.get_by_role('tab', name='周', exact=True).click()
             page.set_viewport_size({'width': 390, 'height': 844})
             page.keyboard.press('Escape')
@@ -131,7 +133,7 @@ def main():
             page.get_by_role('button', name='取消编辑', exact=True).click()
             assert not errors, errors
         with desktop.desktop(playwright, home, 'unified-restart') as (page, errors):
-            saved = desktop.rpc(page, 'stellaOrganizer/business', {'request': {'domain': 'tasks', 'method': 'get_todo', 'arguments': {'todo_id': saved['id']}}})
+            saved = desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'get_todo', 'arguments': {'todo_id': saved['id']}}})
             assert saved['category_id'] == group['id'] and saved['status'] == 'completed'
             assert not errors, errors
     print('PASS: official Desktop unified creation, category parity, task calendar completion, narrow layout and restart')

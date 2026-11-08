@@ -1,27 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { discoverBriefingSources, readBriefingSourcePage, briefingSourceOptions } from '../../packages/stella-organizer/src/briefing-sources.js'
-import { schemas } from '../../packages/stella-organizer/src/remote.js'
-import { BriefingGenerator } from '../../packages/stella-organizer/src/briefing.js'
+import { discoverBriefingSources, readBriefingSourcePage, briefingSourceOptions, effectiveBriefingSources, localBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
+import { schemas } from '../../packages/alcor-organizer/src/remote.js'
+import { BriefingGenerator } from '../../packages/alcor-organizer/src/briefing.js'
 
 const source = { source: 'plugin:notes:inbox', accountId: 'account-1', label: 'Notes', tool: 'notes_briefing_fetch', method: 'briefing_fetch', arguments: { source_id: 'inbox' } }
 const options = { since: '2026-11-04T00:00:00Z', until: '2026-11-05T00:00:00Z', offset: 0, cursors: {}, signal: new AbortController().signal }
 const output = value => ({ results: [{ result: { isError: false, value } }] })
 
+test('scheduled local-only briefing with only external preferences fails before worker or cursor changes', async () => {
+  const preferences = [{source:'elearning',accountId:'school'}, ...[1,2,3].map(id=>({source:'email',accountId:`mail-${id}`}))]
+  const groups = {stella_bills:false, alcor_bills:false}
+  const sources = effectiveBriefingSources(preferences, localBriefingSources(), groups)
+  assert.deepEqual(sources, [])
+  const calls = []
+  const generator = new BriefingGenerator({}, {call: async (...args) => {calls.push(args); throw new Error('unexpected worker call')}})
+  await assert.rejects(generator.start({record:{date:'2026-11-07',notes:''},requestId:'synthetic',sources}), /请选择简报来源/)
+  assert.deepEqual(calls, [])
+})
+
 test('installed sources remain discoverable before account setup without reading content or exposing credentials', async () => {
   const states = new Map([
-    ['stellaElearning', { state: async () => ({ installed: true, configured: false, connected: false }), briefingSource: async () => null }],
-    ['stellaMailConnection', { state: async () => ({ installed: true, configured: false, connected: false, accounts: [], password: 'must not expose' }) }],
+    ['alcorElearning', { state: async () => ({ installed: true, configured: false, connected: false }), briefingSource: async () => null }],
+    ['alcorMailConnection', { state: async () => ({ installed: true, configured: false, connected: false, accounts: [], password: 'must not expose' }) }],
   ])
   const ctx = { get: key => states.get(key), tools: { definitions: () => [], execute: async () => { assert.fail('Unconfigured sources must not execute tools') } } }
   const result = await discoverBriefingSources(ctx)
   assert.deepEqual(result.connections, [
-    { package: '@stella/elearning', label: 'eLearning', status: 'unconfigured' },
-    { package: '@stella/mail', label: '邮件', status: 'unconfigured' },
+    { package: '@alcor/elearning', label: 'eLearning', status: 'unconfigured' },
+    { package: '@alcor/mail', label: '邮件', status: 'unconfigured' },
   ])
-  assert.deepEqual(result.sources.map(row => row.source), ['calendar_agenda', 'stella_tasks', 'stella_bills'])
+  assert.deepEqual(result.sources.map(row => row.source), ['calendar_agenda', 'alcor_tasks', 'alcor_bills'])
   assert.deepEqual(result.errors, [])
-  states.set('stellaElearning', { state: async () => ({ installed: true, configured: true, connected: false }), briefingSource: async () => null })
+  states.set('alcorElearning', { state: async () => ({ installed: true, configured: true, connected: false }), briefingSource: async () => null })
   assert.equal((await discoverBriefingSources(ctx)).connections[0].status, 'disconnected')
   states.clear()
   assert.deepEqual((await discoverBriefingSources(ctx)).connections, [])
@@ -29,7 +40,7 @@ test('installed sources remain discoverable before account setup without reading
 
 test('connected account discovery replaces setup state and reports missing enabled accounts', async () => {
   const school = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', method: 'fetch', arguments: {} }
-  const ctx = { get: key => key === 'stellaElearning'
+  const ctx = { get: key => key === 'alcorElearning'
     ? { state: async () => ({ installed: true, configured: true, connected: true }), briefingSource: async () => school }
     : { state: async () => ({ installed: true, configured: true, connected: true }) }, tools: {
       definitions: () => [{ name: school.tool }], execute: async () => { assert.fail('No fetch during discovery') },
@@ -125,30 +136,30 @@ test('no selected sources cannot return a previous implicitly local daily report
 
 
 test('plugin account availability replaces external briefing subscriptions while preserving saved course scope', async () => {
-  const { effectiveBriefingSources } = await import('../../packages/stella-organizer/src/briefing-sources.js')
+  const { effectiveBriefingSources } = await import('../../packages/alcor-organizer/src/briefing-sources.js')
   const mail = id => ({ source: 'email', accountId: id, tool: 'mcp__email__fetch_messages', arguments: { account_id: id } })
   const school = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', arguments: {} }
-  const local = { source: 'stella_tasks', accountId: 'local' }
+  const local = { source: 'alcor_tasks', accountId: 'local' }
   const preferences = [mail('disabled'), { ...school, arguments: { course_ids: ['chosen'] } }]
   const available = [mail('enabled-1'), mail('enabled-2'), school, local]
   const effective = effectiveBriefingSources(preferences, available)
   assert.deepEqual(effective.filter(row => row.source === 'email').map(row => row.accountId), ['enabled-1', 'enabled-2'])
   assert.deepEqual(effective.find(row => row.source === 'elearning').arguments, { course_ids: ['chosen'] })
-  assert(!effective.some(row => row.source === 'stella_tasks'), 'No implicit local sources')
+  assert(!effective.some(row => row.source === 'alcor_tasks'), 'No implicit local sources')
   assert.deepEqual(effectiveBriefingSources(preferences, []), [], 'Disabled integration cannot retain access through an old preference')
   assert.deepEqual(effectiveBriefingSources([], available).find(row => row.source === 'elearning').arguments, {})
 })
 
 
 test('briefing group switches cannot bypass disabled plugins and preserve independent plugin availability', async () => {
-  const { effectiveBriefingSources } = await import('../../packages/stella-organizer/src/briefing-sources.js')
+  const { effectiveBriefingSources } = await import('../../packages/alcor-organizer/src/briefing-sources.js')
   const mail = { source: 'email', accountId: 'enabled', tool: 'mcp__email__fetch_messages', arguments: { account_id: 'enabled' } }
-  const local = { source: 'stella_tasks', accountId: 'local' }
+  const local = { source: 'alcor_tasks', accountId: 'local' }
   assert.deepEqual(effectiveBriefingSources([], [mail], { email: false }), [])
   assert.deepEqual(effectiveBriefingSources([], [], { email: true }), [])
   assert.deepEqual(effectiveBriefingSources([], [mail], { email: true }), [mail])
-  assert.deepEqual(effectiveBriefingSources([], [local], { stella_tasks: true }), [local])
-  assert.deepEqual(effectiveBriefingSources([local], [local], { stella_tasks: false }), [])
+  assert.deepEqual(effectiveBriefingSources([], [local], { alcor_tasks: true }), [local])
+  assert.deepEqual(effectiveBriefingSources([local], [local], { alcor_tasks: false }), [])
   const one = { source: 'plugin:notes:one', accountId: 'notes', tool: 'notes_briefing_fetch' }
   const two = { ...one, source: 'plugin:notes:two' }
   assert.deepEqual(effectiveBriefingSources([one], [one, two], { 'plugin:notes': true }), [one])

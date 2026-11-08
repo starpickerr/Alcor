@@ -3,11 +3,12 @@ import json
 import os
 import sys
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from pathlib import Path
 from playwright.sync_api import expect,sync_playwright
 import official_desktop_check as desktop
 from web_check import open_secretary
-sys.path.insert(0,str(desktop.ROOT/'packages/stella-secretary'))
+sys.path.insert(0,str(desktop.ROOT/'packages/alcor-secretary'))
 from business.worker import Business
 
 
@@ -15,16 +16,17 @@ def main():
     artifacts=Path(os.environ.get('STELLA_CHECK_ARTIFACTS','/private/tmp/stella-lists-manager'))
     artifacts.mkdir(parents=True,exist_ok=True);desktop.ARTIFACTS=artifacts
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
-    apple_version=json.loads((desktop.ROOT/'packages/stella-apple-sync/package.json').read_text())['version']
-    apple_pack=desktop.ROOT/f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
+    apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_pack=desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     desktop.verify_release()
-    with tempfile.TemporaryDirectory(prefix='stella-lists-manager-') as temporary,sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-lists-manager-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True);(home/'documents').mkdir()
+        initialize_fresh(temporary, home / 'dsh', profile)
         (profile/'package.json').write_text(json.dumps({'name':'lists-manager-review','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home,'lists-install','add',str(desktop.PACK),str(apple_pack),'--ignore-scripts')
-        fixture=Business(profile/'stella/business');owner=fixture.tasks
+        fixture=Business(profile/'alcor/business');owner=fixture.tasks
         groups=[owner.create_category({'name':name,'color':color}) for name,color in [('planA','#597ac5'),('共享计划','#48a28e'),('只读清单','#b58b54'),('待确认清单','#9b72b0')]]
         records=[owner.create_todo({'title':title,'notes':'保留原有备注和身份','category_id':group['id']}) for title,group in zip(['Python 课程练习','小组展示','共享阅读','待确认事项'],groups)]
         for index,group in enumerate(groups[1:],1):
@@ -33,7 +35,7 @@ def main():
         fixture.meta.close()
         with desktop.desktop(playwright,home,'lists-manager') as (page,errors):
             page.set_viewport_size({'width':1440,'height':1050});open_secretary(page)
-            business=lambda method,args=None:desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':'tasks','method':method,'arguments':args or {}}})
+            business=lambda method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'tasks','method':method,'arguments':args or {}}})
             page.get_by_role('button',name='清单管理',exact=True).click()
             dialog=page.get_by_role('dialog',name='清单管理',exact=True)
             search=dialog.get_by_role('textbox',name='搜索清单',exact=True)
@@ -48,7 +50,7 @@ def main():
             assert saved['name']=='学习计划' and saved['color']=='#48a28e'
             assert business('get_todo',{'todo_id':records[0]['id']})['notes']=='保留原有备注和身份'
             dialog.screenshot(path=str(artifacts/'06-lists-manager.png'),animations='disabled')
-            search.fill('共享');expect(dialog.locator('.stella-category-list > li')).to_have_count(1);search.fill('')
+            search.fill('共享');expect(dialog.locator('.alcor-category-list > li')).to_have_count(1);search.fill('')
             dialog.get_by_role('button',name='新建清单',exact=True).click();name.fill('课程安排')
             accounts=dialog.get_by_label('Apple 账户',exact=True);expect(accounts).to_be_enabled();accounts.select_option('account1')
             dialog.get_by_role('button',name='紫色',exact=True).click()

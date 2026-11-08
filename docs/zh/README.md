@@ -1,10 +1,10 @@
-<p align="center"><img src="../images/logo.jpg" alt="Stella" width="160" /></p>
+<p align="center"><img src="../images/logo.jpg" alt="Alcor" width="160" /></p>
 
-# Stella
+# Alcor
 
 [English](../../README.md) · [中文](README.md) · [繁體中文](README-Hant.md) · [日本語](../ja/README.md)
 
-**Stella 是一款桌面端私人 AI 助理**，以智能对话为核心，将事务、日程、账单、智能简报和自动化任务集中在一个工作空间中。
+**Alcor 是一款桌面端私人 AI 助理**，以智能对话为核心，将事务、日程、账单、智能简报和自动化任务集中在一个工作空间中。
 
 ## 主要功能
 
@@ -46,7 +46,7 @@
 
 ### 下载安装包
 
-可用安装包见 [GitHub Releases](https://github.com/starpickerr/Stella/releases)。安装、首次配置及日常使用见[使用指南](guide.md)。
+可用安装包见 [GitHub Releases](https://github.com/starpickerr/Alcor/releases)。安装、首次配置及日常使用见[使用指南](guide.md)。
 
 ### 从源码运行
 
@@ -61,8 +61,8 @@
 本地开发统一使用 Conda 的 `Stella` 环境（Python 3.12）；已有环境时跳过创建命令。
 
 ```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
+git clone https://github.com/starpickerr/Alcor.git
+cd Alcor
 conda create -n Stella python=3.12
 conda activate Stella
 python -m pip install --upgrade pip setuptools
@@ -87,14 +87,14 @@ npm --prefix desktop run dev:hot
 - [文档索引](../README.md)：架构、业务模块与安全边界。
 - [桌面开发](../../desktop/README.md)：构建和打包。
 - [贡献指南](../../CONTRIBUTING.md)：开发环境与检查要求；开发以 `develop` 为基线，`main` 用于发布。
-- [问题反馈](https://github.com/starpickerr/Stella/issues)：提交问题前，请从日志中删除凭据和个人信息。
+- [问题反馈](https://github.com/starpickerr/Alcor/issues)：提交问题前，请从日志中删除凭据和个人信息。
 
 ## 项目来源与许可
 
-Stella 基于 zhayujie 及贡献者开发的 [CowAgent](https://github.com/zhayujie/CowAgent)（原 `chatgpt-on-wechat`）独立开发，复用上游的 Agent、模型、工具、技能、记忆和消息通道基础，并增加桌面工作流，以及事务、日程、账单、简报和安全管理等共享业务服务。
+Alcor 基于 zhayujie 及贡献者开发的 [CowAgent](https://github.com/zhayujie/CowAgent)（原 `chatgpt-on-wechat`）独立开发，复用上游的 Agent、模型、工具、技能、记忆和消息通道基础，并增加桌面工作流，以及事务、日程、账单、简报和安全管理等共享业务服务。
 
 来源与版权说明见[第三方声明](../../THIRD_PARTY_NOTICES.md)，许可条款见 [MIT 许可证](../../LICENSE)。
 
 ## 作者的话
 
-这是我第一次独立完成的开源项目，感谢 Codex 和 Cursor 在开发过程中提供的帮助。项目仍有需要完善的地方，欢迎通过[问题反馈](https://github.com/starpickerr/Stella/issues)提交建议和缺陷报告。
+这是我第一次独立完成的开源项目，感谢 Codex 和 Cursor 在开发过程中提供的帮助。项目仍有需要完善的地方，欢迎通过[问题反馈](https://github.com/starpickerr/Alcor/issues)提交建议和缺陷报告。

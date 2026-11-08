@@ -68,14 +68,14 @@ def wait(page, predicate, message):
 
 
 def seed(profile):
-    sys.path.insert(0, str(desktop.ROOT / 'packages/stella-agent-hub'))
+    sys.path.insert(0, str(desktop.ROOT / 'packages/alcor-agent-hub'))
     from business.agent_hub.domain.service import AgentHubService
     from business.agent_hub.domain.store import AgentHubStore
     from business.migration import import_stella, import_jobs
     target = AgentHubStore(profile / 'agent-hub/agent-hub.sqlite3')
     import_stella(target, None)
     import_jobs(target, [{'id':'legacy-native-job','title':'旧委托记录','prompt':'Retain original output','parentSessionId':'old-parent','createdAt':'2026-11-01T00:00:00Z','status':'completed','output':'Legacy output','diagnostic':''}])
-    service = AgentHubService(AgentHubStore(profile / 'stella/business/agent-hub.sqlite3'))
+    service = AgentHubService(AgentHubStore(profile / 'alcor/business/agent-hub.sqlite3'))
     task = service.create_task({'title': '待恢复的方案评估', 'goal': 'HUB_NATIVE_SENTINEL 保留研究结论，完成评估并汇总。', 'participants': [{'nativeAgentId': 'stella', 'displayName': name} for name in ['研究助手', '评估助手', '汇总助手']]}, str(uuid4()))
     steps = [{'stepId': key, 'title': title, 'participantId': task['participants'][index]['participantId'], 'dependsOn': deps} for index, (key, title, deps) in enumerate([('research', '梳理需求', []), ('review', '评估方案风险', []), ('summary', '汇总全部结果', ['research', 'review'])])]
     service.set_workflow(task['taskId'], steps, task['revision'], str(uuid4()))
@@ -97,23 +97,24 @@ def check_old_owner(playwright):
         desktop.native_cli(home,'hub-old-owner-install','add',str(old_pack),'--ignore-scripts')
         desktop.native_cli(home,'hub-old-owner-add','add',str(desktop.PACK),'--ignore-scripts')
         with desktop.desktop(playwright,home,'hub-old-owner') as (page,errors):
-            open_secretary(page)
+            open_secretary(page, brand='Stella')
             result = page.evaluate('''async()=>{ const response=await fetch('/api/agentHub/read',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId:'old-owner-check',method:'agentHub/read',payload:{args:{request:{}}}})});return {status:response.status,body:await response.text()} }''')
             assert result['status'] != 200 or json.loads(result['body'])['result']['ok'] is False, result
             assert not (profile / 'agent-hub/agent-hub.sqlite3').exists(), 'Refuse migration while old Stella still owns collaboration'
             entries = desktop.rpc(page, 'pluginManager/listPlugins')
-            entry = next(item for item in entries if item['moduleName'] == '@stella/agent-hub')
+            entry = next(item for item in entries if item['moduleName'] == '@alcor/agent-hub')
             assert entry['fiberPhase'] == 'failed' and '支持独立 AgentHub' in entry.get('diagnostic', ''), entry
             (desktop.ARTIFACTS / 'hub-old-owner-diagnostic.json').write_text(json.dumps({'rpc':result,'plugin':entry,'targetDatabaseCreated':False},ensure_ascii=False,indent=2))
 
 
 def main():
-    desktop.PACK = Path(os.environ.get('STELLA_AGENT_HUB_PACK',str(desktop.ROOT/'.local/artifacts/stella-agent-hub-0.1.0.tgz')))
+    hub_version = json.loads((desktop.ROOT / 'packages/alcor-agent-hub/package.json').read_text())['version']
+    desktop.PACK = Path(os.environ.get('STELLA_AGENT_HUB_PACK',str(desktop.ROOT / f'.local/artifacts/alcor-agent-hub-{hub_version}.tgz')))
     desktop.verify_release(); desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        with tempfile.TemporaryDirectory(prefix='stella-hub-native-') as temporary, sync_playwright() as playwright:
+        with tempfile.TemporaryDirectory(prefix='alcor-hub-native-') as temporary, sync_playwright() as playwright:
             home = Path(temporary); env = desktop.environment(home)
             profile = Path(env['DSH_HOME']) / 'profiles/desktop'; profile.mkdir(parents=True)
             (home / 'documents').mkdir()
@@ -165,7 +166,7 @@ def main():
                 page.get_by_role('button', name='添加助手', exact=True).click()
                 expect(page.get_by_role('button', name='添加助手', exact=True)).to_be_disabled()
                 page.get_by_label('助手 3 分工', exact=True).fill('独立核对遗漏')
-                page.locator('.stella-hub-agent-editor').last.get_by_role('button', name='移除', exact=True).click()
+                page.locator('.alcor-hub-agent-editor').last.get_by_role('button', name='移除', exact=True).click()
                 page.reload(); hub()
                 expect(page.get_by_label('助手 2 分工', exact=True)).to_have_value('评估方案的风险与实施顺序')
                 assert len(Provider.calls) == before, 'Draft creation/edit/reload must never call the model'
@@ -182,7 +183,7 @@ def main():
                 stream = page.get_by_role('list', name='协作交流记录', exact=True)
                 expect(stream.locator('[data-kind="started"]')).to_have_count(2)
                 expect(stream).to_contain_text('HUB_NATIVE_SENTINEL')
-                expect(page.locator('.stella-hub-chat-working')).to_contain_text('助手正在执行')
+                expect(page.locator('.alcor-hub-chat-working')).to_contain_text('助手正在执行')
                 active = next(job for job in read() if job['title'] == 'AgentHub 工作台优化')
                 recipient = active['collaboration']['participants'][0]['id']
                 desktop.rpc(page,'agentHub/hubSend',{'request':{'id':active['id'],'body':'请保留依据与尚未解决的问题。','recipientIds':[recipient],'intent':'message','requestId':str(uuid4())}})
@@ -198,7 +199,7 @@ def main():
                 expect(stream).to_contain_text('协作结论')
                 expect(stream.locator('img')).to_have_count(0)
                 assert not page.evaluate('Boolean(window.__hubUnsafe)')
-                expect(page.locator('.stella-hub-chat-working')).to_have_count(0)
+                expect(page.locator('.alcor-hub-chat-working')).to_have_count(0)
                 activity = desktop.rpc(page, 'agentHub/hubActivity', {'request': {'id': active['id']}})
                 assert [row['id'] for row in activity] == [row['id'] for row in sorted(activity, key=lambda row: row['createdAt'])]
                 page.get_by_label('查看参与者', exact=True).select_option(recipient)
@@ -212,7 +213,7 @@ def main():
                 expect(page.locator('body')).to_have_attribute('data-ds-dark-theme', '')
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '11-hub-chat-dark.png'))
                 page.set_viewport_size({'width':390,'height':844})
-                if page.get_by_role('dialog', name='Stella 秘书导航', exact=True).count(): page.keyboard.press('Escape')
+                if page.get_by_role('dialog', name='Alcor 秘书导航', exact=True).count(): page.keyboard.press('Escape')
                 assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')
                 page.get_by_role('button', name='跳至最新', exact=True).click()
                 expect(stream.locator('li').last).to_be_in_viewport()
@@ -220,10 +221,10 @@ def main():
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '12-hub-chat-narrow.png'))
                 page.set_viewport_size({'width':1440,'height':1000});page.emulate_media(color_scheme='light')
                 page.get_by_role('tab', name='概览', exact=True).click()
-                expect(page.locator('.stella-hub-result h2')).to_have_text('协作结论')
-                expect(page.locator('.stella-hub-result strong')).to_have_count(2)
-                expect(page.locator('.stella-hub-result a')).to_have_attribute('href', 'https://example.com/research')
-                expect(page.locator('.stella-hub-result img')).to_have_count(0)
+                expect(page.locator('.alcor-hub-result h2')).to_have_text('协作结论')
+                expect(page.locator('.alcor-hub-result strong')).to_have_count(2)
+                expect(page.locator('.alcor-hub-result a')).to_have_attribute('href', 'https://example.com/research')
+                expect(page.locator('.alcor-hub-result img')).to_have_count(0)
                 assert not page.evaluate('Boolean(window.__hubUnsafe)')
                 assert page.evaluate('sessionStorage.getItem("stella.agent-hub.draft.v1")') is None
                 assert len({step['attempts'][0]['childId'] for step in completed_job['collaboration']['steps']}) == 3
@@ -236,14 +237,14 @@ def main():
                 expect(page.get_by_role('button', name='查看原生会话', exact=True)).to_have_count(3)
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '06-hub-process.png'))
                 page.set_viewport_size({'width': 390, 'height': 844})
-                if page.get_by_role('dialog', name='Stella 秘书导航', exact=True).count():
+                if page.get_by_role('dialog', name='Alcor 秘书导航', exact=True).count():
                     page.keyboard.press('Escape')
-                assert page.locator('.stella-hub-mobile').bounding_box()['height'] < 90
+                assert page.locator('.alcor-hub-mobile').bounding_box()['height'] < 90
                 for tab in ['任务', '工作台']:
                     page.get_by_role('tab', name=tab, exact=True).click()
                     assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')
                 expect(page.get_by_role('button', name='查看原生会话', exact=True).first).to_be_visible()
-                (desktop.ARTIFACTS / 'narrow-layout.json').write_text(json.dumps(page.locator('.stella-hub-mobile').evaluate('e=>({padding:getComputedStyle(e).padding,clearance:getComputedStyle(e).getPropertyValue("--dsh-frame-leading-clearance"),box:e.getBoundingClientRect().toJSON()})')))
+                (desktop.ARTIFACTS / 'narrow-layout.json').write_text(json.dumps(page.locator('.alcor-hub-mobile').evaluate('e=>({padding:getComputedStyle(e).padding,clearance:getComputedStyle(e).getPropertyValue("--dsh-frame-leading-clearance"),box:e.getBoundingClientRect().toJSON()})')))
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '07-hub-narrow.png'))
                 page.set_viewport_size({'width': 1440, 'height': 1000}); page.emulate_media(color_scheme='light')
                 page.get_by_role('tab', name='交流', exact=True).click()
@@ -255,7 +256,7 @@ def main():
                 composer.press_sequentially('始终列出尚未解决的问题。')
                 before_persona = len(Provider.calls)
                 page.get_by_role('button', name='更新人设', exact=True).click()
-                expect(page.locator('.stella-hub-chat-composer')).to_contain_text('人设已更新，下一次执行生效。')
+                expect(page.locator('.alcor-hub-chat-composer')).to_contain_text('人设已更新，下一次执行生效。')
                 assert len(Provider.calls)==before_persona, 'Persona updates must not start a model call'
                 page.get_by_label('交流操作', exact=True).select_option('task')
                 composer.fill('@')
@@ -271,11 +272,11 @@ def main():
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '15-hub-mentions.png'))
                 page.get_by_role('tab', name='过程', exact=True).click()
                 page.get_by_label('搜索协作任务', exact=True).fill('不存在的任务')
-                expect(page.locator('.stella-hub-task-list button')).to_have_count(0)
+                expect(page.locator('.alcor-hub-task-list button')).to_have_count(0)
                 page.get_by_label('搜索协作任务', exact=True).fill('')
                 page.get_by_label('筛选协作任务', exact=True).select_option('attention')
-                expect(page.locator('.stella-hub-task-list button')).to_have_count(1)
-                page.locator('.stella-hub-task-list button').click()
+                expect(page.locator('.alcor-hub-task-list button')).to_have_count(1)
+                page.locator('.alcor-hub-task-list button').click()
                 expect(page.get_by_role('button', name='重试此步骤', exact=True)).to_have_count(1)
                 page.screenshot(animations='disabled', path=str(desktop.ARTIFACTS / '08-hub-retry.png'))
                 page.get_by_role('button', name='重试此步骤', exact=True).click()
@@ -304,7 +305,7 @@ def main():
                 assert restored == completed_job, 'Restart must retain the exact workflow and result'
                 restored_activity = desktop.rpc(page, 'agentHub/hubActivity', {'request': {'id': completed_job['id']}})
                 assert restored_activity == activity, 'Formal messages and original times must survive restart'
-                page.locator('.stella-hub-task-list button').filter(has_text='AgentHub 工作台优化').click()
+                page.locator('.alcor-hub-task-list button').filter(has_text='AgentHub 工作台优化').click()
                 page.get_by_role('tab', name='交流', exact=True).click()
                 expect(page.get_by_role('list', name='协作交流记录', exact=True).locator('[data-kind="reply"]')).to_have_count(4)
                 assert len(jobs) == 4 and not errors, errors
@@ -312,16 +313,16 @@ def main():
             desktop.native_cli(home,'hub-with-stella','add',str(secretary_pack),'--ignore-scripts')
             with desktop.desktop(playwright,home,'hub-with-stella') as (page,errors):
                 open_secretary(page)
-                expect(page.locator('.stella-sidebar').get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
-                expect(page.locator('.stella-sidebar').get_by_role('button',name='Agent 协作',exact=True)).to_have_count(0)
+                expect(page.locator('.alcor-sidebar').get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
+                expect(page.locator('.alcor-sidebar').get_by_role('button',name='Agent 协作',exact=True)).to_have_count(0)
                 page.screenshot(animations='disabled',path=str(desktop.ARTIFACTS/'13-stella-without-hub.png'))
-                page.get_by_role('button',name='切换使用模式，当前 Stella',exact=True).click()
+                page.get_by_role('button',name='切换使用模式，当前 Alcor',exact=True).click()
                 page.get_by_role('menuitem',name='DeepSeek Harness',exact=True).click()
                 page.get_by_role('button',name='AgentHub',exact=True).click()
                 expect(page.get_by_role('heading',name='AgentHub',exact=True)).to_be_visible()
                 page.screenshot(animations='disabled',path=str(desktop.ARTIFACTS/'14-dsh-hub-entry.png'))
                 assert not errors,errors
-            desktop.native_cli(home,'hub-remove','remove','@stella/agent-hub')
+            desktop.native_cli(home,'hub-remove','remove','@alcor/agent-hub')
             with desktop.desktop(playwright,home,'hub-disabled') as (page,errors):
                 expect(page.get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
                 assert (profile/'agent-hub/agent-hub.sqlite3').is_file()

@@ -16,9 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(home, keychain, security):
-    privacy = ROOT / '.local/artifacts/stella-privacy-0.0.1.tgz'
-    version = json.loads((ROOT / 'packages/stella-secretary/package.json').read_text())['version']
-    secretary = ROOT / f'.local/artifacts/stella-secretary-{version}.tgz'
+    privacy_version = json.loads((ROOT / 'packages/alcor-privacy/package.json').read_text())['version']
+    privacy = ROOT / f'.local/artifacts/alcor-privacy-{privacy_version}.tgz'
+    version = json.loads((ROOT / 'packages/alcor-secretary/package.json').read_text())['version']
+    secretary = ROOT / f'.local/artifacts/alcor-secretary-{version}.tgz'
     assert privacy.exists() and secretary.exists(), 'Pack privacy and secretary before this check'
     assert 'shell.top' not in (CLI.parents[2] / 'dsh-client-ui-layout/lib/client.js').read_text()
     home.mkdir()
@@ -79,7 +80,7 @@ def check(home, keychain, security):
             assert 'old-file-value-is-retained' in retained_credentials
             active = config + f'''- id: credentials
   disabled: true
-- id: stella-keychain
+- id: alcor-keychain
   disabled: false
   config:
     keychainPath: {json.dumps(os.environ['STELLA_TEST_KEYCHAIN'])}
@@ -104,7 +105,7 @@ def check(home, keychain, security):
                             open_secretary(page)
                             start_secretary_chat(page)
                             composer = page.locator('[data-composer-input][contenteditable="true"]')
-                            composer.fill('Call stella_overview using the Keychain-backed synthetic provider')
+                            composer.fill('Call alcor_overview using the Keychain-backed synthetic provider')
                             composer.press('Enter')
                             page.get_by_text('Stella synthetic tool round trip passed.', exact=True).wait_for(timeout=25000)
                         else:

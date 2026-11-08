@@ -4,20 +4,20 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
-import { HubWorker } from '../../packages/stella-agent-hub/src/worker.js'
-import { recordSchema } from '../../packages/stella-organizer/src/records.js'
+import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
+import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
+import { recordSchema } from '../../packages/alcor-organizer/src/records.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
 test('business recovery preserves Apple imports, action receipts and unknown operations', async () => {
-  await promisify(execFile)(process.env.STELLA_BUSINESS_PYTHON || 'python3', [fileURLToPath(new URL('./business-recovery.py', import.meta.url))])
+  await promisify(execFile)(process.env.ALCOR_BUSINESS_PYTHON || process.env.STELLA_BUSINESS_PYTHON || 'python3', [fileURLToPath(new URL('./business-recovery.py', import.meta.url))])
 })
 
 test('briefing catalog retains host operations after AgentHub is detached', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-briefing-catalog-'))
-  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
+  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const catalog = args => worker.call('invoke', { domain: 'briefing', method: 'catalog', arguments: args })
   const methods = await catalog({})
@@ -29,11 +29,13 @@ test('briefing catalog retains host operations after AgentHub is detached', asyn
 
 test('migrated business services share page records, persist hierarchy, dependencies, recurrence and ledger receipts', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-domain-'))
-  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
+  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (domain, method, args = {}, request_id) => worker.call('invoke', { domain, method, arguments: args, ...(request_id ? { request_id } : {}) })
   const parent = await invoke('tasks', 'create_todo', { payload: { title: 'Parent' } })
   const child = await invoke('tasks', 'add_subtask', { parent_id: parent.id, payload: { title: 'Child' } })
+  await assert.rejects(invoke('tasks', 'delete_todo', { todo_id: parent.id, preserve_children: true }), /人工确认/)
+  assert.equal((await invoke('tasks', 'get_todo', { todo_id: child.id })).title, 'Child')
   const blocker = await invoke('tasks', 'create_todo', { payload: { title: 'Blocker' } })
   await invoke('tasks', 'add_dependency', { todo_id: child.id, prerequisite_id: blocker.id })
   await assert.rejects(invoke('tasks', 'add_dependency', { todo_id: blocker.id, prerequisite_id: child.id }), /cycl|循环/)
@@ -84,7 +86,7 @@ test('migrated business services share page records, persist hierarchy, dependen
 
 test('briefing revisions, source deduplication and collaboration configuration survive worker restart', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-revisions-'))
-  const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
+  const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
   let worker = new BusinessWorker(directory, options)
   let hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
   context.after(async () => { await hub.close(); await worker.close(); await rm(directory, { recursive: true, force: true }) })
@@ -108,7 +110,7 @@ test('briefing revisions, source deduplication and collaboration configuration s
 
 test('bill CSV export uses exact ledger amounts and protects spreadsheet formulas', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-csv-export-'))
-  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) })
+  const worker = new BusinessWorker(directory, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (method, args) => worker.call('invoke', { domain: 'bills', method, arguments: args })
   await invoke('create_ledger', { name: '=SUM(1,2)', amount_minor: 1234, currency: 'CNY', entry_type: 'expense', occurred_at: '2026-11-06T12:00:00+08:00' })

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { midnight, calendarRecord, calendarTaskRecord, dateTimeDraft, dateTimeInZone, calendarDraftTimes, eventLanes } from '../../packages/stella-secretary/src/organizer-forms.js'
+import { midnight, calendarRecord, calendarTaskRecord, dateTimeDraft, dateTimeInZone, calendarDraftTimes, eventLanes } from '../../packages/alcor-secretary/src/organizer-forms.js'
 
 test('all-day form dates keep their selected timezone across DST and calendar projection', () => {
   assert.equal(midnight('2026-03-08', 'America/New_York'), '2026-03-08T05:00:00.000Z')

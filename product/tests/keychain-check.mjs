@@ -5,8 +5,8 @@ import { promisify } from 'node:util'
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import KeychainCredentials from '../../packages/stella-privacy/src/index.js'
-import { keychainRequest } from '../../packages/stella-privacy/src/keychain.js'
+import KeychainCredentials from '../../packages/alcor-privacy/src/index.js'
+import { keychainRequest } from '../../packages/alcor-privacy/src/keychain.js'
 
 const keychainPath = process.env.STELLA_TEST_KEYCHAIN
 const testHome = process.env.STELLA_TEST_HOME

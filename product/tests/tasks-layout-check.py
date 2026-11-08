@@ -2,6 +2,7 @@
 import json
 import os
 import tempfile
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from datetime import datetime,timedelta
 from pathlib import Path
 from playwright.sync_api import expect,sync_playwright
@@ -15,15 +16,16 @@ def main():
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     baseline=os.environ.get('STELLA_TASKS_BASELINE')=='1'
     desktop.verify_release()
-    with tempfile.TemporaryDirectory(prefix='stella-tasks-layout-') as temporary,sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-tasks-layout-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True);(home/'documents').mkdir()
+        initialize_fresh(temporary, home / 'dsh', profile)
         (profile/'package.json').write_text(json.dumps({'name':'tasks-layout-review','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
         desktop.native_cli(home,'tasks-layout-install','add',str(desktop.PACK),'--ignore-scripts')
         with desktop.desktop(playwright,home,'tasks-layout') as (page,errors):
             page.set_viewport_size({'width':1440,'height':1100})
-            business=lambda method,args=None:desktop.rpc(page,'stellaOrganizer/business',{'request':{'domain':'tasks','method':method,'arguments':args or {}}})
+            business=lambda method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'tasks','method':method,'arguments':args or {}}})
             lists=[business('create_category',{'payload':{'name':name,'color':color}}) for name,color in [('planA','#597ac5'),('学习','#48a28e'),('工作','#b58b54'),('生活','#9b72b0')]]
             day=page.evaluate('new Date().toLocaleDateString("sv-SE")');now=datetime.fromisoformat(day)
             tasks=[]
@@ -45,7 +47,7 @@ def main():
             business('update_todo',{'todo_id':tasks[2]['id'],'payload':{'tags':['课程','Python'],'flagged':True,'url':'https://example.com/course','alarms':[{'offset':-900}],'checklist':legacy,'planned_on':day}})
             child=business('add_subtask',{'parent_id':tasks[2]['id'],'payload':{'title':'核对练习附件','notes':'检查提交所需文件。'}})
             open_secretary(page);page.get_by_role('button',name='刷新',exact=True).click()
-            tasks_page=page.locator('.stella-tasks-page');expect(tasks_page).to_contain_text('完成 Python 练习')
+            tasks_page=page.locator('.alcor-tasks-page');expect(tasks_page).to_contain_text('完成 Python 练习')
             page.screenshot(path=str(artifacts/('00-before.png' if baseline else '01-tasks-desktop.png')),animations='disabled')
             if baseline:return
             page.set_viewport_size({'width':1280,'height':1150})
@@ -63,7 +65,7 @@ def main():
             assert created['category_id']==lists[0]['id']
             nav.get_by_role('button',name='全部清单',exact=True).click()
             page.get_by_role('textbox',name='搜索事务',exact=True).fill('Python')
-            expect(tasks_page.locator('.stella-task-card')).to_have_count(1)
+            expect(tasks_page.locator('.alcor-task-card')).to_have_count(1)
             page.get_by_role('textbox',name='搜索事务',exact=True).fill('')
             card=page.locator(f'[data-task-id="{tasks[2]["id"]}"]')
             card.click(button='right');page.get_by_role('menuitem',name='显示简介',exact=True).click()
@@ -74,19 +76,19 @@ def main():
             assert business('get_todo',{'todo_id':tasks[2]['id']})['status']=='completed'
             card.get_by_role('button',name='重新打开',exact=True).click()
             page.get_by_role('button',name='完成 Python 练习',exact=True).click()
-            expect(page.locator('.stella-task-description')).to_contain_text('turtle')
+            expect(page.locator('.alcor-task-description')).to_contain_text('turtle')
             panel=page.get_by_role('region',name='事务详情',exact=True)
             expect(page.get_by_role('dialog')).to_have_count(0)
-            assert panel.bounding_box()['x']>=page.locator('.stella-task-workspace').bounding_box()['x']+page.locator('.stella-task-workspace').bounding_box()['width']-1
+            assert panel.bounding_box()['x']>=page.locator('.alcor-task-workspace').bounding_box()['x']+page.locator('.alcor-task-workspace').bounding_box()['width']-1
             expect(panel).to_contain_text('子事务进度')
-            panel.locator('.stella-task-children').get_by_role('button',name='核对练习附件',exact=True).click()
+            panel.locator('.alcor-task-children').get_by_role('button',name='核对练习附件',exact=True).click()
             expect(panel.get_by_role('navigation',name='事务路径')).to_contain_text('完成 Python 练习')
             panel.get_by_role('navigation',name='事务路径').get_by_role('button',name='完成 Python 练习',exact=True).click()
-            panel.locator('.stella-task-children').get_by_role('button',name='重新打开',exact=True).click()
-            panel.locator('.stella-task-children').get_by_role('button',name='完成事务',exact=True).click()
+            panel.locator('.alcor-task-children').get_by_role('button',name='重新打开',exact=True).click()
+            panel.locator('.alcor-task-children').get_by_role('button',name='完成事务',exact=True).click()
             expect(panel).to_contain_text('子事务进度 1/1')
             assert business('get_todo',{'todo_id':child['id']})['status']=='completed'
-            page.locator('.stella-business').evaluate('e=>e.scrollIntoView({block:"start"})')
+            page.locator('.alcor-business').evaluate('e=>e.scrollIntoView({block:"start"})')
             page.screenshot(path=str(artifacts/'02-task-details.png'),animations='disabled')
             page.get_by_role('region',name='事务详情',exact=True).screenshot(path=str(artifacts/'02-task-details-content.png'),animations='disabled')
             page.get_by_role('button',name='编辑详情',exact=True).click()
@@ -118,7 +120,7 @@ def main():
             expect(deletion).to_contain_text('子事务');deletion.get_by_role('button',name='取消',exact=True).click()
             expect(panel).to_be_visible()
             page.emulate_media(color_scheme='dark');page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
-            page.locator('.stella-business').evaluate('e=>e.scrollIntoView({block:"start"})')
+            page.locator('.alcor-business').evaluate('e=>e.scrollIntoView({block:"start"})')
             page.screenshot(path=str(artifacts/'06-task-panel-dark.png'),animations='disabled')
             page.emulate_media(color_scheme='light');page.set_viewport_size({'width':390,'height':844})
             assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')

@@ -5,7 +5,8 @@ import { createRequire } from 'node:module'
 import { join, resolve, delimiter } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
-import { prepareProductHome } from './home.mjs'
+import { prepareProductHome, initializeFreshPreview } from './home.mjs'
+import { renamedEnv } from './env.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const source = join(root, '.local/upstream')
@@ -18,8 +19,9 @@ if (commit !== upstream.commit) throw new Error('Desktop source does not match t
 execFileSync('git', ['apply', '--reverse', '--check', join(root, 'product/patches/0001-desktop-private-environment.patch')], {
   cwd: source, env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
 })
-const home = await prepareProductHome(resolve(process.env.STELLA_PRODUCT_HOME || join(root, '.local/desktop-preview')), root, 'desktop')
+const home = await prepareProductHome(resolve(renamedEnv('ALCOR_PRODUCT_HOME', 'STELLA_PRODUCT_HOME') || join(root, '.local/desktop-preview')), root, 'desktop')
 await withFileLock(join(home, 'product-instance'), async () => {
+await initializeFreshPreview(home, 'desktop')
 const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|LANG|LC_[A-Z_]+|https?_proxy|all_proxy|no_proxy|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS)$/.test(name)))
 environment.DSH_HOME = home
 environment.DSH_TELEMETRY_DISABLED = '1'
@@ -49,7 +51,7 @@ const newProfile = await access(join(profile, 'package.json')).then(() => false,
   throw error
 })
 createPluginProfile(profile)
-const secretary = 'link:' + join(root, 'packages/stella-secretary')
+const secretary = 'link:' + join(root, 'packages/alcor-secretary')
 if (newProfile) {
   // The official CLI exits after plugin operations, so it must own a child process.
   const setup = `import { runCli } from ${JSON.stringify(pathToFileURL(join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js')).href)};

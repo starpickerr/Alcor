@@ -1,0 +1,95 @@
+# Profile-owned UI extensions leave the signed official application unchanged.
+- id: ui-layout
+  disabled: true
+- id: ui-workspace
+  disabled: true
+- id: ui-settings-general
+  disabled: true
+- id: ui-schedule
+  disabled: true
+- id: ui-settings-models
+  disabled: true
+- insert:
+    - id: alcor-ui-layout
+      name: './vendor/ui-layout/lib/index.js'
+    - id: alcor-ui-workspace
+      name: './vendor/ui-workspace/lib/index.js'
+    - id: alcor-ui-settings-general
+      name: './vendor/ui-settings-general/lib/index.js'
+    - id: alcor-ui-schedule
+      name: './vendor/ui-schedule/lib/index.js'
+    - id: alcor-ui-settings-models
+      name: './vendor/ui-settings-models/lib/index.js'
+- insert:
+    - id: alcor-organizer
+      name: '@alcor/secretary/organizer'
+    - id: alcor-secretary
+      name: '@alcor/secretary'
+    - id: preset-alcor
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: alcor
+        name: Alcor
+        description: 帮你梳理想法、优先事项与安排。
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: '{{alcor_identity}}'
+              complete: true
+              includeRuntimeContext: false
+          - id: alcor-tools
+            name: '@alcor/secretary/tools'
+          - id: alcor-skill-reader
+            name: '@deepseek-ai/dsh-tool-skill'
+    - id: preset-alcor-briefing
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: alcor-briefing
+        name: 简报执行
+        description: Alcor 简报任务的专用执行会话。
+        order: 100
+        plugins:
+          - id: briefing-agent
+            name: '@alcor/secretary/briefing-agent'
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: '{{briefing_identity}}'
+              complete: true
+              includeRuntimeContext: false
+    - id: preset-stella
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: stella
+        name: Alcor 历史会话（兼容）
+        description: 帮你梳理想法、优先事项与安排。
+        order: 1000
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: '{{alcor_identity}}'
+              complete: true
+              includeRuntimeContext: false
+          - id: stella-tools
+            name: '@alcor/secretary/tools'
+          - id: stella-skill-reader
+            name: '@deepseek-ai/dsh-tool-skill'
+    - id: preset-stella-briefing
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: stella-briefing
+        name: 简报执行（旧会话兼容）
+        description: Alcor 简报任务的专用执行会话。
+        order: 1100
+        plugins:
+          - id: briefing-agent
+            name: '@alcor/secretary/briefing-agent'
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: '{{briefing_identity}}'
+              complete: true
+              includeRuntimeContext: false

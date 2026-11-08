@@ -16,6 +16,7 @@ class NativeBridge(Bridge):
     def __init__(self,kind):
         super().__init__(kind)
         self.sources[0].update(source_id='account1',source='iCloud',immutable=False)
+        for row in self.rows: row['source_id'] = 'account1'
         self.calls = []
         self.offline = False
         self.sequence = 0
@@ -25,6 +26,8 @@ class NativeBridge(Bridge):
         reminder = self.kind=='reminders'
         group,identity = ('list_id','reminder_id') if reminder else ('calendar_id','event_id')
         singular = 'reminder' if reminder else 'event'
+        if op in ('status','reminder_status'):
+            return {**super().call(op, **payload), 'delete_write_version':1}
         if self.offline and op not in ('status','reminder_status','calendars','reminder_lists'):
             raise RuntimeError('Synthetic offline')
         if op in ('calendars','reminder_lists'):
@@ -34,6 +37,8 @@ class NativeBridge(Bridge):
             self.sequence += 1
             row = dict(id='created-'+str(self.sequence),title=payload['title'],color=payload['color'],source_id=payload.get('source_id','account1'),source='iCloud' if payload.get('source_id','account1')=='account1' else 'Work',writable=True,immutable=False)
             self.sources.append(row)
+            if payload.get('receipt_binding'):
+                Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'],'saved':row}))
             return {'list' if reminder else 'calendar':copy.deepcopy(row)}
         if op in ('events','reminders'):
             rows = [row for row in self.rows if row[group] in payload['list_ids' if reminder else 'calendar_ids']]
@@ -52,6 +57,12 @@ class NativeBridge(Bridge):
             if op in ('delete','reminder_delete'):
                 if not row and payload.get('require_match'):
                     raise ValueError('Native occurrence unavailable')
+                if row and payload.get('require_exact_identity') and row[identity] != payload.get(identity):
+                    raise ValueError('Native identity changed')
+                if row and payload.get('expected_source_id') and row.get('source_id') != payload['expected_source_id']:
+                    raise ValueError('Native source changed')
+                if row and payload.get('expected_snapshot') and row != payload['expected_snapshot']:
+                    raise ValueError('Native content changed')
                 if row:
                     self.rows.remove(row)
                 return {'deleted':True}
@@ -65,13 +76,26 @@ class NativeBridge(Bridge):
                     following.update(reminder_id=row['reminder_id']+'-next',due_on=(datetime.fromisoformat(row['due_on'])+timedelta(days=1)).date().isoformat(),completed=False,completed_at=None)
                     self.rows.append(following)
                 return {'reminder':copy.deepcopy(row)}
+            if op=='reminder_upsert':
+                target=next(source for source in self.sources if source['id']==payload[group])
+                if payload.get('expected_source_id') and payload['expected_source_id']!=target.get('source_id'):
+                    raise ValueError('Reminder destination source changed; write was not applied')
+                if payload.get('expected_destination_snapshot') and payload['expected_destination_snapshot']!=target:
+                    raise ValueError('Reminder destination changed; write was not applied')
+                if payload.get('expected_absent') and row is not None:
+                    raise ValueError('Reminder already exists; write was not applied')
+                if payload.get('receipt_binding'):
+                    receipt=Path(payload['receipt_file'])
+                    if receipt.exists():raise ValueError('Reminder write already has a receipt; review before retrying')
+                    receipt.write_text(json.dumps({'binding':payload['receipt_binding'],'intent':True}))
             if row is None:
                 self.sequence += 1
                 row = copy.deepcopy(Bridge(self.kind).rows[0])
                 row.update({identity:'item-'+str(self.sequence),'external_id':'external-'+str(self.sequence),group:payload[group]})
-                row['stella_id']=''
+                row['alcor_id']=''
                 self.rows.append(row)
             row[group]=payload[group]
+            row['source_id']=next(source['source_id'] for source in self.sources if source['id']==row[group])
             for key in ('title','notes','description','location','start_at','end_at','all_day','timezone','due_on','due_time','planned_on','remind_at','priority','completed','completed_at','url','alarms','floating'):
                 if key in payload:
                     row[key]=payload[key]
@@ -82,8 +106,17 @@ class NativeBridge(Bridge):
                     row['is_detached']=True
             if not matches or payload.get('set_recurrence'):
                 row['recurrence']=payload.get('native_recurrence',{'frequency':payload.get('repeat_frequency','none'),'interval':payload.get('repeat_interval',1),'days':payload.get('repeat_days',[]),'until':payload.get('repeat_until')})
+            if op=='reminder_upsert' and payload.get('receipt_binding'):
+                Path(payload['receipt_file']).write_text(json.dumps({'binding':payload['receipt_binding'],'saved':row}))
             return {singular:copy.deepcopy(row)}
         if op in ('delete_calendar','reminder_list_delete'):
+            target = next((row for row in self.sources if row['id'] == payload[group]), None)
+            if payload.get('require_match') and not target:
+                raise ValueError('Native category unavailable')
+            if target and payload.get('expected_source_id') and target.get('source_id') != payload['expected_source_id']:
+                raise ValueError('Native category source changed')
+            if target and payload.get('expected_snapshot') and target != payload['expected_snapshot']:
+                raise ValueError('Native category content changed')
             self.rows=[row for row in self.rows if row[group]!=payload[group]]
         return super().call(op,**payload)
 
@@ -104,27 +137,15 @@ class Contracts(unittest.TestCase):
         return sync
 
     def test_delete_keeps_local_data_until_apple_acknowledges(self):
-        class Deleting(Bridge):
-            fail = True
-            def call(self, op, **payload):
-                if op == 'delete_calendar' and self.fail:
-                    raise RuntimeError('Synthetic offline')
-                return super().call(op, **payload)
-        bridge = Deleting('calendar')
+        bridge = NativeBridge('calendar')
         sync = self.calendar(bridge)
-        started = sync.start_sync()
-        group = next(row for row in started['state']['links'] if row['apple_id']=='a')
-        event = self.business.calendar.list_events()[0]
-        result = self.business.calendar.delete_category(group['stella_id'])
-        self.assertTrue(result['pending'])
-        self.assertEqual(self.business.calendar.get_event(event['id'])['title'], event['title'])
-        self.assertNotEqual(sync.sync()['status'], 'success')
-        self.assertEqual(self.business.calendar.get_event(event['id'])['title'], event['title'])
-        bridge.fail = False
-        sync.sync()
-        with self.assertRaises(KeyError):
-            self.business.calendar.get_event(event['id'])
-        self.assertEqual(self.business.calendar.apple_operations(), [])
+        group = sync.start_sync()['state']['links'][0]
+        row = self.business.calendar.list_events()[0]
+        with self.assertRaisesRegex(PermissionError, '人工确认'):
+            self.business.calendar.delete_category(group['alcor_id'])
+        self.assertEqual(sync.sync()['deleted_remote'], 0)
+        self.assertEqual(self.business.calendar.get_event(row['id'])['title'], row['title'])
+        self.assertFalse(any(op == 'delete_calendar' for op, _ in bridge.calls))
 
     def test_content_writable_does_not_allow_immutable_category_changes(self):
         bridge = Bridge('calendar')
@@ -133,21 +154,30 @@ class Contracts(unittest.TestCase):
         state = sync.start_sync()['state']
         group = next(row for row in state['links'] if row['apple_id']=='a')
         with self.assertRaises(PermissionError):
-            self.business.calendar.delete_category(group['stella_id'])
+            self.business.calendar.delete_category(group['alcor_id'])
         with self.assertRaises(PermissionError):
-            self.business.calendar.update_category(group['stella_id'], {'name':'Disallowed'})
+            self.business.calendar.update_category(group['alcor_id'], {'name':'Disallowed'})
         event = self.business.calendar.list_events()[0]
         self.business.calendar.update_event(event['id'], {'title':'Allowed local content edit'})
 
     def test_cancel_pending_delete_preserves_category_and_records(self):
-        sync = self.calendar()
-        state = sync.start_sync()['state']
-        group = next(row for row in state['links'] if row['apple_id']=='a')
-        result = self.business.calendar.delete_category(group['stella_id'])
-        self.business.calendar.cancel_apple_operation(result['operation_id'])
+        bridge = NativeBridge('calendar')
+        sync = self.calendar(bridge)
+        group = sync.start_sync()['state']['links'][0]
+        owner = self.business.calendar
+        from business.apple_delete_approval import prepare, commit
+        from apple_sync.approved_delete import prepare as prepare_native
+        args = {'id': group['alcor_id']}
+        operation = 'c' * 64
+        plan = prepare(owner, 'calendar', 'delete_category', args, operation)
+        native = prepare_native(sync, 'calendar', operation, plan)
+        commit(owner, 'calendar', 'delete_category', args, operation, plan['snapshot'], native['native'])
+        owner.cancel_apple_operation(operation)
+        self.assertFalse(owner.apple_operations())
         sync.sync()
-        self.assertTrue(self.business.calendar.get_category(group['stella_id']))
-        self.assertEqual(len(self.business.calendar.list_events()),1)
+        self.assertTrue(owner.get_category(group['alcor_id']))
+        self.assertEqual(len(owner.list_events()), 1)
+        self.assertFalse(any(op == 'delete_calendar' for op, _ in bridge.calls))
 
     def reminder(self,bridge=None):
         sync=AppleReminderSync(bridge=bridge or NativeBridge('reminders'),db_path=self.root/'reminders-sync.sqlite3',todo_port=self.business.tasks,clock=lambda:'2026-11-07T00:00:00Z')
@@ -156,12 +186,12 @@ class Contracts(unittest.TestCase):
 
     def test_identity_reset_rebinds_without_changing_local_ids_or_losing_notes(self):
         bridge=NativeBridge('calendar');sync=self.calendar(bridge)
-        sync.start_sync();before=sync._maps()[0];event=self.business.calendar.get_event(before['stella_id'])
+        sync.start_sync();before=sync._maps()[0];event=self.business.calendar.get_event(before['alcor_id'])
         self.business.calendar.update_event(event['id'],{'description':'Keep private local content'})
         bridge.sources[0]['id']='reset-calendar';bridge.rows[0].update(calendar_id='reset-calendar',event_id='reset-event')
         result=sync.sync()
         self.assertEqual(result['status'],'success',sync.status())
-        self.assertEqual(sync._maps()[0]['stella_id'],event['id'])
+        self.assertEqual(sync._maps()[0]['alcor_id'],event['id'])
         self.assertEqual(self.business.calendar.get_event(event['id'])['description'],'Keep private local content')
         self.assertEqual(len(self.business.calendar.categories()),1)
         self.assertEqual(sync._stored_links()[0]['apple_id'],'reset-calendar')
@@ -197,19 +227,23 @@ class Contracts(unittest.TestCase):
         self.assertTrue(sync.status()['readonly_issues'])
         self.assertIsNone(sync.status()['last_success'])
         with self.assertRaises(PermissionError):self.business.tasks.update_todo(item['id'],{'title':'Invalid'})
-        self.assertTrue(self.business.tasks.delete_todo(item['id'])['pending'])
+        with self.assertRaisesRegex(PermissionError, '人工确认'): self.business.tasks.delete_todo(item['id'])
+        self.assertTrue(self.business.tasks.get_todo(item['id']))
 
-    def test_adopting_apple_restores_a_deleted_conflict_with_same_identity(self):
+    def test_adopting_apple_for_deleted_local_conflict_restores_locally_once(self):
         for kind in ('calendar','reminders'):
             bridge=NativeBridge(kind);sync=self.calendar(bridge) if kind=='calendar' else self.reminder(bridge)
             owner=self.business.calendar if kind=='calendar' else self.business.tasks
             sync.start_sync();item=(owner.list_events() if kind=='calendar' else owner.list_todos())[0]
             owner.apple_remove_item(item['id']);bridge.rows[0]['title']='Apple changed while local was deleted'
             sync.sync();self.assertTrue(sync.status()['conflicts'])
+            before=sync._maps();native=[dict(row) for row in bridge.rows];bridge.calls.clear()
             sync.resolve_conflict(item['id'],'keep_apple')
-            restored=owner.get_event(item['id']) if kind=='calendar' else owner.get_todo(item['id'])
-            self.assertEqual(restored['title'],bridge.rows[0]['title'])
-            self.assertEqual(restored['id'],item['id'])
+            self.assertEqual(sync._local(item['id'])['title'],'Apple changed while local was deleted')
+            self.assertEqual(len(sync._maps()),len(before));self.assertEqual(sync._maps()[0]['state'],'active');self.assertEqual(bridge.rows,native)
+            sync.sync();sync.sync();self.assertEqual(len(sync._maps()),len(before))
+            self.assertFalse(any(op in ('upsert','reminder_upsert') for op,_ in bridge.calls))
+            self.assertEqual(sync.status()['scan_claims'],[])
 
     def test_timezone_floating_url_and_alarms_round_trip(self):
         bridge=NativeBridge('calendar');sync=self.calendar(bridge);sync.start_sync()
@@ -269,17 +303,42 @@ class Contracts(unittest.TestCase):
         sync.sync()
         return bridge,sync,item
 
-    def test_skipping_occurrence_deletes_exact_native_instance_and_survives_restart(self):
+    def test_unconfirmed_occurrence_delete_preserves_instances_after_restart(self):
+        bridge, sync, item = self.local_series()
+        with self.assertRaisesRegex(PermissionError, '人工确认'):
+            self.business.calendar.exclude_occurrence(item['id'], '2026-11-08')
+        self.assertEqual(sync.sync()['deleted_remote'], 0)
+        self.assertEqual(self.calendar(bridge).sync()['deleted_remote'], 0)
+        self.assertEqual(len(bridge.rows), 3)
+        self.assertFalse(any(op == 'delete' for op, _ in bridge.calls))
+
+    def test_legacy_marker_instance_edit_without_metadata_baseline_preserves_url(self):
         bridge,sync,item=self.local_series()
-        self.business.calendar.exclude_occurrence(item['id'],'2026-11-08')
-        self.assertEqual(sync.sync()['status'],'success',sync.status())
-        deletion=[payload for op,payload in bridge.calls if op=='delete'][-1]
-        self.assertFalse(deletion['series']);self.assertTrue(deletion['require_match'])
-        self.assertFalse(any(row['start_at'].startswith('2026-11-08') for row in bridge.rows))
-        self.assertEqual(len(bridge.rows),2)
-        self.assertEqual(self.business.calendar.list_events('2026-11-08T00:00:00Z','2026-11-09T00:00:00Z'),[])
-        restarted=self.calendar(bridge);self.assertEqual(restarted.sync()['status'],'success')
-        self.assertEqual(len([op for op,_ in bridge.calls if op=='delete']),1)
+        # Swift presents legacy marker URLs as an empty public URL and alcor_id.
+        for row in bridge.rows:
+            row.update(alcor_id=item['id'],url='')
+        sync._set('item-metadata:'+item['id'],None)
+        self.business.calendar.update_event(item['id']+'@2026-11-08',{'title':'One exception','edit_scope':'this'})
+        operation_id=self.business.calendar.apple_operations()[0]['id']
+        writes=sum(op=='upsert' for op,_ in bridge.calls)
+        result=sync.sync()
+        self.assertEqual(result['status'],'success',sync.status())
+        payload=next(payload for op,payload in reversed(bridge.calls) if op=='upsert')
+        self.assertNotIn('url',payload)
+        self.assertEqual(Path(payload['receipt_file']).name,operation_id+'.json')
+        self.assertEqual(sum(op=='upsert' for op,_ in bridge.calls),writes+1)
+        sync.sync()
+        self.assertEqual(sum(op=='upsert' for op,_ in bridge.calls),writes+1)
+
+    def test_explicit_instance_url_clear_without_baseline_is_preserved(self):
+        bridge,sync,item=self.local_series()
+        sync._set('item-metadata:'+item['id'],None)
+        self.business.calendar.update_event(item['id']+'@2026-11-08',{'url':'','edit_scope':'this'})
+        result=sync.sync()
+        self.assertEqual(result['status'],'success',sync.status())
+        payload=next(payload for op,payload in reversed(bridge.calls) if op=='upsert')
+        self.assertIn('url',payload)
+        self.assertEqual(payload['url'],'')
 
     def test_native_instance_edit_uses_requested_scope_without_changing_other_instances(self):
         bridge,sync,item=self.local_series()
@@ -290,19 +349,28 @@ class Contracts(unittest.TestCase):
         self.assertEqual(self.business.calendar.get_event(item['id'])['title'],'Series')
         self.assertTrue(any(row.get('native_series_key') for row in self.business.calendar.list_events() if row['id']!=item['id']))
 
-    def test_deletion_race_requires_choice_and_apple_choice_cancels_delete(self):
-        for kind in ('calendar','reminders'):
-            bridge=NativeBridge(kind);sync=self.calendar(bridge) if kind=='calendar' else self.reminder(bridge)
-            owner=self.business.calendar if kind=='calendar' else self.business.tasks
-            sync.start_sync();item=(owner.list_events() if kind=='calendar' else owner.list_todos())[0]
-            (owner.delete_event if kind=='calendar' else owner.delete_todo)(item['id'])
-            bridge.rows[0]['title']='Changed while pending'
-            result=sync.sync();self.assertEqual(result['deleted_remote'],0)
-            self.assertTrue(sync.status()['conflicts']);self.assertTrue(owner.apple_operations())
-            sync.resolve_conflict(item['id'],'keep_apple')
-            self.assertEqual((owner.get_event if kind=='calendar' else owner.get_todo)(item['id'])['title'],'Changed while pending')
-            self.assertEqual(owner.apple_operations(),[])
-            self.assertEqual(sync.sync()['status'],'success')
+    def test_remote_edit_after_preview_blocks_approved_delete(self):
+        from business.apple_delete_approval import prepare, commit
+        from apple_sync.approved_delete import prepare as native_plan, run
+        for kind in ('calendar', 'reminders'):
+            bridge = NativeBridge(kind)
+            sync = self.calendar(bridge) if kind == 'calendar' else self.reminder(bridge)
+            domain = 'calendar' if kind == 'calendar' else 'tasks'
+            owner = getattr(self.business, domain)
+            sync.start_sync()
+            item = (owner.list_events() if kind == 'calendar' else owner.list_todos())[0]
+            method = 'delete_event' if kind == 'calendar' else 'delete_todo'
+            args = {'id' if kind == 'calendar' else 'todo_id': item['id']}
+            op = 'd' * 64
+            local = prepare(owner, domain, method, args, op)
+            plan = native_plan(sync, domain, op, local)
+            commit(owner, domain, method, args, op, local['snapshot'], plan['native'])
+            bridge.rows[0]['title'] = 'Changed after preview'
+            with self.assertRaises((ValueError, RuntimeError)):
+                run(sync, plan, lambda *a: True, lambda action, **kw: getattr(owner, action)(**kw))
+            self.assertFalse(any(op in ('delete','reminder_delete') for op, _ in bridge.calls))
+            self.assertTrue(owner.apple_operations())
+            self.assertEqual(bridge.rows[0]['title'], 'Changed after preview')
 
     def test_old_empty_categories_and_existing_content_survive_reinitialization(self):
         from business.calendar.domain.service import CalendarService
@@ -325,24 +393,13 @@ class Contracts(unittest.TestCase):
         self.assertEqual(restored['title'],item['title']);self.assertEqual(restored['url'],'https://example.com/legacy-user-url')
         self.assertEqual(restored['alarms'],[{'offset':-300}])
 
-    def test_future_scope_delete_preserves_earlier_series_and_does_not_delete_other_calendar(self):
-        bridge,sync,item=self.local_series()
-        original=bridge.call
-        def scoped(op,**payload):
-            if op=='delete' and payload.get('series'):
-                target=datetime.fromisoformat(payload['occurrence_date'].replace('Z','+00:00'))
-                bridge.rows=[row for row in bridge.rows if not(row['calendar_id']==payload['calendar_id'] and row['external_id']==payload['external_id'] and datetime.fromisoformat(row['occurrence_date'].replace('Z','+00:00'))>=target)]
-                for row in bridge.rows:
-                    row['recurrence']={**row['recurrence'],'until':'2026-11-07T15:59:59Z'}
-                return {'deleted':True}
-            return original(op,**payload)
-        bridge.call=scoped
-        result=self.business.calendar.delete_event(item['id'],'future','2026-11-08')
-        self.assertTrue(result['pending']);self.assertEqual(len(bridge.rows),3)
-        self.assertEqual(sync.sync()['status'],'success',sync.status())
-        kept=self.business.calendar.get_event(item['id']);self.assertEqual(kept['repeat_until'],'2026-11-07')
-        self.assertEqual(len(bridge.rows),1)
-        self.assertEqual(self.business.calendar.list_events('2026-11-08T00:00:00Z','2026-11-10T00:00:00Z'),[])
+    def test_unconfirmed_future_delete_preserves_all_occurrences(self):
+        bridge, sync, item = self.local_series()
+        with self.assertRaisesRegex(ValueError, 'Apple 来源'):
+            self.business.calendar.delete_event(item['id'], 'future', '2026-11-08')
+        self.assertEqual(sync.sync()['deleted_remote'], 0)
+        self.assertEqual(len(bridge.rows), 3)
+        self.assertFalse(any(op == 'delete' for op, _ in bridge.calls))
 
     def test_failed_range_never_claims_complete_coverage(self):
         bridge=NativeBridge('calendar');sync=self.calendar(bridge);sync.start_sync()
@@ -371,15 +428,19 @@ class Contracts(unittest.TestCase):
         self.assertEqual(sync.sync()['status'],'success',sync.status())
         self.assertEqual(self.business.calendar.categories(),[])
 
-    def test_confirmed_category_delete_supersedes_pending_item_actions(self):
-        bridge=NativeBridge('reminders');bridge.rows[0].update(due_on='2026-11-07',recurrence={'frequency':'daily'})
-        sync=self.reminder(bridge);sync.start_sync();owner=self.business.tasks;item=owner.list_todos()[0]
-        owner.complete_todo(item['id'],True)
-        operation=owner.delete_category(item['category_id'])
-        with self.assertRaises(ValueError):owner.complete_todo(item['id'],True)
-        owner.apple_finish_operation(operation['operation_id'])
-        self.assertEqual(owner.apple_operations(),[])
-        with self.assertRaises(KeyError):owner.get_todo(item['id'])
+    def test_unconfirmed_category_delete_preserves_pending_item_actions(self):
+        bridge = NativeBridge('reminders')
+        bridge.rows[0].update(due_on='2026-11-07', recurrence={'frequency':'daily'})
+        sync = self.reminder(bridge)
+        sync.start_sync()
+        owner = self.business.tasks
+        item = owner.list_todos()[0]
+        owner.complete_todo(item['id'], True)
+        operations = owner.apple_operations()
+        with self.assertRaisesRegex(PermissionError, '人工确认'):
+            owner.delete_category(item['category_id'])
+        self.assertEqual(owner.apple_operations(), operations)
+        self.assertEqual(owner.get_todo(item['id'])['id'], item['id'])
 
     def test_legacy_deleted_category_with_retained_records_never_deletes_apple_data(self):
         bridge=NativeBridge('calendar');sync=self.calendar(bridge);sync.start_sync()
@@ -399,7 +460,7 @@ class Contracts(unittest.TestCase):
         owner=self.business.calendar
         target=owner.create_category({'name':'Instance destination'})
         sync.sync()
-        original=next(row['calendar_id'] for row in sync._maps() if row['stella_id']==item['id'])
+        original=next(row['calendar_id'] for row in sync._maps() if row['alcor_id']==item['id'])
         destination=owner.get_category(target['id'])['apple']['apple_id']
         owner.update_event(item['id']+'@2026-11-08',{'category_id':target['id'],'edit_scope':'this'})
         sync.sync()
@@ -414,7 +475,7 @@ class Contracts(unittest.TestCase):
     def test_a_queued_instance_move_stops_if_the_original_calendar_becomes_readonly(self):
         bridge,sync,item=self.local_series();owner=self.business.calendar
         target=owner.create_category({'name':'Writable destination'});sync.sync()
-        original=next(row['calendar_id'] for row in sync._maps() if row['stella_id']==item['id'])
+        original=next(row['calendar_id'] for row in sync._maps() if row['alcor_id']==item['id'])
         owner.update_event(item['id']+'@2026-11-08',{'category_id':target['id'],'edit_scope':'this'})
         writes=sum(op=='upsert' for op,_ in bridge.calls)
         next(row for row in bridge.sources if row['id']==original)['writable']=False

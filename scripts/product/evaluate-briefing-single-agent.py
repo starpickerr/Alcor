@@ -25,9 +25,9 @@ from datetime import datetime
 from uuid import NAMESPACE_URL, uuid5
 
 BASELINE = '234e3bf3ba8ee60dc540ec573620cf691134cab8'
-BUSINESS = 'packages/stella-secretary/business'
+BUSINESS = 'packages/alcor-secretary/business'
 SOURCE_FILES = [f'{BUSINESS}/briefing/domain/generator.py', f'{BUSINESS}/worker.py',
-                f'{BUSINESS}/briefing/runs.py', 'packages/stella-organizer/src/briefing.js']
+                f'{BUSINESS}/briefing/runs.py', 'packages/alcor-organizer/src/briefing.js']
 SCENARIOS = ['first_generation', 'unchanged_refresh', 'changed_thread_member', 'changed_rule']
 
 
@@ -236,7 +236,7 @@ def independent_quality(variant, fixture, request, responses):
 
 
 def snapshot_sources(repo, revision, work):
-    archive = subprocess.check_output(['git', '-C', str(repo), 'archive', revision, BUSINESS])
+    archive = subprocess.check_output(['git', '-C', str(repo), 'archive', revision, 'packages/stella-secretary/business'])
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         for member in tar.getmembers():
             if not member.isfile():
@@ -249,7 +249,7 @@ def snapshot_sources(repo, revision, work):
     shutil.copytree(repo / BUSINESS, work / 'candidate/business', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     (work / 'organizer').mkdir()
     for name in ('briefing.js', 'briefing-sources.js', 'source-groups.js'):
-        shutil.copy2(repo / 'packages/stella-organizer/src' / name, work / 'organizer' / name)
+        shutil.copy2(repo / 'packages/alcor-organizer/src' / name, work / 'organizer' / name)
     (work / 'package.json').write_text('{"type":"module"}\n')
     (work / 'node_modules').symlink_to(repo / 'node_modules', target_is_directory=True)
 
@@ -278,7 +278,7 @@ def main():
         work = Path(temporary)
         snapshot_sources(repo, revision, work)
         (work / 'fixture.json').write_bytes(fixture_path.read_bytes())
-        frozen_hashes = {name: sha((work / 'candidate' / Path(name).relative_to('packages/stella-secretary')
+        frozen_hashes = {name: sha((work / 'candidate' / Path(name).relative_to('packages/alcor-secretary')
             if name.startswith(BUSINESS) else work / 'organizer/briefing.js').read_bytes()) for name in SOURCE_FILES}
         (work / 'home').mkdir()
         env = {key: os.environ[key] for key in ('PATH', 'TMPDIR', 'USER', 'LOGNAME') if key in os.environ}

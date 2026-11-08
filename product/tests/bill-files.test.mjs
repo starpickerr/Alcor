@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readBillFiles } from '../../packages/stella-secretary/src/bill-files.js'
+import { readBillFiles } from '../../packages/alcor-secretary/src/bill-files.js'
 
 test('bill reader uses the DSH filesystem, honors its denials and caps reads before returning bytes', async () => {
   let reads = 0

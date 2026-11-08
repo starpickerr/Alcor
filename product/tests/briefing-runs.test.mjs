@@ -4,14 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { BusinessWorker } from '../../packages/stella-organizer/src/business.js'
-import { BriefingGenerator } from '../../packages/stella-organizer/src/briefing.js'
-import { buildBriefing } from '../../packages/stella-organizer/src/records.js'
-import { schemas } from '../../packages/stella-organizer/src/remote.js'
+import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
+import { BriefingGenerator } from '../../packages/alcor-organizer/src/briefing.js'
+import { buildBriefing } from '../../packages/alcor-organizer/src/records.js'
+import { schemas } from '../../packages/alcor-organizer/src/remote.js'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 
 const source = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', method: 'fetch', arguments: { course_ids: ['selected'] } }
-const options = { worker: new URL('../../packages/stella-secretary/business/worker.py', import.meta.url) }
+const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
 const route = { provider: 'synthetic', model: 'chosen-model', reasoningEffort: 'high' }
 
 async function fixture(t) {
@@ -31,12 +31,12 @@ function nativeContext() {
         creations.push(request)
         const id = 'run-' + randomUUID(), definitions = new Map(), listeners = new Set()
         let model = { provider: 'synthetic', model: 'default-model' }, activity = Promise.resolve(), controller
-        const agent = { session: { id, header: {} }, model: { current: () => model, select: value => { model = value } },
+        const agent = { session: { id, header: {}, preset: request.agentPreset }, model: { current: () => model, select: value => { model = value } },
           ctx: { tools: { restrict: () => () => {}, register: tool => { definitions.set(tool.name, tool); return () => definitions.delete(tool.name) } },
             on: (event, listener) => { if (event === 'agent/pre-step') return () => {}; assert.equal(event, 'tools/result'); listeners.add(listener); return () => listeners.delete(listener) } },
           followup: message => {
             controller = new AbortController()
-            const request = { parent: agent, agentPreset: 'stella-briefing', agentOptions: model,
+            const request = { parent: agent, agentPreset: agent.session.preset, agentOptions: model,
               outputSchema: definitions.get('briefing_submit').parameters, prompt: message.content }
             requests.push(request)
             activity = (async () => {
@@ -53,6 +53,7 @@ function nativeContext() {
       },
       rename: async () => {}, resolveAgent: async id => ({ agent: agents.get(id) }),
     },
+    agentPresets: { presetForSession: session => session.preset },
     tools: { execute: async ({ calls: [call] }) => {
       readCount++; const args = JSON.parse(call.arguments); assert.deepEqual(args.course_ids, ['selected'])
       return { results: [{ result: { value: { structuredContent: { value: { source_items: [{ source_id: 'one', title: 'Synthetic task', snippet: 'secret-payload', occurred_at: new Date(Date.now() - 1000).toISOString() }], cursors: { checkpoint: 'source-state' }, next_offset: null } } } } }] }
@@ -99,7 +100,7 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   schemas.startBriefing[1].parse(started)
   assert.deepEqual(snapshotJsonValue(started), started)
   assert.notEqual(started.sessionId, 'chat-owner')
-  assert.deepEqual(native.creations, [{ agentPreset: 'stella-briefing', cwd: '/tmp' }])
+  assert.deepEqual(native.creations, [{ agentPreset: 'alcor-briefing', cwd: '/tmp' }])
   await until(() => release)
   request.parent.model.current = () => ({ provider: 'changed', model: 'other-model' })
   await worker.call('invoke', { domain: 'briefing', method: 'create_rule', arguments: { payload: { text: 'NEW RULE MUST NOT ENTER THIS RUN', source: '*', enabled: true } } })
@@ -113,7 +114,7 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   assert.equal(native.requests.length, 1)
   for (const call of native.requests) {
     assert.equal(call.parent.session.id, started.sessionId)
-    assert.equal(call.agentPreset, 'stella-briefing')
+    assert.equal(call.agentPreset, 'alcor-briefing')
     assert.deepEqual(call.agentOptions, route)
     assert(!call.prompt[0].text.includes('NEW RULE MUST NOT ENTER THIS RUN'))
   }
@@ -375,4 +376,43 @@ test('a durably accepted cancellation wins over a queued model commit', async t 
   assert.equal((await state(worker, request.requestId)).phase, 'cancelled')
   assert.equal(await worker.call('briefing_run', { method: 'result', request_id: request.requestId }), null)
   assert.equal(await worker.call('invoke', { domain: 'briefing', method: 'get_cursor', arguments: { source: 'elearning', account_id: 'school', cursor_key: 'until' } }), null)
+})
+
+test('legacy unfinished briefing resumes its existing session after restart', async t => {
+  const data = await fixture(t), native = nativeContext(), request = input()
+  let worker = data.worker, generator = new BriefingGenerator(native.ctx, worker)
+  native.response(async () => ({ stopReason: 'failed' }))
+  await assert.rejects(generator.generate(request), /模型未提交/)
+  const previous = native.requests[0].parent.session
+  previous.preset = 'stella-briefing'
+  await generator.close(); await worker.close()
+  worker = data.restart(); generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
+  native.response(async call => structured(call))
+  const resumed = await generator.resume(request.requestId, async () => {})
+  assert.equal(resumed.sessionId, previous.id)
+  assert.equal((await generator.wait(request.requestId)).body, '已完成独立简报。')
+  assert.equal(native.creations.length, 1)
+  assert.equal(native.requests.at(-1).agentPreset, 'stella-briefing')
+})
+
+test('a briefing cannot change between legacy and new presets while running', async () => {
+  let entered = false, preset = 'stella-briefing'
+  const agent = directAgent(async ({ events }) => {
+    preset = 'alcor-briefing'
+    try { await events.get('agent/pre-step')({ modelSelection: route }, async () => { entered = true }) } catch {}
+  })
+  const generator = new BriefingGenerator({ agentPresets: { presetForSession: () => preset } }, {})
+  const state = { requestId: 'r', preset: 'stella-briefing', run: { sessionId: 'same-session', model: route }, parent: agent, controller: new AbortController() }
+  generator.current = state
+  await assert.rejects(generator.runAgent(state, { entries: [], task: '', rules: '', schema: { type: 'object' } }, async () => {}, async () => {}), /会话的配置已改变/)
+  assert.equal(entered, false)
+})
+
+test('unfinished briefing refuses unrelated preset before model use', async () => {
+  const generator = new BriefingGenerator({
+    sessionController: { resolveAgent: async () => ({ agent: { session: { preset: 'owner-default' } } }) },
+    agentPresets: { presetForSession: session => session.preset },
+  }, {})
+  const state = { run: { sessionId: 'unrelated', context: {} }, controller: new AbortController() }
+  await assert.rejects(generator.prepareSession(state, async () => {}), /会话的配置已改变/)
 })

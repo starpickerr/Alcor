@@ -179,7 +179,7 @@
     },
     {
       "id": "task-overdue",
-      "source": "stella_tasks",
+      "source": "alcor_tasks",
       "account_id": "synthetic",
       "source_id": "task-overdue",
       "thread_id": "",
@@ -203,7 +203,7 @@
     },
     {
       "id": "bill-due",
-      "source": "stella_bills",
+      "source": "alcor_bills",
       "account_id": "synthetic",
       "source_id": "bill-due",
       "thread_id": "",
