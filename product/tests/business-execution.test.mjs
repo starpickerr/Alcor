@@ -406,7 +406,7 @@ test('first source window ignores legacy history and empty selection has no impl
 })
 
 
-test('incremental reports isolate days and selections, apply changed rules only to new information and keep cursors on model failure', async context => {
+test('incremental reports isolate days and selections, reconsider today’s candidates once after a rule change and keep cursors on model failure', async context => {
   const {worker,invoke}=await fixture(context)
   const scope={source:'elearning',accountId:'school',tool:'mcp__elearning__fetch',method:'fetch',arguments:{course_ids:['one']}}
   const makeSource=(items,stamp)=>({source:'elearning',account_id:'school',items,cursors:{elearning_state:stamp,until:stamp},window_start:'2026-11-05T12:00:00Z'})
@@ -429,7 +429,9 @@ test('incremental reports isolate days and selections, apply changed rules only 
   assert.equal(calls,1)
   await invoke('briefing','create_rule',{payload:{text:'Keep concrete deadlines',enabled:true,source:'*'}})
   await finish('2026-11-06','2026-11-06T09:00:00Z',makeSource([],'2026-11-06T09:00:00Z'))
-  assert.equal(calls,1,'New rules do not reanalyze existing candidates')
+  assert.equal(calls,2,'New rules reconsider the current day’s candidate once')
+  await finish('2026-11-06','2026-11-06T09:30:00Z',makeSource([],'2026-11-06T09:30:00Z'))
+  assert.equal(calls,2,'An unchanged refresh after rule reevaluation skips the model')
   const before=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   const changed={...item,snippet:'Changed',payload:{...item.payload,body:'Changed'}}
   const pending=await worker.call('generated_briefing',{record:buildBriefing([],'2026-11-06','','2026-11-06T10:00:00Z'),request_id:randomUUID(),sources:[makeSource([changed],'2026-11-06T10:00:00Z')],configurations:[scope],run_at:'2026-11-06T10:00:00Z'})
@@ -441,7 +443,7 @@ test('incremental reports isolate days and selections, apply changed rules only 
   assert.notEqual(switched.body,'Report','Old narrative must not survive a changed course selection')
   const nextDay=await finish('2026-11-07','2026-11-07T08:00:00Z',makeSource([],'2026-11-07T08:00:00Z'),other)
   assert.equal(nextDay.business.snapshot.items.length,0,'Previous day candidates never enter the next day model')
-  assert.equal(calls,1,'Empty windows do not call a model')
+  assert.equal(calls,2,'Empty windows for a new selection or day do not call a model')
   assert.deepEqual(await worker.call('source_cursors',{source:'elearning',account_id:'another-school',configuration:{...scope,accountId:'another-school'}}),{})
 })
 

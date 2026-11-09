@@ -322,6 +322,7 @@ def commit_daily(service, record, request_id, window, current, detail, draft, ca
     unchanged_day = bool(
         current
         and current.status == "completed"
+        and current.rule_text == draft["rule_text"]
         and same_scopes
         and old_visible == candidates.rows.keys() == candidates.unchanged
         and not stats["accepted"]

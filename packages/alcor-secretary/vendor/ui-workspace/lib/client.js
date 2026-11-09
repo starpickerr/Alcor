@@ -1506,6 +1506,7 @@ window.__ModuleLoader__.load({
 				});
 			}
 			startSession(workspaceId, options) {
+				if (window[Symbol.for("@alcor/secretary.workspace-navigation")]) return window[Symbol.for("@alcor/secretary.workspace-navigation")].startSession(workspaceId, options);
 				const { agentPreset, ...draft } = options ?? {};
 				const draftOptions = options === void 0 ? void 0 : draft;
 				const initializeDraft = draftOptions !== void 0 && (draftOptions.prompt !== void 0 || (draftOptions.whenDraftExists ?? (draftOptions.clearPreviousDraft === true ? "replace" : "keep")) === "replace");
@@ -1665,6 +1666,17 @@ window.__ModuleLoader__.load({
 				this.ctx.layout.selectPanel(null);
 			}
 			replaceMain(target, signal, panel, beforeOpen) {
+                if (typeof target === 'string' && (window[Symbol.for("@alcor/secretary.workspace-navigation")]?.isChannelSession(target) || /^onebot-(group|private)-[1-9]\d{0,19}(?:-|$)/.test(target))) {
+                    signal.throwIfAborted();
+                    if (window[Symbol.for("@alcor/secretary.workspace-navigation")]) window[Symbol.for("@alcor/secretary.workspace-navigation")].openQQ(target);
+                    else {
+                        const open = () => { if (!signal.aborted) window[Symbol.for("@alcor/secretary.workspace-navigation")]?.openQQ(target); };
+                        window.addEventListener('alcor-navigation-ready', open, { once: true });
+                        signal.addEventListener('abort', () => window.removeEventListener('alcor-navigation-ready', open), { once: true });
+                    }
+                    return;
+                }
+                window[Symbol.for("@alcor/secretary.workspace-navigation")]?.selectSpace(target);
 				signal.throwIfAborted();
 				const reference = this.sessions.retain(target, { source: "mainView" });
 				try {
@@ -2910,12 +2922,12 @@ window.__ModuleLoader__.load({
 		* @param props - empty-state slot props (owner share + injected creation callback).
 		* @returns the flow element.
 		*/
-		function WorkspacePicker({ open, anchorRef, useWorkspaces, selectedId, onPick, onClose, createWorkspace, useDirectoryFlow, renderSlot, t }) {
+		function WorkspacePicker({ open, anchorRef, useWorkspaces: useAllWorkspaces, useSpaceWorkspaces, selectedId, onPick, onClose, createWorkspace, useDirectoryFlow, renderSlot, t }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkspacePickFlow, {
 				t,
 				open,
 				anchorRef,
-				useWorkspaces,
+				useWorkspaces: useSpaceWorkspaces ?? useAllWorkspaces,
 				createWorkspace,
 				useDirectoryFlow,
 				renderDirectoryFlow: (owner) => renderSlot("conversation.hero.workspace.directoryFlow", owner),
@@ -3173,7 +3185,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
-		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess, onSessionRenameRequest, renderSlot, openSessionMenu, openWorkspaceMenu, useContextMenuTarget, useContextMenu, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
+		function SessionTree({ renderQQ, list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess, onSessionRenameRequest, renderSlot, openSessionMenu, openWorkspaceMenu, useContextMenuTarget, useContextMenu, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
 			const statuses = useSessionStatus((s) => s);
 			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
@@ -3494,7 +3506,7 @@ window.__ModuleLoader__.load({
 						rowKeys,
 						ready: list.phase === "ready" && workspaceReady && !nativeDragActive,
 						resetKey: JSON.stringify([animationResetKey, watermarkMotionKey]),
-						children: [groups.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptySessions, {
+						children: [renderQQ?.(Rows_module_css_default), groups.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptySessions, {
 							rowState,
 							onLeaveArchivedOnly,
 							t
@@ -3505,7 +3517,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** The flat "In one list" body: every session is one draggable top-level row. */
-		function FlatList({ list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, useSessionAccess, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, openSessionMenu, useContextMenuTarget, useContextMenu, home, t }) {
+		function FlatList({ renderQQ, list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, useSessionAccess, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, openSessionMenu, useContextMenuTarget, useContextMenu, home, t }) {
 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
 			const statuses = useSessionStatus((s) => s);
 			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
@@ -3535,7 +3547,7 @@ window.__ModuleLoader__.load({
 					rowKeys: rows.length === 0 ? ["empty"] : rows.map((row) => `session:${row.id}`),
 					ready: list.phase === "ready" && workspaceReady && drag === null,
 					resetKey: animationResetKey,
-					children: [rows.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptySessions, {
+					children: [renderQQ?.(Rows_module_css_default), rows.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EmptySessions, {
 						rowState,
 						onLeaveArchivedOnly,
 						t
@@ -3666,7 +3678,9 @@ window.__ModuleLoader__.load({
 		* @param props - composed slot props (shell owner share + store + injected actions).
 		* @returns the region element tree.
 		*/
-		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, useWorkspaceActionRequest, settleWorkspaceAction, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, openSessionMenu, openWorkspaceMenu, useContextMenuTarget, useContextMenu, t }) {
+		function WorkspaceBrowser({ wide, renderQQ, usePanelInfo, expandSidebar, useSessions: useAllSessions, useSpaceSessions, useSessionStatus, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces: useAllWorkspaces, useSpaceWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, useWorkspaceActionRequest, settleWorkspaceAction, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, renderSlot, openSessionMenu, openWorkspaceMenu, useContextMenuTarget, useContextMenu, t }) {
+			const useSessions = useSpaceSessions ?? useAllSessions;
+			const useWorkspaces = useSpaceWorkspaces ?? useAllWorkspaces;
 			const home = useHostInfo((info) => info.home);
 			const shortcuts = useShortcuts((rows) => rows);
 			const searchShortcut = shortcuts.find((row) => row.id === "session.search");
@@ -4087,7 +4101,7 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: WorkspaceBrowser_module_css_default.listArea,
-						children: wide && (normalizedQuery !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SearchResults, {
+						children: !wide ? renderQQ?.(Rows_module_css_default, expandSidebar) : (normalizedQuery !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SearchResults, {
 							usePanelInfo,
 							useSessionAccess,
 							useSessions,
@@ -4102,7 +4116,7 @@ window.__ModuleLoader__.load({
 							resultLimit: searchResultLimit,
 							t
 						}) : groupBy === "flat" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FlatList, {
-							useSessionAccess,
+							renderQQ, useSessionAccess,
 							usePanelInfo,
 							list,
 							sessionIds: orderedFlatSessionIds,
@@ -4123,7 +4137,7 @@ window.__ModuleLoader__.load({
 							home,
 							t
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SessionTree, {
-							useRemoteAccess,
+							renderQQ, useRemoteAccess,
 							useSessionAccess,
 							useWorkspaceAccess,
 							usePanelInfo,
@@ -5800,6 +5814,7 @@ window.__ModuleLoader__.load({
 			}), "ui-workspace: dictionaries");
 			const shortcutControls = createWorkspaceShortcutControls();
 			const searchSessions = async (query, signal) => {
+                if (window[Symbol.for("@alcor/secretary.workspace-navigation")]) return window[Symbol.for("@alcor/secretary.workspace-navigation")].search(query, signal);
 				const result = await sessions.search(query, signal);
 				if (!result.ok) throw new Error(result.error.message);
 				return result.value;
@@ -5986,7 +6001,22 @@ window.__ModuleLoader__.load({
 					}
 				}] : []
 			}), "workspace: delete menu action");
-			const browserInjected = () => ({
+			const productSource = (name, fallback) => ({
+                getSnapshot: () => window[Symbol.for("@alcor/secretary.workspace-navigation")]?.[name].getSnapshot() ?? fallback.getSnapshot(),
+                subscribe(listener) {
+                    let release;
+                    const connect = () => { release?.(); release = window[Symbol.for("@alcor/secretary.workspace-navigation")]?.[name].subscribe(listener); listener(); };
+                    const stop = fallback.subscribe(listener);
+                    window.addEventListener('alcor-navigation-ready', connect);
+                    connect();
+                    return () => { stop(); release?.(); window.removeEventListener('alcor-navigation-ready', connect); };
+                }
+            });
+            const productSessions = productSource('sessions', sessions.list);
+            const productWorkspaces = productSource('workspaces', workspaces.list);
+            const productPicker = productSource('picker', workspaces.list);
+            const createProductWorkspace = input => window[Symbol.for("@alcor/secretary.workspace-navigation")] ? window[Symbol.for("@alcor/secretary.workspace-navigation")].createWorkspace(input) : workspaces.create(input);
+            const browserInjected = () => ({
 				openWorkspaceMenu: (workspaceId, path, displayTitle, point, mode) => {
 					const target = ctx.contextMenus.active.getSnapshot();
 					if (mode === "toggle" && target?.kind === "workspace" && target.value.workspaceId === workspaceId) ctx.contextMenus.close();
@@ -6024,10 +6054,10 @@ window.__ModuleLoader__.load({
 					notify({ kind: "archivedNotOpenable" });
 				},
 				renameWorkspace: async (workspaceId, title) => {
-					await workspaces.rename(workspaceId, title);
+					if (window[Symbol.for("@alcor/secretary.workspace-navigation")]) await window[Symbol.for("@alcor/secretary.workspace-navigation")].renameWorkspace(workspaceId,title); else await workspaces.rename(workspaceId, title);
 				},
 				deleteWorkspace: async (workspaceId) => {
-					await workspaces.delete(workspaceId);
+					if (window[Symbol.for("@alcor/secretary.workspace-navigation")]) await window[Symbol.for("@alcor/secretary.workspace-navigation")].deleteWorkspace(workspaceId); else await workspaces.delete(workspaceId);
 				},
 				insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
 					await workspaces.insertBefore(workspaceId, beforeWorkspaceId);
@@ -6035,12 +6065,13 @@ window.__ModuleLoader__.load({
 				unarchiveSession: async (sessionId) => {
 					await uiWorkspace.unarchiveSession(sessionId);
 				},
-				createWorkspace: (input) => workspaces.create(input),
+				createWorkspace: createProductWorkspace,
 				requestSearch: shortcutControls.search,
 				requestAddWorkspace: shortcutControls.add,
 				closeAddWorkspace: shortcutControls.closeAdd,
 				setDirectoryBusy: shortcutControls.directoryBusy,
 				hooks: {
+					spaceSessions: productSessions, spaceWorkspaces: productWorkspaces,
 					workspaceActionRequest,
 					contextMenuTarget: ctx.contextMenus.active,
 					directoryFlow: browserFlowSource,
@@ -6050,8 +6081,8 @@ window.__ModuleLoader__.load({
 				}
 			});
 			const pickerInjected = () => ({
-				createWorkspace: (input) => workspaces.create(input),
-				hooks: { directoryFlow: pickerFlowSource }
+				createWorkspace: createProductWorkspace,
+				hooks: { directoryFlow: pickerFlowSource, spaceWorkspaces: productPicker }
 			});
 			ctx.slots.registerFactory({
 				name: "workspace.browser",

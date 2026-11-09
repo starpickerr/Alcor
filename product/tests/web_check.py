@@ -44,7 +44,7 @@ class Provider(BaseHTTPRequestHandler):
             delta = {"content": "DSH synthetic conversation passed."}
         reason = "stop"
         if tools and "alcor_overview" in names and not completed:
-            delta = {"tool_calls": [{"index": 0, "id": "call_overview", "type": "function", "function": {"name": "alcor_generate_briefing" if "生成并保存今日简报" in json.dumps(payload["messages"], ensure_ascii=False) else "alcor_review_tasks" if "回顾本机未完成事务" in json.dumps(payload["messages"], ensure_ascii=False) else "alcor_overview", "arguments": "{}"}}]}
+            delta = {"tool_calls": [{"index": 0, "id": "call_overview", "type": "function", "function": {"name": "alcor_generate_briefing" if "生成并保存今日简报" in json.dumps(payload["messages"], ensure_ascii=False) else "alcor_overview", "arguments": "{}"}}]}
             reason = "tool_calls"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")

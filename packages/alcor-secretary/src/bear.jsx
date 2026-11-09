@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { FollowupNote } from './followup.jsx'
 import mascot from './assets/alcor-mascot.svg'
 import { bearSession, bearWorkspace, normalizePosition } from './bear-state.js'
 import { canonicalPanel } from './mode.js'
@@ -181,13 +182,14 @@ function FloatingBear({prefs, state, workspace, openSettings, ...chat}) {
   </div>
 }
 
-export function BearOverlay({state, ctx, renderSettings, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
+export function BearOverlay({state, ctx, product, followupApi, renderSettings, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const mode = useMode(value => value), panel = canonicalPanel(usePanelInfo(value => value.activePanelId))
   const selected = useMainSelection(value => value.sessionId)
   const catalog = useSessions(value => value), spaces = useWorkspaces(value => value)
   const prefs = useSyncExternalStore(state.preferences.subscribe,state.preferences.getSnapshot)
-  const workspace = bearWorkspace(spaces, selected, state.read('workspace', null))
+  const {metadata} = useSyncExternalStore(product.subscribe, product.getSnapshot)
+  const workspace = bearWorkspace(spaces, metadata?.defaults.alcor)
   useEffect(() => {
     if (mode !== 'alcor' || !workspace) return
     if (state.read('workspace') !== workspace) state.write('workspace', workspace)
@@ -195,9 +197,10 @@ export function BearOverlay({state, ctx, renderSettings, useMode, usePanelInfo, 
       state.write('session.'+workspace, selected)
     }
   }, [mode, panel, workspace, selected, catalog, spaces, state])
-  if (mode !== 'alcor' || !panel) return null
+  if (mode !== 'alcor' || !panel || panel === 'alcor-qq-history') return null
   return <>
+    {followupApi && <FollowupNote api={followupApi} />}
     {prefs.enabled && <FloatingBear prefs={prefs} state={state} ctx={ctx} workspace={workspace} panel={panel} spaces={spaces} catalog={catalog} openSettings={() => setSettingsOpen(true)} {...native} />}
-    <Modal open={settingsOpen} title="Alcor" closeLabel="关闭" onClose={() => setSettingsOpen(false)} className="alcor-bear-settings-dialog">{renderSettings()}</Modal>
+    <Modal open={settingsOpen} title="Alcor" closeLabel="关闭" onClose={() => setSettingsOpen(false)} className="alcor-bear-settings-dialog">{renderSettings('pet')}</Modal>
   </>
 }

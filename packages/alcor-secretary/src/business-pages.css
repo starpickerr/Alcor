@@ -652,3 +652,11 @@
 .alcor-business > .alcor-notice { margin:16px 24px; }
 .alcor-mode-bar > .alcor-mode-notice { padding:3px 8px; font-size:11px; }
 .alcor-mode-notice > svg { width:14px; height:14px; }
+
+.alcor-business .alcor-app-header { gap:12px 20px; padding:clamp(16px,2vw,22px) clamp(16px,3vw,32px); }
+.alcor-business .alcor-app-header .alcor-actions { flex-wrap:wrap; max-width:100%; }
+.alcor-business :is(button,summary,select):focus-visible { outline:2px solid var(--dsw-alias-state-business-primary,var(--alcor-brand)); outline-offset:2px; }
+@media (max-width:600px) {
+  .alcor-business .alcor-app-header > .alcor-actions { justify-content:flex-start; margin-left:0; }
+  .alcor-business .alcor-app-header h1 { line-height:1.35; }
+}

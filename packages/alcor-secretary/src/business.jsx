@@ -173,7 +173,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   const panelTitle = editor !== null ? `${editor.id ? '编辑' : '新增'}${titles[editorKind]}` : details?.record.kind === 'task' ? '事务详情' : '日程详情'
   const focused = editor ?? details?.record
   return <div data-alcor-bear-page={view} data-alcor-bear-record={focused?.id ? recordId(focused) : undefined} className={`alcor-business${kind === 'bill' ? ' alcor-bills-page' : kind === 'task' ? ' alcor-task-business' : ''}`}>
-    <header className="alcor-app-header"><div><h1>{current.label}</h1></div><div className="alcor-actions">
+    <header className="alcor-app-header"><div className="alcor-business-title"><current.icon size={23} /><h1>{current.label}</h1></div><div className="alcor-actions">
       <Button variant="outline" aria-label="刷新" title="刷新" onClick={() => { setError(''); void refresh() }}><IconRefreshOutlineRegular size={16} /></Button>
       {['event','task'].includes(kind) && <Button variant="outline" disabled={busy} onClick={openRecoveries}>恢复同步移除记录</Button>}
       {kind === 'event' && <><Button variant="outline" disabled={busy} onClick={() => setCalendarManage('categories')}>分类管理</Button></>}

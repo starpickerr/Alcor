@@ -4,8 +4,14 @@ import z from '@deepseek-ai/schemastery'
 import { z as schema } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import { remote, overviewSchema, accountSchemas } from './remote.js'
-import { assertProfileMigrated } from '../../alcor-organizer/src/profile-migration.js'
+import { remote, overviewSchema, accountSchemas, ownershipSchema } from './remote.js'
+import { qqRoute } from './spaces.js'
+import { ChannelRegistry, channelRouteSchema, cachedMessageSchema } from './channels/registry.js'
+import { ChannelDelivery } from './channels/delivery.js'
+import { deliveryStateSchema } from './channels/schema.js'
+import { ProductSpaces } from './space-host.js'
+import { AlcorMemory } from './memory/service.js'
+import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
 
 const domainSpec = defineDomain({
   name: 'alcor_secretary', version: 1,
@@ -19,21 +25,37 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class Secretary extends TypertRemoteService {
-  static inject = ['storageDomain', 'typert', 'tools']
+  static inject = ['credentials', 'storageDomain', 'typert', 'tools', 'workspaceRegistry', 'sessionQuery', 'agents', 'agentPresets', 'llm', 'agentDefaultModel', 'schedule']
   static Config = z.object({ displayName: z.string().min(1).max(80).default('Alcor').volatile() })
 
   constructor(ctx, config) {
     assertCompatibleProfile(ctx)
-    assertProfileMigrated(ctx)
     super(ctx, 'alcorSecretary', { namespace: 'alcorSecretary' })
     this.config = config
   }
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
-    assertProfileMigrated(this.ctx)
+    await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(domainSpec)
     this.ctx.effect(() => () => this.domain.close())
+    const spaces = await this.ctx.storageDomain.open(defineDomain({ name: 'alcor_spaces', version: 1, tables: { ownership: domainTable(ownershipSchema) } }))
+    this.ctx.effect(() => () => spaces.close())
+    this.productSpaces = new ProductSpaces(this.ctx, spaces.table('ownership'))
+    const channelDomain=await this.ctx.storageDomain.open(defineDomain({name:'alcor_channels',version:1,tables:{
+      routes:domainTable(channelRouteSchema),delivery:domainTable(deliveryStateSchema),messages:domainTable(cachedMessageSchema),
+    }}))
+    this.ctx.effect(()=>()=>channelDomain.close())
+    this.channels=new ChannelRegistry(channelDomain.table('routes'),()=>this.ctx.workspaceRegistry.list().flatMap(row=>row.sessionIds),channelDomain.table('messages'),id=>this.ctx.sessionQuery.readSurface(id))
+    this.ctx.on('session/event',(session,event)=>{
+      if(['user/message','assistant/message'].includes(event.type) && this.channels.resolve(session.id))
+        void this.channels.messages(session.id,[event]).catch(()=>this.ctx.logger.warn('通道记录摘要暂未保存，可从原会话恢复。'))
+    })
+    this.productSpaces.channels=this.channels
+    this.memory = new AlcorMemory(this.ctx, this.productSpaces, this.config.displayName.get())
+    this.delivery=new ChannelDelivery(this.ctx,this.channels,this.memory,channelDomain.table('delivery'))
+    this.memory.delivery=this.delivery
+    await this.delivery.initialize()
     const records = this.domain.table('installation')
     if (!records.get('product')) await records.put('product', { installedAt: new Date().toISOString() })
     this.ctx.typert.register({
@@ -42,6 +64,153 @@ export default class Secretary extends TypertRemoteService {
     })
   }
 
+  @Remote
+  async spaces(request) {
+    accountSchemas.spaces[0].parse(request)
+    return this.productSpaces.info()
+  }
+
+  @Remote
+  async qqConversation(request) {
+    const {sessionId}=accountSchemas.qqConversation[0].parse(request)
+    const route=qqRoute(sessionId)
+    if (!route || !this.ctx.workspaceRegistry.list().some(row=>row.sessionIds.includes(sessionId))) return null
+    return await this.productSpaces.qqConversationInfo?.(route[1],route[2]) ?? null
+  }
+
+  @Remote
+  async channelCatalog(request) {
+    accountSchemas.channelCatalog[0].parse(request)
+    return this.channels.catalog()
+  }
+  @Remote
+  async channelConversation(request) {
+    const {sessionId}=accountSchemas.channelConversation[0].parse(request)
+    await this.channels.catalog()
+    return this.channels.info(sessionId)
+  }
+  @Remote
+  async channelHistory(request) {
+    const {sessionId,beforeSeq}=accountSchemas.channelHistory[0].parse(request)
+    await this.channels.catalog()
+    if(!this.channels.table.get(sessionId))throw Error('通道会话不存在。')
+    const surface=await this.ctx.sessionQuery.readSurface(sessionId)
+    const events=surface.events.filter(e=>(beforeSeq==null || e.seq<beforeSeq) && ['user/message','assistant/message'].includes(e.type))
+    const selected=events.slice(-80)
+    const messages=await this.channels.messages(sessionId,selected)
+    const from=selected[0]?.time ?? 0,to=beforeSeq==null?Infinity:(selected.at(-1)?.time ?? 0)
+    for(const receipt of this.delivery.state().receipts)if(receipt.status==='sent' && receipt.route.sessionId===sessionId && receipt.updatedAt>=from && receipt.updatedAt<=to)
+      messages.push({seq:-receipt.updatedAt,role:'Alcor',text:receipt.content,time:receipt.updatedAt})
+    messages.sort((a,b)=>(a.time ?? 0)-(b.time ?? 0) || a.seq-b.seq)
+    return {messages,hasMore:events.length>80,beforeSeq:selected[0]?.seq ?? null}
+  }
+  @Remote
+  async deliverySettings(request) {
+    accountSchemas.deliverySettings[0].parse(request)
+    return this.delivery.settings()
+  }
+  @Remote
+  async allowChannelDelivery(request) {
+    const {sessionId,enabled}=accountSchemas.allowChannelDelivery[0].parse(request)
+    return this.delivery.configure(sessionId,enabled)
+  }
+
+  @Remote
+  async claimSpace(request) {
+    return this.productSpaces.claim(accountSchemas.claimSpace[0].parse(request))
+  }
+
+  @Remote
+  async editProject(request) {
+    return this.productSpaces.editProject(accountSchemas.editProject[0].parse(request))
+  }
+
+  @Remote
+  async searchSpace(request) {
+    const { space, query, sessionIds } = accountSchemas.searchSpace[0].parse(request)
+    return this.productSpaces.search(query, sessionIds, space)
+  }
+
+  @Remote
+  memoryState(request) {
+    accountSchemas.memoryState[0].parse(request)
+    return { initiative: this.memory.personal.initiative, desktopDelivery:this.memory.personal.desktopDelivery, soul: this.memory.personal.soul, entries: this.memory.personal.records().slice(0, 200) }
+  }
+
+  @Remote
+  async updateSoul(request) {
+    return this.memory.personal.editIdentity(accountSchemas.updateSoul[0].parse(request))
+  }
+
+  @Remote
+  async allowInitiative(request) {
+    const enabled=accountSchemas.allowInitiative[0].parse(request).enabled
+    const result=await this.memory.personal.allowInitiative(enabled)
+    if(enabled && this.delivery.state().grants.some(g=>g.until>Date.now()))await this.delivery.ensureJob()
+    if(!enabled)await this.delivery.pause()
+    return result
+  }
+
+  @Remote
+  allowDesktopDelivery(request) {
+    return this.memory.personal.allowDesktopDelivery(accountSchemas.allowDesktopDelivery[0].parse(request).enabled)
+  }
+
+  @Remote
+  async nextFollowup(request) {
+    accountSchemas.nextFollowup[0].parse(request)
+    const candidate=()=>this.memory.personal.desktopFollowup(new Date(), note=>!this.delivery.assigned(note.id))
+    const planned=candidate()
+    const note=await this.memory.personal.reconsider(planned,()=>candidate()?.id===planned?.id)
+    if(note && (!this.memory.personal.validReview(note.id,note.stamp) || candidate()?.id!==note.id))return null
+    if(!note)return null
+    return {id:note.id,evidence:note.evidence,content:note.content,due:note.due}
+  }
+
+  @Remote
+  dismissFollowup(request) {
+    return this.memory.personal.dismissFollowup(accountSchemas.dismissFollowup[0].parse(request).id)
+  }
+
+  @Remote
+  experienceScopes(request) {
+    accountSchemas.experienceScopes[0].parse(request)
+    return this.memory.experienceScopes()
+  }
+
+  @Remote
+  exportExperiences(request) {
+    const { audience } = accountSchemas.exportExperiences[0].parse(request)
+    return this.memory.exportExperiences(audience)
+  }
+
+  @Remote
+  restoreExperiences(request) {
+    const { document } = accountSchemas.restoreExperiences[0].parse(request)
+    const target = this.memory.experienceStore(document.audience)
+    return target.restoreExperiences(document, () => {
+      this.memory.experienceStore(document.audience)
+      return this.memory.personal.identity().id
+    })
+  }
+
+  @Remote
+  exportIdentity(request) {
+    accountSchemas.exportIdentity[0].parse(request)
+    return this.memory.personal.identity()
+  }
+
+  @Remote
+  importIdentity(request) {
+    const { document, expectedRevision } = accountSchemas.importIdentity[0].parse(request)
+    return this.memory.importIdentity(document, expectedRevision)
+  }
+
+  @Remote
+  async changeMemory(request) {
+    const args = accountSchemas.changeMemory[0].parse(request)
+    return this.memory.personal.change(args, { owner: true, subject: 'owner', source: { kind: 'desktop-settings', at: new Date().toISOString() } })
+  }
 
   @Remote
   async elearningAccount(request) {
@@ -73,7 +242,7 @@ export default class Secretary extends TypertRemoteService {
   @Remote
   overview() {
     return overviewSchema.parse({
-      displayName: this.config.displayName.get(),
+      displayName: this.memory.personal.identity().name,
       installedAt: this.domain.table('installation').get('product').installedAt,
       message: '准备好和你一起安排今天。',
     })

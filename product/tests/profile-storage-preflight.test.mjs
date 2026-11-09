@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertProfileMigrated } from '../../packages/alcor-organizer/src/profile-migration.js'
+import { assertProfileMigrated, initializeProfile } from '../../packages/alcor-organizer/src/profile-migration.js'
 
 const fresh = () => ({ schema: 1, status: 'complete', source: 'fresh', directories: { business: 'absent', appleSync: 'absent', email: 'absent', elearning: 'absent' }, domains: { organizer: 'absent', secretary: 'absent' }, credentials: { elearning: 'absent', email: 'absent' }, schedule: { mapped: 0 } })
 async function fixture(t) {
@@ -63,4 +63,36 @@ test('migrated marker requires declared directories and correctly named domain',
   assert.doesNotThrow(() => assertProfileMigrated(ctx))
   await mkdir(join(home, 'storages', 'stella_secretary'))
   assert.throws(() => assertProfileMigrated(ctx), /迁移/)
+})
+
+
+test('native installation initializes a new Alcor profile without reading credential values', async t => {
+  const { home, dir, profile, ctx } = await fixture(t)
+  await rm(join(dir, 'alcor'), { recursive: true })
+  let checks = 0
+  ctx.credentials = { describeRecord: async key => { checks++; assert.match(key, /^(stella|alcor)-(elearning|email)\//); return { configured: false } } }
+  await writeFile(join(home, 'storages', 'schedule.json'), 'host-owned schedule')
+  await Promise.all([initializeProfile(ctx), initializeProfile(ctx)])
+  assertProfileMigrated(ctx)
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'alcor', '.migration.json'), 'utf8')), fresh())
+  assert(checks >= 4)
+  const before = await readFile(join(dir, 'alcor', '.migration.json'), 'utf8')
+  ctx.credentials.describeRecord = async () => { throw Error('existing profile does not need credential inspection') }
+  await initializeProfile(ctx)
+  assert.equal(await readFile(join(dir, 'alcor', '.migration.json'), 'utf8'), before)
+  assert.equal(await readFile(join(home, 'storages', 'schedule.json'), 'utf8'), 'host-owned schedule')
+})
+
+test('native initialization refuses existing state, legacy packages and unavailable credential metadata', async t => {
+  for (const state of ['stella', 'alcor', 'domain', 'legacy-package', 'credential', 'credentials-unavailable']) {
+    const { home, dir, ctx } = await fixture(t)
+    await rm(join(dir, 'alcor'), { recursive: true })
+    ctx.credentials = { describeRecord: async () => ({ configured: state === 'credential' }) }
+    if (state === 'credentials-unavailable') ctx.credentials.describeRecord = async () => { throw Error('locked') }
+    if (['stella', 'alcor'].includes(state)) await mkdir(join(dir, state))
+    if (state === 'domain') await writeFile(join(home, 'storages', 'alcor_organizer.json'), 'sentinel')
+    if (state === 'legacy-package') await writeFile(join(dir, 'package.json'), JSON.stringify({ dependencies: { '@stella/secretary': '0.1.0' } }))
+    await assert.rejects(initializeProfile(ctx), /迁移|locked/, state)
+    assert.equal(await readFile(join(dir, 'alcor', '.migration.json'), 'utf8').catch(error => error.code), 'ENOENT', state)
+  }
 })

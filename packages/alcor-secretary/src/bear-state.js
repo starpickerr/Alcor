@@ -1,4 +1,4 @@
-const internalPresets = new Set(['alcor-briefing', 'stella', 'stella-briefing'])
+const internalPresets = new Set(['alcor-delivery', 'alcor-briefing', 'stella', 'stella-briefing', 'qq-group-chat'])
 
 export function visiblePresetStore(store) {
   let previous, filtered
@@ -47,10 +47,8 @@ export function normalizePosition(value) {
     ? value.map(coordinate => Math.max(0, Math.min(1, coordinate))) : [1,1]
 }
 
-export function bearWorkspace(workspaces, selected, last) {
-  const current = workspaces.items.find(item => item.sessionIds.includes(selected))
-  return (current ?? workspaces.items.find(item => item.workspaceId === last)
-    ?? (workspaces.items.length === 1 ? workspaces.items[0] : undefined))?.workspaceId
+export function bearWorkspace(workspaces, defaultId) {
+  return workspaces.items.find(item => item.workspaceId === defaultId)?.workspaceId
 }
 
 export function bearSession(workspace, id, catalog, workspaces) {

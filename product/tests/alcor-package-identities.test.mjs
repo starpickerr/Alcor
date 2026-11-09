@@ -126,7 +126,8 @@ test('each new plugin rejects an old selected peer before registration', async t
     assert.equal(sideEffect, false, name)
     if (name !== 'privacy') {
       ctx.get = () => ({ home: directory, dir: join(directory, 'uninitialized'), startedBundles: [`@alcor/${oldName}`] })
-      await assert.rejects(async () => invoke(), /迁移尚未完成/, name)
+      const initialize = ['secretary','organizer'].includes(name) ? () => plugin.default.prototype[Service.init].call({ctx}) : invoke
+      await assert.rejects(async () => initialize(), /迁移尚未完成/, name)
       assert.equal(sideEffect, false, name)
     }
     ctx.get = () => ({ ...profile, startedBundles: [`@alcor/${oldName}`] })

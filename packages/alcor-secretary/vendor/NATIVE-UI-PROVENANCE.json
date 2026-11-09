@@ -18,8 +18,10 @@
     },
     "ui-workspace": {
       "module": "@deepseek-ai/dsh-client-ui-workspace",
-      "client": "c5cd2c0bd47daf72da5a1e9f54a14f21e94a80cd4c01ed15573ec66814b53337",
-      "host": "e6cdc4b725585354102a5c4598c9d8c79d6abac62d7979c09919821716370438"
+      "client": "33c3f66625a68aba8c0cb27e087d9bad99a980f25512d528cd3d01c8e5d1d6cd",
+      "host": "e6cdc4b725585354102a5c4598c9d8c79d6abac62d7979c09919821716370438",
+      "upstreamClient": "c5cd2c0bd47daf72da5a1e9f54a14f21e94a80cd4c01ed15573ec66814b53337",
+      "adapter": "597a3bb1f6e206133b4ccffe7666cab8ca65e64e843057e074b809c57fdd833a"
     },
     "ui-settings-general": {
       "module": "@deepseek-ai/dsh-client-ui-settings-general",

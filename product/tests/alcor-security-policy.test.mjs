@@ -34,7 +34,7 @@ test('resource and irreversible operations never classify as ordinary local writ
   assert.equal(business('automation','edit',{action:'invented'}), 'unclassified')
   assert.equal(business('apple','sync'), 'apple')
   assert.equal(classifyCapability('alcor_generate_briefing').kind, 'briefing')
-  assert.equal(classifyCapability('alcor_review_tasks').kind, 'scheduled-local')
+  assert.equal(classifyCapability('alcor_review_tasks').kind, 'read')
   assert.equal(business('tasks','queue_delivery'), 'internal')
   assert.equal(business('bills','create_ledger'), 'local')
 })

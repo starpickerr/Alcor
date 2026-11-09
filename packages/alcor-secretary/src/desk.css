@@ -111,3 +111,158 @@
   [data-shortcut-modal=settings]:has(.alcor-settings-content) > :nth-last-child(2) { grid-area:alcor-header; height:auto; padding:18px 12px 8px; }
   [data-shortcut-modal=settings]:has(.alcor-settings-content) > :last-child { grid-area:alcor-options; padding:0 16px 24px; }
 }
+
+.alcor-sidebar-workspaces { flex-direction: column; }
+.alcor-qq-browser button { width:100%; font:inherit; text-align:start; background-color:transparent; border-block:0; }
+.alcor-qq-browser section { --dsh-workspace-indent:16px; }
+.alcor-qq-browser h3 { margin:6px 0 2px; padding-inline-start:calc(var(--dsh-sidebar-row-padding) + 16px); color:var(--dsw-alias-label-secondary); font-size:11px; font-weight:500; }
+.alcor-qq-browser button[aria-current],.alcor-qq-browser section button:hover { background-color:var(--dsw-alias-interactive-bg-hover); }
+.alcor-qq-browser button:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:-2px; }
+.alcor-memory-settings, .alcor-space-settings { margin: 32px 0; padding-top: 24px; border-top: 1px solid var(--dsw-alias-border-l4); }
+.alcor-memory-settings h2, .alcor-space-settings h2 { font-size: 16px; margin: 0 0 20px; }
+.alcor-memory-settings h3, .alcor-space-settings h3 { margin: 28px 0 12px; font-size: 13px; font-weight: 500; }
+.alcor-memory-settings label { display: block; margin: 0 0 8px; font-size: 13px; }
+.alcor-memory-settings textarea, .alcor-memory-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 13px; line-height: 1.6; padding: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-l2); border: 1px solid var(--dsw-alias-border-l4); border-radius: 10px; margin-bottom: 12px; }
+.alcor-memory-settings textarea:focus-visible, .alcor-memory-editor textarea:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.alcor-memory-row, .alcor-space-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--dsw-alias-border-l4); }
+.alcor-memory-row > div, .alcor-space-row > span { flex: 1; min-width: 0; }
+.alcor-space-row > span { overflow-wrap: anywhere; font-size: 13px; }
+.alcor-memory-row p { margin: 0 0 5px; line-height: 1.6; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.alcor-memory-row small { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.alcor-memory-editor > div { display: flex; gap: 10px; justify-content: flex-end; }
+.alcor-followup { position:fixed; bottom:108px; right:18px; z-index:10; max-width:min(320px,85vw); padding:14px; border:1px solid var(--dsw-alias-border-l4); border-radius:12px; background:var(--dsw-alias-bg-l1,#fff); color:var(--dsw-alias-label-primary); }
+.alcor-followup p { margin:0 0 8px; line-height:1.55; overflow-wrap:anywhere; }
+
+.alcor-memory-settings .alcor-bear-option-row small { display: block; color: var(--dsw-alias-label-secondary); margin-top: 3px; }
+
+/* Shared navigation and settings inside the native desktop shell. */
+.alcor-settings-content { container-type:inline-size; color:var(--dsw-alias-label-primary); min-width:0; }
+.alcor-settings-content > nav {
+  position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+  padding:6px 0 10px; border-bottom:1px solid var(--dsw-alias-border-l3);
+  background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-bg-layer-2));
+}
+.alcor-settings-content > nav button {
+  appearance:none; border:1px solid transparent; border-radius:var(--dsw-radius-md,8px); padding:7px 12px;
+  background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; cursor:pointer;
+}
+.alcor-settings-content > nav button[aria-pressed="true"] { background:var(--dsw-alias-interactive-bg-active); color:var(--dsw-alias-label-primary); font-weight:600; }
+.alcor-settings-content :is(button,input,select,textarea,summary):focus-visible,
+.alcor-workbench button:focus-visible,.alcor-qq-history button:focus-visible {
+  outline:2px solid var(--dsw-alias-state-business-primary,var(--alcor-brand)); outline-offset:2px;
+}
+.alcor-settings-content > [hidden] { display:none; }
+.alcor-settings-content :is(.alcor-space-settings,.alcor-memory-settings) { margin:0; border:none; padding:20px 0 8px; }
+.alcor-settings-group ~ .alcor-settings-group { margin-top:22px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-settings-content .alcor-settings-group h2,.alcor-settings-content .alcor-space-settings h2 { margin:0 0 14px; font-size:15px; letter-spacing:-.2px; }
+.alcor-settings-content .alcor-memory-settings :is(input:not([type="file"]),select),.alcor-settings-content .alcor-memory-editor textarea {
+  display:block; width:100%; max-width:100%; min-width:0; border:1px solid var(--dsw-alias-border-l4); border-radius:8px;
+  background:var(--dsw-alias-bg-layer-1); color:inherit; padding:8px 10px; box-sizing:border-box; font:inherit; font-size:13px;
+}
+.alcor-settings-content #alcor-identity-name { max-width:24em; margin:0 0 14px; }
+.alcor-field-caption,.alcor-identity-actions { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.alcor-field-caption small,.alcor-space-row small,.alcor-settings-group small { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-space-row > span small { display:block; margin-top:3px; overflow-wrap:anywhere; }
+.alcor-settings-group details { margin:12px 0; }
+.alcor-settings-group summary,.alcor-space-settings summary { padding:7px 0; cursor:pointer; color:var(--dsw-alias-label-secondary); }
+.alcor-settings-group .alcor-bear-option-row { min-height:42px; }
+.alcor-settings-group select { margin:5px 0 9px; }
+.alcor-settings-group .alcor-memory-row { align-items:flex-start; padding:12px 0; }
+.alcor-settings-group .alcor-identity-actions { align-items:center; gap:6px; }
+.alcor-identity-actions button:first-child { margin-right:auto; }
+.alcor-workbench { flex:1; min-width:0; min-height:0; overflow:auto; width:100%; max-width:920px; margin:0 auto; padding:clamp(24px,5vw,64px); box-sizing:border-box; color:var(--dsw-alias-label-primary); }
+.alcor-workbench header,.alcor-workbench-title { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.alcor-workbench header { justify-content:space-between; padding-bottom:18px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-workbench h1 { margin:0; font-size:24px; line-height:1.35; letter-spacing:-.5px; }
+.alcor-workbench section { margin-top:24px; }
+.alcor-workbench h2 { margin:0 0 12px; font-size:14px; }
+.alcor-workbench-projects { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:10px; }
+.alcor-workbench-projects button,.alcor-workbench-chat { cursor:pointer; font:inherit; text-align:start; color:inherit; overflow-wrap:anywhere; }
+.alcor-workbench-projects button { display:grid; gap:6px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:10px; background:var(--dsw-alias-bg-layer-1); }
+.alcor-workbench-projects small { color:var(--dsw-alias-label-secondary); }
+.alcor-workbench-chat { display:block; width:100%; padding:10px 8px; border:none; border-bottom:1px solid var(--dsw-alias-border-l3); background:transparent; }
+.alcor-workbench :is(.alcor-workbench-projects button,.alcor-workbench-chat):hover { background:var(--dsw-alias-interactive-bg-hover); }
+@container (max-width:380px) {
+  .alcor-space-row { align-items:flex-start; flex-wrap:wrap; }
+  .alcor-settings-content > nav button { padding-inline:8px; }
+}
+
+.alcor-settings-content .alcor-bear-options { padding:18px 0 8px; }
+.alcor-settings-content .alcor-settings-group input[type="file"] { max-width:100%; }
+.alcor-settings-content > nav button,.alcor-workbench-chat { display:flex; align-items:center; gap:7px; }
+.alcor-profile-heading { display:flex; align-items:center; gap:14px; padding:0 0 16px; }
+.alcor-profile-heading > div:last-child { flex:1; min-width:0; }
+.alcor-profile-avatar { flex:none; width:62px; height:62px; display:grid; place-items:center; border-radius:15px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); color:var(--dsw-alias-label-primary); }
+.alcor-settings-content .alcor-profile-heading #alcor-identity-name { margin:0; max-width:min(100%,24em); }
+.alcor-project-filter { width:100%; padding:8px 12px; margin:0 0 10px; border:1px solid var(--dsw-alias-border-l4); border-radius:8px; background:var(--dsw-alias-bg-layer-1); color:inherit; }
+.alcor-space-row strong { font-weight:550; }
+.alcor-space-row > svg,.alcor-workbench-projects svg { flex:none; color:var(--dsw-alias-label-secondary); }
+.alcor-workbench-projects button { grid-template-columns:auto 1fr; align-items:center; column-gap:10px; }
+.alcor-workbench-projects small { grid-column:2; }
+.alcor-workbench-chat svg { flex:none; color:var(--dsw-alias-label-secondary); }
+.alcor-business-title { display:flex; align-items:center; gap:10px; }
+.alcor-business-title > svg { flex:none; color:var(--alcor-brand,var(--dsw-alias-label-secondary)); }
+.alcor-show-projects { padding:8px 2px; border:0; color:var(--alcor-brand,var(--dsw-alias-label-primary)); background:none; font:inherit; cursor:pointer; }
+
+/* A narrow reading column keeps short replies together, even in a wide desktop window. */
+.alcor-qq-history { display:flex; flex-direction:column; width:min(100%,760px); height:100%; min-height:0; margin-inline:auto; padding:0 clamp(12px,3vw,28px); box-sizing:border-box; color:var(--dsw-alias-label-primary); }
+.alcor-qq-heading { display:flex; align-items:center; gap:9px; padding:12px 0 10px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-qq-avatar { display:grid; place-items:center; flex:0 0 34px; height:34px; border-radius:11px; font-size:15px; font-weight:600; color:var(--alcor-brand); background:var(--alcor-brand-soft); }
+.alcor-qq-identity { flex:1; min-width:0; }
+.alcor-qq-identity h1 { margin:0; font-size:17px; font-weight:600; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.alcor-qq-identity small,.alcor-qq-readonly,.alcor-qq-attributes dt,.alcor-message-author time,.alcor-message-author small { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.alcor-qq-heading button { border:0; border-radius:7px; background:transparent; color:inherit; cursor:pointer; min-height:30px; padding:4px 7px; font:inherit; font-size:12px; }
+.alcor-qq-heading button:hover,.alcor-qq-heading button[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-qq-refresh { display:grid; place-items:center; }
+.alcor-qq-attributes { border-bottom:1px solid var(--dsw-alias-border-l3); padding:8px 2px; }
+.alcor-qq-attributes dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(106px,1fr)); gap:6px 12px; margin:0; }
+.alcor-qq-attributes dd { margin:2px 0 0; font-size:12px; }
+.alcor-qq-transcript { min-height:0; overflow:auto; flex:1; padding-block:4px 12px; scrollbar-width:thin; }
+.alcor-qq-thread { display:grid; align-content:start; gap:5px; }
+.alcor-history-day { display:flex; align-items:center; gap:9px; margin-block:7px 2px; font-size:11px; color:var(--dsw-alias-label-secondary); }
+.alcor-history-day::before,.alcor-history-day::after { content:""; flex:1; height:1px; background:var(--dsw-alias-border-l3); }
+.alcor-qq-thread article { display:grid; grid-template-columns:26px minmax(0,1fr); column-gap:8px; min-width:0; padding:3px 2px; }
+.alcor-qq-speaker-avatar { grid-column:1; grid-row:1 / 3; display:grid; place-items:center; align-self:start; width:26px; height:26px; border-radius:8px; background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-qq-thread article > :not(.alcor-qq-speaker-avatar) { grid-column:2; }
+.alcor-qq-thread article[data-speaker="assistant"] .alcor-qq-speaker-avatar { background:var(--alcor-brand-soft); }
+.alcor-message-author { display:flex; align-items:baseline; gap:8px; line-height:16px; }
+.alcor-message-author strong { font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+.alcor-qq-thread article[data-speaker="assistant"] strong { color:var(--alcor-brand); }
+.alcor-qq-thread p { margin:2px 0 0; font-size:14px; line-height:1.48; white-space:pre-wrap; overflow-wrap:anywhere; }
+.alcor-message-author button { padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.alcor-message-author button:hover strong { text-decoration:underline; text-underline-offset:2px; }
+.alcor-qq-message-meta { display:block; margin:3px 0; color:var(--dsw-alias-label-secondary); font-size:11px; }
+
+[data-sidebar-drawer] .alcor-qq-heading { padding-top:max(12px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-initiative-card,.alcor-settings-content .alcor-memory-card { padding:12px 14px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
+.alcor-initiative-card + .alcor-initiative-card { margin-top:8px; }
+.alcor-initiative-card .alcor-bear-option-row { padding:0; min-height:30px; border:0; }
+.alcor-card-caption { display:flex; align-items:center; gap:9px; font-weight:500; }
+.alcor-card-caption svg { color:var(--alcor-brand); flex:none; }
+.alcor-memory-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); align-items:start; gap:10px; }
+.alcor-settings-content .alcor-memory-card { display:block; min-width:0; }
+.alcor-memory-card header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; font-weight:500; }
+.alcor-memory-card header time { color:var(--dsw-alias-label-secondary); font-size:11px; font-weight:400; }
+.alcor-memory-card header button { margin-left:auto; flex:none; }
+.alcor-memory-card p { margin:0; font-size:13px; line-height:1.65; }
+.alcor-memory-preview { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.alcor-memory-expand { border:0; border-radius:4px; padding:6px 0 0; background:none; font:inherit; font-size:12px; color:var(--alcor-brand); cursor:pointer; }
+
+.alcor-memory-body { overflow-wrap:anywhere; }
+.alcor-memory-body :is(h1,h2,h3,h4) { font-size:14px; line-height:1.5; margin:10px 0 4px; }
+.alcor-memory-body :is(ul,ol) { padding-left:18px; margin:5px 0; }
+.alcor-memory-card .alcor-memory-body p { margin:0; }
+
+.alcor-channel-target { display:flex; align-items:center; gap:9px; min-width:0; }
+.alcor-channel-target > svg { color:var(--alcor-brand); flex:none; }
+.alcor-channel-target > div { flex:1; min-width:0; }
+.alcor-channel-target strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.alcor-channel-target small,.alcor-channel-consent { display:block; font-size:11px; color:var(--dsw-alias-label-secondary); line-height:1.6; }
+.alcor-channel-consent { margin-top:7px; }
+.alcor-channel-target button { flex:none; }
+.alcor-delivery-history > div { padding:10px 0; border-bottom:1px solid var(--dsw-alias-border-l3); font-size:12px; }
+.alcor-delivery-history span { float:right; color:var(--dsw-alias-label-secondary); }
+.alcor-delivery-history p { margin:4px 0; overflow-wrap:anywhere; }
+
+.alcor-channel-target small { overflow-wrap:anywhere; }
