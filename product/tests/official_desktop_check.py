@@ -11,7 +11,7 @@ import re
 import signal
 import subprocess
 import tempfile
-from fresh_profile_fixture import fresh_test_home, initialize_fresh
+from fresh_profile_fixture import fresh_test_home
 import time
 from uuid import uuid4
 
@@ -330,7 +330,7 @@ def main():
             profile = home / 'dsh/profiles/desktop'
             if not args.baseline:
                 profile.mkdir(parents=True)
-                initialize_fresh(temporary, home / 'dsh', profile)
+                assert not (profile / 'alcor').exists(), 'Native install must initialize its own data'
             with desktop(playwright, home, 'hot-install' if args.hot_install else 'baseline') as (page, errors):
                 if args.hot_install:
                     install(page)

@@ -1,6 +1,6 @@
 {
   "name": "@alcor/mail",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "邮件连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",

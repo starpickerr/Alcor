@@ -86,7 +86,8 @@ test('Stella inherits native tool visibility and host denials, including later t
   assert.equal(invocations, 1); guard()
 })
 
-test('native MCP uses DSH policy directly while preserving personal turn and disconnect boundaries', async context => {
+for (const method of ['list_courses', 'download_file', 'get_assignment', 'submit_assignment'])
+test(`native MCP ${method} uses DSH policy directly while preserving personal turn and disconnect boundaries`, async context => {
   const ctx = new Context(); ctx.provide('agents', { turnBoundaryOf: () => ({ openTurnStartSeq: simulatedTurn, lastTurn: simulatedTurn }) }); let simulatedTurn = 0
   context.after(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(NativeExecutor)
@@ -96,7 +97,7 @@ test('native MCP uses DSH policy directly while preserving personal turn and dis
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt', 'alcorSecretary'] }))
   const fixture = fileURLToPath(new URL('./fixtures/mcp-server.mjs', import.meta.url))
   const connection = await ctx.plugin(McpClient, { transport: 'stdio', serverName: 'elearning', command: process.execPath, args: [fixture], failOnStartupError: true })
-  const name = 'mcp__elearning__list_courses'
+  const name = 'mcp__elearning__' + method
   const call = async (agent, signal = AbortSignal.timeout(5000)) => (await ctx.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'probe', name, arguments: '{}' }] })).results[0].result
   const turn = (agent, kind) => (simulatedTurn++, ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [{ source: { kind } }] }, async () => {}))
   assert(ctx.tools.schemas(secretary).some(tool => tool.name === name))
