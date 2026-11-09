@@ -92,10 +92,6 @@ export async function readBriefingSourcePage(ctx, config, { since, until, offset
   if (!value || !Array.isArray(value.items ?? value.source_items)) throw new Error('来源返回格式无效。')
   if ((value.source && value.source !== config.source) || (value.account_id && value.account_id !== config.accountId)) throw new Error('来源账号与简报配置不一致，请重新选择账号。')
   if ((value.items ?? value.source_items).some(item => (item.source && item.source !== config.source) || (item.account_id && item.account_id !== config.accountId))) throw new Error('来源账号已变化，请重新选择简报来源。')
-  if (config.source === 'elearning') {
-    const key = Array.isArray(value.items) ? 'items' : 'source_items'
-    return { ...value, [key]: value[key].filter(item => item.payload?.resource_type === 'assignment') }
-  }
   return value
 }
 
