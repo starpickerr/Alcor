@@ -210,15 +210,14 @@ export function apply(ctx) {
       },
     }))
     for (const [name, description, execute] of [
-      ['alcor_generate_briefing', 'Start an independent briefing task using the configured sources and a fixed model. Return its run identity and execution session; starting does not mean the briefing is finished. User turns may use saved briefing sources. Scheduled turns use only selected local sources; external sources require separate manual authorization.', async (_args, execution) => {
+      ['alcor_generate_briefing', 'Start an independent briefing task using the configured sources and a fixed model. Return its run identity and execution session; starting does not mean the briefing is finished. User and scheduled turns use the same saved briefing sources, including enabled external accounts and selected scopes. Scheduled calls wait for the saved result. Source switches and account access are rechecked during generation; no per-run manual authorization is required.', async (_args, execution) => {
         const now = new Date()
         const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
         // Replays of one delivery reuse its run; the next delivery on the same day is a new increment.
         const scheduled = !personalTurn(execution.agent)
         const hash = createHash('sha256').update(scheduled ? `alcor-briefing:${execution.agent.session.id}:${turnSources.get(execution.agent).start}` : execution.callId || randomUUID()).digest('hex')
         const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`
-        const sources = scheduled ? await ctx.alcorOrganizer.localBriefingSources() : undefined
-        const input = { date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { sources, trigger:'scheduled' } : {}) }
+        const input = { date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { trigger:'scheduled' } : {}) }
         if (!scheduled) return ctx.alcorOrganizer.startBriefing(input)
         const record = await ctx.alcorOrganizer.generateBriefing(input)
         return { id: record.id, date: record.date, body: record.body, saved: true }

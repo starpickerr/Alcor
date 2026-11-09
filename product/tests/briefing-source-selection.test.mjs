@@ -20,8 +20,8 @@ test('course selection cannot accidentally turn an empty subset into all courses
 
 test('current report shows only selected sources, accounts and courses while history stays intact', () => {
   const rows = [{source:'alcor_tasks',account_id:'local'}, {source:'email',account_id:'other'},
-    {source:'elearning',account_id:'school',metadata:{course_id:'one'},payload:{course_id:'one'}},
-    {source:'elearning',account_id:'school',metadata:{course_id:'two'},payload:{course_id:'two'}}]
+    {source:'elearning',account_id:'school',metadata:{course_id:'one'},payload:{course_id:'one',resource_type:'assignment'}},
+    {source:'elearning',account_id:'school',metadata:{course_id:'two'},payload:{course_id:'two',resource_type:'assignment'}}]
   const detail={briefing:{body:'Old body includes unselected sources',source_windows:{tasks:{source:'alcor_tasks',account_id:'local'},school:{source:'elearning',account_id:'school'}}},mail:rows,items:rows}
   const sources=[{source:'elearning',accountId:'school',arguments:{course_ids:['one']}}]
   const visible=visibleBriefingDetail(detail,sources)

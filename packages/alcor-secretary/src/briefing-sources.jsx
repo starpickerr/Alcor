@@ -93,7 +93,7 @@ export function BriefingSources({ api, openPlugins }) {
       const label = card.connection === 'disabled' ? '已停用' : card.connection === 'unconfigured' ? '待配置' : state === 'unavailable' ? '需检查' : card.selected ? '已开启' : '未开启'
       const checked = briefingGroupEnabled(card.key, value.retained, value.groups)
       const activeCount = value.catalog.sources.filter(source => briefingSourceGroup(source) === card.key).length
-      const description = card.key === 'email' ? `${activeCount} 个邮箱已开启` : card.key === 'elearning' ? '课程、作业与公告' : card.key === 'calendar_agenda' ? '未来 24 小时日程' : card.key === 'alcor_tasks' ? '未归档事务' : card.key === 'alcor_bills' ? '未归档账单' : `${card.count} 个来源`
+      const description = card.key === 'email' ? `${activeCount} 个邮箱已开启` : card.key === 'elearning' ? '课程作业' : card.key === 'calendar_agenda' ? '未来 24 小时日程' : card.key === 'alcor_tasks' ? '未归档事务' : card.key === 'alcor_bills' ? '未归档账单' : `${card.count} 个来源`
       return <div className="alcor-source-card" key={card.key} data-source-card={card.key}><button type="button" className="alcor-source-card-open" aria-label={`管理来源：${card.title}`} onClick={() => openPlugins(card.package)}><div><strong>{card.title}</strong></div><p>{description}</p>{state === 'unavailable' && <small>{label}</small>}<IconChevronRightOutlineRegular size={16} /></button><BriefingToggle label={`启用来源：${card.title}`} checked={checked} disabled={busy} onChange={enabled => toggle(card, enabled)} /></div>
     })}</div>}
     {error && <Notice tone="error" role="alert">{error}</Notice>}

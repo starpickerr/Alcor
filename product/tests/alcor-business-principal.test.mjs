@@ -22,7 +22,7 @@ for (const mode of ['native','ptc']) test(`${mode}: generic business requires a 
   const cases=[{domain:'tasks',method:'list_todos'},{domain:'calendar',method:'list_events'},{domain:'bills',method:'list_statements'},{domain:'briefing',method:'list_briefings'},{domain:'apple',method:'status'},{domain:'automation',method:'catalog'}]
   await step('schedule');for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)
   assert.equal(forwarded,0);assert.equal((await call('alcor_review_tasks',{})).isError,true);assert.equal((await call('alcor_generate_briefing',{})).isError,false)
-  assert.deepEqual(briefingInput.sources.map(source=>source.source),['alcor_tasks','calendar_agenda']);assert.equal(reviewCount,0);assert.equal(forwarded,0)
+  assert.equal(Object.hasOwn(briefingInput,'sources'),false);assert.equal(briefingInput.trigger,'scheduled');assert.equal(reviewCount,0);assert.equal(forwarded,0)
   turn++;await step('user');for(const args of cases)assert.equal((await call('alcor_business',args)).isError,false)
   assert.equal((await call('alcor_review_tasks',{})).isError,false);assert.equal(reviewCount,1)
   const before=forwarded;agent.session.header={origin:'subagent',parentSession:'parent'};for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)

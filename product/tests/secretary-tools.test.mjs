@@ -128,7 +128,7 @@ test('native MCP uses DSH policy directly while preserving personal turn and dis
   assert.equal((await call(secretary)).isError, true)
 })
 
-test('local automation tools deny delegated/unknown turns and reuse a delivery identity within one turn', async context => {
+test('scheduled briefings use saved sources, deny delegated/unknown turns and reuse a delivery identity', async context => {
   const ctx = new Context(); ctx.provide('agents', { turnBoundaryOf: () => ({ openTurnStartSeq: simulatedTurn, lastTurn: simulatedTurn }) }); let simulatedTurn = 0
   context.after(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, {})
@@ -138,7 +138,7 @@ test('local automation tools deny delegated/unknown turns and reuse a delivery i
   ctx.provide('alcorSecretary', { mcpAllowed: () => false })
   ctx.provide('alcorOrganizer', {
     business: async () => [{ source: 'alcor_tasks', accountId: 'local' }, { source: 'elearning', accountId: 'school' }],
-    localBriefingSources: async () => [{ source: 'alcor_tasks', accountId: 'local' }],
+    localBriefingSources: async () => assert.fail('Scheduled briefings must use the shared saved-source selection'),
     generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing' } },
     startBriefing: async input => ({ requestId: input.requestId, phase: 'starting', sessionId: 'independent-root' }),
     taskReview: async () => ({ open: [{ title: 'Synthetic task' }], completed: 0 }),
@@ -158,7 +158,8 @@ test('local automation tools deny delegated/unknown turns and reuse a delivery i
   await turn(agent, 'schedule')
   assert.equal((await call(agent, 'alcor_generate_briefing')).isError, false)
   assert.notEqual(saved[0].requestId,saved[2].requestId)
-  assert.deepEqual(saved[0].sources.map(source => source.source), ['alcor_tasks'])
+  assert.equal(Object.hasOwn(saved[0], 'sources'), false)
+  assert.equal(saved[0].trigger, 'scheduled')
   const child = { session: { header: { origin: 'subagent', parentSession: 'parent' } } }
   bindScopeParent(child, agent)
   await turn(child, 'user')

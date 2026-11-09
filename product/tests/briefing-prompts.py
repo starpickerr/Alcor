@@ -20,6 +20,18 @@ class PromptTests(unittest.TestCase):
         cls.fixture = json.loads((ROOT / 'product/tests/fixtures/briefing-prompts.json').read_text())
         cls.result, cls.requests = evaluation.run(generator, cls.fixture)
 
+    def test_assignments_in_one_course_keep_individual_cards(self):
+        from business.briefing.domain.models import SourceItem
+        rows = [generator.SelectedCandidate(SourceItem(
+            id=str(i), source='elearning', account_id='school', source_id=f'course:assignment:{i}',
+            thread_id='same-course', sender='Course', title=f'Assignment {i}', snippet=f'Due date {i}',
+            occurred_at='2026-11-09T00:00:00Z', url='',
+            payload={'resource_type':'assignment', 'entity_id':f'course:assignment:{i}'}), 'action', 80)
+            for i in (1, 2)]
+        cards = generator._merge_threads(rows)
+        self.assertEqual([row.item.id for row in cards], ['1', '2'])
+        self.assertEqual([row.item.snippet for row in cards], ['Due date 1', 'Due date 2'])
+
     def test_selection_keeps_full_source_once_instead_of_a_second_preview(self):
         request = self.requests[0]
         self.assertEqual(len(request['entries']), 16)
