@@ -12,8 +12,7 @@
         "PyInstaller": "6.22.3",
         "playwright": "1.52.0"
       },
-      "sourceRevision": "40683b5b099d04287b7ca975a61cf93b821a70cf",
-      "sourceState": "working-tree"
+      "sourceRevision": "f82d13de57518fac015903a45a3550267a83c279"
     },
     {
       "repo": "dsh-email",

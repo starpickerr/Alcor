@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { lstatSync, readFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { MIGRATION_BUNDLES, MIGRATION_DIRECTORIES, MIGRATION_DOMAINS, MIGRATION_CREDENTIALS, MIGRATION_PACKAGE_NAMES, MIGRATION_MARKER, createMigrationMarker, isMigrationMarker } from './migration-contract.js'
 
@@ -69,7 +69,11 @@ export async function initializeProfile(ctx) {
   }
   const absent = names => Object.fromEntries(Object.keys(names).map(key => [key, 'absent']))
   const marker = createMigrationMarker({ source: 'fresh', directories: absent(MIGRATION_DIRECTORIES), domains: absent(MIGRATION_DOMAINS), credentials: absent(MIGRATION_CREDENTIALS), schedule: { mapped: 0 } })
-  mkdirSync(target, { mode: 0o700 })
-  writeFileSync(join(target, MIGRATION_MARKER), JSON.stringify(marker) + '\n', { flag: 'wx', mode: 0o600 })
+  const stage = mkdtempSync(join(profile.dir,'.alcor-first-install-'))
+  try {
+    writeFileSync(join(stage,MIGRATION_MARKER), JSON.stringify(marker) + '\n', { flag:'wx', mode:0o600 })
+    try { renameSync(stage,target) }
+    catch (error) { if (!['EEXIST','ENOTEMPTY'].includes(error.code)) throw error }
+  } finally { rmSync(stage,{recursive:true,force:true}) }
   assertProfileMigrated(ctx)
 }

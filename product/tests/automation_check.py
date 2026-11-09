@@ -66,12 +66,6 @@ def check_automation(page, url):
     page.get_by_role('button', name='New', exact=True).click()
     expect(page.get_by_label('Automation task name', exact=True)).to_have_value('')
     page.keyboard.press('Escape')
-    page.get_by_role('button', name='Choose a creation method', exact=True).click()
-    page.get_by_role('menuitem', name='每周事务回顾', exact=True).click()
-    expect(page.get_by_label('Automation task name', exact=True)).to_have_value('每周事务回顾')
-    expect(page.locator('textarea')).to_have_value(re.compile('回顾本机未完成事务'))
-    page.get_by_label('Automation task name', exact=True).fill('Retained weekly draft')
-    page.keyboard.press('Escape')
     # Templates are only drafts. Saving through the native form creates one Host record.
     page.get_by_role('button', name='Choose a creation method', exact=True).click()
     page.get_by_role('menuitem', name='每日简报', exact=True).click()
@@ -104,23 +98,6 @@ def check_automation(page, url):
     assert data['records'][-1]['kind'] == 'briefing'
     history = auto('history', {'id': daily['id'], 'limit': 20})
     assert history['records'], history
-    page.get_by_role('button', name='Choose a creation method', exact=True).click()
-    page.get_by_role('menuitem', name='每周事务回顾', exact=True).click()
-    expect(page.get_by_label('Automation task name', exact=True)).to_have_value('Retained weekly draft')
-    page.get_by_role('button', name='Create', exact=True).click()
-    expect(manager.get_by_role('button', name='Retained weekly draft', exact=True)).to_be_visible()
-    weekly = next(item for item in auto('catalog') if item['title'] == 'Retained weekly draft')
-    assert 'FREQ=WEEKLY' in weekly['rrule'] and 'BYDAY=MO' in weekly['rrule']
-    assert weekly['target']['create']['agentPreset'] == 'alcor'
-    auto('run', {'id': weekly['id']})
-    deadline = time.monotonic() + 25
-    while time.monotonic() < deadline:
-        if any(message.get('role') == 'tool' and 'completed' in str(message.get('content')) for payload in requests if '回顾本机未完成事务' in json.dumps(payload, ensure_ascii=False) for message in payload['messages']):
-            break
-        page.wait_for_timeout(100)
-    else:
-        raise AssertionError('Scheduled weekly review must return the local task summary')
-    assert len(rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records']) == records_before + 1
     # Removing in DSH removes the same task in Stella; unrelated tasks survive.
     latest = next(item for item in auto('catalog', scope='all') if item['id'] == task['id'])
     auto('edit', {'id': task['id'], 'action': 'delete', 'expectedUpdatedAt': latest.get('updatedAt')}, 'all')

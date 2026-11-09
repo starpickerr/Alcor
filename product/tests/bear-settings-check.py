@@ -14,6 +14,7 @@ def settings(page):
     page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
     dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
     dialog.get_by_role('button', name='Alcor', exact=True).click()
+    dialog.get_by_role('navigation',name='Alcor 设置分类').get_by_role('button',name='小熊',exact=True).click()
     return dialog
 
 

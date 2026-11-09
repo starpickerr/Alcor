@@ -25,6 +25,14 @@
       name: '@alcor/secretary/organizer'
     - id: alcor-secretary
       name: '@alcor/secretary'
+    - id: preset-alcor-delivery
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: alcor-delivery
+        name: 跟进投递
+        description: Alcor 内部通道投递。
+        order: 1000
+        plugins: []
     - id: preset-alcor
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -39,6 +47,14 @@
               prefix: '{{alcor_identity}}'
               complete: true
               includeRuntimeContext: false
+          - id: alcor-workspace-reader
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: false
+              write: false
+              edit: false
+              applyPatch: false
           - id: alcor-tools
             name: '@alcor/secretary/tools'
           - id: alcor-skill-reader
@@ -73,6 +89,14 @@
               prefix: '{{alcor_identity}}'
               complete: true
               includeRuntimeContext: false
+          - id: stella-workspace-reader
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: false
+              write: false
+              edit: false
+              applyPatch: false
           - id: stella-tools
             name: '@alcor/secretary/tools'
           - id: stella-skill-reader

@@ -66,7 +66,7 @@ test('Stella inherits native tool visibility and host denials, including later t
   bindScopeParent(secretary, preset)
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt'] }))
   const names = agent => ctx.tools.schemas(agent).map(tool => tool.name).sort()
-  assert.deepEqual(names(secretary), ['alcor_overview', 'bash', 'working_directory'])
+  assert.deepEqual(names(secretary), ['alcor_memory_correct', 'alcor_memory_followup', 'alcor_memory_forget', 'alcor_memory_recall', 'alcor_memory_reflect', 'alcor_memory_remember', 'alcor_overview', 'bash', 'working_directory'])
   register('later_installed_executor')
   assert(names(secretary).includes('later_installed_executor'))
   const call = (agent, name) => ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'host-probe', name, arguments: '{}' }] })

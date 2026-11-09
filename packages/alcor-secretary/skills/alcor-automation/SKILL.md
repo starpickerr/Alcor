@@ -8,7 +8,7 @@ description: 安排 Alcor 定时执行：每天、每周、间隔、自定义计
 用 `alcor_business` 的 automation 域；实际调度器由 DSH 管理。事务的重复频率只定义待办重复，不等于定时唤醒 Agent。
 
 ```json
-{"domain":"automation","method":"create","arguments":{"title":"每日事务回顾","prompt":"使用 alcor_review_tasks 回顾未完成事务并总结优先事项","timing":{"kind":"daily","daily":{"time":"20:00","time_zone":"Asia/Shanghai"}}}}
+{"domain":"automation","method":"create","arguments":{"title":"每日简报","prompt":"使用 alcor_generate_briefing 生成并保存今日简报。","target":{"kind":"new"},"timing":{"kind":"daily","daily":{"time":"20:00","time_zone":"Asia/Shanghai"}}}}
 ```
 
 create 必填 title、prompt、timing。未指定 target 时由宿主创建 Alcor 会话，不编造会话 ID。不要传 scope:all。

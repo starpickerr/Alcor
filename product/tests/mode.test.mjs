@@ -198,12 +198,12 @@ test('new and legacy presets register equivalent isolated compositions', async (
   const { parse } = await import('yaml')
   const rows = parse(await readFile(new URL('../../packages/alcor-secretary/cordis.patch.yml', import.meta.url), 'utf8'))
     .flatMap(row => row.insert ?? []).filter(row => row.name === '@deepseek-ai/dsh-agent-preset')
-  assert.deepEqual(rows.map(row => row.config.id), ['alcor', 'alcor-briefing', 'stella', 'stella-briefing'])
+  assert.deepEqual(rows.map(row => row.config.id), ['alcor-delivery','alcor', 'alcor-briefing', 'stella', 'stella-briefing'])
   const normalize = plugins => plugins.map(plugin => ({ ...plugin, id: plugin.id.replace(/^stella-/, "alcor-") }))
-  assert.deepEqual(rows[0].config.plugins, normalize(rows[2].config.plugins))
-  assert.deepEqual(rows[1].config.plugins, rows[3].config.plugins)
-  assert.match(rows[2].config.name, /历史会话.*兼容/)
-  assert.match(rows[3].config.name, /兼容/)
+  assert.deepEqual(rows[1].config.plugins, normalize(rows[3].config.plugins))
+  assert.deepEqual(rows[2].config.plugins, rows[4].config.plugins)
+  assert.match(rows[3].config.name, /历史会话.*兼容/)
+  assert.match(rows[4].config.name, /兼容/)
 })
 
 test('a destination appearing during migration takes precedence', () => {

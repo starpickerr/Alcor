@@ -1,6 +1,6 @@
 {
   "name": "@alcor/secretary",
-  "version": "0.1.71",
+  "version": "0.1.88",
   "type": "module",
   "license": "MIT",
   "alcor": {
@@ -15,6 +15,8 @@
     "!**/* 2.*",
     "cordis.patch.yml",
     "DSH-LICENSE.txt",
+    "LAN-MEMORY-LICENSE.txt",
+    "LAN-MEMORY-SOURCE.json",
     "README.md",
     "vendor",
     "native",
@@ -71,7 +73,8 @@
     "@deepseek-ai/dsh-authorization": "*",
     "@deepseek-ai/dsh-tool-workspace-dependencies": "*",
     "@deepseek-ai/dsh-skill-filesystem": "*",
-    "@deepseek-ai/dsh-tool-skill": "*"
+    "@deepseek-ai/dsh-tool-skill": "*",
+    "@deepseek-ai/dsh-tool-fs": "*"
   },
   "engines": {
     "node": ">=24.9.0",
@@ -121,6 +124,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-tool-skill": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-fs": {
       "optional": true
     }
   },
