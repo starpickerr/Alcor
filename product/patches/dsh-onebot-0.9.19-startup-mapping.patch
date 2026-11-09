@@ -1,0 +1,13 @@
+--- a/lib/registry.js
++++ b/lib/registry.js
+@@ -194,6 +194,10 @@
+     }
+     async createChat(chatId, nickname) {
+         await this.mappingLoaded;
++        // Startup mapping may have resumed this chat while ensureChat awaited readiness.
++        const existing = this.chats.get(chatId);
++        if (existing !== undefined)
++            return existing;
+         // B8c: a chat evicted for idleness resumes its recorded session instead
+         // of forking a fresh one — the mapping entry was kept for exactly this.
+         const evicted = this.evictedChats.get(chatId);
