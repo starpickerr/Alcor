@@ -227,7 +227,7 @@ class Business:
                 'business':{'briefingId':receipt['briefingId'], 'revision':receipt['revision'], **({'snapshot':scoped} if snapshot else {})}}
 
     def generated_briefing(self, record=None, request_id=None, sources=None, submissions=None, run_at=None, configurations=None, rules_snapshot=None, baseline=None, validate_only=False, local_only=False):
-        from business.briefing.domain.generator import AgentBriefingGenerator, NeedModel
+        from business.briefing.domain.generator import AgentBriefingGenerator, NeedModel, rules_document
         run_row = self.meta.execute('SELECT document FROM briefing_runs WHERE id=?', (request_id,)).fetchone()
         run = json.loads(run_row[0]) if run_row else None
         if run and record is None:
@@ -268,6 +268,10 @@ class Business:
         from business.briefing.domain.incremental import daily_candidates, commit_daily, collection_stats
         stats = collection_stats()
         candidates = daily_candidates(self.briefing, selected, configurations, detail, window, stats)
+        if detail.get('briefing', {}).get('rule_text') != rules_document(rules):
+            candidates.decisions.clear()
+            candidates.reports.clear()
+            candidates.previous_reports.clear()
         try:
             if local_only:
                 from business.briefing.domain.pipeline import compose_draft

@@ -92,6 +92,21 @@ class Incremental(unittest.TestCase):
         self.assertEqual(three["revision"], 2)
         self.assertEqual(self.business.briefing_runs.invoke("result", one["id"])["business"]["revision"], 1)
 
+    def test_rule_changes_reconsider_unchanged_candidates(self):
+        stamp = '2026-11-11T07:00:00+08:00'
+        self.collect('2026-11-11T08:00:00+08:00', [self.row('公告', stamp)])
+        self.collect('2026-11-11T09:00:00+08:00', [])
+        self.assertEqual(self.prompts, [])
+        rule = self.business.briefing.create_rule({'source':'email', 'text':'保留公告，每条信息一张卡片。'})
+        result, _ = self.collect('2026-11-11T10:00:00+08:00', [])
+        self.assertTrue(any('decisions' in prompt['schema']['properties'] for prompt in self.prompts))
+        self.assertTrue(all(rule.text in prompt['rules'] for prompt in self.prompts))
+        self.assertEqual(result['business']['snapshot']['items'][0]['title'], '公告')
+        self.business.briefing.update_rule(rule.id, {'text':'保留公告和文件，每条信息一张卡片。'})
+        self.collect('2026-11-11T11:00:00+08:00', [])
+        self.assertTrue(any('decisions' in prompt['schema']['properties'] for prompt in self.prompts))
+        self.assertTrue(all('保留公告和文件' in prompt['rules'] for prompt in self.prompts))
+
     def test_midnight_first_gap_and_bounds(self):
         old = self.row("旧邮件", "2026-11-07T21:45:42+08:00")
         midnight = self.row("午夜", "2026-11-08T00:00:00+08:00")

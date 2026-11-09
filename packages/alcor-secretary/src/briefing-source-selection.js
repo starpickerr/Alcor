@@ -19,7 +19,7 @@ export function selectCourseScope(source, all, ids) {
 export function visibleBriefingDetail(detail, sources, historical = false) {
   if (historical) return detail
   const selected = row => sources.some(source => canonicalSource(source.source) === canonicalSource(row.source) && source.accountId === (row.account_id || 'default') &&
-    (source.source !== 'elearning' || ((row.payload?.resource_type || row.metadata?.resource_type) === 'assignment' && (!source.arguments?.course_ids?.length || source.arguments.course_ids.includes(String(row.payload?.course_id || row.metadata?.course_id || ''))))))
+    (source.source !== 'elearning' || !source.arguments?.course_ids?.length || source.arguments.course_ids.includes(String(row.payload?.course_id || row.metadata?.course_id || ''))))
   const mail = (detail.mail || []).filter(selected)
   const items = detail.items.filter(selected)
   const windows = Object.fromEntries(Object.entries(detail.briefing.source_windows || {}).filter(([, window]) => sources.some(source => canonicalSource(source.source) === canonicalSource(window.source) && source.accountId === (window.account_id || 'default'))))

@@ -6,7 +6,7 @@
       "package": "alcor-elearning",
       "binary": "elearning-mcp",
       "version": "1.0.7",
-      "sourceSha256": "2c37a6febd3881d1d89a897084b9f33c17bf35700c19a552003c3dba4d7823ff",
+      "sourceSha256": "d2d7433ed07fe7128a2bd881f3a60aa00fc6d82f59d865464b62af28c456f333",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",
