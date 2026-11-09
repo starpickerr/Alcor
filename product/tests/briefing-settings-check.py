@@ -1,11 +1,11 @@
 """Unified briefing settings page on the unchanged official Desktop; no model/source content reads."""
 import json
 import os
-import tempfile
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 import official_desktop_check as desktop
 from briefing_sources_ui import check_briefing_sources
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from plugin_check import pack_briefing_fixture
 from web_check import open_secretary
 
@@ -14,11 +14,12 @@ def main():
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='stella-briefing-settings-') as temporary, sync_playwright() as playwright:
+    with fresh_test_home(prefix='stella-briefing-settings-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
         env = desktop.environment(home)
         profile = Path(env['DSH_HOME']) / 'profiles/desktop'
         profile.mkdir(parents=True)
+        initialize_fresh(temporary, Path(env['DSH_HOME']), profile)
         (profile / 'package.json').write_text(json.dumps({'name': 'briefing-settings-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
         fixture = pack_briefing_fixture(home)
         desktop.native_cli(home, 'briefing-settings-install', 'add', str(desktop.PACK), str(fixture), '--ignore-scripts')
@@ -35,6 +36,65 @@ def main():
             expect(screen.get_by_role('heading', name='信息来源', exact=True)).to_be_visible()
             expect(screen.get_by_role('heading', name='筛选与写作规则', exact=True)).to_be_visible()
             expect(page.get_by_role('dialog', name='简报设置', exact=True)).to_have_count(0)
+            request = lambda method, args={}: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
+            column = screen.locator('.alcor-briefing-settings-column')
+            expect(column.locator(':scope > section')).to_have_count(2)
+            timezone = column.locator(':scope > section').nth(1)
+            expect(timezone.get_by_role('heading', name='简报时区', exact=True)).to_be_visible()
+            zone = timezone.get_by_role('textbox', name='简报时区', exact=True)
+            save_zone = timezone.get_by_role('button', name='保存时区', exact=True)
+            follow_system = timezone.get_by_role('button', name='跟随系统', exact=True)
+            expect(zone).to_be_visible()
+            expect(save_zone).to_be_visible()
+            expect(follow_system).to_be_visible()
+            original_preferences = request('get_preferences')
+            zone.fill('Invalid/Timezone')
+            save_zone.click()
+            expect(timezone.get_by_role('alert')).to_contain_text('时区未保存')
+            assert request('get_preferences') == original_preferences
+            zone.fill('Asia/Shanghai')
+            save_zone.click()
+            expect(save_zone).to_be_disabled()
+            assert request('get_preferences')['time_zone'] == 'Asia/Shanghai'
+            screen.get_by_role('button', name='返回简报', exact=True).click()
+            gear.click()
+            expect(zone).to_have_value('Asia/Shanghai')
+            follow_system.click()
+            expect(zone).to_have_value('')
+            save_zone.click()
+            expect(save_zone).to_be_disabled()
+            assert request('get_preferences')['time_zone'] == ''
+
+            zone.fill('America/New_York')
+            screen.get_by_role('button', name='管理来源：Alcor 事务', exact=True).click()
+            plugin = page.locator('[data-plugin-detail="@alcor/secretary"]')
+            back_to_settings = plugin.get_by_role('button', name='返回简报设置', exact=True)
+            expect(plugin).to_be_visible()
+            expect(back_to_settings).to_be_visible()
+            expect(plugin.locator('[data-window-drag]').get_by_role('button', name='返回简报设置', exact=True)).to_have_count(1)
+            page.set_viewport_size({'width': 430, 'height': 900})
+            expect(back_to_settings).to_be_in_viewport()
+            assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
+            page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-plugin-return-narrow.png'))
+            back_to_settings.click()
+            expect(screen.get_by_role('heading', name='简报设置', exact=True)).to_be_focused()
+            expect(zone).to_have_value('America/New_York')
+            assert request('get_preferences')['time_zone'] == ''
+            page.set_viewport_size({'width': 1440, 'height': 1000})
+
+            sidebar = page.locator('.alcor-sidebar')
+            sidebar.get_by_role('button', name='插件', exact=True).click()
+            page.get_by_text('@alcor/secretary', exact=True).click()
+            expect(plugin).to_be_visible()
+            expect(back_to_settings).to_have_count(0)
+            sidebar.get_by_role('button', name='简报', exact=True).click()
+            gear.click()
+            screen.get_by_role('button', name='管理来源：Alcor 事务', exact=True).click()
+            expect(back_to_settings).to_be_visible()
+            sidebar.get_by_role('button', name='插件', exact=True).click()
+            expect(page.get_by_role('button', name='返回简报设置', exact=True)).to_have_count(0)
+            sidebar.get_by_role('button', name='简报', exact=True).click()
+            gear.click()
             screen.get_by_role('button', name='新增规则', exact=True).click()
             detail = page.get_by_role('dialog', name='新增规则', exact=True)
             markdown = '# 重点通知\n\n保留 **截止日期** 和需要处理的通知。\n\n- 忽略重复信息\n- [参考](https://example.com/rules)\n\n```text\n完整规则原文\n```\n\n<img src=x onerror="window.__ruleUnsafe=true">'
@@ -76,7 +136,6 @@ def main():
             refresh_rules = screen.get_by_role('button', name='刷新规则', exact=True)
             expect(refresh_rules).to_have_text('')
             expect(refresh_rules.locator('svg')).to_have_count(1)
-            request = lambda method, args={}: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
             saved_rule = next(row for row in request('list_rules') if '重点通知（更新）' in row['text'])
             request('update_rule', {'rule_id': saved_rule['id'], 'payload': {'text': saved_rule['text'].replace('重点通知（更新）', '重点通知（刷新）')}})
             refresh_rules.click()
@@ -94,6 +153,10 @@ def main():
                 page.emulate_media(color_scheme=theme)
                 page.set_viewport_size({'width': 430, 'height': 900})
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible()
+                timezone.scroll_into_view_if_needed()
+                expect(zone).to_be_in_viewport()
+                expect(save_zone).to_be_in_viewport()
+                page.screenshot(path=str(desktop.ARTIFACTS / f'briefing-timezone-{theme}-narrow.png'))
                 card.scroll_into_view_if_needed()
                 expect(card).to_be_in_viewport()
                 assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
@@ -111,7 +174,7 @@ def main():
             assert all(row['type'] == 'catalog' for row in rows), 'Settings must not read source content'
             expect(page.locator('.alcor-sidebar').get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
             assert not errors, errors
-    print('PASS: one gear opens a full settings page with sources and rules; source saves/conflicts, rule creation/edit/cancel/toggle/confirmed deletion and safe Markdown work; desktop and narrow themes; zero model or source content calls')
+    print('PASS: briefing settings preserve timezone preferences and unsaved drafts through contextual plugin return; direct plugin visits clear return context; source saves/conflicts, rule CRUD and safe Markdown, desktop/narrow themes; zero model or source content calls')
 
 
 if __name__ == '__main__':

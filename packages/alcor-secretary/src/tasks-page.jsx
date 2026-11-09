@@ -85,7 +85,7 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     const contextOnly = node && !node.matched
     return <li key={taskKey(item)} className="alcor-task-node"><div className="alcor-task-card" style={{'--task-indent': `${Math.min(depth, 4) * 16}px`}} {...(!contextOnly ? context.trigger(item) : {})} data-task-id={item.id} data-tree-key={node?.key} data-context-only={contextOnly || undefined} data-depth={depth} data-record-selected={selectedRecord && recordId(selectedRecord) === recordId(item) || undefined} data-priority={item.business?.priority} data-group={taskGroup(item, now)} data-completed={item.status === 'done' || undefined}>
       <button type="button" className="alcor-task-open" aria-label={item.title} onClick={() => open(item.id)} />
-      {node && <span className="alcor-task-disclosure">{node.children.length > 0 && <Button variant="ghost" size="sm" aria-label={`${expanded(node) ? '收起' : '展开'}子事务：${item.title}`} aria-expanded={expanded(node)} onClick={() => setExpanded(node.key, !expanded(node))}><IconChevronDownOutlineRegular size={14} /></Button>}</span>}
+      {node && <span className="alcor-task-disclosure">{node.children.length > 0 && <Button variant="ghost" size="sm" aria-label={`${expanded(node) ? '收起' : '展开'}子事务：${item.title}`} aria-expanded={expanded(node)} onClick={() => setExpanded(node.key, !expanded(node))}><IconChevronDownOutlineRegular size={20} /></Button>}</span>}
       {!contextOnly && <Button className="alcor-task-check" variant="ghost" aria-label={item.business?.repeat_frequency !== 'none' ? item.status === 'done' ? '重新打开本次' : '完成本次' : item.status === 'done' ? '重新打开' : '完成事务'} aria-pressed={item.status === 'done'} disabled={busy || item.archived || item.business?.occurrence_unavailable || item.business?.apple?.can_modify === false || !!item.business?.apple_pending?.length || item.business?.apple_history} onClick={() => toggle(item)}>{item.status === 'done' && <IconCheckOutlineRegular size={16} />}</Button>}
       <div className="alcor-task-copy"><h3 className={item.status === 'done' ? 'alcor-completed' : undefined}>{item.title}</h3>
         {!contextOnly && <TaskMetadata item={item} categories={categories} hideList={list === item.business?.category_id} />}
@@ -96,9 +96,7 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     </div>{content}</li>
   }
   function treeRow(node, depth = 0) {
-    const completed = !filtering ? node.children.filter(child => child.group === 'completed') : []
-    const children = node.children.filter(child => !completed.includes(child))
-    return row(node.record, { node, depth, content: expanded(node) && node.children.length > 0 && <div className="alcor-task-branch"><ul className="alcor-task-list">{children.map(child => treeRow(child, depth + 1))}</ul>{completed.length > 0 && <details className="alcor-task-completed-children"><summary>已完成 {completed.reduce((count, child) => count + child.matchCount, 0)} 项</summary><ul className="alcor-task-list">{completed.map(child => treeRow(child, depth + 1))}</ul></details>}</div> })
+    return row(node.record, { node, depth, content: expanded(node) && node.children.length > 0 && <div className="alcor-task-branch"><ul className="alcor-task-list">{node.children.map(child => treeRow(child, depth + 1))}</ul></div> })
   }
 
   if (current) {

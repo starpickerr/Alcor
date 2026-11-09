@@ -1,7 +1,9 @@
 import noticeStyle from './notice.css'
 import { Notice } from './notice.jsx'
-import { PluginBriefingSources } from './briefing-sources.jsx'
+import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
+import mascot from './assets/alcor-mascot.svg'
+import { BriefingToggle } from './briefing-toggle.jsx'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
 import { canonicalPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
@@ -17,7 +19,7 @@ import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
 const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + bearStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
-import { Button, Input, Menu, MenuItemButton, FishLogo, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Menu, MenuItemButton, SegmentedControl, FishLogo, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const inject = ['slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
 
@@ -54,6 +56,8 @@ function Workbench({ startSession }) {
 
 function Preferences({ describe, update, bear }) {
   const prefs = useSyncExternalStore(bear.subscribe, bear.getSnapshot)
+  const [petName, setPetName] = useState(prefs.name)
+  useEffect(() => setPetName(prefs.name), [prefs.name])
   const [descriptor, setDescriptor] = useState()
   const [name, setName] = useState('')
   const [status, setStatus] = useState({message:'正在加载…',tone:'info'})
@@ -78,14 +82,41 @@ function Preferences({ describe, update, bear }) {
       setDescriptor(result.value); setStatus({message:'已保存',tone:'success'})
     } catch { setStatus({message:'连接中断，请重新打开以确认保存结果。',tone:'error'}) }
   }
-  return <><form className="alcor-preference-form" onSubmit={save}><h2>Alcor</h2><label htmlFor="alcor-display-name">助手名称</label>
+  return <><section className="alcor-bear-options" aria-label="小熊宠物设置"><h2>小熊宠物</h2>
+    <div className="alcor-bear-preview" style={{'--alcor-bear-preview-size': `${prefs.size * 1.5}px`}}><img src={mascot} alt={prefs.name} draggable={false} /></div>
+    <div className="alcor-bear-name">
+      <label htmlFor="alcor-bear-name">名字</label>
+      <Input id="alcor-bear-name" aria-label="小熊名称" value={petName} maxLength={40}
+        onChange={e => setPetName(e.target.value)}
+        onBlur={() => {
+          const value = petName.trim() || 'Alcor 小熊'
+          setPetName(value)
+          bear.update({name:value})
+        }}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur() }} />
+    </div>
+    <div className="alcor-bear-option-row">
+      <span>显示小熊</span>
+      <BriefingToggle label="显示 Alcor 小熊" checked={prefs.enabled} onChange={enabled => bear.update({enabled})} />
+    </div>
+    <div className="alcor-bear-option-row">
+      <span>大小</span>
+      <SegmentedControl id="alcor-bear-size" label="小熊大小" value={String(prefs.size)}
+        onChange={value => bear.update({size:Number(value)})}
+        options={[{value:'48',label:'小'},{value:'60',label:'标准'},{value:'84',label:'大'}]} />
+    </div>
+    <div className="alcor-bear-option-row">
+      <span>悬停展开对话</span>
+      <BriefingToggle label="悬停展开输入框" checked={prefs.hover} onChange={hover => bear.update({hover})} />
+    </div>
+    <div className="alcor-bear-option-row">
+      <span>位置</span>
+      <Button size="sm" variant="outline" disabled={prefs.position.every(n => n === 1)} onClick={() => bear.update({position:[1,1]})}>恢复默认位置</Button>
+    </div>
+    </section><form className="alcor-preference-form" onSubmit={save}><label htmlFor="alcor-display-name">助手名称</label>
     <Input id="alcor-display-name" value={name} maxLength={80} required disabled={!descriptor} onChange={e => setName(e.target.value)} />
     <Button type="submit" variant="outline" disabled={!descriptor || !name.trim()}>保存</Button>{status.message && <Notice tone={status.tone} role={status.tone === 'error' ? 'alert' : 'status'}>{status.message}</Notice>}</form>
-    <section className="alcor-bear-options"><h3>Alcor 小熊</h3>
-      <label><input type="checkbox" checked={prefs.enabled} onChange={e => bear.update({enabled:e.target.checked})} />显示 Alcor 小熊</label>
-      <label><input type="checkbox" checked={prefs.hover} disabled={!prefs.enabled} onChange={e => bear.update({hover:e.target.checked})} />悬停展开输入框</label>
-      <Button size="sm" variant="outline" disabled={prefs.position.every(n => n === 1)} onClick={() => bear.update({position:[1,1]})}>恢复默认位置</Button>
-    </section></>
+    </>
 }
 
 export async function apply(ctx) {
@@ -104,6 +135,19 @@ export async function apply(ctx) {
   await ctx.remote.$mount(organizerRemote)
   ctx.inject(['remote.alcorSecretary', 'remote.alcorOrganizer', 'remote.settings', 'remote.agentPresets', 'remote.schedule'], ctx => {
     let modeController
+    let briefingVisit = null
+    const visitListeners = new Set()
+    const briefingNavigation = {
+      getSnapshot: () => briefingVisit,
+      subscribe(listener) { visitListeners.add(listener); return () => visitListeners.delete(listener) },
+      update(value) { briefingVisit = value; for (const listener of visitListeners) listener() },
+    }
+    ctx.effect(() => ctx.layout.panelInfo.subscribe(() => {
+      if (!briefingVisit) return
+      const panel = canonicalPanel(ctx.layout.panelInfo.getSnapshot().activePanelId)
+      const expected = briefingVisit.returning ? 'alcor-briefing' : 'plugins'
+      if (panel !== expected) briefingNavigation.update(null)
+    }))
     const describe = () => ctx.remote.settings.describe()
     const update = (displayName, revision) => ctx.remote.settings.update('alcor-secretary', { displayName }, revision)
     const startSession = prompt => { modeController?.switchMode('alcor'); return startSecretarySession(ctx, prompt) }
@@ -114,8 +158,18 @@ export async function apply(ctx) {
       return workspace ? { workspaceId: workspace.workspaceId } : {}
     }
     ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({ name: 'plugins.detail.section', id: 'alcor-briefing-sources', inject: () => ({ api: ctx.remote.alcorOrganizer }) }, PluginBriefingSources))
+    ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
+      name:'plugins.detail.actions', id:'alcor-briefing-return', order:-10,
+      inject:() => ({navigation:briefingNavigation, onReturn:() => {
+        const visit = briefingVisit
+        if (!visit) return
+        modeController?.switchMode('alcor')
+        briefingNavigation.update({...visit, returning:true})
+        ctx.layout.selectPanel('alcor-briefing')
+      }}),
+    }, BriefingPluginReturn))
     const preferences = () => <div className="alcor-settings-content"><Preferences describe={describe} update={update} bear={state.preferences} /></div>
-    const navigate = panel => { modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
+    const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,
@@ -123,7 +177,15 @@ export async function apply(ctx) {
       view: canonicalPanel(panel),
       business: ctx.remote.alcorOrganizer,
       briefingContext,
-      openPlugins: name => { modeController?.switchMode('alcor'); const navigation = ctx.get('pluginNavigation'); if (name && navigation) navigation.openBundle(name); else navigate('plugins') },
+      briefingView:() => briefingVisit?.returning ? briefingVisit.view : undefined,
+      openPlugins: (name, view) => {
+        modeController?.switchMode('alcor')
+        briefingNavigation.update({packageName:name, view, returning:false})
+        const navigation = ctx.get('pluginNavigation')
+        if (name && navigation) navigation.openBundle(name)
+        else if (navigation) navigation.openList()
+        else ctx.layout.selectPanel('plugins')
+      },
       currentSession: () => ctx.uiSession.adapter.current.getSnapshot().props.sessionId,
       hasModeSwitch: !!modeController,
     }) }, SecretaryDesk))
@@ -143,7 +205,7 @@ export async function apply(ctx) {
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name:'shell.overlay', id:'alcor-bear',
         children:{'alcor.bear.timeline':{kind:'single',scope:'session'}},
-        inject:() => ({state, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
+        inject:() => ({state, renderSettings:preferences, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
       }, BearOverlay))
       ctx.slots.inject('alcor.bear.timeline', () => ctx.slots.register({name:'alcor.bear.timeline'}, BearTimeline))
       let releaseSidebar

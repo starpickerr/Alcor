@@ -69,18 +69,19 @@ function BriefingTimeline({ revisions, selected, onSelect, timeZone }) {
   </aside>
 }
 
-export function BriefingWorkspace({ api, briefingContext, openSession, openPlugins }) {
+export function BriefingWorkspace({ api, briefingContext, openSession, openPlugins, initialView }) {
   const [history, setHistory] = useState([])
-  const [selected, setSelected] = useState('')
-  const [revision, setRevision] = useState(0)
+  const [selected, setSelected] = useState(initialView?.selected ?? '')
+  const [revision, setRevision] = useState(initialView?.revision ?? 0)
   const [detail, setDetail] = useState(null)
   const [sources, setSources] = useState([])
   const [progress, setProgress] = useState({ phase: 'idle' })
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [settings, setSettings] = useState(false)
-  const [zone, setZone] = useState(''), [zoneInput, setZoneInput] = useState('')
+  const [settings, setSettings] = useState(initialView?.settings ?? false)
+  const [zone, setZone] = useState(''), [zoneInput, setZoneInput] = useState(initialView?.zoneInput ?? '')
+  const [zoneSaving, setZoneSaving] = useState(false), [zoneError, setZoneError] = useState('')
   const day = zone ? new Date().toLocaleDateString('sv-SE',{timeZone:zone}) : localDate()
   const settingsButton = useRef(null)
   const settingsHeading = useRef(null)
@@ -125,7 +126,7 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
         const key = `${value.requestId}:${value.phase}`
         if (key !== lastRun && ['completed', 'failed', 'cancelled', 'interrupted'].includes(value.phase)) {
           await refresh()
-          if (value.phase === 'completed' && value.briefingId && !currentRevision.current) { setSelected(value.briefingId); setRevision(0); setDetail(await call(api, 'get_briefing', { briefing_id: value.briefingId })) }
+          if (value.phase === 'completed' && value.briefingId && !currentRevision.current && (!initialView || lastRun)) { setSelected(value.briefingId); setRevision(0); setDetail(await call(api, 'get_briefing', { briefing_id: value.briefingId })) }
         }
         lastRun = key
       } catch (error) { if (!disposed) setError(error.message) } finally { polling = false }
@@ -160,18 +161,33 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   const report = detail?.briefing
   if (settings) return <div className="alcor-business" data-briefing-settings>
     <header className="alcor-app-header"><div className="alcor-actions"><Button variant="ghost" aria-label="返回简报" title="返回简报" onClick={closeSettings}><IconChevronLeftOutlineRegular size={18} /></Button><h1 ref={settingsHeading} tabIndex={-1}>简报设置</h1></div></header>
+    {error && <Notice tone="error" role="alert">{error}</Notice>}
     <div className="alcor-page-content alcor-briefing-settings">
-      <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => { setSettings(false); openPlugins(name) }} /></section>
-      <form className="alcor-actions" onSubmit={async e => {
-        e.preventDefault()
-        try {
-          const value = zoneInput.trim()
-          if (value) new Intl.DateTimeFormat('zh-CN',{timeZone:value})
-          const preferences = await call(api,'update_preferences',{payload:{time_zone:value}},true)
-          setZone(preferences.time_zone); setError('')
-        } catch { setError('时区未保存，请使用有效的时区名称。') }
-      }}><Field label="简报时区"><input aria-label="简报时区" value={zoneInput} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={e=>setZoneInput(e.target.value)} /></Field><Button type="submit" variant="outline" disabled={zoneInput.trim()===zone}>保存时区</Button></form>
-      {error && <Notice tone="error" role="alert">{error}</Notice>}
+      <div className="alcor-briefing-settings-column">
+        <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, selected, revision, zoneInput})} /></section>
+        <section aria-labelledby="alcor-briefing-timezone-heading">
+          <h2 id="alcor-briefing-timezone-heading">简报时区</h2>
+          <form className="alcor-briefing-timezone" onSubmit={async event => {
+            event.preventDefault()
+            setZoneSaving(true); setZoneError('')
+            try {
+              const value = zoneInput.trim()
+              if (value) new Intl.DateTimeFormat('zh-CN',{timeZone:value})
+              const preferences = await call(api,'update_preferences',{payload:{time_zone:value}},true)
+              setZone(preferences.time_zone); setZoneInput(preferences.time_zone)
+            } catch { setZoneError('时区未保存，请使用有效的时区名称。') }
+            finally { setZoneSaving(false) }
+          }}>
+            <Input aria-label="简报时区" value={zoneInput} disabled={zoneSaving} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onChange={event => { setZoneInput(event.target.value); setZoneError('') }} />
+            <div className="alcor-briefing-timezone-actions">
+              <Button variant="ghost" size="sm" disabled={zoneSaving || !zoneInput.trim()} onClick={() => { setZoneInput(''); setZoneError('') }}>跟随系统</Button>
+              <Button type="submit" variant="outline" size="sm" disabled={zoneSaving || zoneInput.trim()===zone}>{zoneSaving ? '正在保存…' : '保存时区'}</Button>
+            </div>
+            {zoneError && <Notice tone="error" role="alert">{zoneError}</Notice>}
+          </form>
+        </section>
+      </div>
       <BriefingRules api={api} />
     </div>
   </div>

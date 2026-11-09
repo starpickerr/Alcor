@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import mascot from './assets/alcor-mascot.svg'
 import { bearSession, bearWorkspace, normalizePosition } from './bear-state.js'
 import { canonicalPanel } from './mode.js'
+import { Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 
-const size = 60, margin = 12
+const margin = 12
 const pages = { 'alcor-tasks':'事务', 'alcor-calendar':'日程', 'alcor-bills':'账单', 'alcor-briefing':'简报', 'alcor-schedules':'自动化', plugins:'插件' }
 function promptText(text, panel) {
   if (!pages[panel]) return text
@@ -91,8 +92,10 @@ function BearChat({workspace, state, ctx, panel, catalog, spaces, ...native}) {
   </>
 }
 
-function FloatingBear({prefs, state, workspace, ...chat}) {
+function FloatingBear({prefs, state, workspace, openSettings, ...chat}) {
   const [open, setOpen] = useState(false), [pinned, setPinned] = useState(false)
+  const [menu, setMenu] = useState(null)
+  const size = prefs.size
   const viewport = () => [window.innerWidth, window.innerHeight]
   const [[width,height], setViewport] = useState(viewport)
   const [dragPos,setDragPos] = useState(null)
@@ -109,6 +112,13 @@ function FloatingBear({prefs, state, workspace, ...chat}) {
     return () => {window.removeEventListener('resize',resize); clearTimeout(timer.current)}
   }, [])
   function close() { clearTimeout(timer.current); setOpen(false); setPinned(false) }
+  function contextMenu(event) {
+    event.preventDefault(); event.stopPropagation()
+    close()
+    const rect = button.current.getBoundingClientRect()
+    const keyboard = event.type === 'keydown' || (!event.clientX && !event.clientY)
+    setMenu({x:keyboard ? rect.left : event.clientX, y:keyboard ? rect.bottom : event.clientY})
+  }
   useEffect(() => {
     if (!open) return
     function escape(e) { if (e.key === 'Escape' && !e.defaultPrevented) {close(); button.current?.focus()} }
@@ -132,19 +142,20 @@ function FloatingBear({prefs, state, workspace, ...chat}) {
   }
   const enter = e => {
     clearTimeout(timer.current)
-    if (prefs.hover && e.pointerType === 'mouse' && !drag.current && !open) timer.current = setTimeout(() => setOpen(true),320)
+    if (prefs.hover && !menu && e.pointerType === 'mouse' && !drag.current && !open) timer.current = setTimeout(() => setOpen(true),320)
   }
-  const leave = () => {clearTimeout(timer.current); if (!pinned && !drag.current) timer.current = setTimeout(close,340)}
+  const leave = () => {clearTimeout(timer.current); if (!menu && !pinned && !drag.current) timer.current = setTimeout(close,340)}
   const pin = () => {clearTimeout(timer.current); setPinned(true); setOpen(true)}
   return <div className="alcor-bear" onPointerEnter={enter} onPointerLeave={leave}>
-    <button className="alcor-bear-handle" ref={button} type="button" aria-label="Alcor 小熊" aria-expanded={open} title="Alcor 小熊 · 拖动以移动"
-      style={{left:x,top:y}} onPointerDown={e => {
+    <button className="alcor-bear-handle" ref={button} type="button" aria-label={prefs.name} aria-expanded={open} title={`${prefs.name} · 拖动以移动，右键打开菜单`}
+      style={{left:x,top:y,width:size,height:size}} onContextMenu={contextMenu} onPointerDown={e => {
         if (!e.isPrimary || e.button !== 0) return
         clearTimeout(timer.current); moved.current = false
         drag.current = {pointer:e.pointerId,startX:e.clientX,startY:e.clientY,left:x,top:y}
         e.currentTarget.setPointerCapture(e.pointerId)
       }} onPointerMove={move} onPointerUp={e => end(e,true)} onPointerCancel={e => end(e,false)} onLostPointerCapture={e => end(e,false)}
       onKeyDown={e => {
+        if (e.key === 'ContextMenu' || e.key === 'F10' && e.shiftKey) { contextMenu(e); return }
         const delta = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key]
         if (!delta) return
         e.preventDefault()
@@ -152,6 +163,15 @@ function FloatingBear({prefs, state, workspace, ...chat}) {
       }} onClick={() => {if (moved.current) {moved.current = false; return} if (pinned) close(); else pin()}}>
       <img src={mascot} alt="" draggable={false} />
     </button>
+    <Menu open={!!menu} contextual portal autoFocus anchor={null} onClose={() => setMenu(null)}
+      className="alcor-bear-menu" listClassName="alcor-bear-menu-list"
+      getAnchorRect={() => menu ? new DOMRect(menu.x,menu.y,0,0) : null} returnFocus={() => button.current}
+      items={[{id:'settings',label:'设置'},{id:'hide',label:'隐藏'}]}
+      onSelect={id => {
+        setMenu(null)
+        if (id === 'hide') state.preferences.update({enabled:false})
+        if (id === 'settings') openSettings()
+      }} />
     {open && <section className="alcor-bear-panel" role="region" aria-label="Alcor 小熊对话" onFocus={pin} onPointerDown={pin}
       onPointerEnter={() => clearTimeout(timer.current)}
       style={{width:panelWidth, maxHeight:Math.max(100,room), left:Math.max(margin,Math.min(x + size - panelWidth,width - margin - panelWidth)),
@@ -161,7 +181,8 @@ function FloatingBear({prefs, state, workspace, ...chat}) {
   </div>
 }
 
-export function BearOverlay({state, ctx, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
+export function BearOverlay({state, ctx, renderSettings, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const mode = useMode(value => value), panel = canonicalPanel(usePanelInfo(value => value.activePanelId))
   const selected = useMainSelection(value => value.sessionId)
   const catalog = useSessions(value => value), spaces = useWorkspaces(value => value)
@@ -174,6 +195,9 @@ export function BearOverlay({state, ctx, useMode, usePanelInfo, useMainSelection
       state.write('session.'+workspace, selected)
     }
   }, [mode, panel, workspace, selected, catalog, spaces, state])
-  if (mode !== 'alcor' || !prefs.enabled || !panel) return null
-  return <FloatingBear prefs={prefs} state={state} ctx={ctx} workspace={workspace} panel={panel} spaces={spaces} catalog={catalog} {...native} />
+  if (mode !== 'alcor' || !panel) return null
+  return <>
+    {prefs.enabled && <FloatingBear prefs={prefs} state={state} ctx={ctx} workspace={workspace} panel={panel} spaces={spaces} catalog={catalog} openSettings={() => setSettingsOpen(true)} {...native} />}
+    <Modal open={settingsOpen} title="Alcor" closeLabel="关闭" onClose={() => setSettingsOpen(false)} className="alcor-bear-settings-dialog">{renderSettings()}</Modal>
+  </>
 }

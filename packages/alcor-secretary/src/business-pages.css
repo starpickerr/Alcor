@@ -50,16 +50,16 @@
 .alcor-task-node > .alcor-task-card { gap:8px; padding:12px 2px 12px calc(2px + var(--task-indent,0px)); border-bottom-color:var(--dsw-alias-border-l3); }
 .alcor-task-node:last-child > .alcor-task-card { border-bottom-color:transparent; }
 .alcor-task-branch .alcor-task-card { padding-top:8px; padding-bottom:8px; }
-.alcor-task-disclosure { position:relative; z-index:1; display:flex; flex:none; width:20px; height:24px; }
-.alcor-task-disclosure > button { width:20px; min-width:20px; height:24px; padding:0; }
+.alcor-task-disclosure { position:relative; z-index:1; display:flex; flex:none; width:40px; height:40px; margin-block:-8px; }
+.alcor-task-disclosure > button { width:40px; min-width:40px; height:40px; padding:0; border-radius:8px; background:var(--dsw-alias-bg-layer-2); }
+.alcor-task-disclosure > button:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-task-disclosure > button:focus-visible { outline:2px solid var(--alcor-brand); outline-offset:2px; }
 .alcor-task-disclosure [aria-expanded=false] svg { transform:rotate(-90deg); }
 .alcor-task-card[data-context-only] .alcor-task-copy h3 { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .alcor-task-urgency { display:flex; flex-wrap:wrap; gap:4px 12px; }
 .alcor-task-urgency:empty { display:none; }
 .alcor-task-urgency > button { position:relative; z-index:1; pointer-events:auto; height:auto; min-height:24px; padding:0; font-size:11px; color:var(--alcor-brand); }
 .alcor-task-urgency > button[data-urgency=overdue] { color:var(--dsw-alias-state-error-primary); }
-.alcor-task-completed-children { padding-left:28px; }
-.alcor-task-completed-children > summary { width:fit-content; padding:8px 0; font-size:12px; color:var(--dsw-alias-label-secondary); cursor:pointer; }
 .alcor-task-add-entry { margin-top:12px; }
 .alcor-task-open { position:absolute; inset:0 -8px; border:0; border-radius:8px; background:transparent; cursor:pointer; }
 .alcor-task-card:has(.alcor-task-open:hover) { background:var(--dsw-alias-interactive-bg-hover); }
@@ -375,7 +375,11 @@
 .alcor-repeat-weekdays { display:flex; flex-wrap:wrap; gap:10px 16px; }
 
  .alcor-briefing-settings { max-width:1160px; margin:0 auto; display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); align-items:start; gap:24px; }
-.alcor-briefing-settings > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:18px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--alcor-shadow); }
+.alcor-briefing-settings > section, .alcor-briefing-settings-column > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:18px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--alcor-shadow); }
+.alcor-briefing-settings-column { display:grid; gap:24px; min-width:0; }
+.alcor-briefing-timezone { display:grid; gap:16px; margin-top:20px; }
+.alcor-briefing-timezone > input { width:100%; min-width:0; box-sizing:border-box; }
+.alcor-briefing-timezone-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .alcor-briefing-settings h2 { margin:0; font-size:16px; line-height:24px; font-weight:500; }
 .alcor-briefing-settings .alcor-briefing-source-option { padding:12px 0; }
 .alcor-rule-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:0; }
@@ -398,7 +402,7 @@
 .alcor-rule-preview { padding:24px 0; overflow-wrap:anywhere; }
 .alcor-rule-preview pre { max-width:100%; overflow:auto; }
 .alcor-rule-delete { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:16px; border-top:1px solid var(--dsw-alias-border-l3); }
-@media(max-width:860px) { .alcor-briefing-settings { grid-template-columns:minmax(0,1fr); } .alcor-briefing-settings > section { padding:18px; } }
+@media(max-width:860px) { .alcor-briefing-settings { grid-template-columns:minmax(0,1fr); } .alcor-briefing-settings > section, .alcor-briefing-settings-column > section { padding:18px; } }
 
 .alcor-source-overview-toolbar { display:flex; align-items:center; justify-content:space-between; margin:12px 0; }
 .alcor-source-cards { display:grid; gap:12px; }
