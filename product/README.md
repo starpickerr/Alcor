@@ -8,6 +8,17 @@ Alcor（原 Stella）是一组 DeepSeek Harness 原生插件。秘书插件提�
 
 界面扩展保存在 Alcor 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
+## 插件名称与源码仓库
+
+客户端通过 DSH 原生显示元数据使用 GitHub 项目名称。已有 `@alcor/*` 安装标识保持兼容，安装、数据路径和凭据不因显示名变化而迁移。
+
+| 客户端名称 | 安装标识 | 当前插件源码 | 独立服务／历史仓库 |
+| --- | --- | --- | --- |
+| Alcor | `@alcor/secretary` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-secretary) | — |
+| dsh-agent-hub | `@alcor/agent-hub` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-agent-hub) | [dsh-agent-hub](https://github.com/starpickerr/dsh-agent-hub) 保存旧第一方插件，新版尚未迁入 |
+| dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
+| dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
+
 ## 当前源码与默认入口
 
 `packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试，`npm run dev` 启动独立 DSH Profile 的开发预览。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 运行时的测试入口为 `make test-legacy`。
@@ -28,10 +39,10 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.62.tgz` 与可选的 `alcor-apple-sync-0.1.17.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.69.tgz` 与可选的 `alcor-apple-sync-0.1.17.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
 
 ```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.62.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.69.tgz --ignore-scripts
 dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.17.tgz --ignore-scripts
 ```
 
