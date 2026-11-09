@@ -110,7 +110,7 @@ def main():
                 page.get_by_role('button', name='简报', exact=True).click()
                 page.get_by_role('heading', name='简报', exact=True).wait_for()
                 page.get_by_role('button', name='简报设置', exact=True).click()
-                page.get_by_label('简报时区').fill('Asia/Shanghai')
+                page.get_by_role('textbox', name='简报时区', exact=True).fill('Asia/Shanghai')
                 page.get_by_role('button',name='保存时区').click()
                 expect(page.get_by_role('button',name='保存时区')).to_be_disabled()
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
@@ -156,10 +156,12 @@ def main():
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed.png'))
                 # Schedule receipt is distinct from completion: use the real DSH scheduler and wait for the saved report.
-                business(page, 'configure_sources', {'sources': [{'source': 'alcor_tasks', 'accountId': 'local'}]})
+                selected_sources = business(page, 'list_sources')
+                business(page, 'configure_sources', {'sources': [*selected_sources, {'source': 'alcor_tasks', 'accountId': 'local'}]})
                 desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo', 'arguments': {'payload': {'title': 'Scheduled local task'}}}})
                 auto = lambda action, request: desktop.rpc(page, 'alcorOrganizer/automation', {'request': {'action': action, 'scope': 'alcor', 'request': request}})
-                job = auto('create', {'title': 'Independent scheduled briefing', 'prompt': '整理本机今日事务，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}})
+                job_request = {'title': 'Independent scheduled briefing', 'prompt': '使用已选来源，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}}
+                job = auto('create', job_request)
                 auto('run', {'id': job['id']})
                 deadline = time.monotonic() + 35
                 while time.monotonic() < deadline:
@@ -168,9 +170,21 @@ def main():
                     page.wait_for_timeout(100)
                 assert scheduled['phase'] == 'completed' and scheduled['requestId'] != run['requestId'], scheduled
                 assert scheduled['sessionId'] != run['sessionId']
-                assert len(reads()) == 2, 'Scheduled local briefings must not read external sources'
+                assert len(reads()) == 4, 'Scheduled briefings must read the same selected external source without separate approval'
+                assert all(row['source_id'] == 'inbox' for row in reads())
+                groups = business(page, 'source_groups')
+                business(page, 'configure_source_groups', {'groups': {**groups, 'plugin:synthetic': False}, 'expectedGroups': groups})
+                disabled_job = auto('create', {**job_request, 'title': 'Disabled-source scheduled briefing'})
+                auto('run', {'id': disabled_job['id']})
+                deadline = time.monotonic() + 35
+                while time.monotonic() < deadline:
+                    after_disable = business(page, 'generation_status')
+                    if after_disable.get('requestId') != scheduled['requestId'] and after_disable['phase'] in ('completed', 'failed'): break
+                    page.wait_for_timeout(100)
+                assert after_disable['phase'] == 'completed' and after_disable['requestId'] != scheduled['requestId'], after_disable
+                assert len(reads()) == 4, 'A disabled external source must not be read by the next scheduled run'
                 saved = business(page,'get_briefing',{'briefing_id':scheduled['briefingId']})
-                assert any(item['source'].startswith('plugin:') for item in saved['items']), 'Local updates must preserve earlier external cards'
+                assert any(item['source'].startswith('plugin:') for item in saved['items']), 'Scheduled updates must retain external cards'
                 assert saved['revisions'][0]['trigger'] == 'scheduled'
                 assert len(business(page,'list_briefings')) == 1
                 page.set_viewport_size({'width': 430, 'height': 900})

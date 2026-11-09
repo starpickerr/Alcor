@@ -191,7 +191,7 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
     const args = JSON.parse(calls[0].arguments)
     pages.push(args)
     if (calls[0].name.includes('__email__')) return {results:[{result:mailOffline ? {isError:true,error:{message:'Synthetic source unavailable'}} : {value:{items:[],cursors:{}}}}]}
-    return { results: [{ result: { isError: false, value: { structuredContent: { value: { source_items: [{ source_id: 'source-' + args.offset, title: 'Candidate ' + args.offset, snippet: 'Due tomorrow', occurred_at: stamp }], next_offset: args.offset === 0 ? 1 : null } } } } }] }
+    return { results: [{ result: { isError: false, value: { structuredContent: { value: { source_items: [{ source_id: 'source-' + args.offset, title: 'Candidate ' + args.offset, snippet: 'Due tomorrow', occurred_at: stamp, payload: { resource_type: 'assignment' } }], next_offset: args.offset === 0 ? 1 : null } } } } }] }
   } }, subagents: { startActivation: async ({ request }) => {
     assertObjectJsonSchema(request.outputSchema)
     modelCalls++
@@ -320,7 +320,7 @@ test('briefing body batches expose only their own thread members and constrain o
   const stamp = new Date(Date.now()-1000).toISOString()
   let bodyBatches=0
   const generator=new TestBriefingGenerator({tools:{execute:async()=>({results:[{result:{isError:false,value:{structuredContent:{value:{
-    source_items:Array.from({length:26},(_,i)=>({source_id:'batch-'+i,thread_id:i<2?'merged-thread':'thread-'+i,title:'Synthetic '+i,snippet:'Needs attention',occurred_at:stamp,payload:{body:'Full original '+i}})),
+    source_items:Array.from({length:26},(_,i)=>({source_id:'batch-'+i,thread_id:i<2?'merged-thread':'thread-'+i,title:'Synthetic '+i,snippet:'Needs attention',occurred_at:stamp,payload:{resource_type:'assignment',body:'Full original '+i}})),
     next_offset:null,errors:[],
   }}}}}]})},subagents:{startActivation:async({request})=>{
     assertObjectJsonSchema(request.outputSchema)
@@ -359,8 +359,8 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   const generator=new TestBriefingGenerator({tools:{execute:async({calls:[call]})=>{
     const args=JSON.parse(call.arguments);seen.push(args)
     if(failure)throw new Error('Synthetic source failure')
-    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{course_id:args.course_ids[0],body:'A'}},
-      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
+    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:'A'}},
+      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
     return {results:[{result:{isError:false,value:{structuredContent:{value:{source_items:data,next_offset:null,errors:[],cursors:{elearning_state:changed?'v2':'v1'}}}}}}]}
   }},subagents:{startActivation:async({request})=>{
     modelCalls++

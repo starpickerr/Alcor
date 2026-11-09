@@ -17,7 +17,7 @@
 - DSH 更新兼容是交付底线：插件不得安装或覆盖宿主的 `@deepseek-ai/*` 运行组件；SDK 使用宿主提供的可选 peer。扩展支持版本前，验证官方版本身份、旧 Profile 升级、配置与业务数据保留及插件不兼容时原生 DSH 仍可启动。不能用放宽 `engines.dsh` 或关闭兼容检查代替验收；入口为 `product/tests/host-compatibility.test.mjs` 与 `product/tests/upgrade-compatibility-check.py`。
 - 验收区分源码、打包产物、已安装 DSH Profile 与真实 Apple 账号。使用隔离 Profile 和合成 EventKit；默认不运行个人账号同步。
 
-原 `/private/tmp/stella-dsh-workspace/Stella-Core` 保留作迁移前副本，后续产品修改使用当前目录，避免两处并行开发。迁移并不表示全部旧业务数据已导入或旧运行时可以删除。
+迁移前临时工作树已清理，后续产品修改使用当前实际目录。中间产物和备份按工作区清理工作流核对依赖后处理。
 
 设计变更先评估用户任务、页面必要性、能力归属及兼容影响，再实施已授权方案；不能仅按界面要求直接堆功能。
 

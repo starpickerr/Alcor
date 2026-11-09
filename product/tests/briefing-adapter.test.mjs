@@ -8,7 +8,7 @@ const source = { source: 'plugin:notes:inbox', accountId: 'account-1', label: 'N
 const options = { since: '2026-11-04T00:00:00Z', until: '2026-11-05T00:00:00Z', offset: 0, cursors: {}, signal: new AbortController().signal }
 const output = value => ({ results: [{ result: { isError: false, value } }] })
 
-test('scheduled local-only briefing with only external preferences fails before worker or cursor changes', async () => {
+test('explicit local-only selection with only external preferences fails before worker or cursor changes', async () => {
   const preferences = [{source:'elearning',accountId:'school'}, ...[1,2,3].map(id=>({source:'email',accountId:`mail-${id}`}))]
   const groups = {stella_bills:false, alcor_bills:false}
   const sources = effectiveBriefingSources(preferences, localBriefingSources(), groups)
@@ -102,7 +102,7 @@ test('course metadata refuses a changed account before calling its plugin', asyn
 
 test('eLearning briefing respects its 50-row limit and collects every subsequent page', async () => {
   const school = { source: 'elearning', accountId: 'school', tool: 'mcp__elearning__fetch', method: 'fetch', arguments: { course_ids: ['synthetic-course'] } }
-  const records = Array.from({length:105}, (_,index) => ({source:'elearning',account_id:'school',source_id:'item-'+index}))
+  const records = Array.from({length:105}, (_,index) => ({source:'elearning',account_id:'school',source_id:'item-'+index,payload:{resource_type:'assignment'}}))
   const offsets = []
   const ctx = { tools: { execute: async ({calls:[call]}) => {
     assert.equal(call.name,school.tool)
@@ -163,4 +163,14 @@ test('briefing group switches cannot bypass disabled plugins and preserve indepe
   const one = { source: 'plugin:notes:one', accountId: 'notes', tool: 'notes_briefing_fetch' }
   const two = { ...one, source: 'plugin:notes:two' }
   assert.deepEqual(effectiveBriefingSources([one], [one, two], { 'plugin:notes': true }), [one])
+})
+
+
+test('school briefing accepts assignments as individual candidates and discards other resources', async () => {
+  const school = {source:'elearning',accountId:'school',method:'fetch',tool:'mcp__elearning__fetch',arguments:{}}
+  const rows = ['assignment','announcement','grade','file','assignment'].map((kind,id) => ({source_id:String(id),payload:{resource_type:kind}}))
+  const ctx = {tools:{execute:async () => output({source_items:rows,next_offset:null,cursors:{elearning_state:'checkpoint'}})}}
+  const page = await readBriefingSourcePage(ctx,school,options)
+  assert.deepEqual(page.source_items.map(row => row.source_id),['0','4'])
+  assert.deepEqual(page.cursors,{elearning_state:'checkpoint'})
 })

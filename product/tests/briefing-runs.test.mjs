@@ -56,7 +56,7 @@ function nativeContext() {
     agentPresets: { presetForSession: session => session.preset },
     tools: { execute: async ({ calls: [call] }) => {
       readCount++; const args = JSON.parse(call.arguments); assert.deepEqual(args.course_ids, ['selected'])
-      return { results: [{ result: { value: { structuredContent: { value: { source_items: [{ source_id: 'one', title: 'Synthetic task', snippet: 'secret-payload', occurred_at: new Date(Date.now() - 1000).toISOString() }], cursors: { checkpoint: 'source-state' }, next_offset: null } } } } }] }
+      return { results: [{ result: { value: { structuredContent: { value: { source_items: [{ source_id: 'one', title: 'Synthetic task', snippet: 'secret-payload', payload: { resource_type: 'assignment' }, occurred_at: new Date(Date.now() - 1000).toISOString() }], cursors: { checkpoint: 'source-state' }, next_offset: null } } } } }] }
     } },
   }
   return { ctx, agents, creations, requests, reads: () => readCount, response: handler => { respond = handler } }

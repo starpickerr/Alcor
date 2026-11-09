@@ -108,6 +108,8 @@ def main():
                     fetched = [item for item in reads() if item['type'] == 'fetch']
                     assert [item['offset'] for item in fetched] == [0, 1]
                     assert all(item['source_id'] == 'inbox' for item in fetched)
+                    expect(page.locator('.alcor-briefing-item-list')).to_be_visible()
+                    expect(page.locator('.alcor-report')).to_have_count(0)
                     page.get_by_role('button', name='查看条目：Plugin item 0', exact=True).click()
                     expect(page.locator('.alcor-report')).to_contain_text('Synthetic source report')
                     expect(page.locator('.alcor-report h2')).to_have_text('Synthetic source report')
@@ -156,7 +158,8 @@ def main():
                     result = rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_briefings'}})
                     assert len(result) == 1
                     auto = lambda action, request: rpc(page, url, 'alcorOrganizer/automation', {'request': {'scope': 'alcor', 'action': action, 'request': request}})
-                    rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_sources', 'arguments': {'sources': [{'source': 'alcor_tasks', 'accountId': 'local'}]}}})
+                    groups = rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'source_groups'}})
+                    rpc(page, url, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'configure_source_groups', 'arguments': {'groups': {**groups, 'plugin:synthetic': False, 'alcor_tasks': True}, 'expectedGroups': groups}}})
                     job = auto('create', {'title': 'Synthetic daily integration', 'prompt': '整理本机今日事务、日程和待处理账单，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}})
                     before = len(rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records'])
                     external_before = len([item for item in reads() if item['type'] == 'fetch'])
@@ -166,7 +169,7 @@ def main():
                         records = rpc(page, url, 'alcorOrganizer/read', {'request': {}})['records']
                         if len(records) > before: break
                         page.wait_for_timeout(100)
-                    assert len([item for item in reads() if item['type'] == 'fetch']) == external_before, 'Scheduled template must not inherit external source permission'
+                    assert len([item for item in reads() if item['type'] == 'fetch']) == external_before, 'Scheduled briefing must respect the disabled external source switch'
                     assert len(records) == before + 1, 'Scheduled briefing must use the same model pipeline and save a result'
                     auto('edit', {'id': job['id'], 'action': 'update', 'patch': {'active': False}})
                     # Exercise the no-items body path independently of per-item reports.
