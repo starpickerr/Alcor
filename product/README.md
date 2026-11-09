@@ -4,7 +4,7 @@ Alcor（原 Stella）是一组 DeepSeek Harness 原生插件。秘书插件提�
 
 ## 桌面用户安装
 
-桌面版面向 macOS Apple Silicon，已核对的 DSH 版本为 `0.2.2-alpha.3` 和 `0.2.2-rc.1`。在已初始化的 DSH Profile 中，通过原生插件管理器安装秘书插件的 `.tgz` 包，退出并重新打开客户端，再从顶部模式菜单进入 Alcor。Apple 同步、eLearning、邮件和 AgentHub 均可按需安装。旧 Stella Profile 须先完成迁移，避免同时启用新旧插件。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
+桌面版面向 macOS Apple Silicon，已核对的 DSH 版本为 `0.2.2-alpha.3` 和 `0.2.2-rc.1`。在已初始化的 DSH Profile 中，通过原生插件管理器安装秘书插件的 `.tgz` 包，退出并重新打开客户端，再从顶部模式菜单进入 Alcor。Apple 同步、eLearning、邮件和 AgentHub 均可按需安装。首次安装由插件自动建立空白 Alcor 数据目录；已有 Alcor/Stella 数据或凭据但缺少完成记录时，停止启动并要求离线检查，不覆盖或推断迁移完成。旧 Stella Profile 须先完成迁移，避免同时启用新旧插件。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
 
 界面扩展保存在 Alcor 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -39,11 +39,11 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.69.tgz` 与可选的 `alcor-apple-sync-0.1.17.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.71.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
 
 ```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.69.tgz --ignore-scripts
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.17.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.71.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.18.tgz --ignore-scripts
 ```
 
 通过顶部模式菜单进入 Alcor；事务与日程展开 Alcor Agent 即可在原页对话；新会话由侧栏提供，Alcor 设置只保留助手名称；工具权限使用 DSH 当前会话策略。它直接使用已有模型路由；New Session 在 Alcor 模式使用秘书 Preset，切回 DSH 后使用用户原有默认 Preset。安装不改写宿主的模型、凭据 provider、默认 Agent 或执行策略，不会自动读取个人来源；旧客户端使用显式离线迁移。停用/卸载使用原生管理器，Alcor 安装记录与设置默认保留；其他插件、会话和凭据由宿主管理。

@@ -5,7 +5,7 @@ import { z as schema } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { remote, overviewSchema, accountSchemas } from './remote.js'
-import { assertProfileMigrated } from '../../alcor-organizer/src/profile-migration.js'
+import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
 
 const domainSpec = defineDomain({
   name: 'alcor_secretary', version: 1,
@@ -19,19 +19,18 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class Secretary extends TypertRemoteService {
-  static inject = ['storageDomain', 'typert', 'tools']
+  static inject = ['credentials', 'storageDomain', 'typert', 'tools']
   static Config = z.object({ displayName: z.string().min(1).max(80).default('Alcor').volatile() })
 
   constructor(ctx, config) {
     assertCompatibleProfile(ctx)
-    assertProfileMigrated(ctx)
     super(ctx, 'alcorSecretary', { namespace: 'alcorSecretary' })
     this.config = config
   }
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
-    assertProfileMigrated(this.ctx)
+    await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(domainSpec)
     this.ctx.effect(() => () => this.domain.close())
     const records = this.domain.table('installation')

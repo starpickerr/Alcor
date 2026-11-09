@@ -9,7 +9,7 @@ import { HubWorker, resolveHubPython } from './worker.js'
 import { HubCoordinator } from './hub.js'
 import { prepareHubJob, projectHubJob, projectHubActivity } from './hub-job.js'
 import { assertLegacySecretaryDetached } from './legacy.js'
-import { assertProfileMigrated } from '../../alcor-organizer/src/profile-migration.js'
+import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
 
 const legacySpec = defineDomain({name:'alcor_organizer',version:1,tables:{records:domainTable(z.record(z.string(),z.json())),jobs:domainTable(jobSchema),schedules:domainTable(z.record(z.string(),z.json()))}})
 
@@ -20,15 +20,15 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class AgentHub extends TypertRemoteService {
-  static inject = ['typert','subagents','sessionController','agentPresets','storageDomain']
+  static inject = ['credentials', 'typert','subagents','sessionController','agentPresets','storageDomain']
   private worker
   private hub
   private active = true
   private queue = Promise.resolve()
-  constructor(ctx) { assertCompatibleProfile(ctx); assertProfileMigrated(ctx); super(ctx, 'agentHub', {namespace:'agentHub'}) }
+  constructor(ctx) { assertCompatibleProfile(ctx); super(ctx, 'agentHub', {namespace:'agentHub'}) }
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
-    assertProfileMigrated(this.ctx)
+    await initializeProfile(this.ctx)
     await assertLegacySecretaryDetached(this.ctx.get('profileContext'))
     const legacy = this.ctx.get('stellaOrganizer')
     if (legacy && !legacy.agentHubDetached) throw new Error('请先将 Stella 更新到支持独立 AgentHub 的版本；协作数据尚未改动。')

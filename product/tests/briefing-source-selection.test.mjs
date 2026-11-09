@@ -59,3 +59,12 @@ test('email cards aggregate accounts without subscribing, expose no addresses, a
   assert.equal(sourceOwner({ source: 'elearning' }), '@alcor/elearning')
   assert.equal(sourceOwner({ source: 'calendar_agenda' }), '@alcor/secretary')
 })
+
+
+test('current report preserves rule-selected announcements and files in the selected course', () => {
+  const rows = ['assignment','announcement','file'].map(resource_type => ({source:'elearning',account_id:'school',payload:{course_id:'one',resource_type}}))
+  const detail = {briefing:{body:'rule-selected items',source_windows:{}},mail:rows,items:rows}
+  const result = visibleBriefingDetail(detail,[{source:'elearning',accountId:'school',arguments:{course_ids:['one']}}])
+  assert.deepEqual(result.items,rows)
+  assert.equal(result.briefing.body,detail.briefing.body)
+})

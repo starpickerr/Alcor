@@ -5,14 +5,15 @@
       "module": "elearning_mcp",
       "package": "alcor-elearning",
       "binary": "elearning-mcp",
-      "version": "1.0.7",
-      "sourceSha256": "2c37a6febd3881d1d89a897084b9f33c17bf35700c19a552003c3dba4d7823ff",
+      "version": "1.0.8",
+      "sourceSha256": "972b29ed74fe99628a650ba71a34bba1eefb554a7bced06fe4c5f4001c56c7d6",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",
         "playwright": "1.52.0"
       },
-      "sourceRevision": "2dc2367b2e03303e00073a73d8f576aa0df60adc"
+      "sourceRevision": "40683b5b099d04287b7ca975a61cf93b821a70cf",
+      "sourceState": "working-tree"
     },
     {
       "repo": "dsh-email",

@@ -6,7 +6,7 @@
 
 Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Profile、插件生命周期、配置和 `pluginManager/listBundles` 的访问检查；不另建安装器、账号表单或工具授权列表。
 
-已安装的独立包为 `@alcor/elearning@0.1.7` 和 `@alcor/mail@0.1.9`；本机 Profile 已完成跨包迁移。每个来源只启用一个版本。Bundle 管理安装、启停、配置、原生凭据与 MCP Client；随包冻结的独立 MCP（eLearning 1.0.7、邮件 1.0.6）负责业务，不依赖开发目录或用户另装 Python。学校连接复用现有适配器和课程来源身份，候选凭据键为 `alcor-elearning/account`；邮件候选键为 `alcor-email/accounts`，多邮箱编辑保留其他账号。旧键必须先通过受控离线迁移核验，不能直接安装新包后假设账号已迁入。账号表单始终展开，测试连接位于各表单下方；已保存授权码以固定星号占位，空值保留原授权码。不同表单的未提交编辑保留原版本，冲突时拒绝覆盖并允许撤销修改。两包均不安装 DSH 核心组件。
+本机 Profile 已完成跨包迁移；安装版本以实际 Profile 为准，每个来源只启用一个版本。当前 eLearning 开发候选为 `@alcor/elearning@0.1.12`，冻结独立 MCP 1.0.8；邮件 MCP 为 1.0.6。Bundle 管理安装、启停、配置、原生凭据与 MCP Client，不依赖开发目录或用户另装 Python。学校连接复用现有适配器和课程来源身份，候选凭据键为 `alcor-elearning/account`；邮件候选键为 `alcor-email/accounts`，多邮箱编辑保留其他账号。旧键必须先通过受控离线迁移核验，不能直接安装新包后假设账号已迁入。账号表单始终展开，测试连接位于各表单下方；已保存授权码以固定星号占位，空值保留原授权码。不同表单的未提交编辑保留原版本，冲突时拒绝覆盖并允许撤销修改。两包均不安装 DSH 核心组件。
 
 在原生插件页打开相应包：学校填写学工号和密码；邮件填写邮箱、IMAP SSL 地址、客户端授权码与文件夹。保存仅建立本地 MCP 连接，不登录外部网站或读取正文；用户点击「测试连接」才请求课程列表或测试 IMAP 登录和文件夹。真实网站的额外认证由用户处理。对话使用 DSH 策略；邮箱开启/停用统一控制所有读取，简报还需启用独立来源开关，两层都开启才会采集。
 
@@ -14,9 +14,9 @@ Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Prof
 
 邮件 DSH 模式只发布 `list_accounts`、`list_sources`、`get_cursors`、`fetch_messages`、`test_connection`、`list_folders`；账号增删不作为 MCP 工具，且禁止伪造管理调用。账号密码仅来自当前 DSH 记录，MCP 忽略旧数据库账号和环境默认密码，业务库只保存游标。读取采用只读 IMAP，不标已读、不发送或删除邮件。停用插件关闭连接、撤销工具，保留凭据与历史数据；移除账号后阻断后续访问。
 
-构建：`npm run product:sources:pack`，候选产物为 `.local/artifacts/alcor-elearning-0.1.7.tgz` 与 `alcor-mail-0.1.9.tgz`。依赖与源码摘要在 `source-releases.lock.json` 固定，修改来源后先验证再更新锁。冻结库在入包时解除符号链接，防止 npm 省略运行库；保留运行依赖许可证。
+构建：`npm run product:sources:pack`，版本来自各包 package.json。依赖与源码摘要在 `source-releases.lock.json` 固定，修改来源后先验证再更新锁。冻结库在入包时解除符号链接，防止 npm 省略运行库；保留运行依赖许可证。
 
-学校 1.0.7 的构建输入现已保存于学校仓库提交 `453c9634acc920ca2429221a0e0df4e0ef82befb`。邮件 1.0.6 对应邮件仓库提交 `7bb82f44f8c16d9b5494ed2748994a3ded4d98c2`。两处源码均以 `product/source-releases.lock.json` 中的摘要校验。
+学校 1.0.8 开发候选基于学校仓库 `40683b5`，包含未提交的下载与作业提交实现；锁中的 `sourceState: working-tree` 明确此状态，sourceRevision 仅标记基线，准确输入以源码摘要为准。正式发布前应在获得提交授权后固定最终提交。邮件 1.0.6 对应邮件仓库提交 `7bb82f44f8c16d9b5494ed2748994a3ded4d98c2`。两处源码均以 `product/source-releases.lock.json` 中的摘要校验。
 
 ## eLearning 账号与凭据
 
@@ -38,9 +38,13 @@ Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Prof
         dataDir: /absolute/elearning-data
 ```
 
-此插件在内部启动 `python -m elearning_mcp.server --data-dir ... --dsh-credentials`，仅发布 `list_courses`、`fetch`、`list_files`。不要再同时配置同名 `elearning` 原生 Client；不要使用依赖旧 Core 的 `--hosted-connector`。普通独立 MCP 模式保持原有行为，新凭据路径仅在显式 DSH 模式生效。
+此插件在内部启动 `python -m elearning_mcp.server --data-dir ... --dsh-credentials`，发布 `list_courses`、`fetch`、`list_files`、`download_file`、`get_assignment`、`submit_assignment`。账号管理与游标写入仍不开放。不要再同时配置同名 `elearning` 原生 Client；不要使用依赖旧 Core 的 `--hosted-connector`。普通独立 MCP 模式保持原有行为，新凭据路径仅在显式 DSH 模式生效。
 
-候选包通过 DSH 插件 → @alcor/elearning 的原生插件页保存账号并测试连接。连接成功后，其只读工具随宿主目录提供给 Alcor 主对话；简报课程范围在该插件的「课程范围」中设置。连接测试仅读取课程元数据；主对话查询结果会发送给当前模型。
+候选包通过 DSH 插件 → @alcor/elearning 的原生插件页保存账号并测试连接。连接成功后，查询、下载与作业提交工具随宿主目录提供给 Alcor 主对话；简报课程范围在该插件的「课程范围」中设置。连接测试仅读取课程元数据；主对话查询结果会发送给当前模型。
+
+`download_file` 接受课程文件 ID 或 eLearning 文件网页链接，写入明确的本地绝对路径，父目录须存在、不覆盖已有文件、单文件最大 512 MB。`get_assignment` 读取具体作业的要求和当前提交次数，独立于近期简报窗口。`submit_assignment` 支持 Canvas 原生 online_upload 作业，将 1 至 20 个普通文件直接上传到学校指定的 HTTPS 服务器并提交；不向上传服务器转发 Canvas Cookie、Token 或 CSRF 头。提交校验文件格式、锁定状态、允许次数和 expected_attempt。重交可能替换上一轮附件，由用户明确要求；保持既有宿主权限和主动主对话限制，不强制跳转页面确认。
+
+写请求不自动重试；只有已验证的正式提交回执才报告成功。上传成功不等于已交作业，网络中断或 `submission_unknown` 时先查询提交次数和附件，不自动重发。失败可能留下已上传的未提交文件，不擅自删除远端数据。跨浏览器同时提交仍由学校服务最终裁决，本地 attempt 复核不构成远端事务。
 
 ## 其他 MCP 与执行边界
 
@@ -52,7 +56,9 @@ Alcor 不再遮罩宿主工具或保存第二套授权。DSH 的工具限制、�
 
 `npm run product:test` 验证宿主工具继承、宿主拒绝与撤销、后注册工具、私人来源上下文、凭据轮换和来源停用。`source-plugins-check.py` 覆盖原生账号配置与生命周期，替代已移除的通用设置账号表单用例。`mcp_check.py` 验证真实 DSH 模型 → MCP → 模型往返、重启及旧白名单文件保持原位且不再生效；使用合成模型与课程。
 
-独立 eLearning 仓库 `tests.test_dsh_credentials` 验证三项只读工具、伪造写入拒绝、忽略旧凭据、内存 Cookie、环境移除及无业务秘密落盘。真实账号测试与合成测试分开记录，不把安装或进程运行视为登录成功。
+独立 eLearning 仓库 `tests.test_dsh_credentials` 验证六项工具及读写注解、伪造管理写入拒绝、忽略旧凭据、内存 Cookie、环境移除、真实 MCP 通信上的合成下载和提交及无业务秘密落盘。`test_assignment_transfers` 与 `test_transfer_client` 覆盖不覆盖原文件、符号链接、课程范围、提交次数竞争、multipart 上传、CSRF、拒绝、未知结果与不自动重试。真实账号测试与合成测试分开记录，不把安装或进程运行视为登录成功。
+
+`elearning-transfer-desktop-check.py` 使用官方原版 Desktop 和临时 Profile，仅安装真实 eLearning 发行包，使用合成凭据验证六项冻结工具的宿主发现、插件设置、停用、重启恢复、移除账号撤销与卸载，不发起真实学校查询或提交。0.1.12 已通过此专项检查；独立服务 152 项测试及主仓 49 项相关检查通过。通用 `source-plugins-check.py` 在无关的助手设置窄窗口断言处失败，本轮不将其报告为通过；首次冻结协议初始化曾超过测试的 20 秒截止，后续独立解包与安装后协议检查通过，确切原因未确定。冻结服务退出时出现关闭流诊断输出，具体来源未定位，协议检查退出状态为 0。
 
 独立邮件仓库 `tests.test_dsh_credentials` 验证原生账号环境移除、六只读工具、伪造写入拒绝、无密码落盘及普通模式兼容。`mail-credentials.test.mjs` 覆盖多账号保留、空授权码保留、并发版本冲突、凭据轮换／撤销与重启；`source-remotes.test.mjs` 使用真实 DSH Client Gateway 挂载所有 Alcor Remote，防止方法名与宿主保留接口冲突，并验证沿用旧学校连接。
 
@@ -65,4 +71,4 @@ Alcor 不再遮罩宿主工具或保存第二套授权。DSH 的工具限制、�
 
 邮件连接测试保留等待状态，35 秒截止；仅通过白名单诊断码区分登录拒绝、DNS、SSL、网络、文件夹权限及超时，不返回服务器异常原文或授权码。凭据发生变化时丢弃旧测试结果。
 
-2026-11-09 修复：eLearning 独立登录浏览器沿用系统 HTTPS 代理并尊重目标站点代理绕过配置；登录页等待完整加载，最长 60 秒，避免 5 秒学校认证跳转导致通用失败。简报增量采集仅请求作业，每个作业保留独立 entity_id；普通对话 fetch 仍可查询其他课程内容。报告列表仅展示信息卡片，完整条目报告在卡片详情中阅读。
+2026-11-09 修复：eLearning 独立登录浏览器沿用系统 HTTPS 代理并尊重目标站点代理绕过配置；登录页等待完整加载，最长 60 秒，避免 5 秒学校认证跳转导致通用失败。简报增量采集恢复课程公告、作业、测验、成绩和文件元数据，采集、适配与页面均不固定限制资源类型，由已启用的规则文稿筛选。每个作业保留独立 entity_id；同一作业的更新可关联到该卡片，不跨作业汇总。规则修改后，更新简报会重新评估当前候选，避免复用旧规则的筛选和报告。当前个人 eLearning 规则设为只保留作业、一作业一卡，后续可在「简报设置 → 筛选与写作规则」编辑该规则以纳入公告、文件等。普通对话 fetch 保持原有范围。报告列表仅展示信息卡片，完整条目报告在卡片详情中阅读。

@@ -33,7 +33,8 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   }
   let { ctx } = await makeContext()
   t.after(() => ctx.fiber.dispose())
-  const call = async () => (await ctx.tools.execute({ signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'test', name: 'mcp__elearning__list_courses', arguments: '{}' }] })).results[0].result
+  const transferNames = ['download_file', 'get_assignment', 'submit_assignment'].map(name => 'mcp__elearning__' + name)
+  const call = async (name = 'mcp__elearning__list_courses') => (await ctx.tools.execute({ signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'test', name, arguments: '{}' }] })).results[0].result
   assert.deepEqual(await ctx.alcorElearning.state(), { installed: true, configured: false, connected: false, writable: true })
   await assert.rejects(ctx.alcorElearning.save({ username: '', password: 'synthetic' }))
   assert.equal(ctx.authorization.describe(accountKey).label, '复旦 eLearning')
@@ -46,6 +47,12 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   assert.equal(source.source, 'elearning')
   assert(!JSON.stringify(source).includes('first-synthetic-secret'))
   const firstResult = await call(); assert(JSON.stringify(firstResult).includes('first-account'), JSON.stringify(firstResult))
+  for (const name of transferNames) {
+    assert.equal((await call(name)).isError, false)
+    const deny = ctx.tools.guard(execution => execution.name === name ? 'DSH host denied transfer' : undefined)
+    assert.equal((await call(name)).isError, true)
+    deny()
+  }
   assert.equal((await stat(filename)).mode & 0o777, 0o600)
   assert.equal((await ctx.credentials.readRecord(accountKey)).payload.password, 'first-synthetic-secret')
   assert(!JSON.stringify(await ctx.alcorElearning.state()).includes('synthetic-secret'))
@@ -72,6 +79,10 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   assert.equal(state.username, undefined)
   assert.equal(await ctx.alcorElearning.briefingSource(), null)
   assert.equal(ctx.tools.executable('mcp__elearning__list_courses'), undefined)
+  for (const name of transferNames) {
+    assert.equal(ctx.tools.executable(name), undefined)
+    assert.equal((await call(name)).isError, true)
+  }
   assert(!(await readFile(filename, 'utf8')).includes('second-synthetic-secret'))
   assert.equal((await ctx.credentials.resolve(credentialRef('UNRELATED_MODEL_API_KEY'))).value, 'synthetic-model-key')
 })

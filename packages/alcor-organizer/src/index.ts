@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { ReminderDelivery } from './reminders.js'
 import { BriefingGenerator } from './briefing.js'
 import { discoverBriefingSources, briefingSourceOptions, effectiveBriefingSources, localBriefingSources } from './briefing-sources.js'
-import { assertProfileMigrated } from './profile-migration.js'
+import { initializeProfile } from './profile-migration.js'
 
 const spec = defineDomain({ name: 'alcor_organizer', version: 1, tables: {
   records: domainTable(recordSchema), jobs: domainTable(jobSchema),
@@ -30,7 +30,7 @@ function assertCompatibleProfile(ctx) {
 
 export default class Organizer extends TypertRemoteService {
   readonly agentHubDetached = true
-  static inject = ['storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools']
+  static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools']
   private domain
   private businessWorker
   private briefingGenerator
@@ -43,11 +43,11 @@ export default class Organizer extends TypertRemoteService {
     commit: (prepared, authorize) => this.commitApprovedDelete(prepared, authorize),
   })
 
-  constructor(ctx) { assertCompatibleProfile(ctx); assertProfileMigrated(ctx); super(ctx, 'alcorOrganizer', { namespace: 'alcorOrganizer' }) }
+  constructor(ctx) { assertCompatibleProfile(ctx); super(ctx, 'alcorOrganizer', { namespace: 'alcorOrganizer' }) }
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
-    assertProfileMigrated(this.ctx)
+    await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(spec)
     const profile = this.ctx.get('profileContext')
     this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business'), { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })

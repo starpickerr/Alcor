@@ -10,7 +10,7 @@ import { frozenExportPlan, applePlanDetail } from '../../alcor-secretary/src/sec
 import { confirmMacDeletion } from '../../alcor-secretary/src/mac-delete-confirmation.js'
 import { createCategoryRebuildHost } from './category-rebuild-host.js'
 import { remote, requestSchema, itemRestoreSchema, boundConflictSchema, rebuildPreviewSchema, rebuildCommitSchema } from './remote.js'
-import { assertProfileMigrated } from '../../alcor-organizer/src/profile-migration.js'
+import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
 
 function assertCompatibleProfile(ctx) {
   const selected = ctx.get('profileContext')?.startedBundles
@@ -19,7 +19,7 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class AppleSync extends TypertRemoteService {
-  static inject = ['typert', 'alcorOrganizer']
+  static inject = ['credentials', 'typert', 'alcorOrganizer']
   private worker
   private active = true
   private rebuildPage = createCategoryRebuildHost(() => this.worker)
@@ -31,11 +31,11 @@ export default class AppleSync extends TypertRemoteService {
   private preparingDeletes = new Map()
   private runningDeletes = new Map()
 
-  constructor(ctx) { assertCompatibleProfile(ctx); assertProfileMigrated(ctx); super(ctx, 'alcorAppleSync', { namespace: 'alcorAppleSync' }) }
+  constructor(ctx) { assertCompatibleProfile(ctx); super(ctx, 'alcorAppleSync', { namespace: 'alcorAppleSync' }) }
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
-    assertProfileMigrated(this.ctx)
+    await initializeProfile(this.ctx)
     registerBundledSkills(this.ctx, 'alcor-apple-sync', new URL('../skills/', import.meta.url))
     const profile = this.ctx.get('profileContext')?.dir ?? dshHomePath('profiles', 'default')
     this.worker = new BusinessWorker(join(profile, 'alcor', 'apple-sync'), {

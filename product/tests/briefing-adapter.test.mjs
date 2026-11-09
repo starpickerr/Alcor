@@ -166,11 +166,11 @@ test('briefing group switches cannot bypass disabled plugins and preserve indepe
 })
 
 
-test('school briefing accepts assignments as individual candidates and discards other resources', async () => {
+test('school briefing passes every resource type to editable model rules', async () => {
   const school = {source:'elearning',accountId:'school',method:'fetch',tool:'mcp__elearning__fetch',arguments:{}}
   const rows = ['assignment','announcement','grade','file','assignment'].map((kind,id) => ({source_id:String(id),payload:{resource_type:kind}}))
   const ctx = {tools:{execute:async () => output({source_items:rows,next_offset:null,cursors:{elearning_state:'checkpoint'}})}}
   const page = await readBriefingSourcePage(ctx,school,options)
-  assert.deepEqual(page.source_items.map(row => row.source_id),['0','4'])
+  assert.deepEqual(page.source_items,rows)
   assert.deepEqual(page.cursors,{elearning_state:'checkpoint'})
 })
