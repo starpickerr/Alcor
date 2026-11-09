@@ -24,8 +24,8 @@ class BriefingRuns:
         self.db.execute('CREATE TABLE IF NOT EXISTS briefing_runs (id TEXT PRIMARY KEY, phase TEXT NOT NULL, document TEXT NOT NULL)')
         for run in self.active():
             if run['phase'] in ACTIVE:
-                record = self.db.execute('SELECT document FROM reports WHERE id=?', (run['requestId'],)).fetchone()
-                patch = {'phase': 'completed', 'message': '简报已保存', 'briefingId': json.loads(record[0])['business']['briefingId']} if record else {'phase': 'interrupted', 'message': '生成已中断，可继续未完成的部分。'}
+                record = self.invoke('result', run['requestId'])
+                patch = {'phase': 'completed', 'message': '简报已保存', 'briefingId': record['business']['briefingId']} if record else {'phase': 'interrupted', 'message': '生成已中断，可继续未完成的部分。'}
                 self.save(run, patch)
         self.db.commit()
 
@@ -53,7 +53,7 @@ class BriefingRuns:
         generated_at = current.generated_at if current else None
         baseline_at = run['baseline'].get('briefing', {}).get('generated_at')
         states = [self.business.source_cursors(source['source'], source['accountId'], source) for source in run['sources']]
-        if generated_at != baseline_at or states != run['sourceStates']:
+        if generated_at != baseline_at or states != run['sourceStates'] or run['window']['previous'] != self.business.briefing.store.checkpoint():
             raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
 
     def invoke(self, method, request_id=None, **args):
@@ -61,6 +61,9 @@ class BriefingRuns:
             row = self.db.execute("SELECT document FROM briefing_runs ORDER BY (phase IN ('starting','collecting','model')) DESC, rowid DESC LIMIT 1").fetchone()
             return public_run(json.loads(row[0])) if row else {'phase': 'idle'}
         if method == 'result':
+            receipt = self.business.briefing.store.collection(request_id)
+            if receipt:
+                return self.business.collection_result(receipt)
             row = self.db.execute('SELECT document FROM reports WHERE id=?', (request_id,)).fetchone()
             return json.loads(row[0]) if row else None
         if method == 'get':
@@ -81,23 +84,27 @@ class BriefingRuns:
         existing = self.db.execute('SELECT document FROM briefing_runs WHERE id=?', (request_id,)).fetchone()
         if existing:
             run = json.loads(existing[0])
-            if [run['date'], run['record']['notes'], run['sources']] != [record['date'], record['notes'], sources]:
+            if [run.get('requestedDate',run['date']), run['record']['notes'], run['sources']] != [record['date'], record['notes'], sources]:
                 raise ValueError('同一操作标识不能用于不同简报或来源。')
             if run['phase'] in ACTIVE:
                 raise ValueError('简报正在生成，请等待完成或取消。')
             saved = self.invoke('result', request_id)
             if saved:
                 return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
-            if run.get('protocol') != 'single-agent-v1':
+            if run.get('protocol') != 'single-agent-window-v2':
                 raise ValueError('旧版简报任务无法继续，请新建简报任务；原记录和来源游标未更改。')
             self.assert_current(run)
             return run
         if self.active():
             raise ValueError('简报正在生成，请等待完成或取消。')
+        run_at = stamp()
+        window = self.business.collection_window(run_at)
+        requested_date = record['date']
+        record = {**record,'date':window['day']}
         current = self.business.briefing.briefing_for_date(record['date'])
-        run = {'protocol': 'single-agent-v1', 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
+        run = {'protocol':'single-agent-window-v2', 'requestedDate':requested_date, 'window':window, 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
                'context': args.get('context', {}), 'phase': 'starting', 'message': '正在准备简报…',
-               'createdAt': stamp(), 'runAt': stamp(), 'collected': [], 'submissions': [],
+               'createdAt': stamp(), 'runAt':run_at, 'collected': [], 'submissions': [],
                'rules': self.serialize(self.business.briefing.list_rules(enabled_only=True)),
                'baseline': self.serialize(self.business.briefing.get_briefing(current.id)) if current else {}}
         previous = self.db.execute('SELECT document FROM reports WHERE id=?', (request_id,)).fetchone()
@@ -107,5 +114,5 @@ class BriefingRuns:
                 raise ValueError('同一操作标识不能用于不同简报。')
             return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
         run['sourceStates'] = [self.business.source_cursors(source['source'], source['accountId'], source) for source in sources]
-        run['windows'] = self.business.source_windows(run['date'], run['runAt'], sources)
+        run['windows'] = [window['start']] * len(sources)
         return self.save(run, {})

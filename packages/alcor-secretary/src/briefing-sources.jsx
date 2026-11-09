@@ -1,8 +1,8 @@
 import { Notice } from './notice.jsx'
 import { BriefingToggle } from './briefing-toggle.jsx'
 import { briefingSourceGroup, briefingGroupEnabled } from '../../alcor-organizer/src/source-groups.js'
-import React, { useEffect, useState } from 'react'
-import { Button, Checkbox, IconRefreshOutlineRegular, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import React, { useEffect, useState, useSyncExternalStore } from 'react'
+import { Button, Checkbox, IconRefreshOutlineRegular, IconChevronRightOutlineRegular, IconChevronLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sourceKey, sourceName, briefingScope, mergeSources, selectCourseScope, sourceOwner, briefingSourceCards, canonicalPackage } from './briefing-source-selection.js'
 
 const call = async (api, method, args = {}) => {
@@ -59,6 +59,13 @@ export function BriefingSourceControls({ api, owner, disabled = false }) {
 export function PluginBriefingSources({ api, subject }) {
   if (subject.kind !== 'bundle' || canonicalPackage(subject.pkg.name) !== '@alcor/elearning') return null
   return <section className="alcor-plugin-briefing" data-plugin-briefing={subject.pkg.name}><h2>{canonicalPackage(subject.pkg.name) === '@alcor/elearning' ? '课程范围' : '简报来源'}</h2><BriefingSourceControls api={api} owner={subject.pkg.name} disabled={!subject.pkg.enabled} /></section>
+}
+
+export function BriefingPluginReturn({ subject, navigation, onReturn }) {
+  const visit = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
+  if (!visit || visit.returning || !visit.view?.settings || !subject.pkg
+    || visit.packageName && canonicalPackage(visit.packageName) !== canonicalPackage(subject.pkg.name)) return null
+  return <Button variant="outline" size="sm" onClick={onReturn}><IconChevronLeftOutlineRegular size={16} />返回简报设置</Button>
 }
 
 export function BriefingSources({ api, openPlugins }) {

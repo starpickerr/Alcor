@@ -7,8 +7,8 @@ const resourceId = z.string().regex(/^[A-Za-z0-9._:-]{1,80}$/)
 const pluginSources = z.array(z.object({ id: resourceId, account_id: z.string().min(1).max(200), label: z.string().min(1).max(200) })).max(200)
 const pluginPage = z.object({
   source_id: resourceId, account_id: z.string().min(1).max(200),
-  items: z.array(z.object({ source_id: z.string().min(1).max(500), title: z.string(), occurred_at: z.iso.datetime({ offset: true }), snippet: z.string().optional(), sender: z.string().optional(), url: z.string().optional(), payload: z.record(z.string(), z.json()).optional() })).max(100),
-  next_offset: z.number().int().nonnegative().nullable(), errors: z.array(z.string()).default([]),
+  items: z.array(z.object({ source_id: z.string().min(1).max(500), thread_id:z.string().optional(), published_at:z.iso.datetime({offset:true}).optional(), source_updated_at:z.iso.datetime({offset:true}).optional(), title: z.string(), occurred_at: z.iso.datetime({ offset: true }), snippet: z.string().optional(), sender: z.string().optional(), url: z.string().optional(), payload: z.record(z.string(), z.json()).optional() })).max(100),
+  next_offset: z.number().int().nonnegative().nullable(), truncated:z.boolean().optional(), errors: z.array(z.string()).default([]),
 })
 
 async function execute(ctx, name, args, signal) {

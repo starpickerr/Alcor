@@ -95,7 +95,7 @@ test('briefing revisions, source deduplication and collaboration configuration s
   const first = await invoke('briefing', 'run_pipeline', { briefing_date: '2026-11-05', sources, run_at: '2026-11-05T10:00:00Z' })
   const second = await invoke('briefing', 'run_pipeline', { briefing_date: '2026-11-05', sources, run_at: '2026-11-05T11:00:00Z' })
   assert.equal(second.mail.length, 1)
-  assert.equal(second.revisions.length, first.revisions.length + 1)
+  assert.equal(second.revisions.length, first.revisions.length)
   const task = await invoke('agent_hub', 'create_task', { payload: { title: 'Task', goal: 'Deliver', participants: [{ nativeAgentId: 'stella' }] }, request_id: randomUUID() })
   const participant = task.participants[0]
   const changed = await invoke('agent_hub', 'post_message', { task_id: task.taskId, body: 'Task persona', recipient_ids: [participant.participantId], intent: 'persona', expected_revision: task.revision, request_id: randomUUID() })

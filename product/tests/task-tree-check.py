@@ -28,7 +28,12 @@ def main():
         desktop.native_cli(home, 'tree-install', 'add', str(desktop.PACK), '--ignore-scripts')
         with desktop.desktop(playwright, home, 'task-tree') as (page, errors):
             page.set_viewport_size({'width': 1440, 'height': 1100})
-            business = lambda method, args=None: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': method, 'arguments': args or {}}})
+            zone = page.evaluate('Intl.DateTimeFormat().resolvedOptions().timeZone')
+            def business(method, args=None):
+                arguments = args or {}
+                if method in ('create_todo', 'add_subtask'):
+                    arguments = {**arguments, 'payload': {'timezone': zone, **arguments['payload']}}
+                return desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': method, 'arguments': arguments}})
             today = page.evaluate('new Date().toLocaleDateString("sv-SE")')
             yesterday = (datetime.fromisoformat(today) - timedelta(days=1)).date().isoformat()
             category = business('create_category', {'payload': {'name': '任务清单', 'color': '#597ac5'}})
@@ -50,6 +55,8 @@ def main():
             expect(card(project)).to_contain_text('1 项逾期')
             expect(card(project)).to_contain_text('5 项今天到期')
             expect(disclosure(project)).to_have_attribute('aria-expanded', 'false')
+            bounds = disclosure(project).bounding_box()
+            assert bounds['width'] >= 40 and bounds['height'] >= 40, bounds
             disclosure(project).focus()
             page.keyboard.press('Enter')
             expect(disclosure(project)).to_have_attribute('aria-expanded', 'true')
@@ -57,11 +64,9 @@ def main():
             expect(card(papers[0])).to_have_count(0)
             card(project).get_by_role('button', name='Real2Sim 十篇论文精读：5 项子事务今天到期', exact=True).click()
             expect(card(papers[0])).to_be_visible()
-            expect(card(done)).not_to_be_visible()
-            expect(workspace.get_by_text('论文的完整说明只在详情中展示。', exact=True)).to_have_count(0)
-            workspace.locator('.alcor-task-completed-children summary').click()
             expect(card(done)).to_be_visible()
-            workspace.locator('.alcor-task-completed-children summary').click()
+            expect(workspace.get_by_text('论文的完整说明只在详情中展示。', exact=True)).to_have_count(0)
+            expect(workspace.locator('.alcor-task-completed-children')).to_have_count(0)
             page.screenshot(path=str(artifacts / '01-tree-desktop.png'), animations='disabled')
 
             nav = workspace.get_by_role('navigation', name='事务清单', exact=True)
@@ -104,12 +109,41 @@ def main():
             disclosure(project).click()
             disclosure(day).click()
             card(papers[0]).get_by_role('button', name='完成事务', exact=True).click()
-            expect(card(papers[0])).not_to_be_visible()
+            expect(card(papers[0])).to_be_visible()
+            expect(card(papers[0]).get_by_role('button', name='重新打开', exact=True)).to_be_visible()
             assert business('get_todo', {'todo_id': papers[0]['id']})['status'] == 'completed'
             assert business('get_todo', {'todo_id': papers[1]['id']})['status'] != 'completed'
-            workspace.locator('.alcor-task-completed-children summary').click()
             card(papers[0]).get_by_role('button', name='重新打开', exact=True).click()
             assert business('get_todo', {'todo_id': papers[0]['id']})['status'] == 'todo'
+
+            finished = business('create_todo', {'payload': {'title': '已完成的十篇论文计划', 'category_id': category['id']}})
+            days = []
+            descendants = []
+            for index, count in enumerate([2, 4, 4, 0], start=1):
+                child = business('add_subtask', {'parent_id': finished['id'], 'payload': {'title': f'第 {index} 天阅读计划'}})
+                days.append(child)
+                descendants.extend(business('add_subtask', {'parent_id': child['id'], 'payload': {'title': f'第 {index} 天第 {paper + 1} 篇'}}) for paper in range(count))
+            business('complete_todo', {'todo_id': finished['id'], 'completed': True})
+            page.get_by_role('button', name='刷新', exact=True).click()
+            expect(disclosure(finished)).to_have_attribute('aria-expanded', 'false')
+            disclosure(finished).click(position={'x': 3, 'y': 3})
+            expect(disclosure(finished)).to_have_attribute('aria-expanded', 'true')
+            expect(card(finished)).to_contain_text('已完成 4/4')
+            for child in days:
+                expect(card(child)).to_be_visible()
+            for child in descendants:
+                expect(card(child)).to_have_count(0)
+            expect(workspace.locator('.alcor-task-completed-children')).to_have_count(0)
+            expect(panel).to_have_count(0)
+            disclosure(days[0]).click()
+            expect(card(descendants[0])).to_be_visible()
+            expect(card(descendants[1])).to_be_visible()
+            disclosure(finished).focus()
+            page.keyboard.press('Space')
+            expect(card(days[0])).to_have_count(0)
+            page.keyboard.press('Space')
+            expect(card(days[0])).to_be_visible()
+            page.screenshot(path=str(artifacts / '04-completed-tree-desktop.png'), animations='disabled')
 
             page.emulate_media(color_scheme='dark')
             page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')

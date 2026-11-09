@@ -153,7 +153,7 @@ class BriefingService:
         return (self.store.get_briefing(briefing_id)
                 or self.store.get_briefing(briefing_id + "-morning"))
 
-    def start_briefing(
+    def _initial_briefing(
         self,
         briefing_date: Optional[str] = None,
         title: str = "",
@@ -163,45 +163,46 @@ class BriefingService:
         now = _now_iso()
         existing = self.briefing_for_date(day.isoformat())
         if existing is None:
-            return self.store.upsert_briefing(
-                Briefing(
-                    id=briefing_id,
-                    status="running",
-                    title=title.strip(),
-                    body="",
-                    fetched_count=0,
-                    kept_count=0,
-                    filtered_count=0,
-                    error_message="",
-                    generated_at=None,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-        return self.store.upsert_briefing(
-            Briefing(
-                id=existing.id,
+            return Briefing(
+                id=briefing_id,
                 status="running",
-                title=title.strip() or existing.title,
-                body=existing.body,
-                fetched_count=existing.fetched_count,
-                kept_count=existing.kept_count,
-                filtered_count=existing.filtered_count,
-                error_message=existing.error_message,
-                generated_at=existing.generated_at,
-                created_at=existing.created_at,
+                title=title.strip(),
+                body="",
+                fetched_count=0,
+                kept_count=0,
+                filtered_count=0,
+                error_message="",
+                generated_at=None,
+                created_at=now,
                 updated_at=now,
-                window_start=existing.window_start,
-                window_end=existing.window_end,
-                mail_snapshot_available=existing.mail_snapshot_available,
-                rule_text=existing.rule_text,
-                source_windows=existing.source_windows,
-                updated_sources=existing.updated_sources,
             )
+        return Briefing(
+            id=existing.id,
+            status="running",
+            title=title.strip() or existing.title,
+            body=existing.body,
+            fetched_count=existing.fetched_count,
+            kept_count=existing.kept_count,
+            filtered_count=existing.filtered_count,
+            error_message=existing.error_message,
+            generated_at=existing.generated_at,
+            created_at=existing.created_at,
+            updated_at=now,
+            window_start=existing.window_start,
+            window_end=existing.window_end,
+            mail_snapshot_available=existing.mail_snapshot_available,
+            rule_text=existing.rule_text,
+            source_windows=existing.source_windows,
+            updated_sources=existing.updated_sources,
         )
 
-    def complete_briefing(self, briefing_id: str, payload: dict) -> dict:
+    def start_briefing(self, briefing_date=None, title=""):
+        return self.store.upsert_briefing(self._initial_briefing(briefing_date, title))
+
+    def complete_briefing(self, briefing_id: str, payload: dict, *, collection=None, source_items=(), unchanged=False) -> dict:
         existing = self.store.get_briefing(briefing_id)
+        if existing is None and collection:
+            existing = self._initial_briefing(collection['window']['day'])
         if existing is None:
             raise KeyError(f"briefing not found: {briefing_id}")
         if not isinstance(payload, dict):
@@ -244,6 +245,7 @@ class BriefingService:
         snapshots = None
         staged_run_id = payload.get("staged_run_id") if status != "failed" else None
         staged_sources = self.store.staged_source_map(staged_run_id) if staged_run_id else {}
+        staged_sources.update({item.id: item for item, _ in source_items})
         if "items" in payload:
             raw_items = payload.get("items")
             if not isinstance(raw_items, list):
@@ -271,10 +273,10 @@ class BriefingService:
             ):
                 raise ValueError("mail must be a list of classified candidate snapshots")
         self.store.save_snapshot(finished, snapshots, payload.get("trigger", "manual"), mail,
-                                 payload.get("cursor_updates"), staged_run_id)
+                                 payload.get("cursor_updates"), staged_run_id, collection=collection, source_items=source_items, unchanged=unchanged)
         detail = self.get_briefing(briefing_id)
         assert detail is not None
-        if status != "failed":
+        if status != "failed" and not unchanged:
             self.actions.prepare(detail)
             from .outbox import dispatch_pending
             dispatch_pending(self.store, todos=self._todos, calendar=self._calendar)
@@ -289,14 +291,6 @@ class BriefingService:
         return BriefingPipeline(self).run(
             briefing_date=briefing_date, operation=operation, trigger=trigger,
             sources=sources, draft=draft, run_at=run_at, acquire_lock=acquire_lock)
-
-    def update_item_status(self, item_id: str, status: str) -> BriefingItem:
-        if status not in _ITEM_STATUSES:
-            raise ValueError("status must be undo, done, ignored, or follow_up")
-        updated = self.store.update_item_status(item_id, status, _now_iso())
-        if updated is None:
-            raise KeyError(f"briefing item not found: {item_id}")
-        return updated
 
     # ------------------------------------------------------------------
     # Source catalog

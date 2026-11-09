@@ -28,10 +28,10 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.61.tgz` 与可选的 `alcor-apple-sync-0.1.17.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.62.tgz` 与可选的 `alcor-apple-sync-0.1.17.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
 
 ```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.61.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.62.tgz --ignore-scripts
 dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.17.tgz --ignore-scripts
 ```
 
@@ -150,7 +150,7 @@ launcher 不继承模型 API Key 等宿主变量。模型配置通过原生 prof
 
 2026-11-05 后端：已迁入原事务、日程、账单、简报与 AgentHub 的独立领域服务。2026-11-07 起 AgentHub 独立为开发者插件，协作数据归其私有目录，Stella 不再开放协作 `catalog`。事务、日程、账单与简报仍由页面和 `stella_business` 共用权威对象，业务库位于当前 DSH Profile 的 `stella/business/`，不使用 macOS Keychain。层级／依赖／重复、准确账目／期间／XLSX、简报修订／行动／outbox 均可通过 `catalog` 查询并调用。现有开发记录幂等迁入，原 KV 保留；旧 Stella 私人业务库仍待离线迁移。
 
-简报可选择使用当前模型整理。通过 Alcor 对话配置已连接的邮件／eLearning MCP 来源，凭据沿用 DSH；来源分页、增量窗口、部分失败和结构化校验共用保存流程，提交后更新游标。模型会接收来源正文，过大的原文可能超出上下文，失败后不更新游标。事务桌面提醒由持久回执管理，失败重试不重跑 Agent；DSH 仍是唯一 Agent 调度器。Apple 桥随独立 Apple 同步插件构建，原生配置页已接，系统实际授权与真实数据同步尚未验证。前端高级入口仍按 [功能对照](feature-parity.md) 标注，不能把后端 API 可用视为全部页面验收完成。
+简报可选择使用当前模型整理。通过 Alcor 对话配置已连接的邮件／eLearning MCP 来源，凭据沿用 DSH；来源统一使用上次成功检查点与前一自然日零点中的较晚者。任一来源失败会保留上次简报和游标，重试复用成功来源。正文、来源游标、修订和采集回执由同一 SQLite 事务提交。模型会接收来源正文，过大的原文可能超出上下文，失败后不更新游标。事务桌面提醒由持久回执管理，失败重试不重跑 Agent；DSH 仍是唯一 Agent 调度器。Apple 桥随独立 Apple 同步插件构建，原生配置页已接，系统实际授权与真实数据同步尚未验证。前端高级入口仍按 [功能对照](feature-parity.md) 标注，不能把后端 API 可用视为全部页面验收完成。
 
 - 首次保留当前 DSH 页面与会话；由模式菜单进入 Alcor，之后恢复本窗口上次模式。窗口之间不监听彼此的模式变更。
 - 切换只恢复当前模式的页面、会话引用；不会创建会话、调用模型或改写已有会话。秘书新会话使用 `stella`；隔离预览在 DSH 新会话创建时读取并显式绑定宿主当前默认 Preset，避免复用秘书空会话而覆盖草稿，读取失败会拒绝创建。本隔离预览的默认值是 `standard`，原生安装不挂接该事件。

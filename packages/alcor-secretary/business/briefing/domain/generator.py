@@ -49,17 +49,30 @@ def _sort_key(candidate: SelectedCandidate) -> tuple:
             -occurred.timestamp(), candidate.item.source_id)
 
 
+def thread_key(item):
+    return item.source, item.account_id, item.payload.get("entity_id") or item.thread_id or item.source_id
+
+
+def report_body(cards):
+    sections = []
+    for key, label in (("action", "需要关注"), ("fyi", "信息更新")):
+        entries = [f"### {card['title']}\n{card['payload'].get('_briefing_report') or card['snippet']}" for card in cards if card['section']==key]
+        if entries:
+            sections.append("## " + label + "\n\n" + "\n\n".join(entries))
+    return "\n\n".join(sections) or "本时间窗口内没有新的精选信息。"
+
+
 def _merge_threads(candidates: Sequence[SelectedCandidate]) -> list[SelectedCandidate]:
     """Keep the best card and every selected summary from each thread."""
     threads: dict[tuple, list[SelectedCandidate]] = {}
     for candidate in candidates:
         item = candidate.item
-        key = (item.source, item.account_id, item.thread_id or item.source_id)
+        key = thread_key(item)
         threads.setdefault(key, []).append(candidate)
     merged = []
     for members in threads.values():
         best = min(members, key=_sort_key)
-        summary = "\n".join(row.item.snippet for row in sorted(members, key=lambda row: row.item.occurred_at))
+        summary = "\n".join(dict.fromkeys(row.item.snippet for row in sorted(members, key=lambda row: row.item.occurred_at)))
         merged.append(replace(best, item=replace(best.item, snippet=summary)))
     return merged
 
@@ -216,7 +229,7 @@ class AgentBriefingGenerator:
         tool.validate(result)
         return result
 
-    def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None, preserved_reports=None):
+    def generate(self, rows, rules, *, briefing_date, window_start, window_end, preserved_decisions=None, preserved_reports=None, previous_reports=None):
         self._check_cancelled()
         rule_text = rules_document(rules)
         entries, by_id = [], {}
@@ -236,7 +249,7 @@ class AgentBriefingGenerator:
         global_result = None
         # A small fresh window can be reviewed and written in one pass. Larger or
         # incremental windows retain bounded, durable checkpoints in the same Agent.
-        if (self.global_mode and entries and not decisions and not preserved_reports
+        if (self.global_mode and entries and not decisions and not preserved_reports and not previous_reports
                 and len(entries) <= 20 and len(json.dumps(entries, ensure_ascii=False)) <= 24000):
             schema = decision_schema()
             schema['properties'].update({
@@ -250,7 +263,7 @@ class AgentBriefingGenerator:
             tool = ResultTool('briefing_global_result', schema,
                 lambda payload: validate_decisions(payload, ids))
             task = (decision_task(entries, window_start, window_end)
-                + '\n同一份结果还须写 body 与 reports。按 source、account_id、thread_id（无 thread_id 时 source_id）合并精选成员；'
+                + '\n同一份结果还须写 body 与 reports。按 source、account_id 和 metadata.entity_id（其次 thread_id、source_id）合并精选成员；'
                 '每个线程以 action 优先、score 较高、时间较新、source_id 字典序较小的成员 ID 为卡片 ID。'
                 'source_item_ids 和 reports 恰好覆盖每张精选卡片 ID，报告须覆盖线程全部精选成员；'
                 '按同样顺序排列，写具体事实、变化与截止时间，不要重复每日大标题，不得编造或声称已执行操作。无精选时正文写状态，列表留空。')
@@ -282,7 +295,7 @@ class AgentBriefingGenerator:
         members_by_thread = {}
         for row in kept:
             member = row.item
-            key = (member.source, member.account_id, member.thread_id or member.source_id)
+            key = thread_key(member)
             members_by_thread.setdefault(key, []).append({
                 "id": member.id,
                 "title": member.title, "sender": member.sender, "occurred_at": member.occurred_at,
@@ -296,8 +309,7 @@ class AgentBriefingGenerator:
                   "snippet": row.item.snippet, "sort_order": index,
                   **{key: getattr(row.item, key) for key in ("source", "account_id", "source_id", "thread_id", "sender", "title", "occurred_at", "url")},
                   "payload": {**row.item.payload, "_briefing_reason": decisions[row.item.id]["reason"],
-                              "_briefing_members": members_by_thread[(row.item.source, row.item.account_id,
-                                                                        row.item.thread_id or row.item.source_id)]}}
+                              "_briefing_members": members_by_thread[thread_key(row.item)]}}
                  for index, row in enumerate(ranked)]
         summaries = [{"id": row.item.id, "source": row.item.source, "sender": row.item.sender,
                       "title": row.item.title, "summary": row.item.snippet, "section": row.section,
@@ -306,10 +318,13 @@ class AgentBriefingGenerator:
                       "body_length": len(entries_by_id[row.item.id]["body"]),
                       "members": [{**{key: value for key, value in member.items() if key != "body"},
                                    "body_preview": member["body"][:2000], "body_length": len(member["body"])}
-                                  for member in members_by_thread[(row.item.source, row.item.account_id,
-                                                                   row.item.thread_id or row.item.source_id)]],
+                                  for member in members_by_thread[thread_key(row.item)]],
                       "metadata": {key: value for key, value in row.item.payload.items() if key != "body"}}
                      for row in ranked]
+        for summary, row in zip(summaries, ranked):
+            previous = (previous_reports or {}).get(thread_key(row.item))
+            if previous:
+                summary['previous_report'] = previous[:2400]
         reports = dict(preserved_reports or {})
         parts = []
         if global_result is not None:
@@ -333,11 +348,14 @@ class AgentBriefingGenerator:
                 "覆盖本批每项精选信息，按主题组织来源事实、关键变化、时间与截止要求、用户需要决定或执行的事项，并明确区分事实和判断。"
                 "source_item_ids 和 reports 的 id 仅使用本批 expected_ids，每个恰好一次；成员 ID 仅作原文参考，不单独输出。"
                 "同时为每个条目提交 reports：逐条写出完整内容，合并线程须覆盖所有精选成员；不要只复制来源正文或一句摘要。"
-                "完整原文和元数据见本次附带的原文数据，按成员 id 对应；阅读完整 body，不要机械复制全文，不得编造缺失信息。"
+                "对新增成员阅读完整 body，将同一事件的新进展与已有事实整合；采用最新的有效更正，注明原来源与时间。既有成员使用已审阅的摘要与报告，无需重新筛选原文。"
                 "不得声称创建、同步或设置提醒已经成功，业务执行结果由系统另行展示。没有精选事项时给出简短状态说明。\n" + json.dumps({
                     "date": briefing_date, "window_start": window_start, "window_end": window_end, "expected_ids": ids, "items": writing_items(batch),
                     "candidate_count": len(entries), "selected_count": len(kept), "filtered_count": len(entries) - len(kept),
-                }, ensure_ascii=False), rule_text, tool, read_entries=[row for row in entries if row["id"] in member_ids])
+                }, ensure_ascii=False), rule_text, tool, read_entries=[
+                    ({**row, "body": decisions[row["id"]].get("summary") or row["snippet"], "metadata": {k:v for k,v in row["metadata"].items() if k in ("source_updated_at","published_at","due_at","entity_id")}}
+                     if row["id"] in (preserved_decisions or {}) else row)
+                    for row in entries if row["id"] in member_ids])
             parts.append(result["body"].strip())
             reports.update({row["id"]: row["content"].strip() for row in result["reports"]})
             if self.progress:
@@ -346,5 +364,5 @@ class AgentBriefingGenerator:
         for card in cards:
             card["payload"]["_briefing_report"] = reports[card["source_item_id"]]
         return {"title": briefing_title(briefing_date),
-                "body": ("\n\n".join(parts) if not preserved_reports else "\n\n".join(reports[row.item.id] for row in ranked)) or "本时间窗口内没有新的精选信息。",
+                "body": ("\n\n".join(parts) if not preserved_reports else report_body(cards)) or "本时间窗口内没有新的精选信息。",
                 "items": cards, "mail": mail, "rule_text": rule_text}

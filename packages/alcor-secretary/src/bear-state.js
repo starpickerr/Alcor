@@ -77,7 +77,11 @@ export function createBearState(storage) {
   }
   function settings() {
     const value = read('settings', {})
-    return { enabled:value.enabled !== false, hover:value.hover !== false, position:normalizePosition(value.position) }
+    return {
+      enabled:value.enabled !== false, hover:value.hover !== false, position:normalizePosition(value.position),
+      name:typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0,40) : 'Alcor 小熊',
+      size:[48,60,84].includes(value.size) ? value.size : 60,
+    }
   }
   let snapshot = settings()
   function refresh() { snapshot = settings(); for (const listener of listeners) listener() }

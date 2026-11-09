@@ -20,7 +20,7 @@ const table = {
   },
   briefing: {
     read: ['catalog', 'list_briefings', 'get_briefing', 'get_revision', 'briefing_for_date', 'list_rules', 'get_rule', 'get_cursor', 'list_action_rules', 'get_preferences', 'get_overview', 'get_action_targets', 'list_revisions', 'list_sources'],
-    local: ['update_item_status', 'create_rule', 'update_rule', 'create_action_rule', 'update_preferences'],
+    local: ['create_rule', 'update_rule', 'create_action_rule', 'update_preferences'],
     resource: ['update_action'],
     irreversible: ['delete_rule', 'delete_action_rule'],
     external: ['generate', 'resume_generation', 'cancel_generation', 'generation_status', 'available_sources'],

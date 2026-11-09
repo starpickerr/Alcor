@@ -2,7 +2,7 @@ import { Notice } from './notice.jsx'
 import { BriefingToggle } from './briefing-toggle.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Input, Modal, IconRefreshOutlineRegular, IconSettingsOutlineMedium, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Empty, Field, showTime } from './business-pages.jsx'
+import { Empty, Field } from './business-pages.jsx'
 import { localDate } from './presentation.js'
 import { BriefingReport, markdownLabels } from './briefing-report.jsx'
 import { BriefingSources } from './briefing-sources.jsx'
@@ -55,31 +55,34 @@ function BriefingRules({ api }) {
   </section>
 }
 
-function BriefingTimeline({ revisions, selected, onSelect }) {
+function BriefingTimeline({ revisions, selected, onSelect, timeZone }) {
   const ordered = [...revisions].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.number - a.number)
   return <aside className="alcor-briefing-revisions" aria-label="更新历史"><h2>更新历史 <small>{revisions.length}</small></h2>
     <ol className="alcor-briefing-timeline" aria-label="简报更新历史">
-      <li data-status="current"><button type="button" aria-current={!selected ? 'true' : undefined} onClick={() => onSelect(0)}><strong>当前版本</strong><span>最新内容与事项状态</span></button></li>
+      <li data-status="current"><button type="button" aria-current={!selected ? 'true' : undefined} onClick={() => onSelect(0)}><strong>当前版本</strong><span>最新简报内容</span></button></li>
       {ordered.map(row => <li data-status={row.status} key={row.number}><button type="button" data-revision={row.number} aria-current={selected === row.number ? 'true' : undefined} onClick={() => onSelect(row.number)}>
-        <span className="alcor-revision-heading"><time dateTime={row.created_at}>{new Date(row.created_at).toLocaleTimeString('zh-CN', { hour12: false })}</time><small>#{row.number}</small></span>
-        <span>{new Date(row.created_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} · {row.trigger === 'scheduled' ? '自动生成／更新' : '手动生成／更新'}</span>
+        <span className="alcor-revision-heading"><time dateTime={row.created_at}>{new Date(row.created_at).toLocaleTimeString('zh-CN', { hour12: false, timeZone })}</time><small>#{row.number}</small></span>
+        <span>{new Date(row.created_at).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', timeZone })} · {row.trigger === 'scheduled' ? '自动生成／更新' : '手动生成／更新'}</span>
         <span className="alcor-revision-status">{statusNames[row.status]}</span>
       </button></li>)}
     </ol>
   </aside>
 }
 
-export function BriefingWorkspace({ api, briefingContext, openSession, openPlugins }) {
+export function BriefingWorkspace({ api, briefingContext, openSession, openPlugins, initialView }) {
   const [history, setHistory] = useState([])
-  const [selected, setSelected] = useState('')
-  const [revision, setRevision] = useState(0)
+  const [selected, setSelected] = useState(initialView?.selected ?? '')
+  const [revision, setRevision] = useState(initialView?.revision ?? 0)
   const [detail, setDetail] = useState(null)
   const [sources, setSources] = useState([])
   const [progress, setProgress] = useState({ phase: 'idle' })
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [settings, setSettings] = useState(false)
+  const [settings, setSettings] = useState(initialView?.settings ?? false)
+  const [zone, setZone] = useState(''), [zoneInput, setZoneInput] = useState(initialView?.zoneInput ?? '')
+  const [zoneSaving, setZoneSaving] = useState(false), [zoneError, setZoneError] = useState('')
+  const day = zone ? new Date().toLocaleDateString('sv-SE',{timeZone:zone}) : localDate()
   const settingsButton = useRef(null)
   const settingsHeading = useRef(null)
   useEffect(() => { if (settings) settingsHeading.current?.focus() }, [settings])
@@ -98,7 +101,8 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   const selection = useRef('')
   selection.current = selected
   async function refresh() {
-    const [rows, configured] = await Promise.all([call(api, 'list_briefings'), call(api, 'list_sources')])
+    const [rows, configured, preferences] = await Promise.all([call(api, 'list_briefings'), call(api, 'list_sources'), call(api, 'get_preferences')])
+    setZone(preferences.time_zone || '')
     setHistory(rows); setSources(configured)
     if (!selection.current && rows.length) setSelected(rows[0].id)
     if (selection.current) {
@@ -122,7 +126,7 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
         const key = `${value.requestId}:${value.phase}`
         if (key !== lastRun && ['completed', 'failed', 'cancelled', 'interrupted'].includes(value.phase)) {
           await refresh()
-          if (value.phase === 'completed' && value.briefingId && !currentRevision.current) { setSelected(value.briefingId); setRevision(0); setDetail(await call(api, 'get_briefing', { briefing_id: value.briefingId })) }
+          if (value.phase === 'completed' && value.briefingId && !currentRevision.current && (!initialView || lastRun)) { setSelected(value.briefingId); setRevision(0); setDetail(await call(api, 'get_briefing', { briefing_id: value.briefingId })) }
         }
         lastRun = key
       } catch (error) { if (!disposed) setError(error.message) } finally { polling = false }
@@ -139,7 +143,7 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   async function generate() {
     setBusy(true); setError('')
     try {
-      const run = unwrap(await api.startBriefing({ date: localDate(), notes: '', ...briefingContext(), requestId: crypto.randomUUID() }))
+      const run = unwrap(await api.startBriefing({ date: day, notes: '', ...briefingContext(), requestId: crypto.randomUUID() }))
       setProgress(run)
     } catch (error) { setError(error.message) } finally { setBusy(false) }
   }
@@ -153,16 +157,41 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
     try { await call(api, method, args, true); setDetail(await call(api, 'get_briefing', { briefing_id: selected })); setRevision(0); return true }
     catch (error) { setError(error.message) } finally { setBusy(false) }
   }
-  const today = history.some(row => row.id === `brf-${localDate()}`)
+  const today = history.some(row => row.id.slice(4,14) === day)
   const report = detail?.briefing
   if (settings) return <div className="alcor-business" data-briefing-settings>
     <header className="alcor-app-header"><div className="alcor-actions"><Button variant="ghost" aria-label="返回简报" title="返回简报" onClick={closeSettings}><IconChevronLeftOutlineRegular size={18} /></Button><h1 ref={settingsHeading} tabIndex={-1}>简报设置</h1></div></header>
+    {error && <Notice tone="error" role="alert">{error}</Notice>}
     <div className="alcor-page-content alcor-briefing-settings">
-      <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => { setSettings(false); openPlugins(name) }} /></section>
+      <div className="alcor-briefing-settings-column">
+        <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, selected, revision, zoneInput})} /></section>
+        <section aria-labelledby="alcor-briefing-timezone-heading">
+          <h2 id="alcor-briefing-timezone-heading">简报时区</h2>
+          <form className="alcor-briefing-timezone" onSubmit={async event => {
+            event.preventDefault()
+            setZoneSaving(true); setZoneError('')
+            try {
+              const value = zoneInput.trim()
+              if (value) new Intl.DateTimeFormat('zh-CN',{timeZone:value})
+              const preferences = await call(api,'update_preferences',{payload:{time_zone:value}},true)
+              setZone(preferences.time_zone); setZoneInput(preferences.time_zone)
+            } catch { setZoneError('时区未保存，请使用有效的时区名称。') }
+            finally { setZoneSaving(false) }
+          }}>
+            <Input aria-label="简报时区" value={zoneInput} disabled={zoneSaving} placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onChange={event => { setZoneInput(event.target.value); setZoneError('') }} />
+            <div className="alcor-briefing-timezone-actions">
+              <Button variant="ghost" size="sm" disabled={zoneSaving || !zoneInput.trim()} onClick={() => { setZoneInput(''); setZoneError('') }}>跟随系统</Button>
+              <Button type="submit" variant="outline" size="sm" disabled={zoneSaving || zoneInput.trim()===zone}>{zoneSaving ? '正在保存…' : '保存时区'}</Button>
+            </div>
+            {zoneError && <Notice tone="error" role="alert">{zoneError}</Notice>}
+          </form>
+        </section>
+      </div>
       <BriefingRules api={api} />
     </div>
   </div>
-  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => setSettings(true)}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
+  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
     {(error || progress.phase !== 'idle') && <div className="alcor-page-feedback">
       {error && <Notice tone="error" role="alert" className="alcor-error">{error}</Notice>}
       {active(progress) && <Notice role="status">{progress.message}<Button variant="ghost" disabled={busy} onClick={() => call(api, 'cancel_generation', { requestId: progress.requestId }).then(setProgress).catch(error => setError(error.message))}>取消生成</Button></Notice>}
@@ -170,9 +199,9 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
       {progress.sessionId && <Button variant="ghost" size="sm" onClick={() => openSession(progress.sessionId)}>执行详情</Button>}
     </div>}
 
-    <div className="alcor-briefing-layout"><aside className="alcor-briefing-history"><h2>历史简报</h2>{history.map(row => <button type="button" key={row.id} aria-current={row.id === selected ? 'true' : undefined} onClick={() => { setSelected(row.id); setRevision(0) }}><strong>{row.title}</strong><small>{statusNames[row.status]} · {row.kept_count} 条精选信息 · {row.id.slice(4)}</small></button>)}</aside>
-      <article className="alcor-briefing-detail">{report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div><p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">{showTime(report.generated_at)}</p>{report.error_message && <Notice role="status">{report.error_message}</Notice>}
-        <BriefingReport sources={sources} detail={detail} revision={revision} busy={running} createTask={async item => {
+    <div className="alcor-briefing-layout"><aside className="alcor-briefing-history"><h2>历史简报</h2>{history.map(row => <button type="button" key={row.id} aria-current={row.id === selected ? 'true' : undefined} onClick={() => { setSelected(row.id); setRevision(0) }}><strong>{row.title}</strong><small>{statusNames[row.status]} · {row.id === selected && !revision && detail?.briefing.id === row.id ? detail.briefing.kept_count : row.kept_count} 条精选信息 · {row.id.slice(4)}</small></button>)}</aside>
+      <article className="alcor-briefing-detail">{report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div><p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">生成于 {new Date(report.generated_at).toLocaleString('zh-CN',{timeZone:zone || undefined})}</p>{report.error_message && <Notice role="status">{report.error_message}</Notice>}
+        <BriefingReport timeZone={zone || undefined} sources={sources} detail={detail} revision={revision} busy={running} createTask={async item => {
           const receipt = detail.actions?.[item.id]?.todo
           if (['detached', 'deleted'].includes(receipt?.state) || receipt?.result?.operation === 'matching_required') throw new Error('请打开条目，选择并关联已有事务。')
           const result = await call(api, 'update_action', { item_id: item.id, payload: { kind: 'todo', operation: 'create', title: item.title } }, true)
@@ -180,9 +209,9 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
           setDetail(updated)
           if (!updated.actions?.[item.id]?.todo?.business && !updated.actions?.[item.id]?.todo?.target_id) throw new Error('事务尚未建立，请打开条目核对关联建议。')
           return result
-        }} renderActions={item => <><div className="alcor-actions"><select aria-label={`处理状态：${item.title}`} disabled={running || !!revision} value={item.status} onChange={event => mutate('update_item_status', { item_id: item.id, status: event.target.value })}>{Object.entries({ undo: '待处理', done: '已完成', ignored: '已忽略', follow_up: '继续关注' }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{['todo', 'calendar'].map(kind => { const action = detail.actions?.[item.id]?.[kind]; return <Button key={kind} variant="outline" disabled={running || !!revision} onClick={() => setDecision({ item, kind, operation: action?.target_id ? 'confirm_update' : 'create', start_at: '', end_at: '', target_id: '' })}>{action?.target_id ? '管理已关联' : '转为'}{kind === 'todo' ? '事务' : '日程'}</Button> })}</div>{Object.entries(detail.actions?.[item.id] || {}).filter(([kind, action]) => ['todo', 'calendar'].includes(kind) && action).map(([kind, action]) => <p className="alcor-muted" key={kind}>{kind === 'todo' ? '事务' : '日程'}：{({ succeeded: '已关联', ignored: '已忽略', deferred: '已推迟', suggested: '待确认', failed: '未成功', deleted: '原记录已删除', briefing_only: '仅在简报保留' })[action.state] || action.state}{action.error && ` · ${action.error}`}</p>)}</>} />
+        }} renderActions={item => <><div className="alcor-actions">{['todo', 'calendar'].map(kind => { const action = detail.actions?.[item.id]?.[kind]; return <Button key={kind} variant="outline" disabled={running || !!revision} onClick={() => setDecision({ item, kind, operation: action?.target_id ? 'confirm_update' : 'create', start_at: '', end_at: '', target_id: '' })}>{action?.target_id ? '管理已关联' : '转为'}{kind === 'todo' ? '事务' : '日程'}</Button> })}</div>{Object.entries(detail.actions?.[item.id] || {}).filter(([kind, action]) => ['todo', 'calendar'].includes(kind) && action).map(([kind, action]) => <p className="alcor-muted" key={kind}>{kind === 'todo' ? '事务' : '日程'}：{({ succeeded: '已关联', ignored: '已忽略', deferred: '已推迟', suggested: '待确认', failed: '未成功', deleted: '原记录已删除', briefing_only: '仅在简报保留' })[action.state] || action.state}{action.error && ` · ${action.error}`}</p>)}</>} />
       </> : <Empty mascot={!loading && !error} title={loading ? '正在读取简报…' : '还没有简报'}  />}</article>
-      <BriefingTimeline revisions={detail?.revisions || []} selected={revision} onSelect={setRevision} /></div>
+      <BriefingTimeline timeZone={zone || undefined} revisions={detail?.revisions || []} selected={revision} onSelect={setRevision} /></div>
     <Modal open={!!decision} title="处理简报事项" closeLabel="关闭" onClose={() => { if (!busy) setDecision(null) }} className="alcor-editor-dialog">{decision && <form onSubmit={async event => { event.preventDefault(); const options = decision.kind === 'calendar' && decision.operation === 'create' ? { start_at: new Date(decision.start_at).toISOString(), end_at: new Date(decision.end_at).toISOString() } : {}; if (await mutate('update_action', { item_id: decision.item.id, payload: { kind: decision.kind, operation: decision.operation, ...(decision.operation === 'link' ? { target_id: decision.target_id } : {}), ...options } })) setDecision(null) }}><h3>{decision.item.title}</h3><Field label="处理方式"><select value={decision.operation} onChange={event => setDecision({ ...decision, operation: event.target.value })}>{Object.entries({ create: '创建新记录', link: '关联已有记录', confirm_update: '按最新来源更新关联记录', keep_current: '保留关联记录现状', ignore: '忽略建议', defer: '稍后处理', keep: '仅在简报保留', unlink: '解除关联' }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>{decision.operation === 'link' && <Field label="关联记录"><select required value={decision.target_id} onChange={event => setDecision({ ...decision, target_id: event.target.value })}><option value="">选择已有记录</option>{targets.map(target => <option key={target.id} value={target.id}>{target.title}</option>)}</select></Field>}{decision.kind === 'calendar' && decision.operation === 'create' && <><Field label="开始时间"><Input type="datetime-local" required value={decision.start_at} onChange={event => setDecision({ ...decision, start_at: event.target.value })} /></Field><Field label="结束时间"><Input type="datetime-local" required value={decision.end_at} onChange={event => setDecision({ ...decision, end_at: event.target.value })} /></Field></>}<Button type="submit" variant="primary" disabled={busy}>确认处理</Button>{error && <Notice tone="error" role="alert">{error}</Notice>}</form>}</Modal>
   </div>
 }

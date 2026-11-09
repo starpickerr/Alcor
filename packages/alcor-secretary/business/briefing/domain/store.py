@@ -396,11 +396,12 @@ class BriefingStore:
                 continue
             if occurred <= start_at:
                 previous = self.get_source_item_by_key(item.source, item.account_id, item.source_id)
-                if previous:
-                    prior, _ = previous
-                    keys = ("due_at", "start_at", "end_at", "submission_status", "score", "grade", "workflow_state")
-                    if prior.title == item.title and all(prior.payload.get(key)==item.payload.get(key) for key in keys):
-                        continue
+                if not previous:
+                    continue
+                prior, _ = previous
+                keys = ("due_at", "start_at", "end_at", "submission_status", "score", "grade", "workflow_state")
+                if prior.title == item.title and all(prior.payload.get(key)==item.payload.get(key) for key in keys):
+                    continue
 
             email = EmailMessage(**snapshot["email"]) if snapshot["email"] else None
             result[key] = item, email
@@ -504,11 +505,41 @@ class BriefingStore:
                 """,
                 args,
             ).fetchall()
-            return [_briefing_from_row(row) for row in rows]
+            by_day = {}
+            for row in rows:
+                day = row['id'][4:14]
+                if day not in by_day or row['id'] == 'brf-' + day:
+                    by_day[day] = _briefing_from_row(row)
+            return list(by_day.values())
 
-    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None, cursor_updates=None, staged_run_id=None) -> None:
+    def _checkpoint(self, db):
+        row = db.execute('SELECT window_end FROM briefing_collections ORDER BY rowid DESC LIMIT 1').fetchone()
+        if row:
+            return row[0]
+        # Old releases stored successful snapshots but had no global collection receipt.
+        row = db.execute("""SELECT json_extract(snapshot,'$.briefing.window_end') AS finish FROM briefing_revisions
+                            WHERE json_extract(snapshot,'$.briefing.status')='completed' AND finish IS NOT NULL
+                            ORDER BY julianday(finish) DESC LIMIT 1""").fetchone()
+        return row[0] if row else None
+
+    def checkpoint(self):
+        with self._conn() as db:
+            return self._checkpoint(db)
+
+    def collection(self, request_id):
+        with self._conn() as db:
+            row = db.execute('SELECT receipt FROM briefing_collections WHERE request_id=?', (request_id,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def save_snapshot(self, briefing: Briefing, items: Optional[List[BriefingItem]], trigger: str = "manual", mail: Optional[List[dict]] = None, cursor_updates=None, staged_run_id=None, *, collection=None, source_items=(), unchanged=False) -> None:
         """Commit candidates, cursors, document, history and Outbox atomically."""
         with self._conn() as conn:
+            if collection:
+                conn.execute('BEGIN IMMEDIATE')
+                if self._checkpoint(conn) != collection['window']['previous']:
+                    raise ValueError('采集期间已有新的成功检查点，请重新生成简报。')
+                for item, email in source_items:
+                    self._upsert_source_item(conn, item, email)
             if staged_run_id and briefing.status in ("completed", "partial"):
                 staged = conn.execute("SELECT snapshot FROM briefing_source_staging WHERE run_id=?",
                                       (staged_run_id,)).fetchall()
@@ -519,23 +550,36 @@ class BriefingStore:
                     self._upsert_source_item(conn, item, email)
                 conn.execute("DELETE FROM briefing_source_staging WHERE run_id=?", (staged_run_id,))
                 conn.execute("DELETE FROM briefing_source_errors WHERE run_id=?", (staged_run_id,))
-            self._write_briefing(conn, briefing)
-            if items is not None:
+            if not unchanged:
+                self._write_briefing(conn, briefing)
+            if not unchanged and items is not None:
                 self._replace_items(conn, briefing.id, items)
-            if mail is not None:
+            if not unchanged and mail is not None:
                 conn.execute("DELETE FROM briefing_mail WHERE briefing_id=?", (briefing.id,))
                 conn.executemany("INSERT INTO briefing_mail VALUES (?,?,?)", [
                     (briefing.id, row["id"], _dump_payload(row)) for row in mail])
                 conn.execute("DELETE FROM briefing_candidates WHERE briefing_id=?", (briefing.id,))
                 conn.executemany("INSERT INTO briefing_candidates VALUES (?,?)", [
                     (briefing.id, row["id"]) for row in mail])
+            if collection:
+                for source, account_id, key, value in cursor_updates or []:
+                    if key == '_briefing_scope':
+                        prev = conn.execute('SELECT cursor_value FROM sync_state WHERE source=? AND account_id=? AND cursor_key=?',(source,account_id,key)).fetchone()
+                        if prev is None or prev[0] != value:
+                            conn.execute('DELETE FROM sync_state WHERE source=? AND account_id=?',(source,account_id))
             for source, account_id, key, value in cursor_updates or []:
                 conn.execute("""INSERT INTO sync_state
                     (source,account_id,cursor_key,cursor_value,updated_at) VALUES (?,?,?,?,?)
                     ON CONFLICT(source,account_id,cursor_key) DO UPDATE SET
                     cursor_value=excluded.cursor_value,updated_at=excluded.updated_at""",
                     (source, account_id, key, value, briefing.updated_at))
-            self._archive(conn, briefing, trigger)
+            if not unchanged:
+                self._archive(conn, briefing, trigger)
+            if collection:
+                revision = conn.execute('SELECT MAX(number) FROM briefing_revisions WHERE briefing_id=?', (briefing.id,)).fetchone()[0]
+                receipt = {**collection, 'briefingId': briefing.id, 'revision': revision, 'unchanged': unchanged}
+                conn.execute('INSERT INTO briefing_collections VALUES (?,?,?,?,?)',
+                             (receipt['id'], receipt['window']['end'], briefing.id, revision, _dump_payload(receipt)))
 
     def _archive(self, conn, briefing, trigger):
         cards = [_item_from_row(row) for row in conn.execute(
@@ -656,25 +700,6 @@ class BriefingStore:
                 (briefing_id,),
             ).fetchall()
             return [_item_from_row(row) for row in rows]
-
-    def update_item_status(
-        self, item_id: str, status: str, updated_at: str
-    ) -> Optional[BriefingItem]:
-        with self._conn() as conn:
-            cur = conn.execute(
-                """
-                UPDATE briefing_items
-                SET status = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (status, updated_at, item_id),
-            )
-            if cur.rowcount == 0:
-                return None
-            row = conn.execute(
-                "SELECT * FROM briefing_items WHERE id = ?", (item_id,)
-            ).fetchone()
-            return _item_from_row(row) if row else None
 
     # ------------------------------------------------------------------
     # Filter rules
