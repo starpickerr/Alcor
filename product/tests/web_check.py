@@ -114,7 +114,7 @@ def wait_secretary(page):
     if mode.count() and mode.get_attribute('aria-label').endswith('Alcor'):
         page.locator('.alcor-sidebar').wait_for()
     settings(page)
-    page.get_by_label('助手名称', exact=True).wait_for()
+    page.get_by_label('小熊名称', exact=True).wait_for()
     page.get_by_role('button', name='Close', exact=True).click()
 
 
@@ -181,12 +181,11 @@ def main():
                 page.get_by_role("button", name="事务", exact=True).click()
                 page.get_by_role("heading", name="事务", exact=True).wait_for()
                 assert page.request.post(url.split("/?")[0] + "/api/alcorSecretary/overview", data={}).ok
-                settings(page)
+                page.locator('.alcor-sidebar nav').get_by_role('button',name='人格',exact=True).click()
                 page.get_by_label("助手名称", exact=True).fill("Stella regression")
-                page.get_by_role("button", name="保存", exact=True).click()
+                page.get_by_role("button", name="保存人格", exact=True).click()
                 page.get_by_text("已保存", exact=True).wait_for()
                 assert rpc(page, url, 'alcorSecretary/overview')['displayName'] == 'Stella regression'
-                page.get_by_role("button", name="Close", exact=True).click()
                 start_secretary_chat(page)
                 composer = page.locator('[data-composer-input][contenteditable="true"]')
                 composer.fill("Read alcor_overview and report the result.")

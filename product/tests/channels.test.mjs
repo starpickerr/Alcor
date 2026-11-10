@@ -128,3 +128,68 @@ test('a personal follow-up may choose an authorized desktop instead of sending t
  assert.equal(delivery.state().receipts[0].status,'desktop')
  assert.equal(delivery.assigned(note.id),false)
 })
+
+test('new trusted QQ destinations stay enabled until revoked; old grants still expire', async () => {
+  const peer = { ...route, channel:'qq', owner:false, audience:'qq:account1:private:10002', peer:'10002' }
+  const rows = table()
+  const r = new ChannelRegistry(rows, () => ['inbox'])
+  let trusted = true
+  r.register({
+    id:'qq', account:'account1', label:'QQ', resolve:() => peer, messages:() => [],
+    send:async () => ({ status:'sent' }), canSend:() => true, trustedForDelivery:() => trusted,
+  })
+  const scoped = { allowInitiative:async () => {}, pendingFollowups:() => [] }
+  const delivery = new ChannelDelivery({}, r, { personal:{initiative:false}, storeForAudience:() => scoped }, table())
+  await delivery.configure(peer.sessionId, true)
+  const grant = delivery.state().grants[0]
+  assert.equal(grant.until, null)
+  assert.ok(delivery.valid(grant, Date.now() + 30 * 86400000))
+  assert.equal(delivery.valid({...grant, until:Date.now()-1}), false)
+  const { deliveryStateSchema } = await import('../../packages/alcor-secretary/src/channels/schema.js')
+  assert.deepEqual(deliveryStateSchema.parse(delivery.state()), delivery.state())
+  assert.equal((await delivery.settings()).targets[0].until, null)
+  trusted = false
+  assert.equal(delivery.valid(grant), false)
+  await assert.rejects(delivery.configure(peer.sessionId, true), /允许交流/)
+  await delivery.configure(peer.sessionId, false)
+  assert.equal(delivery.hasActiveGrants(), false)
+})
+
+test('quiet-time greetings use their original QQ grant and never switch to desktop', async () => {
+  const route = {sessionId:'onebot-private-5001',channel:'qq',account:'20001',kind:'private',
+    peer:'5001',label:'Friend',audience:'personal',owner:true}
+  const channels=new ChannelRegistry(table(),()=>[route.sessionId])
+  const messages=[], outcomes=[]
+  const note = {id:'hello',kind:'idle',idleGrant:'original',content:'聊聊吗？',due:Date.now()}
+  let pending = true
+  const personal = {
+    initiative:true, desktopDelivery:true,
+    considerIdle:async ({grant,sessionId,destination,allowed}) => {
+      assert.equal(sessionId,route.sessionId)
+      assert.equal(destination,'channel')
+      assert.equal(allowed(),true)
+      assert.ok(['original','replacement'].includes(grant))
+    },
+    pendingFollowups:()=>pending ? [note] : [],
+    nextFollowup:(_,accepts)=>pending && accepts(note) ? note : null,
+    reconsider:async (n,allowed,destinations) => {
+      assert.ok(allowed());assert.deepEqual(destinations,['channel'])
+      return {...n,stamp:0,destination:'channel'}
+    },
+    validReview:()=>true,
+    recordIdleOutcome:async (id,status)=>{outcomes.push({id,status});pending=false},
+  }
+  channels.register({id:'qq',account:'20001',label:'QQ',resolve:()=>route,messages:()=>[],
+    canSend:()=>true,trustedForDelivery:()=>true,send:async (_,text,allowed)=>{
+      assert.ok(allowed());messages.push(text);return {status:'sent',messageId:'synthetic'}
+    }})
+  await channels.catalog()
+  const delivery = new ChannelDelivery({},channels,{personal},table())
+  delivery.active=true
+  const grant = nonce => delivery.mutate(state=>{state.grants=[{route,nonce,until:null}]})
+  await grant('replacement');await delivery.drain()
+  assert.deepEqual(delivery.state().receipts,[])
+  await grant('original');await delivery.drain();await delivery.drain()
+  assert.deepEqual(messages,['聊聊吗？'])
+  assert.deepEqual(outcomes,[{id:'hello',status:'sent'}])
+})

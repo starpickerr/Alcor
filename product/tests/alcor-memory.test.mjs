@@ -1,3 +1,4 @@
+import { authorityStore } from '../../packages/alcor-secretary/src/memory/aurabot/authority.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile, writeFile, symlink } from 'node:fs/promises'
@@ -8,6 +9,15 @@ import { Store } from '../../packages/alcor-secretary/src/memory/engine/store.js
 import { AlcorMemory } from '../../packages/alcor-secretary/src/memory/service.js'
 const owner={owner:true,subject:'owner',source:{kind:'desktop',sessionId:'chat',at:'2026-11-09T00:00:00Z'}}
 const quiet={info(){},warn(){},error(){}}
+const shareFixture = {
+  agentDefaultModel:{currentSelection:()=>({provider:'synthetic',model:'test'})},
+  llm:{async *stream(options){
+    const text=options.messages[0].content[0].text
+    if(!text.startsWith('ALCOR_DISCLOSE'))return
+    const {speech,memories}=JSON.parse(text.split('以下是对话资料：\n').at(-1))
+    yield {type:'text-delta',text:JSON.stringify({mention:speech.includes('保密')?[]:memories.map(row=>row.index)})}
+  }},
+}
 async function root(t){const dir=await mkdtemp(join(tmpdir(),'alcor-memory-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir}
 test('memory, correction, source and SOUL survive restart; forgetting does not revive old summaries',async t=>{
   const dir=await root(t)
@@ -50,6 +60,7 @@ test('group stores cannot read each other or edit another member, and prevent a 
 })
 test('corrupt authority fails visibly and symlink memory is refused',async t=>{
   const dir=await root(t),memory=createScopedMemory({dataDir:join(dir,'data'),audience:'personal',logger:quiet});await memory.dispose()
+  await rm(join(dir,'data','aurabot'),{recursive:true})
   await writeFile(join(dir,'data','alcor-authority.json'),'{broken')
   assert.throws(()=>createScopedMemory({dataDir:join(dir,'data'),audience:'personal',logger:quiet}))
   assert.equal(await readFile(join(dir,'data','alcor-authority.json'),'utf8'),'{broken')
@@ -264,10 +275,12 @@ test('retired task grants are discarded without changing identity or queued pers
     const evidence=await memory.remember({content:'Ask about the recording'},owner)
     await memory.planFollowup({evidence:evidence.id,content:'How did it sound?',dueAt:new Date(Date.now()+3600000).toISOString()})
     await memory.dispose()
-    const original=JSON.parse(await readFile(path,'utf8'))
+    const original=authorityStore(dir).load()
+    await rm(join(dir,'aurabot'),{recursive:true})
     await writeFile(path,JSON.stringify({...original,taskGrant:{until:Date.now()+60000},backgroundGrant:{jobId:'old'},taskShown:{id:'task'},taskDismissedDay:'2026-11-10'}))
     memory=createScopedMemory({dataDir:dir,audience:'personal',logger:quiet})
-    assert.deepEqual(JSON.parse(await readFile(path,'utf8')),original)
+    assert.deepEqual(authorityStore(dir).load(),original)
+    assert.equal(JSON.parse(await readFile(path,'utf8')).taskGrant.until>0,true)
     assert.equal(memory.desktopFollowup(),null)
   } finally {await memory.dispose()}
 })
@@ -305,4 +318,125 @@ test('a newly registered non-QQ group obtains a separate memory store before its
    assert.equal(group.records()[0].audience,route.audience)
    assert.ok(!memory.personal.records().some(row=>row.content==='Only in this room'))
  }finally{await memory.personal.dispose();await Promise.all([...memory.groups.values()].map(store=>store.dispose()))}
+})
+
+test('search retained conversations after compilation, including Alcor replies beyond the recent preview', async t => {
+  const dir = await root(t), store = new Store({dataDir:dir,logger:quiet})
+  store.init({migrateV1:false})
+  const now = Date.now()
+  store.appendJournal({id:'old',ts:now-100000,session:'group-test',user:'What went wrong?',assistant:'Cinnabar pigment was unavailable'})
+  store.setJournalStatus('old','compiled')
+  for(let i=0;i<24;i++) store.appendJournal({id:'new-'+i,ts:now-2000+i,session:'group-test',user:'Later message '+i})
+  store.releaseLock()
+  const group = createScopedMemory({dataDir:dir,audience:'group:456',logger:quiet})
+  t.after(() => group.dispose())
+  assert.ok(!group.records().some(row => row.id==='journal:old'))
+  const hit = group.recall('cinnabar')[0]
+  assert.equal(hit.id,'journal:old')
+  assert.match(hit.content,/助手回复：Cinnabar/)
+  await group.change({id:hit.id},owner)
+  assert.equal(group.recall('cinnabar').length,0)
+})
+
+test('trusted contact memory follows its own route and owner context can recall an enabled group without a prior owner post', async t => {
+  const events = new Map(), dir = await root(t)
+  let enabled = true
+  const route = {sessionId:'onebot-private-222',kind:'private',peer:'222',account:'999',channel:'qq',owner:false,audience:'qq:999:private:222'}
+  const channels = {
+    resolve: id => id===route.sessionId ? route : null, adapter:()=>({}),
+    actor: (session,source) => enabled && source.kind==='plugin:dsh-onebot' && source.qqUserId===route.peer
+      ? {owner:false,audience:route.audience,subject:'qq:222',source:{kind:'qq-private',sessionId:session.id,at:new Date().toISOString()}} : undefined,
+  }
+  const config = {adminUsers:['111'],groupAllowFrom:['456'],groupPolicy:'allowlist'}
+  const ctx = {get:name=>({...shareFixture,profileContext:{dir},agentPresets:{presetForSession:()=>'alcor'},configEditor:{entries:()=>[{options:{id:'dsh-onebot',config},fiber:{state:2}}]}}[name]),
+    agents:{turnBoundaryOf:()=>({openTurnStartSeq:1,lastTurn:1})},on:(name,handler)=>events.set(name,handler),effect(){},logger:quiet}
+  const m=new AlcorMemory(ctx,{channels});t.after(()=>Promise.all([m.personal,...m.groups.values()].map(s=>s.dispose())))
+  const me = {session:{id:'owner-chat',header:{}}}, person = {session:{id:route.sessionId,header:{}}}
+  const input = (source,text)=>({source,content:[{type:'text',text}]})
+  const run = (agent,...messages) => events.get('agent/pre-step')({agent,messages},()=>{})
+  await m.personal.remember({content:'Festival owner private flight'},owner)
+  const group=m.storeForAudience('group:456')
+  await group.remember({content:'Festival group workshop starts at ten'},{owner:false,subject:'qq:777',source:{kind:'qq-group',sessionId:'group456',at:new Date().toISOString()}})
+  await run(person,input({kind:'plugin:dsh-onebot',qqUserId:'222'},'Festival'))
+  await m.use('remember',{content:'Festival contact brings a camera'},person)
+  assert.match(m.personalContext(person),/brings a camera/)
+  assert.doesNotMatch(m.personalContext(person),/private flight|starts at ten/)
+  await run(me,input({kind:'user'},'Festival'))
+  assert.match(m.personalContext(me),/group:456.*starts at ten/)
+  assert.doesNotMatch(m.personalContext(me),/brings a camera/)
+  channels.table={entries:()=>[[route.sessionId,route]]}
+  channels.adapter=()=>({trustedForDelivery:()=>enabled})
+  await m.personal.allowSharedRecall(true)
+  await run(person,input({kind:'plugin:dsh-onebot',qqUserId:'222'},'Festival'))
+  await run(me,input({kind:'user'},'Festival'))
+  assert.match(m.personalContext(person),/private flight/)
+  assert.match(m.personalContext(me),/brings a camera/)
+  assert.ok((await m.use('recall',{query:'Festival'},person)).some(row=>row.audience==='group:456'))
+  assert.match(m.personalContext(person),/决定是否开口/)
+  await m.personal.allowSharedRecall(false)
+  assert.doesNotMatch(m.personalContext(person),/private flight|starts at ten/)
+  config.groupAllowFrom=[]
+  assert.doesNotMatch(m.personalContext(me),/starts at ten/)
+  enabled=false
+  assert.equal(m.personalContext(person),'')
+  await assert.rejects(m.use('recall',{query:'Festival'},person),/身份/)
+})
+
+test('group transcript pages preserve platform cursors, search earlier turns and recheck the audience after awaiting I/O', async () => {
+  let audience='group:456', duringRead
+  const agent = {session:{id:'room'}}, calls = []
+  const service = {
+    trustedActor:()=>({audience,source:{kind:'qq-group'}}),
+    spaces:{channels:{platformHistory:async(id,cursor)=>{
+      calls.push([id,cursor])
+      const hits=[{seq:1,cursor:-819,role:'QQ 777',nickname:'同学',text:'上星期的蓝色提案',time:123}]
+      duringRead?.()
+      return {messages:hits,hasMore:true,beforeSeq:-819}
+    }}},
+  }
+  const read=(args)=>AlcorMemory.prototype.groupHistory.call(service,'456',args,agent)
+  const page=await read({query:'蓝色'})
+  assert.equal(page.nextBefore,-819);assert.equal(page.messages[0].speaker,'QQ 777')
+  assert.deepEqual(await read({query:'不存在',before:page.nextBefore}),{messages:[],nextBefore:-819})
+  assert.deepEqual(calls,[['room',undefined],['room',-819]])
+  duringRead=()=>{audience='group:123'}
+  await assert.rejects(read({}),/当前 QQ 群/)
+  await assert.rejects(read({before:-819}),/当前 QQ 群/)
+  assert.equal(calls.length,3)
+})
+
+test('a returning QQ member can recall an old code word from another group, with its actual speaker and source',async t=>{
+  const dir=await root(t), config={groupAllowFrom:['111','222'],groupPolicy:'allowlist'}, handlers=new Map()
+  const ctx={get:key=>({...shareFixture,profileContext:{dir},configEditor:{entries:()=>[{options:{id:'dsh-onebot',config},fiber:{state:2}}]}}[key]),
+    agents:{turnBoundaryOf:()=>({openTurnStartSeq:1,lastTurn:1})},on:(key,f)=>handlers.set(key,f),effect(){},logger:quiet}
+  const memory=new AlcorMemory(ctx,{})
+  t.after(()=>Promise.all([memory.personal,...memory.groups.values()].map(s=>s.dispose())))
+  const archived=memory.storeForAudience('group:111')
+  const source={kind:'qq-group',sessionId:'onebot-group-111',qqUserId:'333',qqGroupId:'111',at:new Date().toISOString()}
+  const entry=await archived.remember({content:'银杏是昨晚的暗号'},{subject:'qq:333',source})
+  await archived.remember({content:'另一人的星图'},{subject:'qq:444',source:{...source,qqUserId:'444'}})
+  const agent={session:{id:'onebot-group-222'}}
+  const event={source:{kind:'plugin:dsh-onebot',qqGroupId:'222',qqUserId:'333'},content:[{type:'text',text:'昨晚的暗号'}]}
+  await handlers.get('agent/pre-step')({agent,messages:[event]},()=>{})
+  const group=memory.group('222')
+  assert.doesNotMatch(group.contextText(agent),/银杏/)
+  await memory.personal.allowSharedRecall(true)
+  await handlers.get('agent/pre-step')({agent,messages:[event]},()=>{})
+  assert.match(group.contextText(agent),/group:111 · qq:333.*银杏/)
+  assert.match(group.participationContext('昨晚的暗号','333'),/银杏/)
+  const previous=await group.recall('',agent)
+  assert.ok(previous.some(row=>row.id===entry.id && row.source.qqGroupId==='111'))
+  assert.ok(!previous.some(row=>row.subject==='qq:444'))
+  await assert.rejects(group.change({id:entry.id,content:'改掉暗号'},agent),/不存在/)
+  await archived.change({id:entry.id,content:'暗号改成松果'},{owner:true,source})
+  assert.doesNotMatch(group.contextText(agent),/银杏/)
+  await handlers.get('agent/pre-step')({agent,messages:[event]},()=>{})
+  assert.match(group.contextText(agent),/松果/)
+  const reserved={...event,content:[{type:'text',text:'昨晚的暗号还在保密'}]}
+  await handlers.get('agent/pre-step')({agent,messages:[reserved]},()=>{})
+  assert.doesNotMatch(group.contextText(agent),/松果/)
+  assert.ok(!(await group.recall('暗号',agent)).some(row=>row.content.includes('松果')))
+  config.groupAllowFrom=['222']
+  assert.doesNotMatch(group.contextText(agent),/松果/)
+  assert.ok(!(await group.recall('暗号',agent)).some(row=>row.audience==='group:111'))
 })

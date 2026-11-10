@@ -93,7 +93,7 @@ function BearChat({workspace, state, ctx, panel, catalog, spaces, ...native}) {
   </>
 }
 
-function FloatingBear({prefs, state, workspace, openSettings, ...chat}) {
+function FloatingBear({prefs, state, workspace, openSettings, openPersona, ...chat}) {
   const [open, setOpen] = useState(false), [pinned, setPinned] = useState(false)
   const [menu, setMenu] = useState(null)
   const size = prefs.size
@@ -167,11 +167,12 @@ function FloatingBear({prefs, state, workspace, openSettings, ...chat}) {
     <Menu open={!!menu} contextual portal autoFocus anchor={null} onClose={() => setMenu(null)}
       className="alcor-bear-menu" listClassName="alcor-bear-menu-list"
       getAnchorRect={() => menu ? new DOMRect(menu.x,menu.y,0,0) : null} returnFocus={() => button.current}
-      items={[{id:'settings',label:'设置'},{id:'hide',label:'隐藏'}]}
+      items={[{id:'persona',label:'人格'},{id:'settings',label:'设置'},{id:'hide',label:'隐藏'}]}
       onSelect={id => {
         setMenu(null)
         if (id === 'hide') state.preferences.update({enabled:false})
         if (id === 'settings') openSettings()
+        if (id === 'persona') openPersona()
       }} />
     {open && <section className="alcor-bear-panel" role="region" aria-label="Alcor 小熊对话" onFocus={pin} onPointerDown={pin}
       onPointerEnter={() => clearTimeout(timer.current)}
@@ -182,7 +183,7 @@ function FloatingBear({prefs, state, workspace, openSettings, ...chat}) {
   </div>
 }
 
-export function BearOverlay({state, ctx, product, followupApi, renderSettings, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
+export function BearOverlay({state, ctx, product, followupApi, renderSettings, openPersona, useMode, usePanelInfo, useMainSelection, useWorkspaces, useSessions, ...native}) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const mode = useMode(value => value), panel = canonicalPanel(usePanelInfo(value => value.activePanelId))
   const selected = useMainSelection(value => value.sessionId)
@@ -200,7 +201,7 @@ export function BearOverlay({state, ctx, product, followupApi, renderSettings, u
   if (mode !== 'alcor' || !panel || panel === 'alcor-qq-history') return null
   return <>
     {followupApi && <FollowupNote api={followupApi} />}
-    {prefs.enabled && <FloatingBear prefs={prefs} state={state} ctx={ctx} workspace={workspace} panel={panel} spaces={spaces} catalog={catalog} openSettings={() => setSettingsOpen(true)} {...native} />}
-    <Modal open={settingsOpen} title="Alcor" closeLabel="关闭" onClose={() => setSettingsOpen(false)} className="alcor-bear-settings-dialog">{renderSettings('pet')}</Modal>
+    {prefs.enabled && <FloatingBear prefs={prefs} state={state} ctx={ctx} workspace={workspace} panel={panel} spaces={spaces} catalog={catalog} openSettings={() => setSettingsOpen(true)} openPersona={openPersona} {...native} />}
+    <Modal open={settingsOpen} title="Alcor" closeLabel="关闭" onClose={() => setSettingsOpen(false)} className="alcor-bear-settings-dialog">{renderSettings()}</Modal>
   </>
 }

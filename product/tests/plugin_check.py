@@ -310,7 +310,7 @@ def main():
                         expect(page.locator('[data-sidebar-opener]')).to_be_focused()
                         page.locator('[data-sidebar-opener]').click()
                         settings(page)
-                        expect(page.get_by_label('助手名称', exact=True)).to_be_visible()
+                        expect(page.get_by_label('小熊名称', exact=True)).to_be_visible()
                         page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
                         if page.locator('[data-sidebar-opener]').is_visible():
                             page.locator('[data-sidebar-opener]').click()
@@ -335,15 +335,14 @@ def main():
                     assert any(record['id'] == apps['recordId'] for record in persisted['records'])
                     assert any(item['id'] == apps['scheduleId'] and item['status'] == 'active' for item in persisted['schedules']), persisted['schedules']
                     open_secretary(page)
-                    settings(page)
+                    page.locator('.alcor-sidebar nav').get_by_role('button',name='人格',exact=True).click()
                     page.get_by_label('助手名称', exact=True).fill('Packed secretary')
-                    page.get_by_role('button', name='保存', exact=True).click()
+                    page.get_by_role('button', name='保存人格', exact=True).click()
                     page.get_by_text('已保存', exact=True).wait_for()
                     assert rpc(page, url, 'alcorSecretary/overview')['displayName'] == 'Packed secretary', (
                         [entry for entry in rpc(page, url, 'settings/describe')['namespaces'] if entry['ns'] == 'alcor-secretary'],
                         (profile / 'cordis.patch.yml').read_text()[-800:],
                         re.sub(r'token=\S+', 'token=[redacted]', Path(log.name).read_text())[-2500:])
-                    page.get_by_role('button', name='Close', exact=True).click()
                     start_secretary_chat(page)
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
                     composer.fill('Call alcor_overview')

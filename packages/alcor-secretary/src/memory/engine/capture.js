@@ -54,7 +54,7 @@ export function createCapture({ store, logger = console, enabled = true, allowed
         const oldest = buffers.keys().next().value
         if (oldest) buffers.delete(oldest)
       }
-      buf = { turn: turn || 0, user: [], assistant: '', tools: [], startedAt: Date.now() }
+      buf = { turn: turn || 0, user: [], qqMessages: [], speakers: new Set(), assistant: '', tools: [], startedAt: Date.now() }
       buffers.set(sessionId, buf)
     }
     if (typeof turn === 'number' && turn !== buf.turn) buf.turn = turn
@@ -86,6 +86,8 @@ export function createCapture({ store, logger = console, enabled = true, allowed
       user: truncateByBytes(user, 500, '…'),
       assistant: truncateByBytes(assistant, 800, '…'),
       tools: [...new Set(buf.tools)].slice(0, 8),
+      ...(buf.qqMessages.length ? { qqMessages: buf.qqMessages } : {}),
+      ...(buf.speakers.size === 1 ? { subject: [...buf.speakers][0] } : {}),
     }
     if (!rec.assistant && byteLength(rec.user) < 8) {
       stats.skipped++
@@ -142,6 +144,8 @@ export function createCapture({ store, logger = console, enabled = true, allowed
           if (!text) return
           const buf = touch(id)
           buf.user.push(text)
+          if (source === 'plugin:dsh-onebot' && msg.source.memorySubject) buf.speakers.add(msg.source.memorySubject)
+          if (source === 'plugin:dsh-onebot' && msg.source.qqMessageId) buf.qqMessages.push('qq-inbound:' + msg.source.qqMessageId)
           break
         }
         case 'assistant/message': {

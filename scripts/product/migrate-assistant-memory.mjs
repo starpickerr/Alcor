@@ -1,3 +1,4 @@
+import { authorityStore } from '../../packages/alcor-secretary/src/memory/aurabot/authority.js'
 import { cp, lstat, readdir, readFile, writeFile, mkdir, rename, rm, chmod } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
@@ -59,9 +60,9 @@ export async function migrateAssistantMemory({ profile, personal, groups, partic
       const content = await readFile(legacyPersona, 'utf8')
       await writeFile(join(staging, 'personal/legacy-persona.private.md'), content, { mode: 0o600 })
       // Old private prompts can contain owner facts. Import as private data, never as the public SOUL.
-      const file = join(staging, 'personal/alcor-authority.json'), data = JSON.parse(await readFile(file, 'utf8'))
+      const db = authorityStore(join(staging, 'personal')), data = db.load()
       if (content.trim()) data.entries.push({ id: 'legacy-persona', content: content.trim(), subject: 'owner', audience: 'personal', source: { kind: 'legacy-import', at: '' } })
-      await writeFile(file, JSON.stringify(data), { mode: 0o600 })
+      db.save(data)
       receipt.files.push({ source: legacyPersona, sha256: createHash('sha256').update(content).digest('hex') })
     }
     if (groups && await exists(groups)) {
@@ -74,9 +75,9 @@ export async function migrateAssistantMemory({ profile, personal, groups, partic
         await memory.dispose()
         if (participants[id]) {
           if (!Array.isArray(participants[id]) || participants[id].some(value => !/^[1-9]\d{0,19}$/.test(value))) throw Error('Invalid verified participant')
-          const file = join(destination, 'alcor-authority.json'), data = JSON.parse(await readFile(file, 'utf8'))
+          const db = authorityStore(destination), data = db.load()
           data.participants = [...new Set([...data.participants, ...participants[id]])]
-          await writeFile(file, JSON.stringify(data), { mode: 0o600 })
+          db.save(data)
         }
       }
     }
