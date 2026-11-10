@@ -37,7 +37,8 @@ const model = http.createServer(async (req, res) => {
     fixture.basis==='ASK_PROGRESS' && fixture.updates?.some(row=>row.text.includes('already resolved')) ? {action:'cancel'} : {action:'send',text:fixture.draft}
   const answers=gate?.candidates.filter(c=>c.text.includes('CONTINUE_WITHOUT_MENTION') ||
     (gate.mode==='addressed' && !c.text.includes('CASUAL_PING_SILENCE'))).map(c=>c.number).join(',')
-  const choices = firstText.includes('ALCOR_QZONE_DIARY') ? [{delta:{role:'assistant',content:JSON.stringify({post:'SYNTHETIC_BEAR_DIARY'})},finish_reason:'stop'}] : gate ? [{delta:{role:'assistant',content:answers || 'PASS'},finish_reason:'stop'}] : internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
+  const visionReply = body.model === 'test-vision' ? 'VISION_RESULT_' + requests.filter(r=>r.model==='test-vision').length : null
+  const choices = visionReply ? [{delta:{role:'assistant',content:visionReply},finish_reason:'stop'}] : firstText.includes('ALCOR_QZONE_DIARY') ? [{delta:{role:'assistant',content:JSON.stringify({post:'SYNTHETIC_BEAR_DIARY'})},finish_reason:'stop'}] : gate ? [{delta:{role:'assistant',content:answers || 'PASS'},finish_reason:'stop'}] : internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
     { delta: { role: 'assistant' }, finish_reason: null },
     { delta: { tool_calls: [{ index: 0, id: 'test-' + serial, type: 'function', function: { name: plan.tool, arguments: JSON.stringify(plan.args) } }] }, finish_reason: null },
     { delta: {}, finish_reason: 'tool_calls' },
@@ -54,7 +55,7 @@ config.find(entry => entry.id === 'dsh-onebot').config.requireMention = false
 controlEntry.name = fileURLToPath(new URL('assistant-host-control.mjs', import.meta.url))
 config.push({ id: 'agent-default-model', config: { provider: 'synthetic', model: 'test' } },
   { id: 'llm-pi-ai', config: { providers: { synthetic: { api: 'openai-completions', apiKeyEnv: 'ALCOR_SYNTHETIC_KEY', baseURL: 'http://127.0.0.1:' + model.address().port + '/v1',
-    models: ['test','test-b'].map(id => ({ id, name:id, contextWindow:32000, maxTokens:2048, input:['text'] })) } } } })
+    models: ['test','test-b',...(process.argv.includes('--vision-check') ? ['test-vision'] : [])].map(id => ({ id, name:id, contextWindow:32000, maxTokens:2048, input:id==='test-vision'?['text','image']:['text'] })) } } } })
 writeFileSync(join(profile, 'cordis.patch.yml'), JSON.stringify(config, null, 2) + '\n')
 writeFileSync(join(root, 'official-dsh/.credentials.yaml'), 'version: 1\nrefs:\n  ALCOR_SYNTHETIC_KEY: synthetic-test-key\n', { mode: 0o600 })
 mkdirSync(join(root, 'home'), { recursive: true })
@@ -110,6 +111,7 @@ function message(user, kind, content, group = 30001) {
 async function send(user, kind, next) {
   plan = { calls: 0, ...next }; const before = requests.length, count = outgoing.length
   const incoming=message(user,kind,next.text ?? next.reply)
+  if (next.images) incoming.message.push(...next.images.map(file=>({type:'image',data:{file}})))
   if(kind==='group')platformMessages.push({...incoming,message_seq:serial})
   socket.send(JSON.stringify(incoming))
   await until(() => outgoing.slice(count).some(row => JSON.stringify(row).includes(next.parts?.at(-1) ?? next.reply)), next.parts?.at(-1) ?? next.reply)
@@ -131,7 +133,41 @@ try {
   socket.send(JSON.stringify({ post_type: 'meta_event', meta_event_type: 'lifecycle', sub_type: 'connect', self_id: 20001, time: Math.floor(Date.now() / 1000) }))
   }
   await connectGateway()
-  if (process.argv.includes('--scope-check')) {
+  if (process.argv.includes('--vision-check')) {
+    const settings=()=>rpc('alcorSecretary','qqVisionSettings',{request:{}})
+    const choose=route=>rpc('alcorSecretary','setQQVisionModel',{request:{route}})
+    const {models,selected}=await settings()
+    assert.equal(selected,null)
+    const route=models.find(m=>m.model==='test-vision')
+    assert.ok(route,JSON.stringify(models))
+    assert.ok(!models.some(m=>m.model==='test'))
+    await assert.rejects(choose({provider:route.provider,model:'test'}))
+    await choose({provider:route.provider,model:route.model})
+    const png='base64://'+readFileSync(new URL('../../scripts/product/qq-stickers/huh.png',import.meta.url)).toString('base64')
+    let index=0
+    for(const kind of ['private','group']){
+      const images=kind==='private'?[png,png]:[png]
+      const bodies=await send(10001,kind,{text:'图中有什么？',images,reply:'ANSWER_'+kind})
+      const vision=bodies.filter(r=>r.model===route.model)
+      assert.equal(vision.length,images.length, JSON.stringify({kind, models:bodies.map(r=>r.model),input:bodies.at(-1)?.messages.filter(m=>m.role==='user').map(m=>typeof m.content==='string'?m.content.slice(-370):'[typed]')}).slice(-2400))
+      for(const request of vision){
+        const payload=request.messages.at(-1).content
+        const image=payload.find(block=>block.type==='image_url')?.image_url.url
+        assert.ok(/^data:image\/(png|jpeg|webp);base64,/.test(image), 'missing encoded raster')
+        assert.ok(Buffer.from(image.split(',')[1],'base64').length>100)
+        assert.ok(payload.some(block=>block.type==='text' && block.text.includes('图中有什么')))
+        index++
+      }
+      const chat=bodies.filter(r=>r.model!==route.model)
+      assert.ok(chat.some(r=>JSON.stringify(r.messages).includes('图片识别：VISION_RESULT_'+index)), 'caption missing from normal chat')
+      assert.ok(!chat.some(r=>JSON.stringify(r.messages).includes('data:image/')))
+    }
+    await choose(null)
+    const off=await send(10001,'private',{text:'now disabled',images:[png],reply:'DISABLED_OK'})
+    assert.ok(!off.some(r=>r.model===route.model))
+    assert.ok(off.some(r=>JSON.stringify(r.messages).includes('未选择看图模型')))
+    writeFileSync(join(root,'result.json'),JSON.stringify({visionRequests:index,private:true,group:true,multiImage:true,textOnlyReply:true,disabled:true}))
+  } else  if (process.argv.includes('--scope-check')) {
     const name='dsh-onebot-qq'
     const set=(value,previous)=>rpc('alcorPluginModes','setScope',{request:{name,value,previous}})
     const scopes=await rpc('alcorPluginModes','readScopes',{request:{}})

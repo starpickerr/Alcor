@@ -19,7 +19,10 @@ export const ownershipSchema = z.object({ projects: z.record(identifier, space),
 export const spacesSchema = ownershipSchema.extend({ defaults: z.object({ alcor: identifier, dsh: identifier }).strict(),channelRoutes:z.array(channelRouteSchema.extend({available:z.boolean(),channelName:z.string()})).optional() }).strict()
 const memoryEntry = z.object({ id: identifier, content: z.string(), subject: z.string(), audience: z.string(), kind: z.string(), evidence: z.array(identifier).max(5).optional(),
   source: z.object({ kind: z.string(), at: z.string(), sessionId: z.string().optional(), channelId:z.string().optional(),accountId:z.string().optional(),channelUserId:z.string().optional(),qqUserId: z.string().optional(), qqGroupId: z.string().optional() }).strict() }).strict()
+export const visionRoute = z.object({provider:identifier,model:identifier}).strict()
 export const accountSchemas = {
+  qqVisionSettings:[z.object({}).strict(),z.object({selected:visionRoute.nullable(),models:z.array(visionRoute.extend({label:z.string()})),unavailable:z.array(z.string())}).strict()],
+  setQQVisionModel:[z.object({route:visionRoute.nullable()}).strict(),visionRoute.nullable()],
   qqConversation: [z.object({sessionId:identifier}).strict(), z.object({
     online:z.boolean(), response:z.enum(['disabled','private','mention','ambient','addressed']),
     queue:z.enum(['queue','steer']), interim:z.boolean(), limit:z.number(), admin:z.boolean().optional(),

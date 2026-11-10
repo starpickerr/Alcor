@@ -5,6 +5,46 @@ import {Notice} from './notice.jsx'
 
 const status = {registered:'已接入', workbench:'DSH工作台接管', enabled:'已启用，尚未接入 Alcor', disabled:'已停用', uninstalled:'未安装'}
 
+const routeKey = route => route ? JSON.stringify([route.provider,route.model]) : ''
+
+function QQVisionSettings({api}) {
+  const [state,setState] = useState(null)
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+  useEffect(() => {
+    let active = true
+    api.qqVisionSettings({}).then(result => {
+      if (!result.ok) throw Error(result.error.message)
+      if (active) setState(result.value)
+    }).catch(reason => { if (active) setError(reason.message) })
+    return () => { active = false }
+  }, [api])
+  async function select(value) {
+    setBusy(true)
+    setError('')
+    const choice = state.models.find(item => routeKey(item) === value)
+    try {
+      const result = await api.setQQVisionModel({route:choice ? {provider:choice.provider,model:choice.model} : null})
+      if (!result.ok) throw Error(result.error.message)
+      setState({...state,selected:result.value})
+    } catch (reason) { setError(reason.message) }
+    finally { setBusy(false) }
+  }
+  const selected = routeKey(state?.selected)
+  return <div className="alcor-vision-setting">
+    <label htmlFor="alcor-qq-vision">看图模型</label>
+    <select id="alcor-qq-vision" disabled={busy || !state} value={selected} onChange={event => select(event.target.value)}>
+      <option value="">{state ? '关闭图片识别' : '正在读取模型…'}</option>
+      {selected && !state.models.some(item => routeKey(item) === selected) &&
+        <option value={selected} disabled>{state.selected.model}（当前不可用）</option>}
+      {state?.models.map(item => <option key={routeKey(item)} value={routeKey(item)}>{item.label}</option>)}
+    </select>
+    {state && !state.models.length && <small>请在 DSH 模型设置中配置支持图片输入的模型。</small>}
+    {!!state?.unavailable.length && <small>无法读取模型列表：{state.unavailable.join('、')}</small>}
+    {error && <Notice tone="error" role="alert">{error}</Notice>}
+  </div>
+}
+
 export function ChannelsPage({api, openPlugin}) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
@@ -34,6 +74,7 @@ export function ChannelsPage({api, openPlugin}) {
           {row.state === 'uninstalled' ? '接入通道' : row.packageName ? '管理接入' : '插件管理'}
         </Button>
       </div>
+      {row.id === 'qq' && ['registered','enabled'].includes(row.state) && <QQVisionSettings api={api}/>}
     </article>)}
     {rows && <section className="alcor-settings-group alcor-section"><h2>主动发送授权</h2>
       <ChannelDeliverySettings key={revision} api={api}/>

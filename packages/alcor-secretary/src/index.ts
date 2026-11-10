@@ -1,3 +1,5 @@
+import {describeQQImage,visionModels} from './qq-vision.js'
+import {visionRoute} from './remote.js'
 import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
@@ -40,6 +42,9 @@ export default class Secretary extends TypertRemoteService {
     await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(domainSpec)
     this.ctx.effect(() => () => this.domain.close())
+    const vision = await this.ctx.storageDomain.open(defineDomain({name:'alcor_qq_vision', version:1, tables:{selection:domainTable(visionRoute)}}))
+    this.ctx.effect(() => () => vision.close())
+    this.visionSelection = vision.table('selection')
     const spaces = await this.ctx.storageDomain.open(defineDomain({ name: 'alcor_spaces', version: 1, tables: { ownership: domainTable(ownershipSchema) } }))
     this.ctx.effect(() => () => spaces.close())
     this.productSpaces = new ProductSpaces(this.ctx, spaces.table('ownership'))
@@ -77,6 +82,44 @@ export default class Secretary extends TypertRemoteService {
     const route=qqRoute(sessionId)
     if (!route || !this.ctx.workspaceRegistry.list().some(row=>row.sessionIds.includes(sessionId))) return null
     return await this.productSpaces.qqConversationInfo?.(route[1],route[2]) ?? null
+  }
+
+  @Remote
+  async qqVisionSettings(request) {
+    accountSchemas.qqVisionSettings[0].parse(request)
+    if (this.ctx.invocation?.peer?.principal?.kind !== 'owner') throw Error('仅客户端所有者可管理看图模型。')
+    return {selected:this.visionSelection.get('qq') ?? null, ...await visionModels(this.ctx.llm)}
+  }
+
+  @Remote
+  async setQQVisionModel(request) {
+    const {route} = accountSchemas.setQQVisionModel[0].parse(request)
+    if (this.ctx.invocation?.peer?.principal?.kind !== 'owner') throw Error('仅客户端所有者可管理看图模型。')
+    if (!route) {
+      await this.visionSelection.delete('qq')
+      return null
+    }
+    const {models} = await visionModels(this.ctx.llm)
+    if (!models.some(item => item.provider === route.provider && item.model === route.model)) throw Error('此模型当前不支持图片输入。')
+    await this.visionSelection.put('qq', route)
+    return route
+  }
+
+  createQQImageReader(question, admitted) {
+    const route = this.visionSelection.get('qq')
+    let count = 0
+    const allowed = () => {
+      const current = this.visionSelection.get('qq')
+      return admitted() && selectedScope(this.ctx,'dsh-onebot-qq') === 'alcor' &&
+        current?.provider === route?.provider && current?.model === route?.model
+    }
+    return async path => {
+      if (!route) return '未选择看图模型'
+      if (!allowed()) return '未识别'
+      if (++count > Math.min(8,this.ctx.get('attachments')?.imageLimits.maxImagesPerMessage ?? 0)) return '本条消息的图片未识别'
+      try { return await describeQQImage(this.ctx, route, path, question, allowed) }
+      catch { return '图片识别失败，无法确认图中内容' }
+    }
   }
 
   @Remote

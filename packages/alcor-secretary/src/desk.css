@@ -289,3 +289,7 @@
 [data-sidebar-drawer] .alcor-channels-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
 
 .alcor-channel-actions { display:flex;align-items:center;gap:6px; }
+
+.alcor-vision-setting { display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-vision-setting select { max-width:100%;min-width:0;font:inherit;color:inherit;background:var(--dsw-alias-bg-l1);border:1px solid var(--dsw-alias-border-l3);border-radius:6px;padding:4px 8px; }
+.alcor-vision-setting small { flex-basis:100%;color:var(--dsw-alias-label-secondary); }
