@@ -23,12 +23,12 @@ export function ChannelDeliverySettings({api}) {
   return <>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
     {state?.targets.map(({route,until,available})=>{
-      const active=until>Date.now(), Icon=route.kind==='group'?IconUsersOutlineRegular:IconNewChatOutlineRegular
+      const active=until===null || until>Date.now(), Icon=route.kind==='group'?IconUsersOutlineRegular:IconNewChatOutlineRegular
       return <div className="alcor-initiative-card" data-channel-session={route.sessionId} key={route.sessionId}>
         <div className="alcor-channel-target"><Icon size={18}/><div><strong>{route.label || route.peer}</strong><small>{route.channelName} · 账号 {route.account} · {route.kind==='group'?'群聊':'私聊'} · {route.peer}</small></div>
           {active?<Button size="sm" variant="outline" disabled={busy} onClick={()=>configure(route.sessionId,false)}>撤销授权</Button>:
-          <Button size="sm" variant="outline" disabled={busy || !available} onClick={()=>configure(route.sessionId,true)}>授权七天</Button>}</div>
-        <small className="alcor-channel-consent">{active?'授权至 '+new Date(until).toLocaleString():route.kind==='group'?'允许将本群的主动跟进发送到这个群。':'允许将私人主动跟进发送给这个联系人。'}</small>
+          <Button size="sm" variant="outline" disabled={busy || !available} onClick={()=>configure(route.sessionId,true)}>允许主动发送</Button>}</div>
+        <small className="alcor-channel-consent">{active?(until===null?'持续授权，可随时撤销。':'授权至 '+new Date(until).toLocaleString()):route.kind==='group'?'允许 Alcor 在本群主动问候或跟进话题。':'允许 Alcor 主动问候这个联系人或跟进话题。'}</small>
         {!available && <small className="alcor-channel-consent">通道离线或当前没有投递权限。</small>}
       </div>
     })}

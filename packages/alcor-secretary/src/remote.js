@@ -1,7 +1,7 @@
-import { channelRouteSchema } from './channels/registry.js'
+import { channelRouteSchema, channelMessageSchema } from './channels/registry.js'
 import { deliveryStateSchema } from './channels/schema.js'
 import { experiences, memoryAudience } from './memory/experience-schema.js'
-import { publicIdentity } from './memory/identity-schema.js'
+import { publicIdentity, personaExamples } from './memory/identity-schema.js'
 import { checkMessages } from './elearning-status.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
@@ -31,14 +31,15 @@ export const accountSchemas = {
     interim:z.boolean(),limit:z.number(),admin:z.boolean().optional(),name:z.string().max(128).optional(),members:z.number().int().nonnegative().optional(),
   }).strict().nullable()],
   channelHistory:[z.object({sessionId:identifier,beforeSeq:z.number().int().optional()}).strict(),
-    z.object({messages:z.array(z.object({seq:z.number(),role:z.string(),text:z.string(),time:z.number().optional(),nickname:z.string().optional(),ambient:z.boolean().optional()}).strict()),
+    z.object({messages:z.array(channelMessageSchema),
       hasMore:z.boolean(),beforeSeq:z.number().nullable()}).strict()],
-  deliverySettings:[z.object({}).strict(),z.object({targets:z.array(z.object({route:channelRouteSchema.extend({available:z.boolean(),channelName:z.string()}),until:z.number(),available:z.boolean()})),
+  deliverySettings:[z.object({}).strict(),z.object({targets:z.array(z.object({route:channelRouteSchema.extend({available:z.boolean(),channelName:z.string()}),until:z.number().nullable(),available:z.boolean()})),
     receipts:deliveryStateSchema.shape.receipts})],
   allowChannelDelivery:[z.object({sessionId:identifier,enabled:z.boolean()}).strict(),z.object({ok:z.literal(true)}).strict()],
   searchSpace: [z.object({ space, query: z.string().trim().min(1).max(1000), sessionIds: z.array(identifier).max(10000) }).strict(),
     z.object({ items: z.array(z.object({ sessionId: identifier, snippet: z.string() }).strict()).max(20), hasMore: z.boolean() }).strict()],
-  memoryState: [z.object({}).strict(), z.object({ initiative: z.boolean(), desktopDelivery:z.boolean(), soul: z.string(), entries: z.array(memoryEntry).max(200) }).strict()],
+  memoryState: [z.object({}).strict(), z.object({ sharedRecall:z.boolean(), initiative: z.boolean(), desktopDelivery:z.boolean(), soul: z.string(), entries: z.array(memoryEntry).max(200) }).strict()],
+  allowSharedRecall: [z.object({ enabled:z.boolean() }).strict(), z.object({ ok:z.literal(true) }).strict()],
   allowInitiative: [z.object({ enabled: z.boolean() }).strict(), z.object({ ok: z.literal(true) }).strict()],
   allowDesktopDelivery: [z.object({enabled:z.boolean()}).strict(),z.object({ok:z.literal(true)}).strict()],
   nextFollowup: [z.object({}).strict(), z.object({ id: identifier, content: z.string(), evidence: identifier, due: z.number() }).strict().nullable()],
@@ -48,7 +49,7 @@ export const accountSchemas = {
   restoreExperiences: [z.object({ document: experiences }).strict(), z.object({ ok: z.literal(true) }).strict()],
   exportIdentity: [z.object({}).strict(), publicIdentity],
   importIdentity: [z.object({ document: publicIdentity, expectedRevision: z.string().uuid() }).strict(), z.object({ ok: z.literal(true) }).strict()],
-  updateSoul: [z.object({ name: z.string().trim().min(1).max(80).optional(), expectedRevision: z.string().uuid().optional(), soul: z.string().trim().min(1).max(12000) }).strict(), z.object({ ok: z.literal(true) }).strict()],
+  updateSoul: [z.object({ name: z.string().trim().min(1).max(80).optional(), expectedRevision: z.string().uuid().optional(), soul: z.string().trim().min(1).max(12000), examples: personaExamples.optional() }).strict(), z.object({ ok: z.literal(true) }).strict()],
   changeMemory: [z.object({ id: identifier, content: z.string().trim().min(1).max(1000).optional() }).strict(), z.object({ ok: z.literal(true), id: identifier }).strict()],
   spaces: [z.object({}).strict(), spacesSchema],
   editProject: [z.object({space,workspaceId:identifier,action:z.enum(['create','rename','remove']),title:z.string().trim().min(1).max(500).optional()}).strict(),spacesSchema],

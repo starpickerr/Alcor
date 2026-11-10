@@ -4,7 +4,7 @@ export const channelRouteSchema=z.object({
   kind:z.enum(['private','group']),peer:z.string().min(1).max(100),label:z.string().max(128),
   audience:z.string().min(1).max(250),owner:z.boolean(),channelName:z.string().max(128).optional(),
 }).strict()
-export const channelMessageSchema=z.object({seq:z.number(),role:z.string(),text:z.string(),time:z.number().optional(),nickname:z.string().optional(),ambient:z.boolean().optional()}).strict()
+export const channelMessageSchema=z.object({seq:z.number(),cursor:z.number().optional(),role:z.string(),text:z.string(),time:z.number().optional(),nickname:z.string().optional(),ambient:z.boolean().optional()}).strict()
 export const cachedMessageSchema=z.object({sessionId:z.string(),message:channelMessageSchema}).strict()
 const keyOf=route=>JSON.stringify([route.channel,route.account,route.kind,route.peer])
 export class ChannelRegistry {
@@ -91,6 +91,28 @@ export class ChannelRegistry {
       await this.catalog()
     }
     return info
+  }
+  async platformHistory(sessionId,beforeSeq){
+    const route=this.resolve(sessionId),adapter=route && this.adapter(route);
+    if(!adapter?.history)return this.cachedPlatformHistory(sessionId,beforeSeq);
+    try{
+      const history=await adapter.history(route,beforeSeq);
+      if(!history)return null;
+      const messages=history.messages.map(row=>channelMessageSchema.parse(row));
+      if(this.cache)for(const message of messages)await this.cache.put(JSON.stringify(['platform',sessionId,message.seq]),{sessionId,message});
+      return {...history,messages};
+    }catch{
+      const cached=this.cachedPlatformHistory(sessionId,beforeSeq);
+      if(cached)return cached;
+      throw Error('通道历史暂不可读取，请稍后重试。');
+    }
+  }
+  cachedPlatformHistory(sessionId,beforeSeq){
+    const messages=[...this.cache?.entries() ?? []].filter(([key,row])=>key.startsWith('["platform",') && row.sessionId===sessionId).map(([,row])=>row.message).sort((a,b)=>a.seq-b.seq);
+    if(!messages.length)return null;
+    const index=beforeSeq==null ? messages.length : messages.findIndex(row=>(row.cursor ?? row.seq)===beforeSeq);
+    const older=messages.slice(0,Math.max(0,index)),page=older.slice(-80);
+    return {messages:page,hasMore:older.length>80,beforeSeq:page[0]?.cursor ?? page[0]?.seq ?? null};
   }
   async messages(sessionId,records) {
     const route=this.resolve(sessionId)
