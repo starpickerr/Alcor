@@ -24,12 +24,18 @@ def synthetic_qq_profiles():
     connection=websocket.create_connection('ws://127.0.0.1:36433/ws',header=['Authorization: Bearer synthetic-only'],suppress_origin=True)
     connection.settimeout(None)
     sent=[]
+    historyReads=0
     def answer():
+        nonlocal historyReads
         try:
             while packet:=connection.recv():
                 row=json.loads(packet); action=row.get('action')
                 if action and action.startswith('send_'):sent.append(action)
                 data={'group_name':'纸样讨论组','member_count':3} if action=='get_group_info' else {'nickname':'林舟'} if action=='get_stranger_info' else {}
+                if action=='get_group_msg_history':
+                    historyReads+=1
+                    bodies=['QUIET_GROUP_HISTORY']+(['PLATFORM_LIVE_UPDATE'] if historyReads>1 else [])
+                    data={'messages':[{'message_seq':i+1,'user_id':10002,'time':1794247920+i,'sender':{'nickname':'阿棠'},'message':[{'type':'text','data':{'text':text}}]} for i,text in enumerate(bodies)]}
                 connection.send(json.dumps({'status':'ok','retcode':0,'data':data,'echo':row.get('echo')}))
         except (OSError,websocket.WebSocketConnectionClosedException):
             pass
@@ -115,7 +121,7 @@ def check(page, label, delayed=None):
     page.set_viewport_size({'width':1280,'height':900})
     mode(page, 'Alcor')
     restored=desktop.rpc(page,'alcorSecretary/deliverySettings',{'request':{}})
-    assert next(row for row in restored['targets'] if row['route']['sessionId']=='onebot-private-10001')['until']>0
+    assert next(row for row in restored['targets'] if row['route']['sessionId']=='onebot-private-10001')['until'] is None
     assert desktop.rpc(page,'alcorSecretary/memoryState',{'request':{}})['initiative'] is False
     first = new_alcor(page)
     row = selected(page)
@@ -188,6 +194,8 @@ def check(page, label, delayed=None):
     page.screenshot(path=str(ARTIFACTS / (label + '-qq-workspaces.png')))
     page.locator('.alcor-qq-browser button[title*="30001"]').click()
     expect(page.locator('.alcor-qq-history article')).not_to_have_count(0)
+    expect(page.get_by_text('QUIET_GROUP_HISTORY',exact=True)).to_be_visible()
+    expect(page.get_by_text('PLATFORM_LIVE_UPDATE',exact=True)).to_be_visible(timeout=15000)
     assert page.locator('[data-composer-input]').count() == 0
     assert page.locator('.alcor-bear-compose').count() == 0
     assert 'PRIVATE_MEMORY_CANARY' not in page.locator('.alcor-qq-history').inner_text()
@@ -240,65 +248,79 @@ def check(page, label, delayed=None):
     if finder.count():finder.fill(result['title'])
     expect(dialog.get_by_text(result['title'],exact=True)).to_be_visible()
     assert dialog.get_by_text(shared['title'],exact=True).count()==0
-    tabs.get_by_role('button',name='人格与记忆',exact=True).click()
-    soul = dialog.get_by_label('Alcor 的人格',exact=True)
+    expect(tabs.get_by_role('button',name='人格与记忆',exact=True)).to_have_count(0)
+    expect(dialog.get_by_label('角色设定',exact=True)).to_have_count(0)
+    dialog.press('Escape')
+    expect(dialog).not_to_be_visible()
+    page.locator('.alcor-sidebar nav').get_by_role('button',name='人格',exact=True).click()
+    persona = page.locator('.alcor-persona-page')
+    expect(persona.get_by_role('heading',name='人格',exact=True)).to_be_visible()
+    soul = persona.get_by_label('角色设定',exact=True)
     expect(soul).to_be_visible()
     examples = ['我喜欢动手试一个小办法；意见不同时，也会说清自己的理由。', '我喜欢先做一个小实验，和你一起看结果。']
     soul.fill(next(item for item in examples if item != soul.input_value()))
-    dialog.get_by_role('button',name='保存人格',exact=True).click()
-    expect(dialog.get_by_role('button',name='保存人格',exact=True)).to_be_disabled()
+    if not persona.get_by_label('对方说', exact=True).count():
+        persona.get_by_role('button', name='添加示例', exact=True).click()
+    persona.get_by_label('对方说', exact=True).first.fill('要不要试试今晚看月亮？')
+    persona.get_by_label('助手回应', exact=True).first.fill('等云散了，我想听你说说月亮像什么。')
+    persona.get_by_role('button',name='保存人格',exact=True).click()
+    expect(persona.get_by_text('已保存',exact=True)).to_be_visible()
     transfer = desktop.rpc(page, 'alcorSecretary/exportIdentity', {'request': {}})
     assert transfer['soul'] == soul.input_value()
+    assert transfer['examples'][0] == {'user':'要不要试试今晚看月亮？', 'assistant':'等云散了，我想听你说说月亮像什么。'}
     for removed in ['导入人格','导出人格','迁移长期经历','档案口令']:
-        expect(dialog.get_by_text(removed,exact=True)).to_have_count(0)
+        expect(persona.get_by_text(removed,exact=True)).to_have_count(0)
     imported_name='岚舟' if transfer['name']!='岚舟' else '阿舟'
-    dialog.get_by_label('助手名称',exact=True).fill(imported_name)
-    dialog.get_by_role('button',name='保存人格',exact=True).click()
-    expect(dialog.get_by_role('button',name='保存人格',exact=True)).to_be_disabled()
-    consent = dialog.get_by_role('switch',name='允许 Alcor 主动跟进',exact=True)
+    persona.get_by_label('助手名称',exact=True).fill(imported_name)
+    persona.get_by_role('button',name='保存人格',exact=True).click()
+    expect(persona.get_by_text('已保存',exact=True)).to_be_visible()
+    persona.get_by_role('tab',name='主动交流',exact=True).click()
+    consent = persona.get_by_role('switch',name='允许 Alcor 主动跟进',exact=True)
     if consent.get_attribute('aria-checked') == 'true':consent.click()
     expect(consent).to_have_attribute('aria-checked','false')
     consent.click()
     expect(consent).to_have_attribute('aria-checked','true')
-    delivery=dialog.get_by_role('switch',name='桌面便笺',exact=True)
+    delivery=persona.get_by_role('switch',name='桌面便笺',exact=True)
     if delivery.get_attribute('aria-checked')=='false':delivery.click()
     expect(delivery).to_have_attribute('aria-checked','true')
     delivery.click()
     expect(consent).to_have_attribute('aria-checked','true')
     expect(delivery).to_have_attribute('aria-checked','false')
     delivery.click()
-    target=dialog.locator('[data-channel-session="onebot-private-10001"]')
+    target=persona.locator('[data-channel-session="onebot-private-10001"]')
     if target.get_by_role('button',name='撤销授权',exact=True).count():
         target.get_by_role('button',name='撤销授权',exact=True).click()
-        expect(target.get_by_role('button',name='授权七天',exact=True)).to_be_enabled()
-    target.get_by_role('button',name='授权七天',exact=True).click()
-    expect(target.get_by_text(re.compile('授权至'))).to_be_visible()
-    assert next(row for row in desktop.rpc(page,'alcorSecretary/deliverySettings',{'request':{}})['targets'] if row['route']['sessionId']=='onebot-private-10001')['until']>0
+        expect(target.get_by_role('button',name='允许主动发送',exact=True)).to_be_enabled()
+    target.get_by_role('button',name='允许主动发送',exact=True).click()
+    expect(target.get_by_text('持续授权，可随时撤销。',exact=True)).to_be_visible()
+    assert next(row for row in desktop.rpc(page,'alcorSecretary/deliverySettings',{'request':{}})['targets'] if row['route']['sessionId']=='onebot-private-10001')['until'] is None
     target.get_by_role('button',name='撤销授权',exact=True).click()
     expect(consent).to_have_attribute('aria-checked','true')
-    expect(target.get_by_role('button',name='授权七天',exact=True)).to_be_enabled()
+    expect(target.get_by_role('button',name='允许主动发送',exact=True)).to_be_enabled()
     page.screenshot(path=str(ARTIFACTS / (label + '-channel-delivery-settings.png')))
-    expect(dialog.get_by_text('留意今天到期的事务',exact=True)).to_have_count(0)
-    expect(dialog.get_by_text('定时事务回顾',exact=True)).to_have_count(0)
+    expect(persona.get_by_text('留意今天到期的事务',exact=True)).to_have_count(0)
+    expect(persona.get_by_text('定时事务回顾',exact=True)).to_have_count(0)
     consent.click()
     expect(consent).to_have_attribute('aria-checked','false')
-    cards=dialog.locator('.alcor-memory-card')
+    persona.get_by_role('tab',name='长期记忆',exact=True).click()
+    cards=persona.locator('.alcor-memory-card')
     assert cards.count()>=2
-    expand=dialog.get_by_role('button',name='展开全文',exact=True).first
+    expand=persona.get_by_role('button',name='展开全文',exact=True).first
     expand.click()
-    expect(dialog.get_by_role('button',name='收起',exact=True).first).to_have_attribute('aria-expanded','true')
-    dialog.get_by_role('button',name='收起',exact=True).first.click()
+    expect(persona.get_by_role('button',name='收起',exact=True).first).to_have_attribute('aria-expanded','true')
+    persona.get_by_role('button',name='收起',exact=True).first.click()
     page.screenshot(path=str(ARTIFACTS / (label + '-memory-cards.png')))
-    record = dialog.locator('.alcor-memory-row').filter(has_text='PRIVATE_MEMORY_CANARY').first
+    record = persona.locator('.alcor-memory-row').filter(has_text='PRIVATE_MEMORY_CANARY').first
     record.get_by_role('button',name='管理',exact=True).click()
     editor = page.get_by_role('dialog',name='管理记忆',exact=True)
     editor.get_by_label('记忆内容').fill('UI_CORRECTED_CANARY')
     editor.get_by_role('button',name='保存更正',exact=True).click()
     expect(editor).not_to_be_visible()
-    dialog.locator('.alcor-memory-row').filter(has_text='UI_CORRECTED_CANARY').get_by_role('button',name='管理',exact=True).click()
+    persona.locator('.alcor-memory-row').filter(has_text='UI_CORRECTED_CANARY').get_by_role('button',name='管理',exact=True).click()
     page.get_by_role('dialog',name='管理记忆',exact=True).get_by_role('button',name='忘记',exact=True).click()
     expect(page.get_by_role('dialog',name='管理记忆',exact=True)).not_to_be_visible()
-    expect(dialog.get_by_text('UI_CORRECTED_CANARY',exact=True)).to_have_count(0)
+    expect(persona.get_by_text('UI_CORRECTED_CANARY',exact=True)).to_have_count(0)
+    persona.get_by_role('tab',name='人格设定',exact=True).click()
     soul.scroll_into_view_if_needed()
     page.screenshot(path=str(ARTIFACTS / (label + '-memory.png')))
     page.set_viewport_size({'width':390,'height':844})
@@ -309,8 +331,6 @@ def check(page, label, delayed=None):
     page.wait_for_function("""() => document.body.hasAttribute('data-ds-dark-theme') && getComputedStyle(document.querySelector('#alcor-identity-name')).backgroundColor === 'rgb(29, 29, 32)'""")
     page.screenshot(path=str(ARTIFACTS / (label + '-memory-dark.png')))
     page.set_viewport_size({'width':1280,'height':900})
-    dialog.press('Escape')
-    expect(dialog).not_to_be_visible()
     page.get_by_role('button', name='简报', exact=True).first.click()
     page.set_viewport_size({'width':1280,'height':900})
     page.emulate_media(color_scheme='light')

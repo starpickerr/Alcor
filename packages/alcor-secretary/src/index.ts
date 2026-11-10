@@ -94,6 +94,8 @@ export default class Secretary extends TypertRemoteService {
     const {sessionId,beforeSeq}=accountSchemas.channelHistory[0].parse(request)
     await this.channels.catalog()
     if(!this.channels.table.get(sessionId))throw Error('通道会话不存在。')
+    const platform=await this.channels.platformHistory(sessionId,beforeSeq)
+    if(platform)return platform
     const surface=await this.ctx.sessionQuery.readSurface(sessionId)
     const events=surface.events.filter(e=>(beforeSeq==null || e.seq<beforeSeq) && ['user/message','assistant/message'].includes(e.type))
     const selected=events.slice(-80)
@@ -146,7 +148,7 @@ export default class Secretary extends TypertRemoteService {
   async allowInitiative(request) {
     const enabled=accountSchemas.allowInitiative[0].parse(request).enabled
     const result=await this.memory.personal.allowInitiative(enabled)
-    if(enabled && this.delivery.state().grants.some(g=>g.until>Date.now()))await this.delivery.ensureJob()
+    if(enabled && this.delivery.hasActiveGrants())await this.delivery.ensureJob()
     if(!enabled)await this.delivery.pause()
     return result
   }
@@ -159,7 +161,7 @@ export default class Secretary extends TypertRemoteService {
   @Remote
   async nextFollowup(request) {
     accountSchemas.nextFollowup[0].parse(request)
-    const candidate=()=>this.memory.personal.desktopFollowup(new Date(), note=>!this.delivery.assigned(note.id))
+    const candidate=()=>this.memory.personal.desktopFollowup(new Date(), note=>note.kind !== 'idle' && !this.delivery.assigned(note.id))
     const planned=candidate()
     const note=await this.memory.personal.reconsider(planned,()=>candidate()?.id===planned?.id)
     if(note && (!this.memory.personal.validReview(note.id,note.stamp) || candidate()?.id!==note.id))return null

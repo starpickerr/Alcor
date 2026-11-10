@@ -45,16 +45,16 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.88.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.91.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
 
 ```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.88.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.91.tgz --ignore-scripts
 dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.18.tgz --ignore-scripts
 ```
 
 在窗口顶部切换 Alcor 或 DSH 工作台。Alcor 侧栏提供事务、日程、简报、账单和自动化。工作台首页按项目和最近对话组织专业任务，使用宿主模型和工具权限。AgentHub 的入口位于工作台，见[插件说明](../packages/alcor-agent-hub/README.md)。
 
-在 Alcor 中，可以从侧栏新建对话，或点击小熊继续交谈。在「设置 → Alcor」中，分别管理人格与记忆、小熊外观和项目空间。右键小熊可以打开设置或隐藏它。
+在 Alcor 中，可以从侧栏新建对话，或点击小熊继续交谈。在侧栏「人格」中管理人设、对话示例、主动交流和长期记忆。「设置 → Alcor」提供小熊外观和项目空间。右键小熊可以打开设置或隐藏它。
 
 Apple 日历与提醒事项的同步由「插件 → @alcor/apple-sync」管理，见[插件说明](../packages/alcor-apple-sync/README.md)。eLearning 和邮件接入见 [MCP 接入](mcp-connections.md)。
 
@@ -311,7 +311,7 @@ Apple `0.1.11`：双方分类／清单取并集并建立一一映射，补齐 St
 
 简报 `0.1.58`：每次运行由一个持久 `stella-briefing` 会话执行筛选和写作，不再为批次启动子 Agent。小型全新窗口可一次提交筛选及报告；较大或增量窗口由同一会话分批处理，较长原文可通过受限工具按顺序分页读取，业务层校验完整覆盖后才保存检查点。规则、模型和来源范围按运行冻结，每步与读取、提交时复核授权；取消在保存前生效时不推进游标；若保存已先完成，按已保存结果对账。未通过校验不推进游标。旧版未完成任务须新建，不会把旧批次当作新协议恢复。空窗口和内容未变化的刷新不调用模型。上下文超限或输出不完整时会失败并保留来源游标；模型摘要和会话历史可能增加调用或成本，不能保证任何窗口均节省 token 或与旧报告完全相同。
 
-设置中的“人格与记忆”可修改助手名称和公开人格。Alcor 可以从不同会话的记忆中形成相处习惯，设置中可查看依据。开启主动跟进后，Alcor 可以依据有效记忆安排后续交流。在「消息送达」中单独启用桌面便笺，到期时可在 Alcor 页面看到跟进。关闭桌面便笺保留未过期事项，关闭主动跟进取消待发事项。消息送达支持桌面便笺和 QQ 主动跟进。QQ 目的地按联系人或群单独授权七天，投递由 DSH 定时检查；客户端需要保持运行。通道适配与回执规则见[通道接入](channels.md)。
+「人格」页面的名字、人设和虚构对话示例供桌面、QQ 私聊与群聊共用。在「主动交流」开启主动跟进后，Alcor 可以记下值得再问的具体经历。到期时结合后续对话和同一人格，决定发送、推迟或取消。即使没有未完成话题，Alcor 也会依据人格、沉默时长和交谈记录选择问候、等待或保持安静。被 @ 时也会区分求助和寒暄。QQ 主动联系按接入的联系人或群分别开启，新的授权持续到撤销，原有七天授权仍按原日期到期。DSH 需要保持运行。[通道与记忆](channels.md)说明 QQ 看到的历史、记忆范围与投递规则。
 
 长期记忆以卡片展示来源、日期和内容预览。展开可查看全文与形成依据，点“管理”可更正或忘记。
 

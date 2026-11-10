@@ -1,6 +1,6 @@
 import { lstatSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { lifeModel, currentMood } from './life.js'
 import { publicSoul } from '../persona.js'
 import { experiences } from './experience-schema.js'
@@ -25,7 +25,7 @@ function memoryRole(item) {
   if (item.kind === 'fact') return '从对话整理的事实'
   return item.subject === 'owner' ? '来自主人对话的记录' : '来自当前听众范围的记录'
 }
-export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', llm, getDefaultModel, getPersona, logger = console }) {
+export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', llm, getDefaultModel, getPersona, getInitiativeGeneration, logger = console }) {
   noLinks(dataDir)
   if (active.has(dataDir)) throw Error('记忆已有写入者。')
   mkdirSync(dataDir, { recursive: true, mode: 0o700 })
@@ -70,13 +70,18 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     }) })
     return publicIdentity.parse(authority.identity)
   }
-  function editIdentity({ name, soul, expectedRevision }) {
+  function editIdentity({ name, soul, examples, expectedRevision }) {
     return serialize(() => {
       const current = identity()
-      if (expectedRevision && expectedRevision !== current.revision) throw Error('人格已更新，请重新打开设置。')
-      if ((name ?? current.name) === current.name && soul === current.soul) return { ok: true }
-      const next = publicIdentity.parse({ ...current, name: name ?? current.name, soul: publicSoul(soul),
-        ancestors: [...current.ancestors, current.revision].slice(-256), revision: randomUUID() })
+      if (expectedRevision && expectedRevision !== current.revision) throw Error('人格已更新，请重新打开人格页面。')
+      const next = publicIdentity.parse({
+        ...current, name: name ?? current.name, soul: publicSoul(soul),
+        examples: examples ?? current.examples,
+      })
+      if (!next.examples?.length) delete next.examples
+      if (JSON.stringify(next) === JSON.stringify(current)) return { ok: true }
+      next.ancestors = [...current.ancestors, current.revision].slice(-256)
+      next.revision = randomUUID()
       persist({ ...authority, identity: next })
       return { ok: true }
     })
@@ -142,16 +147,38 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     capture.handleSessionEvent(session, event)
     schedule()
   }
-  function records() {
+  function captureAmbient(messageId,content,actor,at=Date.now()){
+    open(); reconcile();
+    if(actor.audience!==audience || !messageId || !content)return;
+    content=text(content);
+    const id='qq-inbound:'+messageId;
+    if (!Number.isFinite(at) || at <= authority.barrier || at < Date.now() - 86400000 || at > Date.now() + 60000) return
+    if ((authority.inboundSeen ?? []).includes(id) || store.readJournal(2).some(item => item.id === id)) return
+    store.appendJournal({v:1,id,ts:at,session:actor.source.sessionId,turn:0,subject:actor.subject,
+      user:'['+actor.subject+'] '+content,assistant:'',tools:[]});
+    persist({...authority,participants:[...new Set([...authority.participants,actor.source.qqUserId].filter(Boolean))],inboundSeen:[...(authority.inboundSeen ?? []),id].slice(-512)});
+    noteIncoming(actor,content,at);
+    schedule();
+  }
+  function records(history = 'preview') {
     open(); reconcile()
+    const journal = history === 'archive'
+      ? store.allJournal().filter(item => item.ts > authority.barrier && item.state !== 'dismissed')
+      : store.pendingJournal().slice(0, history === 'context' ? 60 : 12)
+    const retained = new Set(authority.entries.map(item => item.id))
+    // A completed turn supersedes the same incoming message recorded while the group was speaking.
+    const replied = new Set(journal.filter(item => item.assistant).flatMap(item => item.qqMessages ?? []))
     return [
       ...authority.entries.map(item => ({ ...item, kind: 'memory' })),
       ...interests(),
       ...(authority.habits ?? []).map(habit => ({ ...habit, kind: 'habit' })),
       ...store.facts.map(item => ({ id: item.id, kind: 'fact', content: item.fact, subject: 'derived', audience,
         source: { kind: 'compiled', sessionId: item.session || '', at: item.created_at } })),
-      ...store.pendingJournal().slice(0, 12).filter(item => !authority.entries.some(entry => entry.id === 'journal:' + item.id)).map(item => ({ id: 'journal:' + item.id, kind: 'recent', content: item.user, subject: 'derived', audience,
-        source: { kind: 'conversation', sessionId: item.session, at: new Date(item.ts).toISOString() } })),
+      ...journal.filter(item => !replied.has(item.id) && !retained.has('journal:' + item.id)).map(item => ({
+        id: 'journal:' + item.id, kind: 'recent', audience,
+        content: item.assistant ? item.user + '\n助手回复：' + item.assistant : item.user,
+        subject: item.subject || 'derived', source: { kind: 'conversation', sessionId: item.session, at: new Date(item.ts).toISOString() },
+      })),
     ]
   }
   function interests(){
@@ -167,11 +194,14 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       evidence:rows.slice(-5).map(row=>row.evidence),source:{kind:'exploration',at:new Date(rows.at(-1).at).toISOString()},
     }))
   }
-  function recall(query = '', limit = 6) {
-    const pool = records(), byId = new Map(pool.map(item => [item.id, item]))
+  function recall(query = '', limit = 8, history = 'archive') {
+    const pool = records(history), byId = new Map(pool.map(item => [item.id, item]))
     return searchIndex(buildIndex(pool.map(item => ({ id: item.id, text: item.content, tags: [] }))), query, { topK: limit })
-      .map(hit => ({ ...byId.get(hit.id), attribution: memoryRole(byId.get(hit.id)), content: text(byId.get(hit.id).content) }))
+      .map(hit => ({ ...byId.get(hit.id), score: hit.score, attribution: memoryRole(byId.get(hit.id)), content: text(byId.get(hit.id).content) }))
   }
+  let incomingSequence = 0
+  const currentGeneration = () => authority.initiative
+    ? (getInitiativeGeneration ? getInitiativeGeneration() : authority.initiativeGeneration ?? 0) : undefined
   let observing=false
   const waiting=new Map()
   async function observe(input, actor, eventId, selection, allowed=()=>true) {
@@ -184,12 +214,13 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     observing=true
     try {
       const revision=authority.revision
+      const sequence=incomingSequence, generation=currentGeneration()
       const prior=authority.life ?? {}
       const preferences=authority.entries.filter(row=>row.subject===actor.subject && row.source.kind==='preference')
       if(!allowed())return
-      const choice=await lifeModel(llm,()=>selection ?? getDefaultModel?.(),'observe',{speech:input,personality:(getPersona?.() ?? (audience==='personal'?identity().soul:'')).slice(0,1200),
+      const choice=await lifeModel(llm,()=>selection ?? getDefaultModel?.(),'observe',{speech:input,followupsEnabled:generation !== undefined,personality:(getPersona?.() ?? (audience==='personal'?identity().soul:'')).slice(0,1200),
         preferences:preferences.slice(-6).map(row=>({topic:prior.topics?.[row.id],quote:row.content})),topics:[...new Set((prior.readings ?? []).map(row=>row.topic))]})
-      if(closed || !allowed() || revision!==authority.revision || (!choice.mood && !choice.preference && !choice.explore))return
+      if(closed || !allowed() || revision!==authority.revision || (!choice.mood && !choice.preference && !choice.explore && !choice.followup))return
       await serialize(()=>{
         if(!allowed() || revision!==authority.revision)return
         const life={...authority.life}
@@ -213,7 +244,7 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
           const found=recall(choice.explore,8).find(row=>['memory','recent'].includes(row.kind) && !visited.has(row.id) && !consulted.has(row.content.trim()) && !input.includes(row.content) && [...terms].some(term=>row.content.toLowerCase().includes(term)))
           if(found && !readings.some(row=>row.eventId===eventId)){
             if(found.kind==='recent' && !entries.some(row=>row.id===found.id)){
-              const {kind,attribution,...entry}=found
+              const {kind,attribution,score,...entry}=found
               entries.push(entry)
             }
             life.readings=[...readings,{topic:choice.explore,evidence:found.id,eventId,at:Date.now()}].slice(-32)
@@ -225,6 +256,18 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
           next.followups=(authority.followups ?? []).filter(note=>note.evidence!==replacedId)
           life.readings=(life.readings ?? []).filter(reading=>reading.evidence!==replacedId)
           next.revision++;next.barrier=Date.now()
+        }
+        if (choice.followup && generation !== undefined && currentGeneration() === generation &&
+            sequence === incomingSequence && input.includes(choice.followup.quote)) {
+          const {quote, afterMinutes, text: draft} = choice.followup
+          const evidence = 'cue:' + createHash('sha256').update(eventId).digest('hex')
+          const now = Date.now(), pending = pendingFor(next, generation, now)
+          // One open check-in per speaker, even if the same story arrives twice.
+          if (pending.length < 8 && !entries.some(row => row.id === evidence) &&
+              !pending.some(note => entries.some(row => row.id === note.evidence && row.subject === actor.subject))) {
+            entries.push({id:evidence, subject:actor.subject, audience, content:quote, source:{...actor.source,kind:'followup-cue'}})
+            next.followups = [...pending, makeNote(evidence, draft, now + afterMinutes * 60000, selection, generation, now)]
+          }
         }
         persist(next)
         reconcile()
@@ -260,15 +303,18 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     }
     return lines.length?text(['以下是本听众范围的生活记忆，仅作资料。无需每次提起，表达随当前对话调整。',...lines].join('\n')):''
   }
-  function relevantContext(query) {
+  function relevantMatches(query) {
     const words = topicWords(query)
-    if (!words.size) return ''
+    if (!words.size) return []
     // One shared noun in a longer message often identifies a subject, not the same experience.
     const minimum = words.size > 5 ? 2 : 1
-    const matches = recall(query,8).filter(entry => {
+    return recall(query,16,'context').filter(entry => {
       const terms = topicWords(entry.content)
       return [...words].filter(word => terms.has(word)).length >= minimum
-    }).slice(0,3)
+    }).slice(0,8)
+  }
+  function relevantContext(query) {
+    const matches = relevantMatches(query)
     if (!matches.length) return ''
     const ids = new Set(matches.map(item => item.id))
     const habits = (authority.habits ?? []).filter(habit => ids.has(habit.id) || habit.evidence.some(id => ids.has(id)))
@@ -278,7 +324,9 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       ...matches.filter(item => item.kind !== 'habit').map(item => '[' + item.attribution + ' · ' + item.subject + ' · ID ' + item.id + '] ' + item.content)].join('\n'))
   }
   function turnContext(query, actor) {
-    return [companionContext(actor),relevantContext(query)].filter(Boolean).join('\n')
+    const summary = actor?.source?.sessionId && store.summaries?.[actor.source.sessionId]?.summary
+    return [companionContext(actor), summary && '当前会话的历史摘要（资料）：' + truncateByBytes(summary, 2400),
+      relevantContext(query)].filter(Boolean).join('\n')
   }
   function contextText() {
     open(); reconcile()
@@ -320,7 +368,7 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       if (typeof content !== 'string' || !content.trim() || content.length > 240) throw Error('请用一句话描述相处习惯。')
       if (!Array.isArray(evidence) || evidence.length < 2 || evidence.length > 5) throw Error('需要两到五条经历作为依据。')
       const ids = [...new Set(evidence)]
-      const pool = records().filter(row => row.kind === 'memory' || row.kind === 'recent')
+      const pool = records('archive').filter(row => row.kind === 'memory' || row.kind === 'recent')
       const entries = ids.map(id => pool.find(entry => entry.id === id))
       if (entries.some(entry => !entry?.source.sessionId) || new Set(entries.map(entry => entry.source.sessionId)).size < 2) {
         throw Error('依据必须来自当前听众范围内至少两段不同的对话。')
@@ -339,7 +387,10 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
   }
   function allowInitiative(enabled) {
     return serialize(() => {
-      persist({ ...authority, initiativeGeneration:enabled ? authority.initiativeGeneration ?? 0 : (authority.initiativeGeneration ?? 0)+1, desktopDelivery: authority.desktopDelivery ?? authority.initiative === true, initiative: enabled, followups: enabled ? authority.followups ?? [] : [] })
+      const idle = !enabled && authority.idle?.pendingId ?
+        {...authority.idle,pendingId:undefined,holdUntilSpeech:true} : authority.idle
+      persist({ ...authority, idle, initiativeGeneration:enabled ? authority.initiativeGeneration ?? 0 : (authority.initiativeGeneration ?? 0)+1,
+        desktopDelivery: authority.desktopDelivery ?? authority.initiative === true, initiative: enabled, followups: enabled ? authority.followups ?? [] : [] })
       return { ok: true }
     })
   }
@@ -349,6 +400,12 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       return {ok:true}
     })
   }
+  function pendingFor(state, generation, now) {
+    return (state.followups ?? []).filter(note => note.due + 86400000 > now && (note.generation ?? 0) === generation)
+  }
+  function makeNote(evidence, content, due, model, generation, now) {
+    return {id:randomUUID(), evidence, content:content.trim(), due, generation, createdAt:now, ...(model ? {model} : {})}
+  }
   function planFollowup({ evidence, content, dueAt, model, generation=authority.initiativeGeneration ?? 0 }) {
     return serialize(() => {
       if (!authority.initiative) throw Error('主动跟进尚未开启。')
@@ -356,18 +413,43 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       const due = Date.parse(dueAt), now = Date.now()
       if (!Number.isFinite(due) || due <= now || due > now + 7 * 86400000 || !/(Z|[+-]\d\d:\d\d)$/.test(dueAt)) throw Error('请选择未来七天内带时区的时间。')
       if (typeof content !== 'string' || !content.trim() || content.length > 240) throw Error('请用一两句话说明想交流的事。')
-      const pending = (authority.followups ?? []).filter(item => item.due + 86400000 > now && (item.generation ?? 0)===generation)
+      const pending = pendingFor(authority, generation, now)
       const same = pending.find(item => item.evidence === evidence)
       if (same) return same
       if (pending.length >= 8) throw Error('待跟进的事情已满。')
-      const note = { id: randomUUID(), evidence, content: content.trim(), due, generation, createdAt:now, ...(model?{model}:{} ) }
+      const note = makeNote(evidence, content, due, model, generation, now)
       persist({ ...authority, followups: [...pending, note] })
       return note
     })
   }
-  function noteIncoming(actor, speech) {
-    if(!speech || actor.audience!==audience || !authority.initiative || !authority.followups?.length)return
+  function recordActivity(sessionId, speaker, speech, at, desktop = false) {
+    if (!sessionId || !speech || !Number.isFinite(at) || at > Date.now() + 60000 || at <= authority.barrier) return
+    if (authority.idle?.at > at) return
+    const message = truncateByBytes(speech, 900)
+    const lastHuman = speaker === 'Alcor' ? authority.idle?.lastHuman : {speaker,message,at,desktop}
+    const idle = { id:randomUUID(), at, sessionId, speaker, message, nextAt:at + 3600000, desktop, lastHuman }
+    if (speaker === 'Alcor' && authority.idle) {
+      // Only a person speaking again lifts unanswered/uncertain delivery limits.
+      Object.assign(idle, {unanswered:authority.idle.unanswered, unknown:authority.idle.unknown,
+        pendingId:authority.idle.pendingId, done:authority.idle.done, lastGreetingAt:authority.idle.lastGreetingAt,
+        holdUntilSpeech:authority.idle.holdUntilSpeech, personaKey:authority.idle.personaKey,
+        backoffUntil:authority.idle.backoffUntil, boundary:authority.idle.boundary,
+        nextAt:Math.max(idle.nextAt,authority.idle.nextAt)})
+    }
+    persist({ ...authority, idle, followups:speaker === 'Alcor' ? authority.followups :
+      authority.followups?.filter(note => note.kind !== 'idle') })
+  }
+  function noteIncoming(actor, speech, at=Date.now()) {
+    if(!speech || actor.audience!==audience)return
+    incomingSequence++
+    if (['qq-private','qq-group'].includes(actor.source?.kind)) recordActivity(actor.source.sessionId, actor.subject, speech, at)
+    if (actor.source?.kind === 'desktop' && actor.owner && audience === 'personal') {
+      if (authority.idle) recordActivity(authority.idle.sessionId, actor.subject, speech, at, true)
+      else persist({...authority,desktopActivity:{at,message:truncateByBytes(speech,900)}})
+    }
+    if(!authority.initiative || !authority.followups?.length)return
     const followups=authority.followups.map(note=>{
+      if(note.createdAt && at<note.createdAt)return note;
       const updates=note.updates ?? []
       // If the bounded history no longer fits, retire the question instead of guessing what was missed.
       if(updates.length>=12 || speech.length>1600)return null
@@ -375,10 +457,87 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     }).filter(Boolean)
     persist({...authority,followups})
   }
+  const checkedSessions = new Set()
+  function seedIdle(sessionId) {
+    if (authority.idle || checkedSessions.has(sessionId)) return
+    checkedSessions.add(sessionId)
+    const last = store.readJournal().find(row => row.session === sessionId && row.ts > authority.barrier &&
+      (row.qqMessages?.length || row.id.startsWith('qq-inbound:') || row.subject === 'owner' || row.subject?.startsWith('qq:')))
+    if (last) {
+      recordActivity(sessionId, last.assistant ? 'Alcor' : last.subject || '群成员', last.assistant || last.user, last.ts)
+      if (audience === 'personal' && authority.desktopActivity?.at > last.ts)
+        recordActivity(sessionId,'owner',authority.desktopActivity.message,authority.desktopActivity.at,true)
+    }
+  }
+  function recordIdleOutcome(id, status, at = Date.now()) {
+    return serialize(() => {
+      const idle = authority.idle
+      if (!idle || idle.pendingId !== id || !['sent','unknown','deferred','cancelled','expired'].includes(status)) return
+      const next = {...idle,pendingId:undefined}
+      if (status === 'unknown') Object.assign(next, {done:true,unknown:true})
+      else if (status === 'sent') {
+        next.unanswered = (idle.unanswered ?? 0) + 1
+        next.done = next.unanswered >= 3
+        next.nextAt = at + (next.unanswered === 1 ? 24 : 72) * 3600000
+        next.backoffUntil = next.nextAt
+        next.lastGreetingAt = at
+      } else {
+        next.done = false
+        next.nextAt = at + 3600000
+      }
+      persist({...authority,idle:next,followups:(authority.followups ?? []).filter(note => note.id !== id),
+        ...(status === 'sent' ? {lastDismissed:at} : {})})
+    })
+  }
+  async function considerIdle({ allowed, grant, sessionId, destination }) {
+    if (!grant || !sessionId || destination !== 'channel' || !allowed()) return null
+    const now = Date.now(), generation = currentGeneration()
+    const personality = getPersona?.() ?? (audience === 'personal' ? identity().soul : '')
+    const personaKey = createHash('sha256').update(personality).digest('hex')
+    const stale = (authority.followups ?? []).filter(note => note.kind === 'idle' &&
+      (note.idleGrant !== grant || note.activityId !== authority.idle?.id || note.generation !== generation ||
+       note.review?.until <= now || note.personaKey !== personaKey))
+    for (const note of stale) await recordIdleOutcome(note.id,'expired')
+    if (generation === undefined || !mayInterrupt(new Date(now)) || pendingFor(authority,generation,now).length) return null
+    seedIdle(sessionId)
+    const idle = authority.idle
+    if (!idle || idle.sessionId !== sessionId || idle.pendingId || idle.unknown || idle.holdUntilSpeech || idle.unanswered >= 3 ||
+        idle.backoffUntil > now || now < idle.at + 3600000) return null
+    const reconsiderPersona = idle.personaKey && idle.personaKey !== personaKey && !idle.boundary
+    if (!reconsiderPersona && (idle.done || idle.nextAt > now)) return null
+    const revision = authority.revision
+    // Reserve the next check before I/O so a concurrent scheduler or restart cannot start a second decision.
+    persist({...authority,idle:{...idle,personaKey,done:false,nextAt:now + 3600000}})
+    const recentConversation = store.readJournal().filter(row => row.session === sessionId && row.ts > authority.barrier)
+      .slice(0, 8).reverse().map(row => truncateByBytes([row.user,row.assistant].filter(Boolean).join(' / '), 600))
+    let choice
+    try {
+      choice = await lifeModel(llm,getDefaultModel,'idle',{personality,audience,lastSpeaker:idle.speaker,
+        lastMessage:idle.message, lastHuman:idle.lastHuman, preferences:authority.entries.filter(row=>row.source.kind==='preference').slice(-8).map(row=>({subject:row.subject,quote:row.content})), lastInteractionSource:idle.desktop ? 'desktop' : 'qq', unansweredGreetings:idle.unanswered ?? 0, lastGreetingAt:idle.lastGreetingAt ? new Date(idle.lastGreetingAt).toISOString() : undefined, recentConversation, lastInteractionAt:new Date(idle.at).toISOString(),
+        now:new Date(now).toISOString(), idleHours:(now-idle.at)/3600000})
+    } catch { return null }
+    return serialize(() => {
+      const at = Date.now()
+      if (!allowed() || currentGeneration() !== generation || !mayInterrupt(new Date(at)) ||
+          revision !== authority.revision || idle.id !== authority.idle?.id || pendingFor(authority,generation,at).length ||
+          personality !== (getPersona?.() ?? (audience === 'personal' ? identity().soul : ''))) return null
+      if (choice.action === 'wait') {
+        persist({...authority,idle:{...authority.idle,boundary:choice.reason==='boundary',nextAt:at + choice.afterHours * 3600000}})
+        return null
+      }
+      const complete = {...authority.idle,done:true,boundary:choice.reason==='boundary'}
+      if (choice.action === 'skip') { persist({...authority,idle:complete}); return null }
+      const note = {id:randomUUID(),kind:'idle',personaKey,idleGrant:grant,activityId:idle.id,activityAt:idle.at,
+        content:choice.text,due:at,createdAt:at,generation,
+        review:{action:'send',text:choice.text,destination:'channel',until:at + 5*60000}}
+      persist({...authority,idle:{...authority.idle,pendingId:note.id},followups:[...(authority.followups ?? []),note]})
+      return note
+    })
+  }
   const reviews=new Map()
   function validReview(id,stamp,now=Date.now()) {
     const note=authority.followups?.find(row=>row.id===id)
-    return authority.initiative && note && (note.stamp ?? 0)===stamp && note.review?.action==='send' && now<note.review.until
+    return authority.initiative && note && (note.kind !== 'idle' || (note.activityId === authority.idle?.id && note.personaKey === createHash('sha256').update(getPersona?.() ?? (audience === 'personal' ? identity().soul : '')).digest('hex'))) && (note.stamp ?? 0)===stamp && note.review?.action==='send' && now<note.review.until
   }
   async function reconsider(note, allowed, destinations=['desktop']) {
     if(!note || !allowed())return null
@@ -387,14 +546,14 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       const latest=authority.followups.find(row=>row.id===note.id)
       return destinations.includes(latest.review.destination ?? destinations[0]) ? {...latest,content:latest.review.text,destination:latest.review.destination,stamp} : null
     }
-    if(note.review?.until>Date.now())return null
+    if (note.kind === 'idle' || note.review?.until>Date.now()) return null
     const key=note.id+':'+stamp
     if(reviews.has(key))return reviews.get(key)
     const run=(async()=>{
       const evidence=authority.entries.find(row=>row.id===note.evidence)
       if(!evidence)return null
       let decision
-      try{decision=await lifeModel(llm,()=>note.model ?? getDefaultModel?.(),'review',{destinations,speaker:evidence.subject,basis:evidence.content,draft:note.content,updates:note.updates ?? [],
+      try{decision=await lifeModel(llm,()=>note.model ?? getDefaultModel?.(),'review',{destinations,personality:getPersona?.() ?? (audience === 'personal' ? identity().soul : ''),speaker:evidence.subject,basis:evidence.content,draft:note.content,updates:note.updates ?? [],
         priorConversation:note.createdAt?[]:store.pendingJournal().slice(-4).map(row=>row.user.slice(-300)),
         preferences:authority.entries.filter(row=>row.subject===evidence.subject && row.source.kind==='preference').slice(-4).map(row=>row.content),
         mood:currentMood(authority.life?.mood,Date.now())})}
@@ -438,7 +597,7 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
   }
   function change({ id, content }, actor) {
     return serialize(() => {
-      const item = records().find(item => item.id === id)
+      const item = records('archive').find(item => item.id === id)
       if (!item) throw Error('记忆不存在，请先检索。')
       if (!actor.owner && item.subject !== actor.subject) throw Error('只能更正或忘记自己的记忆。')
       if (content !== undefined && (typeof content !== 'string' || !content.trim() || content.length > 1000)) throw Error('更正内容需为 1–1000 字。')
@@ -450,7 +609,7 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       if(item.kind==='interest' && content!==undefined)throw Error('兴趣由实际探索形成，可以忘记后重新积累。')
       const life={...authority.life,mood:null,readings:authority.life?.readings?.filter(row=>row.evidence!==id && 'interest:'+row.topic!==id) ?? []}
       if(life.topics && content===undefined){life.topics={...life.topics};delete life.topics[id]}
-      persist({ ...authority, life, habits, entries, followups: (authority.followups ?? []).filter(note => note.evidence !== id && !note.updates?.some(row=>row.text.includes(item.content))).map(note=>({...note,review:undefined,stamp:(note.stamp ?? 0)+1})), revision: authority.revision + 1, barrier: Date.now() })
+      persist({ ...authority, idle:undefined, desktopActivity:undefined, life, habits, entries, followups: (authority.followups ?? []).filter(note => note.kind !== 'idle' && note.evidence !== id && !note.updates?.some(row=>row.text.includes(item.content))).map(note=>({...note,review:undefined,stamp:(note.stamp ?? 0)+1})), revision: authority.revision + 1, barrier: Date.now() })
       reconcile()
       return { ok: true, id }
     })
@@ -464,10 +623,11 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
   }
   schedule()
   return { dataDir, handleSessionEvent, flushSession(id) { open(); const result = capture.flushSession(id); schedule(); return result },
-    contextText, turnContext, observe, noteIncoming, reconsider, validReview, remember, recall, reflect, change, records, compilePending, dispose, exportExperiences, restoreExperiences,
+    contextText, turnContext, captureAmbient, hasInbound(id){return (authority.inboundSeen ?? []).includes('qq-inbound:'+id)}, observe, noteIncoming, reconsider, validReview, remember, recall, relevantMatches, reflect, change, records, compilePending, dispose, exportExperiences, restoreExperiences,
     identity, editIdentity, importIdentity, allowInitiative, planFollowup, nextFollowup, desktopFollowup, dismissFollowup,
-    allowDesktopDelivery,
-    pendingFollowups() { open(); return structuredClone((authority.followups ?? []).filter(note=>note.due+86400000>Date.now() && authority.entries.some(entry=>entry.id===note.evidence))) },
+    allowDesktopDelivery, considerIdle, recordActivity, recordIdleOutcome,
+    get pendingIdleId() { return authority.idle?.pendingId },
+    pendingFollowups() { open(); return structuredClone((authority.followups ?? []).filter(note=>note.due+86400000>Date.now() && (note.kind === 'idle' ? validReview(note.id,note.stamp ?? 0) : authority.entries.some(entry=>entry.id===note.evidence)))) },
     get desktopDelivery() { return authority.desktopDelivery ?? authority.initiative === true },
     get initiativeGeneration() { return authority.initiativeGeneration ?? 0 },
     get initiative() { return authority.initiative === true },
