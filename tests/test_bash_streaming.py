@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import threading
@@ -143,13 +144,12 @@ def test_windows_timeout_kills_process_tree(tmp_path):
     started = time.monotonic()
 
     try:
-        result = tool.execute({
-            "command": f'start "" /b {child_command} & ping -n 30 127.0.0.1 >nul',
-            "timeout": 1,
-        })
+        with pytest.raises(subprocess.TimeoutExpired):
+            tool._run_streaming(
+                f'start "" /b {child_command} & ping -n 30 127.0.0.1 >nul',
+                1, os.environ.copy(), {},
+            )
 
-        assert result.status == "error"
-        assert "timed out after 1 seconds" in result.result
         assert time.monotonic() - started < 8
         assert pid_file.exists()
         time.sleep(0.5)
@@ -164,18 +164,16 @@ def test_windows_long_running_command_streams_progress(tmp_path):
     progress = []
     tool.progress_callback = progress.append
 
-    result = tool.execute({
-        "command": (
-            f'"{sys.executable}" -u -c '
-            '"import sys,time; '
-            "[(sys.stdout.write('.'),sys.stdout.flush(),time.sleep(0.3)) "
-            'for _ in range(5)]"'
-        ),
-        "timeout": 5,
-    })
+    result = tool._run_streaming(
+        f'"{sys.executable}" -u -c '
+        '"import sys,time; '
+        "[(sys.stdout.write('.'),sys.stdout.flush(),time.sleep(0.3)) "
+        'for _ in range(5)]"',
+        5, os.environ.copy(), {},
+    )
 
-    assert result.status == "success"
-    assert result.result["output"] == "....."
+    assert result.returncode == 0
+    assert result.stdout == "....."
     assert progress
     assert progress[-1].endswith(".")
 
@@ -188,14 +186,25 @@ def test_windows_background_process_holding_pipe_does_not_hang(tmp_path):
     started = time.monotonic()
 
     try:
-        result = tool.execute({
-            "command": f'start "" /b {child_command} & echo done',
-            "timeout": 3,
-        })
+        result = tool._run_streaming(
+            f'start "" /b {child_command} & echo done',
+            3, os.environ.copy(), {},
+        )
 
-        assert result.status == "success"
-        assert result.result["output"].strip() == "done"
+        assert result.returncode == 0
+        assert result.stdout.strip() == "done"
         assert time.monotonic() - started < 8
         assert pid_file.exists()
     finally:
         _windows_kill_pid_file(pid_file)
+
+
+@windows_only
+def test_windows_public_command_fails_closed_without_process_isolation(tmp_path):
+    tool = Bash({"cwd": str(tmp_path)})
+    with patch.object(subprocess, "Popen") as launch:
+        result = tool.execute({"command": "echo denied"})
+
+    assert result.status == "error"
+    assert "Process isolation is not supported on this platform" in result.result
+    launch.assert_not_called()
