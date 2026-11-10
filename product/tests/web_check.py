@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 import time

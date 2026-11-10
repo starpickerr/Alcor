@@ -3,7 +3,6 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
@@ -21,7 +20,8 @@ for name in ('elearning', 'mail'):
 def config(page, package):
     page.get_by_role('button', name=re.compile(r'^(插件|Plugins)$')).click()
     back = page.get_by_role('button', name=re.compile(r'^(返回插件|Back to plugins)$'))
-    if back.is_visible(): back.click()
+    if back.is_visible():
+        back.click()
     page.get_by_role('heading', name=re.compile(r'^(插件|Plugins)$')).wait_for()
     page.get_by_text(package, exact=True).click()
     page.locator(f'[data-plugin-detail="{package}"] [data-plugin-config]').wait_for()
@@ -42,9 +42,14 @@ def open_sources(page):
 
 
 def check(page, home, profile, artifacts):
-    call = lambda endpoint, args={}: desktop.rpc(page, endpoint, args)
-    school = lambda: call('alcorSchool/elearningAccount', {'request': {}})
-    mail = lambda: call('alcorMail/state', {'request': {}})
+    def call(endpoint, args=None):
+        return desktop.rpc(page, endpoint, args if args is not None else {})
+
+    def school():
+        return call('alcorSchool/elearningAccount', {'request': {}})
+
+    def mail():
+        return call('alcorMail/state', {'request': {}})
     assert school()['installed'] and not school()['configured']
     assert mail()['installed'] and not mail()['configured']
     open_secretary(page)
@@ -129,7 +134,8 @@ def check(page, home, profile, artifacts):
     expect(first.get_by_role('button', name='保存邮箱', exact=True)).to_be_disabled()
     expect(first.get_by_role('button', name='测试连接', exact=True)).to_be_enabled()
     assert first.get_by_role('button', name='测试连接', exact=True).bounding_box()['y'] > first.get_by_role('button', name='保存邮箱', exact=True).bounding_box()['y']
-    chosen = lambda: call('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
+    def chosen():
+        return call('alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': 'list_sources'}})
     assert any(row['source'] == 'email' for row in chosen()), 'An enabled mailbox must not require a second briefing subscription'
     expect(page.locator('[data-plugin-briefing="@alcor/mail"]')).to_have_count(0)
     first.get_by_role('button', name='停用邮箱', exact=True).click()
@@ -258,11 +264,15 @@ def check(page, home, profile, artifacts):
 
 
 def main():
-    artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/alcor-source-desktop')); artifacts.mkdir(parents=True, exist_ok=True)
-    desktop.verify_release(); desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/alcor-source-desktop'))
+    artifacts.mkdir(parents=True, exist_ok=True)
+    desktop.verify_release()
+    desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     with fresh_test_home(prefix='alcor-source-desktop-') as temporary, sync_playwright() as playwright:
-        home = Path(temporary); desktop.environment(home)
-        profile = home / 'dsh/profiles/desktop'; profile.mkdir(parents=True)
+        home = Path(temporary)
+        desktop.environment(home)
+        profile = home / 'dsh/profiles/desktop'
+        profile.mkdir(parents=True)
         initialize_fresh(temporary, home / 'dsh', profile)
         (home / 'documents').mkdir()
         (profile / 'package.json').write_text(json.dumps({'name': 'source-bundle-check', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
@@ -335,4 +345,5 @@ export function apply(ctx) {
     print('PASS: official Desktop source bundles, installed frozen protocols, configuration UI, native credentials, discovery without content reads, DSH-owned permissions, disable/restart/restore/removal and config preservation')
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    main()
