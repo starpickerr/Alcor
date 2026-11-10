@@ -76,16 +76,20 @@ test('Hub executes dependency joins, captures model/persona, and retries a faile
   let active = 0
   let maximum = 0
   let fail = true
+  let releaseInitialPair
+  const initialPairStarted = new Promise(resolve => { releaseInitialPair = resolve })
   const coordinator = new HubCoordinator({ logger: { warn: assert.fail }, sessionController: { resolveAgent: async () => ({ agent: { model: { current: () => ({ provider: 'synthetic', model: 'default-model' }) } } }) }, subagents: {
     startActivation: async request => {
       requests.push(request)
       active++; maximum = Math.max(maximum, active)
-      return { childId: 'child-' + requests.length, dispose: async () => {}, result: new Promise(resolve => setTimeout(() => {
+      const initial = requests.length <= 2
+      if (requests.length === 2) releaseInitialPair()
+      return { childId: 'child-' + requests.length, dispose: async () => {}, result: (initial ? initialPairStarted : Promise.resolve()).then(() => {
         active--
         const failed = request.label === 'Fail once' && fail
         if (failed) fail = false
-        resolve({ stopReason: failed ? 'failed' : 'completed', output: [{ type: 'text', text: 'Formal reply ' + request.label }] })
-      }, 40)) }
+        return { stopReason: failed ? 'failed' : 'completed', output: [{ type: 'text', text: 'Formal reply ' + request.label }] }
+      }) }
     },
   } }, worker)
   context.after(() => coordinator.close())
