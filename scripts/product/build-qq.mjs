@@ -3,6 +3,7 @@ import { readFile, writeFile, cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {adaptQQCapabilities} from './qq-capabilities-adapter.mjs'
 import {adaptQQVision} from './qq-vision-adapter.mjs'
 import {adaptQQOwner} from './qq-mode-adapter.mjs'
 import { adaptQQ, adaptedFiles } from './qq-alcor-adapter.mjs'
@@ -17,9 +18,9 @@ const temp = await mkdtemp(join(root, '.local/qq-build-'))
 try {
   execFileSync('tar', ['-xzf', resolve(archive), '-C', temp])
   const directory = join(temp, 'package')
-  for (const file of [...adaptedFiles,'lib/registry.js']) {
+  for (const file of [...adaptedFiles,'lib/registry.js','lib/stt.js']) {
     const source=await readFile(join(directory,file),'utf8')
-    await writeFile(join(directory,file),adaptQQVision(file,adaptQQOwner(file,adaptQQ(file,source))))
+    await writeFile(join(directory,file),adaptQQCapabilities(file,adaptQQVision(file,adaptQQOwner(file,adaptQQ(file,source)))))
   }
   const patch=join(directory,'cordis.patch.yml')
   await writeFile(patch,(await readFile(patch,'utf8'))+`
@@ -52,10 +53,10 @@ try {
   const history=await readFile(join(root,'packages/alcor-secretary/src/qq-history.js'))
   await writeFile(join(directory,'lib/alcor-history.js'),history)
   const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
-  manifest.version = '0.9.19-alcor.21'
+  manifest.version = '0.9.19-alcor.22'
   delete manifest.peerDependencies['dsh-lan-memory']
   if (manifest.peerDependenciesMeta) delete manifest.peerDependenciesMeta['dsh-lan-memory']
-  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.98'
+  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.99'
   manifest.peerDependenciesMeta ??= {}
   for (const name of Object.keys(manifest.peerDependencies)) {
     if (name.startsWith('@deepseek-ai/') || name === '@alcor/secretary') {
@@ -63,7 +64,7 @@ try {
     }
   }
   await writeFile(join(directory, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
-  await writeFile(join(directory, 'ALCOR-SOURCE.json'), JSON.stringify({ ...pin, visionAdapter:sha(await readFile(join(root,'scripts/product/qq-vision-adapter.mjs'))), modeAdapter:sha(await readFile(join(root,'scripts/product/qq-mode-adapter.mjs'))), diary:sha(diary), social:sha(await readFile(join(root,'scripts/product/qq-social.mjs'))), conversationInfo:sha(info), participation:sha(await readFile(join(root,'scripts/product/qq-participation.mjs'))), platformHistory:sha(await readFile(join(root,'scripts/product/qq-platform-history.mjs'))), historyDecoder:sha(history), replies:sha(replies), adapter: sha(await readFile(join(root, 'scripts/product/qq-alcor-adapter.mjs'))) }, null, 2) + '\n')
+  await writeFile(join(directory, 'ALCOR-SOURCE.json'), JSON.stringify({ ...pin, capabilitiesAdapter:sha(await readFile(join(root,'scripts/product/qq-capabilities-adapter.mjs'))), visionAdapter:sha(await readFile(join(root,'scripts/product/qq-vision-adapter.mjs'))), modeAdapter:sha(await readFile(join(root,'scripts/product/qq-mode-adapter.mjs'))), diary:sha(diary), social:sha(await readFile(join(root,'scripts/product/qq-social.mjs'))), conversationInfo:sha(info), participation:sha(await readFile(join(root,'scripts/product/qq-participation.mjs'))), platformHistory:sha(await readFile(join(root,'scripts/product/qq-platform-history.mjs'))), historyDecoder:sha(history), replies:sha(replies), adapter: sha(await readFile(join(root, 'scripts/product/qq-alcor-adapter.mjs'))) }, null, 2) + '\n')
   manifest.files.push('ALCOR-SOURCE.json', 'LICENSE')
   await writeFile(join(directory, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
   execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', join(root, '.local/artifacts')], { cwd: directory, stdio: 'inherit' })

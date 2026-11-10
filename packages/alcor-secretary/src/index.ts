@@ -1,5 +1,5 @@
-import {describeQQImage,visionModels} from './qq-vision.js'
-import {visionRoute} from './remote.js'
+import {ChannelCapabilities,emptyChannelSelection} from './channel-capabilities.js'
+import {visionRoute,channelSelection} from './remote.js'
 import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
@@ -45,6 +45,12 @@ export default class Secretary extends TypertRemoteService {
     const vision = await this.ctx.storageDomain.open(defineDomain({name:'alcor_qq_vision', version:1, tables:{selection:domainTable(visionRoute)}}))
     this.ctx.effect(() => () => vision.close())
     this.visionSelection = vision.table('selection')
+    const capabilities = await this.ctx.storageDomain.open(defineDomain({name:'alcor_channel_capabilities',version:1,tables:{selection:domainTable(channelSelection)}}))
+    this.ctx.effect(() => () => capabilities.close())
+    this.channelCapabilities = new ChannelCapabilities(this.ctx,capabilities.table('selection'))
+    if (!capabilities.table('selection').get('shared')) {
+      await capabilities.table('selection').put('shared',{...emptyChannelSelection,vision:this.visionSelection.get('qq') ?? null})
+    }
     const inbox = await this.ctx.storageDomain.open(defineDomain({name:'alcor_qq_inbox',version:1,tables:{
       checkpoints:domainTable(schema.object({since:schema.number(),seen:schema.record(schema.string(),schema.number())})),
     }}))
@@ -62,6 +68,7 @@ export default class Secretary extends TypertRemoteService {
       if(['user/message','assistant/message'].includes(event.type) && this.channels.resolve(session.id))
         void this.channels.messages(session.id,[event]).catch(()=>this.ctx.logger.warn('通道记录摘要暂未保存，可从原会话恢复。'))
     })
+    this.channels.capabilities=this.channelCapabilities
     this.productSpaces.channels=this.channels
     this.memory = new AlcorMemory(this.ctx, this.productSpaces, this.config.displayName.get())
     this.delivery=new ChannelDelivery(this.ctx,this.channels,this.memory,channelDomain.table('delivery'))
@@ -90,41 +97,38 @@ export default class Secretary extends TypertRemoteService {
   }
 
   @Remote
+  async channelCapabilitySettings(request) {
+    accountSchemas.channelCapabilitySettings[0].parse(request)
+    if(this.ctx.invocation?.peer?.principal?.kind!=='owner')throw Error('仅客户端所有者可管理通道能力。')
+    return this.channelCapabilities.catalog()
+  }
+
+  @Remote
+  async setChannelCapabilities(request) {
+    const {selection,previous}=accountSchemas.setChannelCapabilities[0].parse(request)
+    if(this.ctx.invocation?.peer?.principal?.kind!=='owner')throw Error('仅客户端所有者可管理通道能力。')
+    return this.channelCapabilities.save(selection,previous)
+  }
+
+  @Remote
   async qqVisionSettings(request) {
     accountSchemas.qqVisionSettings[0].parse(request)
-    if (this.ctx.invocation?.peer?.principal?.kind !== 'owner') throw Error('仅客户端所有者可管理看图模型。')
-    return {selected:this.visionSelection.get('qq') ?? null, ...await visionModels(this.ctx.llm)}
+    if(this.ctx.invocation?.peer?.principal?.kind!=='owner')throw Error('仅客户端所有者可管理通道能力。')
+    const catalog=await this.channelCapabilities.catalog()
+    return {selected:catalog.selection.vision,models:catalog.models.filter(row=>row.image).map(({provider,model,label})=>({provider,model,label})),unavailable:catalog.unavailable}
   }
 
   @Remote
   async setQQVisionModel(request) {
-    const {route} = accountSchemas.setQQVisionModel[0].parse(request)
-    if (this.ctx.invocation?.peer?.principal?.kind !== 'owner') throw Error('仅客户端所有者可管理看图模型。')
-    if (!route) {
-      await this.visionSelection.delete('qq')
-      return null
-    }
-    const {models} = await visionModels(this.ctx.llm)
-    if (!models.some(item => item.provider === route.provider && item.model === route.model)) throw Error('此模型当前不支持图片输入。')
-    await this.visionSelection.put('qq', route)
+    const {route}=accountSchemas.setQQVisionModel[0].parse(request)
+    if(this.ctx.invocation?.peer?.principal?.kind!=='owner')throw Error('仅客户端所有者可管理通道能力。')
+    const old=this.channelCapabilities.selection()
+    await this.channelCapabilities.save({...old,vision:route},old)
     return route
   }
 
-  createQQImageReader(question, admitted) {
-    const route = this.visionSelection.get('qq')
-    let count = 0
-    const allowed = () => {
-      const current = this.visionSelection.get('qq')
-      return admitted() && selectedScope(this.ctx,'dsh-onebot-qq') === 'alcor' &&
-        current?.provider === route?.provider && current?.model === route?.model
-    }
-    return async path => {
-      if (!route) return '未选择看图模型'
-      if (!allowed()) return '未识别'
-      if (++count > Math.min(8,this.ctx.get('attachments')?.imageLimits.maxImagesPerMessage ?? 0)) return '本条消息的图片未识别'
-      try { return await describeQQImage(this.ctx, route, path, question, allowed) }
-      catch { return '图片识别失败，无法确认图中内容' }
-    }
+  createQQImageReader(question,admitted) {
+    return this.channelCapabilities.createImageReader(question,()=>admitted() && selectedScope(this.ctx,'dsh-onebot-qq')==='alcor')
   }
 
   @Remote

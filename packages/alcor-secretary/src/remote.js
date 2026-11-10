@@ -20,7 +20,17 @@ export const spacesSchema = ownershipSchema.extend({ defaults: z.object({ alcor:
 const memoryEntry = z.object({ id: identifier, content: z.string(), subject: z.string(), audience: z.string(), kind: z.string(), evidence: z.array(identifier).max(5).optional(),
   source: z.object({ kind: z.string(), at: z.string(), sessionId: z.string().optional(), channelId:z.string().optional(),accountId:z.string().optional(),channelUserId:z.string().optional(),qqUserId: z.string().optional(), qqGroupId: z.string().optional() }).strict() }).strict()
 export const visionRoute = z.object({provider:identifier,model:identifier}).strict()
+export const channelSelection = z.object({
+  main:visionRoute.nullable(),vision:visionRoute.nullable(),transcription:identifier.nullable(),
+  synthesis:z.object({provider:identifier,voice:identifier}).strict().nullable(),
+}).strict()
 export const accountSchemas = {
+  channelCapabilitySettings:[z.object({}).strict(),z.object({selection:channelSelection,
+    models:z.array(visionRoute.extend({label:z.string(),providerName:z.string(),image:z.boolean()})),unavailable:z.array(z.string()),
+    transcription:z.array(z.object({id:identifier,label:z.string()})),
+    synthesis:z.array(z.object({id:identifier,label:z.string(),voices:z.array(z.object({id:identifier,label:z.string()}))})),
+  }).strict()],
+  setChannelCapabilities:[z.object({selection:channelSelection,previous:channelSelection}).strict(),channelSelection],
   qqVisionSettings:[z.object({}).strict(),z.object({selected:visionRoute.nullable(),models:z.array(visionRoute.extend({label:z.string()})),unavailable:z.array(z.string())}).strict()],
   setQQVisionModel:[z.object({route:visionRoute.nullable()}).strict(),visionRoute.nullable()],
   qqConversation: [z.object({sessionId:identifier}).strict(), z.object({

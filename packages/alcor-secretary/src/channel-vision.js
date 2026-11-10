@@ -3,17 +3,8 @@ import {extname} from 'node:path'
 
 const formats = {'.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.gif':'image/gif', '.webp':'image/webp'}
 
-export async function visionModels(llm) {
-  const providers = llm.listProviders()
-  const lists = await Promise.allSettled(providers.map(async provider =>
-    (await llm.listModels(provider.id)).filter(model => model.inputModalities?.includes('image'))
-      .map(model => ({provider:provider.id, model:model.id, label:provider.name + ' / ' + (model.name || model.id)}))))
-  return {models:lists.flatMap(list => list.status === 'fulfilled' ? list.value : []),
-    unavailable:providers.filter((_, index) => lists[index].status === 'rejected').map(provider => provider.name)}
-}
-
-// Only the trusted QQ media resolver passes a downloaded image here. This is not a remote file API.
-export async function describeQQImage(ctx, route, path, question, stillAllowed) {
+// Only trusted channel media resolvers passes a downloaded image here. This is not a remote file API.
+export async function describeChannelImage(ctx, route, path, question, stillAllowed) {
   const attachments = ctx.get('attachments')
   const signal = AbortSignal.timeout(30000)
   const mediaType = formats[extname(path).toLowerCase()]

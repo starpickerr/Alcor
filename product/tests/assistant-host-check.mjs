@@ -55,7 +55,7 @@ config.find(entry => entry.id === 'dsh-onebot').config.requireMention = false
 controlEntry.name = fileURLToPath(new URL('assistant-host-control.mjs', import.meta.url))
 config.push({ id: 'agent-default-model', config: { provider: 'synthetic', model: 'test' } },
   { id: 'llm-pi-ai', config: { providers: { synthetic: { api: 'openai-completions', apiKeyEnv: 'ALCOR_SYNTHETIC_KEY', baseURL: 'http://127.0.0.1:' + model.address().port + '/v1',
-    models: ['test','test-b',...(process.argv.includes('--vision-check') ? ['test-vision'] : [])].map(id => ({ id, name:id, contextWindow:32000, maxTokens:2048, input:id==='test-vision'?['text','image']:['text'] })) } } } })
+    models: ['test','test-b',...((process.argv.includes('--vision-check') || process.argv.includes('--capabilities-check')) ? ['test-vision'] : [])].map(id => ({ id, name:id, contextWindow:32000, maxTokens:2048, input:id==='test-vision'?['text','image']:['text'] })) } } } })
 writeFileSync(join(profile, 'cordis.patch.yml'), JSON.stringify(config, null, 2) + '\n')
 writeFileSync(join(root, 'official-dsh/.credentials.yaml'), 'version: 1\nrefs:\n  ALCOR_SYNTHETIC_KEY: synthetic-test-key\n', { mode: 0o600 })
 mkdirSync(join(root, 'home'), { recursive: true })
@@ -88,7 +88,7 @@ if (existsSync(join(root, 'control-ready.json'))) unlinkSync(join(root, 'control
 // Choose business hours in this isolated host independently of when the test is run.
 const offset = new Date().getUTCHours() - 12
 const testZone = offset ? 'Etc/GMT' + (offset > 0 ? '+' : '') + offset : 'UTC'
-const env = { ...(process.argv.includes('--scope-check')?{ALCOR_MODES_TEST:'1'}:{}), TZ:testZone, PATH: process.env.PATH, LANG: 'en_US.UTF-8', HOME: join(root, 'home'), DSH_HOME: join(root, 'official-dsh'), SHELL: '/bin/zsh', DSH_TELEMETRY_DISABLED: '1' }
+const env = { ...(process.argv.includes('--capabilities-check')?{ALCOR_CAPABILITIES_TEST:'1'}:{}), ...(process.argv.includes('--scope-check')?{ALCOR_MODES_TEST:'1'}:{}), TZ:testZone, PATH: process.env.PATH, LANG: 'en_US.UTF-8', HOME: join(root, 'home'), DSH_HOME: join(root, 'official-dsh'), SHELL: '/bin/zsh', DSH_TELEMETRY_DISABLED: '1' }
 const host = spawn(join(app, 'Contents/Resources/runtime/cli/bin/dsh'), ['--profile', 'spaces-check', '--no-open', '--port', '0'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
 const record = chunk => { log += chunk; writeFileSync(join(root, 'official-check.log'), log.replace(/token=\S+/g, 'token=[redacted]'))
   const url = /dsh web: (http:\S+)/.exec(log)?.[1]; if (url) writeFileSync(join(root, 'browser-url.json'), JSON.stringify({ url }), { mode: 0o600 }) }
@@ -141,7 +141,34 @@ try {
     plan={reply:'COLD_REPLY'}
   }
   await connectGateway()
-  if(cold){
+  if(process.argv.includes('--capabilities-check')) {
+    const read=()=>rpc('alcorSecretary','channelCapabilitySettings',{request:{}})
+    const write=(selection,previous)=>rpc('alcorSecretary','setChannelCapabilities',{request:{selection,previous}})
+    const initial=await read()
+    assert.deepEqual(initial.selection,{main:null,vision:null,transcription:null,synthesis:null})
+    assert.equal(initial.transcription[0].id,'synthetic-speech')
+    assert.deepEqual(initial.synthesis,[])
+    const chosen={main:{provider:'synthetic',model:'test-b'},vision:{provider:'synthetic',model:'test-vision'},transcription:'synthetic-speech',synthesis:null}
+    await write(chosen,initial.selection)
+    await assert.rejects(write({...chosen,main:null},initial.selection))
+    let bodies=await send(10001,'private',{text:'CHANNEL_ROUTE',reply:'SHARED_MAIN_ONE'})
+    assert.ok(bodies.some(row=>row.model==='test-b'))
+    bodies=await send(10001,'group',{text:'CHANNEL_GROUP',reply:'SHARED_MAIN_GROUP'})
+    assert.ok(bodies.some(row=>row.model==='test-b'))
+    const current={...chosen,main:{provider:'synthetic',model:'test'}}
+    await write(current,chosen)
+    bodies=await send(10001,'private',{text:'CHANNEL_ROUTE_CHANGED',reply:'SHARED_MAIN_TWO'})
+    assert.ok(bodies.some(row=>row.model==='test'))
+    assert.ok(!bodies.some(row=>row.model==='test-b'))
+    const wav=Buffer.alloc(48);wav.write('RIFF');wav.writeUInt32LE(40,4);wav.write('WAVE',8)
+    wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(4,40)
+    plan={reply:'VOICE_READY'}
+    const start=requests.length,voice=message(10001,'private','')
+    voice.message=[{type:'record',data:{file:'base64://'+wav.toString('base64')}}]
+    socket.send(JSON.stringify(voice))
+    await until(()=>requests.slice(start).some(row=>JSON.stringify(row.messages).includes('语音转写：SYNTHETIC_TRANSCRIPT')),'shared transcription request')
+    writeFileSync(join(root,'result.json'),JSON.stringify({main:true,group:true,hotChange:true,transcription:true,unavailablePlaceholder:true,conflicts:true}))
+  } else   if(cold){
     await until(()=>outgoing.some(row=>row.user_id==10001 && JSON.stringify(row.message).includes('COLD_REPLY')) &&
       outgoing.some(row=>row.group_id==30001 && JSON.stringify(row.message).includes('COLD_REPLY')),'cold offline replies')
     await pause(1500)

@@ -5,6 +5,14 @@ const root=dirname(process.env.DSH_HOME || '')
 if (!root.startsWith('/private/tmp/alcor-assistant-')) throw Error('Synthetic test control requires an isolated DSH home')
 export const inject=['tools','alcorSecretary','agents','sessions','sessionController','typertGateway','connection','workspaceRegistry','agentPresets']
 export function apply(ctx) {
+ if(process.env.ALCOR_CAPABILITIES_TEST==='1')ctx.provide('speechToText',{
+   listProviders:()=>[{id:'synthetic-speech',name:'Synthetic speech',languages:['auto']}],
+   resolve:request=>{if(request.providerId!=='synthetic-speech')throw Error('Wrong speech provider');return request},
+   transcribe:async request=>{
+     if(Buffer.from(request.audio).subarray(0,4).toString()!=='RIFF')throw Error('Expected WAV bytes')
+     return {text:'SYNTHETIC_TRANSCRIPT',audioSeconds:1,inferenceSeconds:0}
+   },
+ })
  const peer=ctx.connection.createPeer({principal:{kind:'owner'},interactions:'none'})
  let probes=0
  if(process.env.ALCOR_MODES_TEST==='1')ctx.tools.register({name:'mcp__email__scope_probe',description:'Synthetic scope probe',parameters:{},
