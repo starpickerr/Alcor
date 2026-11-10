@@ -248,6 +248,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
         # mode. The tool gate also rejects direct requests for these paths,
         # but a script must not be able to read them indirectly.
         sandbox_options = []
+        # Freeze runtime before private masks so broad mounts cannot uncover secrets.
+        for path in runtime_readonly_roots():
+            if os.path.isdir(path):
+                sandbox_options.extend(['--ro-bind', path, path])
         for path in files:
             if os.path.isfile(path):
                 sandbox_options.extend(["--ro-bind", "/dev/null", os.path.realpath(path)])
@@ -272,12 +276,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                             sandbox_options.extend(["--dir", os.path.dirname(path)])
                             share_writable = writable and (row["access"] == "write" or row["owner_session"] == context.session_id)
                             sandbox_options.extend(["--bind" if share_writable else "--ro-bind", path, path])
-        # Bind last so a broad workspace grant cannot remount runtime code RW.
-        for path in runtime_readonly_roots():
-            if os.path.isdir(path):
-                sandbox_options.extend(['--ro-bind', path, path])
         for folder in protected_folders:
             sandbox_options.extend(['--tmpfs', folder])
+        if constrained:
+            sandbox_options.extend(['--remount-ro', '/'])
         argv[argv.index("--"):argv.index("--")] = sandbox_options
     leases = tuple((row["id"], row["path"], context.session_id, context.agent_id)
                    for row in shared if row["recipient_session"] == context.session_id and row["active"])
