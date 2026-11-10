@@ -14,7 +14,7 @@ test('Apple reminder alarm intent and completion bridge regressions remain isola
 })
 
 for (const suite of [
-  'apple-approved-recurring-delete', 'apple-approved-delete-run', 'apple-owner-approved-delete',
+  'apple-link-replacement-lock', 'apple-approved-recurring-delete', 'apple-approved-delete-run', 'apple-owner-approved-delete',
   'apple-delete-crash-recovery', 'apple-confirmed-delete-continuation', 'apple-delete-state-messages',
   'apple-owner-finish-verification', 'apple-retained-conflict-successor', 'apple-import-unlink-recovery',
   'apple-reminder-identity-candidates', 'apple-calendar-identity-candidates', 'apple-category-source-reconnect',

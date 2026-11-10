@@ -11,6 +11,8 @@ on:
 jobs:
   windows-bash-tests:
     runs-on: windows-2025
+    env:
+      STELLA_PYTHON: python
 
     steps:
       - name: Checkout repository
