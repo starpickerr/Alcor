@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react'
-import {Button} from '@deepseek-ai/dsh-client-ui-primitives'
+import {Button,IconRefreshOutlineRegular,IconSettingsOutlineMedium} from '@deepseek-ai/dsh-client-ui-primitives'
 import {ChannelDeliverySettings} from './channel-delivery-settings.jsx'
 import {ChannelSettings} from './channel-settings.jsx'
 import {Notice} from './notice.jsx'
@@ -25,8 +25,11 @@ export function ChannelsPage({api, openPlugin}) {
   if(settings)return <ChannelSettings api={api} onBack={()=>setSettings(false)}/>
   return <section className="alcor-desk alcor-channels-page" aria-label="通道">
     <header className="alcor-page-heading"><h1>通道</h1>
-      <div className="alcor-channel-actions"><Button variant="outline" size="sm" onClick={()=>setSettings(true)}>设置</Button><Button variant="outline" size="sm" onClick={() => openPlugin(null)}>接入其他通道</Button>
-        <Button variant="ghost" size="sm" disabled={!rows && !error} onClick={() => setRevision(value => value + 1)}>刷新</Button></div>
+      <div className="alcor-channel-actions">
+        <Button className="alcor-icon-action" variant="ghost" size="sm" aria-label="刷新" title="刷新" disabled={!rows && !error} onClick={() => setRevision(value => value + 1)}><IconRefreshOutlineRegular size={18}/></Button>
+        <Button className="alcor-icon-action" variant="ghost" size="sm" aria-label="设置" title="设置" onClick={()=>setSettings(true)}><IconSettingsOutlineMedium size={18}/></Button>
+        <Button variant="outline" size="sm" onClick={() => openPlugin(null)}>接入其他通道</Button>
+      </div>
     </header>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
     {!error && !rows && <p role="status" className="alcor-muted">正在读取通道…</p>}

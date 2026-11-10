@@ -130,7 +130,7 @@ function Conversation({id,navigation,api,secretary}) {
       <div className="alcor-qq-identity"><h1>{title}</h1><small>{group?'群聊':'私聊'} · {number}{info?.members!=null && ' · '+info.members+' 人'}</small></div>
       <span className="alcor-qq-readonly">只读</span>
       <button className="alcor-qq-details-toggle" type="button" aria-expanded={details} aria-controls="alcor-qq-attributes" onClick={()=>setDetails(!details)}>会话资料</button>
-      <button type="button" className="alcor-qq-refresh" aria-label="刷新记录" title="刷新记录" disabled={busy} onClick={()=>setVersion(value=>value+1)}><IconRefreshOutlineRegular size={16}/></button>
+      <button type="button" className="alcor-qq-refresh alcor-icon-action" aria-label="刷新记录" title="刷新记录" disabled={busy} onClick={()=>setVersion(value=>value+1)}><IconRefreshOutlineRegular size={18}/></button>
     </header>
     {details && <div id="alcor-qq-attributes" className="alcor-qq-attributes">{info?<dl>
       <div><dt>{route?.channelName || route?.channel} 接入</dt><dd>{info.online?'已连接':'离线'}</dd></div>

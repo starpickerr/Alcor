@@ -1,6 +1,13 @@
 import React,{useEffect,useState} from 'react'
-import {Button} from '@deepseek-ai/dsh-client-ui-primitives'
+import {Button,IconNewChatOutlineRegular,IconPaperclipOutlineRegular,IconMicrophoneOutlineRegular,IconSendOutlineRegular} from '@deepseek-ai/dsh-client-ui-primitives'
 import {Notice} from './notice.jsx'
+
+function CapabilityHeading({title,description,icon:Icon}) {
+  return <header className="alcor-capability-heading">
+    <span className="alcor-capability-icon" aria-hidden="true"><Icon size={20}/></span>
+    <div><h2>{title}</h2><p>{description}</p></div>
+  </header>
+}
 
 function ModelCard({kind,title,models,value,busy,onChange,onIncomplete}) {
   const [provider,setProvider]=useState(value?.provider ?? '')
@@ -8,7 +15,8 @@ function ModelCard({kind,title,models,value,busy,onChange,onIncomplete}) {
   const choices=models.filter(row=>row.provider===provider)
   const available=choices.some(row=>row.model===value?.model)
   return <section className="alcor-capability-card" aria-label={title}>
-    <h2>{title}</h2>
+    <CapabilityHeading title={title} icon={kind==='main'?IconNewChatOutlineRegular:IconPaperclipOutlineRegular}
+      description={kind==='main'?'负责对话、推理和工具调用':'理解图片内容，识别文字和细节'}/>
     <label>提供方
       <select aria-label={title+'提供方'} disabled={busy} value={provider} onChange={event=>{
         setProvider(event.target.value)
@@ -70,7 +78,7 @@ export function ChannelSettings({api,onBack}) {
           models={state.models.filter(model=>key==='main' || model.image)} value={selection[key]} busy={busy}
           onChange={value=>change(key,value)} onIncomplete={value=>setIncomplete(old=>({...old,[key]:value}))}/>) }
         <section className="alcor-capability-card" aria-label="语音识别">
-          <h2>语音识别</h2>
+          <CapabilityHeading title="语音识别" description="将收到的语音转换为文字" icon={IconMicrophoneOutlineRegular}/>
           <label>提供方
             <select aria-label="语音识别" disabled={busy || (!state.transcription.length && !selection.transcription)} value={selection.transcription ?? ''} onChange={event=>change('transcription',event.target.value || null)}>
               <option value="">{state.transcription.length || selection.transcription?'关闭语音识别':'暂无已接入的服务'}</option>
@@ -86,7 +94,7 @@ export function ChannelSettings({api,onBack}) {
           </label>
         </section>
         <section className="alcor-capability-card" aria-label="语音合成">
-          <h2>语音合成</h2>
+          <CapabilityHeading title="语音合成" description="将回复转换为语音" icon={IconSendOutlineRegular}/>
           <label>提供方
             <select aria-label="语音合成" disabled><option>暂无已接入的服务</option></select>
           </label>

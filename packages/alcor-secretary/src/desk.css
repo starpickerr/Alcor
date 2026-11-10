@@ -295,11 +295,23 @@
 .alcor-capability-fields select { width:100%;max-width:520px;min-width:0;font:inherit;color:inherit;background:var(--dsw-alias-bg-l1);border:1px solid var(--dsw-alias-border-l3);border-radius:7px;padding:8px 10px; }
 .alcor-capability-fields select:disabled { opacity:.6; }
 .alcor-capability-fields small { color:var(--dsw-alias-label-secondary); }
-.alcor-capability-card { display:flex;flex-direction:column;gap:18px;padding:24px;border:1px solid var(--dsw-alias-border-l3);border-radius:14px;background:var(--dsw-alias-bg-layer-1); }
-.alcor-capability-card h2 { margin:0 0 4px;font-size:16px;font-weight:600; }
+.alcor-capability-card { display:flex;flex-direction:column;gap:18px;padding:22px;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-layer-1); }
 .alcor-capability-card select { max-width:none;min-height:40px;border-radius:8px;background:var(--dsw-alias-bg-l2); }
 .alcor-capability-card label { color:var(--dsw-alias-label-secondary);font-weight:500; }
 .alcor-capability-card select { color:var(--dsw-alias-label-primary);font-weight:400; }
 .alcor-capability-card select:focus-visible { outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--alcor-brand));outline-offset:2px; }
 .alcor-capability-save { display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-bottom:8px; }
 @media(max-width:600px) { .alcor-capability-card { padding:18px;gap:16px; } }
+
+.alcor-icon-action { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer; }
+.alcor-icon-action:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-icon-action:disabled { cursor:default;opacity:.45; }
+.alcor-icon-action svg { width:18px;height:18px;flex-shrink:0; }
+.alcor-capability-heading { display:flex;align-items:center;gap:12px;margin-bottom:2px; }
+.alcor-capability-icon { display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:none;border-radius:10px;background:var(--alcor-brand-soft);color:var(--alcor-brand); }
+.alcor-capability-heading h2 { margin:0;font-size:16px;line-height:22px;font-weight:600; }
+.alcor-capability-heading p { margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] { width:32px;min-width:32px;height:32px;min-height:32px;padding:0;gap:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] [class*="toolbarLabel"] { display:none; }
+[data-plugin-toolbar] button[aria-label][aria-busy]:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-capability-heading > div { min-width:0; }
