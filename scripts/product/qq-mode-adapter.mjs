@@ -9,6 +9,8 @@ export function adaptQQOwner(file,text) {
     replace("const mediaDir = config.mediaDir !== '' ? config.mediaDir : defaultMediaDir();","const baseDir = config.mediaDir !== '' ? config.mediaDir : defaultMediaDir();\n    const mediaDir = config.productScope==='dsh' ? join(baseDir,'workbench') : baseDir;")
     replace('            botQQ: config.botQQ,','            productScope: config.productScope,\n            botQQ: config.botQQ,')
     replace('workspacePath: config.workspacePath,',"workspacePath: config.productScope==='dsh' ? join(mediaDir,'workspace') : config.workspacePath,")
+    replace('void bridge.handleInbound(event);',"void bridge.handleInbound(event).catch(()=>log('warn','QQ 入站未确认，将在同步历史时重试。'));")
+    replace('            await bridge.start();',"            if (config.productScope === 'dsh') await ctx.alcorSecretary.qqCheckpoints.put(String(config.botQQ)+'/workbench',{since:Math.floor(Date.now()/1000),seen:{}});\n            await bridge.start();")
     replace('ctx.effect(() => installConversationInfo','if(config.productScope!==\'dsh\') ctx.effect(() => installConversationInfo')
   }
   if(file==='lib/settings-remote.js'){
@@ -52,6 +54,14 @@ export function adaptQQOwner(file,text) {
     replace('        if (chatId.startsWith(\'group:\'))\n            await mkdir(cwd', "        if (this.deps.config.productScope==='dsh' || chatId.startsWith('group:'))\n            await mkdir(cwd")
   }
   if(file==='lib/bridge.js'){
+    replace("if (connected) { this.participation.reconnected();", "if (connected) { this.syncOffline?.(); this.participation.reconnected();")
+    replace("        this.participation.stop();","        this.participation.stop();\n        const inboxStop = this.offlineInbox?.stop();")
+    replace("        const failures = [];","        await inboxStop;\n        const failures = [];")
+    replace("else this.inbound.bursts.clear();","else { this.offlineInbox?.disconnected(); this.inbound.bursts.clear(); }")
+    replace("const run = () => this.handleInboundOnce(event, opts.injected === true);", "const handle = () => this.handleInboundOnce(event, opts.injected === true, opts.recovered === true);\n        const run = () => !opts.injected && this.offlineInbox ? this.offlineInbox.deliver(event,handle) : handle();")
+    replace("async handleInboundOnce(event, injected)","async handleInboundOnce(event, injected, recovered)")
+    replace("this.deps.log('error', 'inbound handling failed: ' + describeError(error) + errorStack(error));","this.deps.log('error', 'inbound handling failed: ' + describeError(error) + errorStack(error));\n            if (this.offlineInbox && !injected) {\n                this.inbound.seenMessages.delete((event.message_type === 'group' ? 'group:'+event.group_id : 'private:'+event.user_id)+'#'+event.message_id);\n                throw error;\n            }")
+
     replace("const memory=deps.ctx.get('alcorSecretary')?.memory;", "if(deps.config.productScope==='dsh')return 0;\n                    const memory=deps.ctx.get('alcorSecretary')?.memory;")
     replace('chooseGroupReply(deps.ctx,deps.defaultModel?.(),lines,signal,candidates,groupId,mode)',"chooseGroupReply(deps.ctx,deps.defaultModel?.(),lines,signal,candidates,groupId,mode,deps.config.productScope==='dsh')")
     replace('msg=>currentInjectRound() ? false', "msg=>deps.config.productScope==='dsh' || currentInjectRound() ? false")

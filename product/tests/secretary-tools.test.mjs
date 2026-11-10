@@ -56,7 +56,7 @@ test('Stella inherits native tool visibility and host denials, including later t
   const ctx = new Context(); ctx.provide('agents', { turnBoundaryOf: () => ({ openTurnStartSeq: simulatedTurn, lastTurn: simulatedTurn }) }); let simulatedTurn = 0
   context.after(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(NativeExecutor)
-  ctx.provide('alcorSecretary', { mcpAllowed: () => false })
+  ctx.provide('alcorSecretary', { mcpAllowed: () => false, memory:{currentActor:()=>({source:{kind:'desktop'}})} })
   let invocations = 0
   const register = name => ctx.tools.register({ name, description: 'Synthetic host tool', parameters: {},
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
@@ -70,6 +70,8 @@ test('Stella inherits native tool visibility and host denials, including later t
   register('later_installed_executor')
   assert(names(secretary).includes('later_installed_executor'))
   const call = (agent, name) => ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'host-probe', name, arguments: '{}' }] })
+  assert.equal((await call(secretary, 'bash')).results[0].result.isError, true)
+  simulatedTurn++; await ctx.waterfall(scopeTarget(secretary,secretary),'agent/pre-step',{agent:secretary,messages:[{source:{kind:'user'}}]},async()=>{})
   assert.equal((await call(secretary, 'bash')).results[0].result.isError, false)
   let hostScope
   await ctx.plugin(Object.assign(inner => { hostScope = createScope(inner, secretary) }, { inject: ['tools'] }))

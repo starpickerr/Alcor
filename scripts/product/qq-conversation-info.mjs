@@ -1,3 +1,4 @@
+import {createOfflineInbox} from './alcor-offline-inbox.js'
 import {attachSpaceDiary} from './alcor-space-diary.js'
 import {platformHistory} from './alcor-platform-history.js'
 import { dmAllowed, groupAllowed } from './chat.js'
@@ -43,7 +44,20 @@ export function installConversationInfo(ctx,connection,bridge,config,policy) {
       : policy.adminUsers.includes(route.peer) || policy.allowFrom.includes(route.peer)),
     info:lookup,
     async history(route,before){
-      if(route.kind!=='group')return null;
+      if(route.kind==='private'){
+        if(!connection.connected || String(connection.selfId)!==account || !allowed(route))return null;
+        let data;
+        try { data=await connection.call('get_friend_msg_history',{user_id:Number(route.peer),count:80,reverseOrder:true,...(before!=null?{message_seq:before}:{})}); }
+        catch { return null }
+        const rows=(Array.isArray(data?.messages)?data.messages:[]).filter(row=>{
+          if(row.message_type==='group' || row.group_id!=null || (row.self_id!=null && String(row.self_id)!==account))return false;
+          const sender=String(row.sender?.user_id ?? row.user_id);
+          return sender===route.peer || (sender===account && (row.target_id==null || String(row.target_id)===route.peer));
+        });
+        if(!rows.length && before==null)return null;
+        const messages=platformHistory({messages:rows},before,account);
+        return {messages,hasMore:rows.length>=80 && messages.length>0,beforeSeq:messages[0]?.cursor ?? null};
+      }
       if(!connection.connected || String(connection.selfId || account)!==account || !allowed(route))throw Error('群消息暂不可读取。');
       const data=await connection.call('get_group_msg_history',{group_id:Number(route.peer),count:80,reverseOrder:true,...(before!=null?{message_seq:before}: {})});
       if(!Array.isArray(data?.messages))return null;
@@ -96,10 +110,22 @@ export function installConversationInfo(ctx,connection,bridge,config,policy) {
     const text=(inbound.segments ?? []).filter(s=>s.type==='text').map(s=>String(s.data?.text ?? '')).join('').trim();
     if(text)ctx.alcorSecretary.memory.storeForAudience(route.audience,route).captureAmbient(inbound.messageId,text,actor,inbound.at ?? Date.now());
   };
+  const peers=()=>[...new Set([...policy.adminUsers,...policy.allowFrom])].filter(id=>/^\d+$/.test(id) && dmAllowed(id,policy)).map(id=>'private:'+id)
+    .concat(policy.groupAllowFrom.filter(id=>/^\d+$/.test(id) && groupAllowed(id,policy)).map(id=>'group:'+id))
+  const inbox=createOfflineInbox({account,table:ctx.alcorSecretary.qqCheckpoints,peers,
+    online:()=>connection.connected && !bridge.stopping && String(connection.selfId)===account,
+    call:(method,args)=>connection.call(method,args),receive:event=>bridge.handleInbound(event,{recovered:true}),
+    log:(level,message)=>bridge.deps.log(level,message)})
+  bridge.offlineInbox=inbox
+  const sync=()=>void bridge.registry.mappingLoaded.then(()=>inbox.sync()).catch(()=>{})
+  const timer=setInterval(sync,60000)
+  timer.unref?.()
+  bridge.syncOffline=sync
+  if(connection.connected)sync()
   const stopDiary=attachSpaceDiary(ctx,bridge,config,connection,account)
   bridge.alcorRecordGroup=record;
   // Older secretary callers keep their read-only metadata endpoint.
   const lookupLegacy=(kind,number)=>lookup({kind,peer:number})
   ctx.alcorSecretary.productSpaces.qqConversationInfo=lookupLegacy
-  return ()=>{stopDiary();if(bridge.alcorRecordGroup===record)delete bridge.alcorRecordGroup;release();if(ctx.alcorSecretary.productSpaces.qqConversationInfo===lookupLegacy)delete ctx.alcorSecretary.productSpaces.qqConversationInfo}
+  return async ()=>{clearInterval(timer);await inbox.stop();delete bridge.syncOffline;delete bridge.offlineInbox;stopDiary();if(bridge.alcorRecordGroup===record)delete bridge.alcorRecordGroup;release();if(ctx.alcorSecretary.productSpaces.qqConversationInfo===lookupLegacy)delete ctx.alcorSecretary.productSpaces.qqConversationInfo}
 }

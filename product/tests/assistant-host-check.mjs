@@ -18,7 +18,7 @@ const profile = join(root, 'official-dsh/profiles/spaces-check')
 const restart = process.argv.includes('--restart'), keep = process.argv.includes('--keep')
 const idleOnly = process.argv.includes('--idle-restart-check')
 let plan = { reply: 'READY' }, serial = 0, socket, log = '', controlPort
-const autoPosts=[], qzonePosts=[], requests = [], outgoing = [], outgoingTimes = [], checks = [], events = [], platformMessages=[]
+const autoPosts=[], qzonePosts=[], requests = [], outgoing = [], outgoingTimes = [], checks = [], events = [], platformMessages=[], privateHistory=[]
 const model = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
   const body = JSON.parse(raw); requests.push(body)
@@ -126,14 +126,66 @@ try {
     const data = JSON.parse(raw); if (data.params) { events.push(data.action); if (['send_msg', 'send_group_msg', 'send_private_msg'].includes(data.action)) {outgoing.push(data.params);outgoingTimes.push(Date.now())} }
     if(data.action?.startsWith('send_') && data.params?.group_id)platformMessages.push({group_id:data.params.group_id,user_id:20001,time:Math.floor(Date.now()/1000),message_seq:++serial,message:Array.isArray(data.params.message)?data.params.message:[{type:'text',data:{text:String(data.params.message)}}]})
     if(data.action==='send_qzone_msg')(data.params.content==='SYNTHETIC_BEAR_DIARY'?autoPosts:qzonePosts).push(data.params)
-    const value = data.action==='send_qzone_msg' ? {tid:'synthetic-tid',time:1} : data.action==='fetch_custom_face_detail' ? [{md5:'test',desc:'PRIVATE_FAVORITE_CANARY',url:'https://example.qq.com/sticker'}] : data.action==='get_group_msg_history' ? {messages:platformMessages.filter(row=>row.group_id===data.params.group_id && (data.params.message_seq==null || row.message_seq<data.params.message_seq)).slice(-80)} : data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
+    const value = data.action==='get_login_info' ? {user_id:20001} : data.action==='get_friend_msg_history' ? {messages:privateHistory.filter(row=>row.user_id===data.params.user_id)} : data.action==='send_qzone_msg' ? {tid:'synthetic-tid',time:1} : data.action==='fetch_custom_face_detail' ? [{md5:'test',desc:'PRIVATE_FAVORITE_CANARY',url:'https://example.qq.com/sticker'}] : data.action==='get_group_msg_history' ? {messages:platformMessages.filter(row=>row.group_id===data.params.group_id && (data.params.message_seq==null || row.message_seq<data.params.message_seq)).slice(-80)} : data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
     socket.send(JSON.stringify({ status: 'ok', retcode: 0, data: value, echo: data.echo }))
   })
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
   socket.send(JSON.stringify({ post_type: 'meta_event', meta_event_type: 'lifecycle', sub_type: 'connect', self_id: 20001, time: Math.floor(Date.now() / 1000) }))
   }
+  const cold = process.argv.includes('--cold-recovery-check')
+  if(cold){
+    const fixture=JSON.parse(readFileSync(join(root,'offline-events.json'),'utf8'))
+    privateHistory.push(...fixture.private)
+    platformMessages.push(...fixture.group)
+    serial=10000
+    plan={reply:'COLD_REPLY'}
+  }
   await connectGateway()
-  if (process.argv.includes('--vision-check')) {
+  if(cold){
+    await until(()=>outgoing.some(row=>row.user_id==10001 && JSON.stringify(row.message).includes('COLD_REPLY')) &&
+      outgoing.some(row=>row.group_id==30001 && JSON.stringify(row.message).includes('COLD_REPLY')),'cold offline replies')
+    await pause(1500)
+    assert.equal(outgoing.filter(row=>JSON.stringify(row.message).includes('COLD_REPLY')).length,2)
+    writeFileSync(join(root,'cold-result.json'),JSON.stringify({persistedReceipts:true,coldPrivate:true,coldGroup:true}))
+  } else if (process.argv.includes('--recovery-check')) {
+    const endGateway = async () => { const closed = new Promise(resolve=>socket.once('close',resolve)); socket.close(); await closed }
+    await send(10001,'private',{text:'在线发言',reply:'LIVE_READY'})
+    await endGateway()
+    const dm=message(10001,'private','断线时的私聊'), group=message(10001,'group','断线时点名')
+    privateHistory.push({...dm,message_seq:dm.message_id})
+    platformMessages.push({...group,message_seq:group.message_id})
+    plan={reply:'OFFLINE_REPLY'}
+    const mark=outgoing.length
+    await connectGateway()
+    const replies=()=>outgoing.slice(mark).filter(r=>JSON.stringify(r.message).includes('OFFLINE_REPLY'))
+    await until(()=>replies().some(r=>r.user_id==10001) && replies().some(r=>r.group_id==30001),'both offline replies',30000)
+    const history=await rpc('alcorSecretary','channelHistory',{request:{sessionId:'onebot-private-10001'}})
+    assert.ok(history.messages.some(row=>row.text.includes('断线时的私聊')))
+    await endGateway()
+    await connectGateway()
+    socket.send(JSON.stringify(dm))
+    await pause(2500)
+    assert.equal(replies().length,2,'duplicate recovery or redelivery')
+    const projectDir=join(root,'directory-test')
+    mkdirSync(join(projectDir,'课程资料'),{recursive:true})
+    writeFileSync(join(projectDir,'课程资料','文件目录校验.pdf'),'fixture')
+    const workspaceId=await control('/shared-project',{path:projectDir})
+    const {sessionId}=await rpc('session','create',{request:{workspaceId,agentPreset:'alcor'}})
+    await rpc('alcorSecretary','claimSpace',{request:{space:'alcor',sessionId}})
+    for(const [tool,args] of [['glob',{pattern:'**/*.pdf'}],['bash',{command:'ls 课程资料',description:'列出测试目录中的课件'}]]){
+      const from=requests.length
+      plan={reply:'LISTED_FILES',tool,args,calls:0}
+      await rpc('session','prompt',{request:{sessionId,requestId:randomUUID(),content:[{type:'text',text:'请列出课程资料中的文件'}],mode:'queue'}})
+      await until(()=>requests.slice(from).some(r=>r.messages.some((m,i)=>m.role==='tool' &&
+        JSON.stringify(m.content).includes('文件目录校验.pdf') && r.messages.slice(0,i).some(prev=>prev.tool_calls?.some(c=>c.id===m.tool_call_id && c.function.name===tool)))),tool+' lists fixture',12000)
+        .catch(error=>{ throw Error(error.message+' offered='+requests[from]?.tools?.map(t=>t.function.name)+' results='+JSON.stringify(requests.slice(from).at(-1)?.messages.filter(m=>m.role==='tool')).slice(-1600)) })
+
+    }
+    const coldDM={...message(10001,'private','重启后的私聊'),message_id:9001,message_seq:9001}
+    const coldGroup={...message(10001,'group','重启后再接话'),message_id:9002,message_seq:9002}
+    writeFileSync(join(root,'offline-events.json'),JSON.stringify({private:[...privateHistory,coldDM],group:[group,coldGroup]}))
+    writeFileSync(join(root,'result.json'),JSON.stringify({private:true,group:true,reconnectDedup:true,glob:true,bash:true}))
+  } else if (process.argv.includes('--vision-check')) {
     const settings=()=>rpc('alcorSecretary','qqVisionSettings',{request:{}})
     const choose=route=>rpc('alcorSecretary','setQQVisionModel',{request:{route}})
     const {models,selected}=await settings()
@@ -167,7 +219,7 @@ try {
     assert.ok(!off.some(r=>r.model===route.model))
     assert.ok(off.some(r=>JSON.stringify(r.messages).includes('未选择看图模型')))
     writeFileSync(join(root,'result.json'),JSON.stringify({visionRequests:index,private:true,group:true,multiImage:true,textOnlyReply:true,disabled:true}))
-  } else  if (process.argv.includes('--scope-check')) {
+  } else if (process.argv.includes('--scope-check')) {
     const name='dsh-onebot-qq'
     const set=(value,previous)=>rpc('alcorPluginModes','setScope',{request:{name,value,previous}})
     const scopes=await rpc('alcorPluginModes','readScopes',{request:{}})

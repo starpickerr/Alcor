@@ -50,11 +50,19 @@
           - id: alcor-workspace-reader
             name: '@deepseek-ai/dsh-tool-fs'
             config:
-              read: true
-              readImage: false
-              write: false
-              edit: false
               applyPatch: false
+          - id: alcor-workspace-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: alcor-workspace-shell
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: alcor-workspace-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: alcor-workspace-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
           - id: alcor-tools
             name: '@alcor/secretary/tools'
           - id: alcor-skill-reader
@@ -92,11 +100,19 @@
           - id: stella-workspace-reader
             name: '@deepseek-ai/dsh-tool-fs'
             config:
-              read: true
-              readImage: false
-              write: false
-              edit: false
               applyPatch: false
+          - id: stella-workspace-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: stella-workspace-shell
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: stella-workspace-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: stella-workspace-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
           - id: stella-tools
             name: '@alcor/secretary/tools'
           - id: stella-skill-reader

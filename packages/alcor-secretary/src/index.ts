@@ -45,6 +45,11 @@ export default class Secretary extends TypertRemoteService {
     const vision = await this.ctx.storageDomain.open(defineDomain({name:'alcor_qq_vision', version:1, tables:{selection:domainTable(visionRoute)}}))
     this.ctx.effect(() => () => vision.close())
     this.visionSelection = vision.table('selection')
+    const inbox = await this.ctx.storageDomain.open(defineDomain({name:'alcor_qq_inbox',version:1,tables:{
+      checkpoints:domainTable(schema.object({since:schema.number(),seen:schema.record(schema.string(),schema.number())})),
+    }}))
+    this.ctx.effect(() => () => inbox.close())
+    this.qqCheckpoints = inbox.table('checkpoints')
     const spaces = await this.ctx.storageDomain.open(defineDomain({ name: 'alcor_spaces', version: 1, tables: { ownership: domainTable(ownershipSchema) } }))
     this.ctx.effect(() => () => spaces.close())
     this.productSpaces = new ProductSpaces(this.ctx, spaces.table('ownership'))

@@ -41,6 +41,7 @@ try {
 
   await cp(join(root,'scripts/product/qq-stickers'),join(directory,'lib/stickers'),{recursive:true})
   await cp(join(root,'scripts/product/qq-social.mjs'),join(directory,'lib/alcor-social.js'))
+  await cp(join(root,'scripts/product/qq-offline-inbox.mjs'),join(directory,'lib/alcor-offline-inbox.js'))
   const diary=await readFile(join(root,'scripts/product/alcor-space-diary.js'))
   await writeFile(join(directory,'lib/alcor-space-diary.js'),diary)
   const info=await readFile(join(root,'scripts/product/qq-conversation-info.mjs'))
@@ -51,10 +52,10 @@ try {
   const history=await readFile(join(root,'packages/alcor-secretary/src/qq-history.js'))
   await writeFile(join(directory,'lib/alcor-history.js'),history)
   const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
-  manifest.version = '0.9.19-alcor.20'
+  manifest.version = '0.9.19-alcor.21'
   delete manifest.peerDependencies['dsh-lan-memory']
   if (manifest.peerDependenciesMeta) delete manifest.peerDependenciesMeta['dsh-lan-memory']
-  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.94'
+  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.98'
   manifest.peerDependenciesMeta ??= {}
   for (const name of Object.keys(manifest.peerDependencies)) {
     if (name.startsWith('@deepseek-ai/') || name === '@alcor/secretary') {

@@ -12,6 +12,8 @@ import { restoreLocalItem } from './local-item-restore.js'
 import { createAppleExportGate, isApplePlanOperation } from './security-apple-export-gate.js'
 
 export const inject = ['tools', 'alcorSecretary', 'systemPrompt']
+const desktopFileTools = new Set(['read','read_image','write','edit','apply_patch','glob','grep','bash','pwsh','job_output','job_list','job_kill'])
+
 export function apply(ctx) {
   registerBundledSkills(ctx, 'alcor-secretary', new URL('../skills/', import.meta.url))
   const turnSources = new WeakMap()
@@ -58,7 +60,7 @@ export function apply(ctx) {
   ctx.tools.guard(execution => {
     if ((execution.name === 'schedule_edit' && execution.arguments?.action === 'delete') || isAutomationDeletion(execution)) return automationDeleteUnavailable
     if (requiresUnimplementedAppleApproval(execution)) return '此 Apple 操作需要具体目标审批，暂不能通过对话执行。'
-    if (execution.name === 'read' && ctx.alcorSecretary.memory?.currentActor(execution.agent)?.source.kind !== 'desktop') return '项目文件读取仅供主人发起的 Alcor 桌面对话使用。'
+    if (desktopFileTools.has(execution.name) && (!personalTurn(execution.agent) || ctx.alcorSecretary.memory?.currentActor(execution.agent)?.source.kind !== 'desktop')) return '本机文件和命令工具仅供主人发起的 Alcor 桌面对话使用。'
     const capability = classifyCapability(execution.name, execution.arguments).kind
     if (capability === 'unclassified') return '此 Alcor 操作尚未完成安全分类，暂不能执行。'
     if (capability === 'internal') return '此内部操作仅由受信任的宿主调用。'

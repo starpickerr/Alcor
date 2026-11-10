@@ -53,6 +53,7 @@ test('actual QQ outbound sends paced bubbles in order, quotes once and retains i
   }
   for(const [source,target] of [
     ['scripts/product/qq-replies.mjs','alcor-replies.js'],
+    ['scripts/product/qq-offline-inbox.mjs','alcor-offline-inbox.js'],
     ['scripts/product/qq-conversation-info.mjs','alcor-conversation-info.js'],
     ['scripts/product/qq-platform-history.mjs','alcor-platform-history.js'],
     ['packages/alcor-secretary/src/qq-history.js','alcor-history.js'],
@@ -90,9 +91,11 @@ test('actual QQ outbound sends paced bubbles in order, quotes once and retains i
 
   const {installConversationInfo}=await load('alcor-conversation-info.js')
   let adapter,authorized=true
-  const bridge={registry:{bySession:new Map(),getSettings:()=>({})},outbound:pipeline,sendMsg:(...args)=>pipeline.sendMsg(...args)}
-  installConversationInfo({alcorSecretary:{channels:{register:value=>{adapter=value;return ()=>{}}},productSpaces:{}}},
-    {connected:true,selfId:'9'},bridge,{botQQ:'9'},{groupPolicy:'allowlist',groupAllowFrom:['10'],adminUsers:['12'],allowFrom:[]})
+  const checkpoints=new Map()
+  const bridge={deps:{log(){}},registry:{mappingLoaded:Promise.resolve(),bySession:new Map(),getSettings:()=>({})},outbound:pipeline,sendMsg:(...args)=>pipeline.sendMsg(...args)}
+  const dispose=installConversationInfo({alcorSecretary:{qqCheckpoints:{entries:()=>checkpoints.entries(),get:k=>checkpoints.get(k),put:(k,v)=>checkpoints.set(k,v)},channels:{register:value=>{adapter=value;return ()=>{}}},productSpaces:{}}},
+    {connected:true,selfId:'9',call:async method=>method==='get_login_info'?{user_id:9}:{messages:[]}},bridge,{botQQ:'9'},{groupPolicy:'allowlist',groupAllowFrom:['10'],adminUsers:['12'],allowFrom:[]})
+  t.after(dispose)
   wire.length=0
   assert.equal((await adapter.send({kind:'private',peer:'12'},'问候一。\n|||\n问候二。',()=>authorized)).status,'sent')
   assert.equal(wire.length,2)
