@@ -278,6 +278,11 @@ def bills_db(identity=None, ensure: bool = True, base=None) -> Path:
     return bills_dir / "bills.db"
 
 
+def data_service_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Core Data Service records and collection/delivery state, owned by the user."""
+    return _ensure(_user_base(identity, base) / "data", ensure) / "data.db"
+
+
 def briefing_db(identity=None, ensure: bool = True, base=None) -> Path:
     """Morning briefing history and filter rules. User-scoped: inbox
     preferences are a fact about the person, not about one Agent."""
@@ -301,6 +306,17 @@ def runs_dir(identity=None, ensure: bool = False, base=None) -> Path:
     """Task execution records. User-scoped because a trace holds full tool
     output: one user's runs must not be readable by another."""
     return _ensure(_user_base(identity, base) / "runs", ensure)
+
+
+def executions_dir(identity=None, ensure: bool = False, base=None) -> Path:
+    """H0 ExecutionService database and managed work copies (user-scoped)."""
+    return _ensure(_user_base(identity, base) / "executions", ensure)
+
+
+def agent_hub_db(identity=None, ensure: bool = True, base=None) -> Path:
+    """Agent Hub provider configs and external run mappings."""
+    hub_dir = _ensure(_user_base(identity, base) / "agent-hub", ensure)
+    return hub_dir / "agent-hub.db"
 
 
 # --- Compatibility -----------------------------------------------------------

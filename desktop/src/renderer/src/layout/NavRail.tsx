@@ -1,25 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import {
-  MessageSquare,
-  BookOpen,
-  Brain,
-  Zap,
-  Radio,
-  Clock,
-  Settings,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Sun,
-  ScrollText,
-  ChevronRight,
-  ListChecks,
-  CalendarDays,
-  Receipt,
-  Shield,
-  Heart,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, ChevronRight } from 'lucide-react'
+import { NAV_GROUPS } from './navigation'
 import brandLogo from '../assets/logo.png'
 import { t } from '../i18n'
 import { useUIStore } from '../store/uiStore'
@@ -27,69 +9,13 @@ import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { product } from '@product'
 
-interface NavItem {
-  path: string
-  labelKey: string
-  icon: LucideIcon
-}
-
-interface NavGroup {
-  id: string
-  labelKey: string
-  items: NavItem[]
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    id: 'chat',
-    labelKey: 'nav_chat',
-    items: [{ path: '/', labelKey: 'menu_chat', icon: MessageSquare }],
-  },
-  {
-    id: 'apps',
-    labelKey: 'nav_work',
-    items: [
-      { path: '/todos', labelKey: 'menu_todos', icon: ListChecks },
-      { path: '/calendar', labelKey: 'menu_calendar', icon: CalendarDays },
-      { path: '/briefing', labelKey: 'menu_briefing', icon: Sun },
-      { path: '/bills', labelKey: 'menu_bills', icon: Receipt },
-      { path: '/health', labelKey: 'menu_health', icon: Heart },
-      { path: '/tasks', labelKey: 'menu_tasks', icon: Clock },
-    ],
-  },
-  {
-    id: 'info',
-    labelKey: 'nav_info',
-    items: [
-      { path: '/memory', labelKey: 'menu_memory', icon: Brain },
-      { path: '/knowledge', labelKey: 'menu_knowledge', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'channels',
-    labelKey: 'nav_channels',
-    items: [{ path: '/channels', labelKey: 'menu_channels', icon: Radio }],
-  },
-  {
-    id: 'system',
-    labelKey: 'nav_system',
-    items: [
-      { path: '/skills', labelKey: 'menu_evolution', icon: Zap },
-      { path: '/security', labelKey: 'menu_security', icon: Shield },
-      { path: '/settings', labelKey: 'menu_settings', icon: Settings },
-      { path: '/logs', labelKey: 'menu_logs', icon: ScrollText },
-    ],
-  },
-]
-
 const GROUP_OPEN_DEFAULT: Record<string, boolean> = Object.fromEntries(
   NAV_GROUPS.map((g) => [g.id, true])
 )
 
 function pathActive(pathname: string, itemPath: string): boolean {
   if (itemPath === '/') return pathname === '/'
-  if (itemPath === '/settings') return pathname === '/settings' || pathname === '/models'
-  return pathname === itemPath
+  return pathname === itemPath || pathname.startsWith(itemPath + '/')
 }
 
 const NavRail: React.FC = () => {
@@ -147,7 +73,7 @@ const NavRail: React.FC = () => {
         {NAV_GROUPS.map((group, gi) => {
           const groupOpen = collapsed || openGroups[group.id] !== false
           return (
-            <div key={group.id} className={gi > 0 ? (collapsed ? 'mt-2' : 'mt-1') : ''}>
+            <div key={group.id} data-testid={`nav-group-${group.id}`} className={gi > 0 ? (collapsed ? 'mt-2' : 'mt-1') : ''}>
               {!collapsed && (
                 <button
                   onClick={() =>

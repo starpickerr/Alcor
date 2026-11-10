@@ -55,7 +55,7 @@ class Ls(BaseTool):
         env_config_dir = expand_path("~/.stella")
         if os.path.abspath(absolute_path) == os.path.abspath(env_config_dir):
             return ToolResult.fail(
-                "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
+                "Error: Access denied. API keys and credentials must be accessed through their owning feature settings only."
             )
         
         if not os.path.exists(absolute_path):

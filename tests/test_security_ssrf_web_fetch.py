@@ -78,7 +78,7 @@ class TestWebFetchSSRF(unittest.TestCase):
 
     def test_loopback_literal_blocked(self):
         """http://127.0.0.1:<port>/x must be refused, no request issued."""
-        with patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+        with patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute({"url": "http://127.0.0.1:8080/canary"})
         self.assertEqual(result.status, "error")
         self.assertIn("non-public", result.result)
@@ -86,7 +86,7 @@ class TestWebFetchSSRF(unittest.TestCase):
 
     def test_cloud_metadata_literal_blocked(self):
         """http://169.254.169.254/latest/meta-data/ must be refused."""
-        with patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+        with patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute(
                 {"url": "http://169.254.169.254/latest/meta-data/"}
             )
@@ -96,7 +96,7 @@ class TestWebFetchSSRF(unittest.TestCase):
 
     def test_ipv6_loopback_literal_blocked(self):
         """http://[::1]/x must be refused."""
-        with patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+        with patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute({"url": "http://[::1]/canary"})
         self.assertEqual(result.status, "error")
         self.assertIn("non-public", result.result)
@@ -107,7 +107,7 @@ class TestWebFetchSSRF(unittest.TestCase):
     def test_rfc1918_hostname_blocked(self):
         """A hostname that resolves to 10.x.x.x must be refused, no request."""
         with patch("socket.getaddrinfo", return_value=_gai("10.1.2.3")), \
-                patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+                patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute({"url": "http://internal.corp/secret"})
         self.assertEqual(result.status, "error")
         self.assertIn("non-public", result.result)
@@ -116,7 +116,7 @@ class TestWebFetchSSRF(unittest.TestCase):
     def test_192_168_hostname_blocked(self):
         """A hostname that resolves to 192.168.x.x must be refused."""
         with patch("socket.getaddrinfo", return_value=_gai("192.168.0.5")), \
-                patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+                patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute({"url": "http://router.local/admin"})
         self.assertEqual(result.status, "error")
         self.assertIn("non-public", result.result)
@@ -141,7 +141,7 @@ class TestWebFetchSSRF(unittest.TestCase):
             return _gai(host)
 
         with patch("socket.getaddrinfo", side_effect=fake_getaddrinfo), \
-                patch("requests.get", return_value=redirect) as mock_get:
+                patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=redirect) as mock_get:
             result = self.tool.execute({"url": "http://evil.example.com/start"})
 
         self.assertEqual(result.status, "error")
@@ -170,7 +170,7 @@ class TestWebFetchSSRF(unittest.TestCase):
         ok.raise_for_status = lambda: None
 
         with patch("socket.getaddrinfo", return_value=_gai("93.184.216.34")), \
-                patch("requests.get", return_value=ok) as mock_get:
+                patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=ok) as mock_get:
             result = self.tool.execute({"url": "http://example.com/page"})
 
         self.assertEqual(result.status, "success")
@@ -196,7 +196,7 @@ class TestWebFetchSSRFDisabledByDefault(unittest.TestCase):
     def test_loopback_allowed_when_disabled(self):
         """http://127.0.0.1/x must be fetched when protection is off (default)."""
         with patch("socket.getaddrinfo", return_value=_gai("127.0.0.1")), \
-                patch("requests.get", return_value=_fake_ok_response()) as mock_get:
+                patch("agent.tools.web_fetch.web_fetch.requests.get", return_value=_fake_ok_response()) as mock_get:
             result = self.tool.execute({"url": "http://127.0.0.1:8080/local"})
         self.assertEqual(result.status, "success")
         mock_get.assert_called_once()

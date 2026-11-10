@@ -1,16 +1,10 @@
 import logging
 import os
 import sys
-import io
-import re
 import traceback
+from logging.handlers import RotatingFileHandler
 
-
-_SECRET_FIELD = re.compile(
-    r'(?i)(["\']?(?:password|token|api[_-]?key|cookie|authorization|client[_-]?secret|access[_-]?token)["\']?\s*[:=]\s*)(["\']?)([^\s,}"\']+)',
-)
-_BEARER = re.compile(r'(?i)\bBearer\s+[^\s,;]+')
-_SK_TOKEN = re.compile(r'(?i)\bsk-[A-Za-z0-9_\-]{16,}')
+from core.log_redaction import redact as _redact
 
 
 class _SecretFilter(logging.Filter):
@@ -22,12 +16,6 @@ class _SecretFilter(logging.Filter):
             record.exc_text = _redact(''.join(traceback.format_exception(*record.exc_info)))
             record.exc_info = None
         return True
-
-
-def _redact(message):
-    message = _BEARER.sub('Bearer [REDACTED]', message)
-    message = _SK_TOKEN.sub('sk-[REDACTED]', message)
-    return _SECRET_FIELD.sub(r'\1\2[REDACTED]', message)
 
 
 def _log_path():
@@ -43,16 +31,23 @@ def _log_path():
 
 
 def _reset_logger(log):
-    for handler in log.handlers:
+    for handler in list(log.handlers):
         handler.close()
         log.removeHandler(handler)
         del handler
     log.handlers.clear()
     log.propagate = False
-    stdout = sys.stdout
-    if hasattr(stdout, "buffer"):
-        stdout = io.TextIOWrapper(stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
-    console_handle = logging.StreamHandler(stdout)
+    if os.environ.get('STELLA_PLUGIN_ID'):
+        from core.plugins.runner.diagnostics import DiagnosticHandler
+        log.addHandler(DiagnosticHandler())
+        return  # The host is the only file writer, including standalone mode.
+    # Borrow stdout. Wrapping its buffer transfers ownership and garbage
+    # collection during reconfiguration can close the application's stdout.
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+    except (AttributeError, OSError, ValueError, TypeError):
+        pass  # Custom/captured streams may not support encoding configuration.
+    console_handle = logging.StreamHandler(sys.stdout)
     console_handle.addFilter(_SecretFilter())
     console_handle.setFormatter(
         logging.Formatter(
@@ -70,7 +65,7 @@ def _reset_logger(log):
     # an unwritable CWD), fall back to console-only instead of crashing the
     # whole process at import time.
     try:
-        file_handle = logging.FileHandler(_log_path(), encoding="utf-8")
+        file_handle = RotatingFileHandler(_log_path(), maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
         file_handle.addFilter(_SecretFilter())
         file_handle.setFormatter(
             logging.Formatter(

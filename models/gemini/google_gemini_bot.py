@@ -14,12 +14,13 @@ import re
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.session_manager import SessionManager
 from bridge.context import ContextType, Context
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 from models.chatgpt.chat_gpt_session import ChatGPTSession
 
@@ -33,7 +34,7 @@ class GoogleGeminiBot(Bot):
 
     @property
     def api_key(self):
-        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("gemini_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else model_key("gemini_api_key")
 
     @property
     def model(self):
@@ -521,6 +522,8 @@ class GoogleGeminiBot(Bot):
             else:
                 return self._handle_gemini_rest_sync_response(response, model_name)
                 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] call_with_tools error: {e}", exc_info=True)
             error_msg = str(e)  # Capture error message before creating generator
@@ -660,6 +663,8 @@ class GoogleGeminiBot(Bot):
                 "safety_ratings": safety_ratings
             }
             
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] sync response error: {e}", exc_info=True)
             return {
@@ -832,6 +837,8 @@ class GoogleGeminiBot(Bot):
                 }]
             }
                     
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] stream response error: {e}", exc_info=True)
             error_msg = str(e)
@@ -966,6 +973,8 @@ class GoogleGeminiBot(Bot):
                                 }]
                             }
                             
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[Gemini] stream response error: {e}")
             yield {

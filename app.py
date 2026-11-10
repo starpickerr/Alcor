@@ -413,14 +413,34 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
-def _init_bills_db():
-    """Create the bills SQLite file on first boot; reuse it afterwards."""
+def _bootstrap_permission_policies():
+    from core.security.migration import ensure_migrated
     try:
-        from agent.bills.store import get_bill_store
+        result = ensure_migrated()
+        logger.info('[Security] Permission migration status=%s', result['status'])
+    except (ValueError, OSError, RuntimeError) as error:
+        # The authenticated recovery UI remains available. Policy edits still
+        # require a successful migration; legacy resolution retains restrictions.
+        logger.error('[Security] Permission migration requires recovery (%s)', type(error).__name__)
 
-        get_bill_store()
+
+def _bootstrap_default_plugins():
+    """Install default first-party plugins and activate domain env flags (desktop)."""
+    if not DESKTOP_MODE:
+        return
+    try:
+        from common.state_dir import state_root
+        from core.plugins.bootstrap import run_desktop_bootstrap
+
+        result = run_desktop_bootstrap(data_dir=state_root())
+        logger.info(
+            "[App] Plugin bootstrap status=%s installed=%s env=%s",
+            result.get("status"),
+            result.get("installed"),
+            sorted((result.get("envApplied") or {}).keys()),
+        )
     except Exception as e:
-        logger.warning(f"[App] Bills database init failed (non-fatal): {e}")
+        logger.warning(f"[App] Plugin bootstrap failed (non-fatal): {e}")
 
 
 def _warn_if_legacy_workspace_data_exists():
@@ -580,7 +600,8 @@ def run():
         # Sync builtin skills to workspace before channels start
         _sync_builtin_skills()
         _scaffold_subagent_assets()
-        _init_bills_db()
+        _bootstrap_permission_policies()
+        _bootstrap_default_plugins()
 
         # Kick off MCP server loading in the background so first-message
         # latency isn't dominated by npx package downloads. Skipped in desktop

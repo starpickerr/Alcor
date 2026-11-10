@@ -5,7 +5,7 @@ import re
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 
 from models.baidu.baidu_wenxin_session import BaiduWenxinSession
 from models.bot import Bot
@@ -14,6 +14,7 @@ from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 
 # Optional OpenAI image support
@@ -65,7 +66,7 @@ class ClaudeAPIBot(Bot, OpenAIImage):
 
     @property
     def api_key(self):
-        return self._stella_api_key if hasattr(self, "_stella_api_key") else conf().get("claude_api_key")
+        return self._stella_api_key if hasattr(self, "_stella_api_key") else model_key("claude_api_key")
 
     @property
     def api_base(self):
@@ -427,6 +428,8 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                 return self._handle_stream_response(request_params)
             else:
                 return self._handle_sync_response(request_params)
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"Claude API call error: {e}")
             if stream:
@@ -699,6 +702,8 @@ class ClaudeAPIBot(Bot, OpenAIImage):
                 "message": f"Connection error: {str(e)}",
                 "status_code": 0
             }
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"Claude streaming error: {e}")
             yield {

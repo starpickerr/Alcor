@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from core.security.file_access import checked_open, identity
 from common.utils import expand_path
 from agent.tools.utils.credentials import credential_denial_message, is_credential_path
 from agent.tools.utils.diff import (
@@ -56,7 +57,6 @@ class Edit(BaseTool):
     def __init__(self, config: dict = None):
         self.config = config or {}
         self.cwd = self.config.get("cwd", os.getcwd())
-        self.memory_manager = self.config.get("memory_manager", None)
     
     def execute(self, args: Dict[str, Any]) -> ToolResult:
         """
@@ -92,7 +92,8 @@ class Edit(BaseTool):
         
         try:
             # Read file
-            with open(absolute_path, 'r', encoding='utf-8') as f:
+            with checked_open(absolute_path, 'r', encoding='utf-8') as f:
+                original_identity = identity(f)
                 raw_content = f.read()
             
             # Remove BOM (LLM won't include invisible BOM in oldText)
@@ -192,7 +193,7 @@ class Edit(BaseTool):
                 return ToolResult.fail(f"Error: {blocking}")
 
             # Write file
-            with open(absolute_path, 'w', encoding='utf-8') as f:
+            with checked_open(absolute_path, 'w', encoding='utf-8', expected=original_identity) as f:
                 f.write(final_content)
             note_write(absolute_path)
             
@@ -217,12 +218,6 @@ class Edit(BaseTool):
                 result["warning"] = " ".join(warnings)
             
             # Notify memory manager if file is in memory directory
-            if self.memory_manager and "memory/" in path:
-                try:
-                    self.memory_manager.mark_dirty()
-                except Exception:
-                    # Don't fail the edit if memory notification fails
-                    pass
             
             return ToolResult.success(result)
             

@@ -7,7 +7,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.runtime_identity import RuntimeIdentity, current_identity, use_identity
+from common.runtime_identity import current_identity, use_identity
+from core.plugins.caller import caller_origin_scope
 
 
 _apple_managers = {}
@@ -54,10 +55,22 @@ _METHODS = {
     "bills": frozenset({
         "list_ledger", "list_ledger_between", "get_ledger", "create_ledger",
         "update_ledger", "delete_ledger", "list_statements", "get_statement",
+        "export_ledger",
+    }),
+    # Managed MCP domains: no legacy in-process service exists behind these ports.
+    "email": frozenset({
+        "list_accounts", "get_account", "list_sources", "get_cursors", "test_connection",
+        "list_folders", "fetch_messages", "save_account", "delete_account", "set_cursors",
+        "reset_cursors",
+    }),
+    "elearning": frozenset({
+        "get_settings", "get_cursors", "list_courses", "fetch", "fetch_source", "list_files",
+        "save_settings", "delete_settings", "save_file_sync_settings", "test_connection",
+        "set_cursors", "sync_files",
     }),
     "briefing": frozenset({
         "list_briefings", "get_briefing", "get_revision", "start_briefing", "briefing_for_date",
-        "complete_briefing", "update_item_status", "upsert_source_item", "list_rules",
+        "complete_briefing", "run_pipeline", "update_item_status", "upsert_source_item", "list_rules",
         "get_rule", "create_rule", "update_rule", "delete_rule", "get_cursor", "set_cursor",
         "build_source_item", "update_action", "list_action_rules", "create_action_rule", "delete_action_rule",
         "get_preferences", "update_preferences", "get_action_targets", "get_overview",
@@ -66,6 +79,13 @@ _METHODS = {
 
 
 class _Port:
+    # G5 routing policy (domain -> service behind the port):
+    # - bills, todos, calendar, briefing, email, elearning: managed MCP (no in-process service); raise unless the
+    #   STELLA_<DOMAIN>_PLUGIN flag is on.
+    # - automation: STELLA_<DOMAIN>_PLUGIN opt-in
+    #   in non-desktop runs (tests stay in-process by default). On STELLA_DESKTOP,
+    #   app._bootstrap_default_plugins installs catalog packages and sets those
+    #   flags for enabled intents (explicit 0/false still wins). Never dual-write.
     def __init__(self, domain, context):
         if domain not in _METHODS:
             raise ValueError(f"unknown business domain: {domain}")
@@ -74,22 +94,38 @@ class _Port:
             raise ValueError("invalid user identity")
         self.domain = domain
         self.context = context
-        identity = RuntimeIdentity(agent_id=context.agent_id, user_id=context.user_id,
-                                   session_id=context.session_id, run_id=current_identity().run_id)
+        identity = current_identity().derive(agent_id=context.agent_id, user_id=context.user_id,
+                                             session_id=context.session_id)
         self.identity = identity
         with use_identity(identity):
             if domain == "calendar":
-                from agent.calendar import CalendarService
-                self._service = CalendarService()
+                from core.services.calendar_public import default_service
+                self._service = default_service()
             elif domain == "todos":
-                from agent.todos import TodoService
-                self._service = TodoService()
+                from core.services.todos_public import default_service
+                self._service = default_service()
             elif domain == "bills":
-                from agent.bills.service import BillsService
-                self._service = BillsService()
+                from core.services.bills_gateway import bills_plugin_enabled
+                if not bills_plugin_enabled():
+                    raise RuntimeError("bills domain requires the stella.bills plugin (STELLA_BILLS_PLUGIN=1)")
+                from core.services.bills_facade import BillsPluginFacade
+                self._service = BillsPluginFacade()
+            elif domain == "email":
+                from core.services.email_gateway import email_mcp_enabled
+                if not email_mcp_enabled():
+                    raise RuntimeError("email MCP connection is disabled or unavailable")
+                from core.services.email_facade import EmailMcpFacade
+                self._service = EmailMcpFacade()
+            elif domain == "elearning":
+                from core.services.elearning_gateway import elearning_mcp_enabled
+                if not elearning_mcp_enabled():
+                    raise RuntimeError(
+                        "eLearning MCP connection is disabled or unavailable")
+                from core.services.elearning_facade import ElearningMcpFacade
+                self._service = ElearningMcpFacade()
             else:
-                from agent.briefing.service import BriefingService
-                self._service = BriefingService()
+                from core.services.briefing_public import default_service
+                self._service = default_service()
 
     @property
     def store(self):
@@ -102,7 +138,7 @@ class _Port:
             raise AttributeError(name)
 
         def call(*args, **kwargs):
-            with use_identity(self.identity):
+            with use_identity(self.identity), caller_origin_scope(self.context.source):
                 mutates = name.startswith(('create_', 'update_', 'delete_', 'complete_', 'change_', 'add_', 'remove_', 'move_', 'import_', 'ingest_', 'upsert_', 'withdraw_', 'start_', 'set_'))
                 run_id = current_identity().run_id
                 if not mutates or not run_id:
@@ -169,10 +205,10 @@ class Application:
         """Resume the todo outbox only from a scheduler handoff."""
         if context.source != "scheduler":
             raise PermissionError("todo reminder dispatch is reserved for scheduler")
-        from agent.todos import TodoService
-        with use_identity(RuntimeIdentity(agent_id=context.agent_id, user_id=context.user_id,
-                                          session_id=context.session_id, run_id=current_identity().run_id)):
-            return TodoService().dispatch_scheduled_reminder(todo_id, expected_at)
+        with use_identity(current_identity().derive(agent_id=context.agent_id, user_id=context.user_id,
+                                                   session_id=context.session_id)), caller_origin_scope(context.source):
+            from core.services.todos_public import dispatch_scheduled_reminder
+            return dispatch_scheduled_reminder(todo_id, expected_at)
 
     @staticmethod
     def scheduler(store=None):
@@ -181,6 +217,16 @@ class Application:
         if store is None:
             from agent.todos.scheduler_link import default_scheduler_store
             store = default_scheduler_store()
+        # Task rules/mutations move to the plugin; Core keeps lease, dispatch and
+        # delivery on the same automation.db. Legacy JSON TaskStore stays on Core.
+        from core.services.automation_facade import AutomationPluginFacade, plugin_serves
+        from core.services.automation_gateway import automation_plugin_enabled
+
+        if plugin_serves(store):
+            if not automation_plugin_enabled():
+                raise RuntimeError(
+                    "automation domain requires the stella.automation plugin (STELLA_AUTOMATION_PLUGIN=1)")
+            return AutomationPluginFacade(store)
         return SchedulerMutations(store)
 
     @staticmethod
@@ -208,8 +254,8 @@ class Application:
         args = params if isinstance(params, list) else [params or {}]
         request = context or RequestContext.ambient()
         operation_id = request.idempotency_key or uuid.uuid4().hex
-        with use_identity(RuntimeIdentity(agent_id=request.agent_id, user_id=request.user_id,
-                                          session_id=request.session_id, run_id=current_identity().run_id)):
+        with use_identity(current_identity().derive(agent_id=request.agent_id, user_id=request.user_id,
+                                                   session_id=request.session_id)), caller_origin_scope(request.source):
             from agent.runtime.tool_invocation import permission_denial
             action = {"create_ledger": "add", "update_ledger": "update", "delete_ledger": "delete",
                       "create_todo": "create", "update_todo": "update", "complete_todo": "complete",

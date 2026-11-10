@@ -139,7 +139,7 @@ def test_sync_response_surfaces_thinking_as_reasoning_content(monkeypatch):
                 "usage": {"input_tokens": 5, "output_tokens": 7},
             }
 
-    monkeypatch.setattr("requests.post", lambda *a, **kw: _Resp())
+    monkeypatch.setattr("models.claudeapi.claude_api_bot.requests.post", lambda *a, **kw: _Resp())
 
     result = bot._handle_sync_response({"model": "claude-sonnet-5"})
     message = result["choices"][0]["message"]

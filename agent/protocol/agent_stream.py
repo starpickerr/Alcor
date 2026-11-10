@@ -1362,6 +1362,9 @@ class AgentStreamExecutor:
                     elif isinstance(choice, dict) and choice.get("_gemini_raw_parts"):
                         gemini_raw_parts = choice["_gemini_raw_parts"]
 
+        except PermissionError:
+            raise
+
         except AgentCancelledError:
             # Must propagate untouched; never treat as a retryable error.
             raise
@@ -1874,6 +1877,7 @@ class AgentStreamExecutor:
 
         scheduled = bool(getattr(self.agent, "_scheduled_noninteractive", False))
         return permission_denial(tool_name, arguments, agent=self.agent,
+                                 tool=self.tools.get(tool_name),
                                  wait_for_approval=self.cancel_event is not None and not scheduled,
                                  noninteractive=scheduled,
                                  cancel_event=self.cancel_event)

@@ -37,13 +37,6 @@ export interface ElectronAPI {
   // Optional app config: first-run default theme + display name. Null when
   // the build ships no app config (standard build).
   getAppConfig?: () => Promise<{ defaultTheme?: string; appName?: string } | null>
-  // Generic HTTPS relay via the main process (bypasses renderer CORS).
-  httpRelay?: (req: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) => Promise<{ ok: boolean; status: number; headers: Record<string, string>; body: string }>
   // Update checks against GitHub Releases. downloadUpdate opens the given URL
   // (or the releases page) in the system browser.
   checkForUpdate?: () => Promise<void>
@@ -390,18 +383,11 @@ export interface SessionSettingsState {
     providers: SessionModelProvider[]
   }
   permission: {
-    source: 'session' | 'project' | 'global' | 'mixed'
-    preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    global_preset: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-    base_preset: 'read-only' | 'workspace-write' | 'full-access'
-    rules: Record<string, 'allow' | 'confirm' | 'deny'>
-    policy: import('./api/client').SecurityPolicy
+    source: 'independent'
+    mode: import('./api/client').FileMode
+    policy: import('./api/client').RunPolicy
     mode_definitions: import('./api/client').SecurityModeDefinition[]
-    authorized_roots: string[]
-    project: string | null
     error?: string | null
-    process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
     presets: string[]
   }
 }
@@ -507,6 +493,7 @@ export interface ModelProvider {
   id: string
   label: LocalizedLabel
   configured: boolean
+  credential_status?: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
   is_custom: boolean
   custom_id?: string
   custom_name?: string
@@ -635,6 +622,8 @@ export interface LocalizedCopy {
 
 export interface ToolInfo {
   id: string
+  source?: { type: 'builtin' | 'plugin'; plugin_ids: string[] }
+  enabled: boolean
   title: LocalizedCopy
   intro: LocalizedCopy
   detail: LocalizedCopy
@@ -754,7 +743,8 @@ export interface TaskAction {
   params?: Record<string, unknown> | unknown[]
   execution_session_id?: string
   notify_session_id?: string
-  conversation_mode?: 'source' | 'reuse' | 'new'
+  conversation_mode?: 'independent' | 'source' | 'reuse' | 'new'
+  workspace_version?: 1
   source_session_id?: string
   conversation_space?: 'personal' | 'project'
   execution_project_dir?: string
@@ -772,6 +762,9 @@ export interface SchedulerTask {
   action: TaskAction
   notification_route?: NotificationRoute | null
   run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access'
+  run_policy?: import('./api/client').RunPolicy
+  owner_agent_id?: string
+  permission_needs_confirmation?: boolean
   notification_delivery_status?: NotificationDeliveryStatus | null
   next_run_at?: string
   last_run_status?: string
@@ -799,7 +792,7 @@ export interface NotificationDeliveryStatus {
 }
 
 // ============================================================
-// Bills (mirrors agent/bills/schema.sql period_statements)
+// Bills (mirrors the stella.bills plugin period_statements schema)
 // ============================================================
 
 export type PeriodType = 'monthly' | 'yearly'
@@ -1044,7 +1037,7 @@ export interface BriefingActionReceipt {
   kind: BriefingActionKind
   state: 'pending' | 'succeeded' | 'failed' | 'conflict' | 'deleted' | 'detached' | 'ignored' | 'deferred' | 'briefing_only'
   target_id: string | null
-  business: Todo | CalendarEvent | null
+  business: Todo | CalendarEvent | { id: string; unresolved: true; access?: 'denied' } | null
   error: string
   result: { operation?: string; changes?: Record<string, { current: unknown; source: unknown }>; remind_at?: string }
 }
@@ -1098,6 +1091,8 @@ export interface BriefingRule {
 export type BriefingRuleInput = Pick<BriefingRule, 'text'> & Partial<Pick<BriefingRule, 'enabled' | 'source'>>
 
 export interface BriefingMailbox {
+  credential_status?: 'configured' | 'not_configured' | 'unavailable' | 'repair_required'
+  credential_revision?: string | null
   id: string
   enabled: boolean
   host: string
@@ -1117,6 +1112,7 @@ export interface BriefingSettings {
 }
 
 export interface BriefingMailboxInput {
+  credential_revision?: string
   id?: string
   enabled?: boolean
   action?: 'add' | 'save'
@@ -1143,7 +1139,6 @@ export interface BriefingSource {
 
 export interface ElearningSettings {
   enabled: boolean
-  file_sync_enabled: boolean
   file_sync_root: string
   configured: boolean
   base_url: string
@@ -1153,6 +1148,20 @@ export interface ElearningSettings {
   account_id: string
   password_set: boolean
   password_masked: string
+  credential_states?: Record<ElearningCredentialField, 'configured' | 'not_configured' | 'unavailable' | 'repair_required'>
+  credential_revision?: string
+  session_revision?: string
 }
 
-export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string }
+export type ElearningCredentialField = 'password' | 'token' | 'session'
+export type ElearningCredentialInput = { credential_field: ElearningCredentialField; credential_value: string; credential_revision: string }
+export type ElearningSettingsInput = Pick<ElearningSettings, 'enabled' | 'base_url' | 'username' | 'courses'> & { password?: string; token?: string; credential_revision?: string }
+
+export interface McpServerInfo {
+  settings_url?: string | null
+  name: string
+  enabled: boolean
+  transport: string
+  state: string
+  tools: { name: string; description: string }[]
+}

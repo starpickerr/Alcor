@@ -1,3 +1,4 @@
+from copy import deepcopy
 from common.runtime_identity import current_identity
 import base64
 import datetime
@@ -26,6 +27,7 @@ from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
+from channel.desktop.log_handlers import LogsEntriesHandler as LogsEntriesHandler
 from common import const
 from common import i18n
 from common.log import logger
@@ -39,9 +41,6 @@ from config import (
     sync_model_config_to_env,
 )
 from models.reasoning_capabilities import provider_reasoning_metadata
-from agent.permission import (
-    global_mode as permission_global_mode,
-)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -82,10 +81,8 @@ def _read_config_file_for_write() -> dict:
     (model, agent limits, ...), silently changing behavior after a restart.
     """
     config_path = os.path.join(get_data_root(), "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return read_config_template()
+    from core.security.config_credentials import read_document
+    return read_document(config_path, default=read_config_template())
 
 
 def _get_web_password() -> str:
@@ -139,6 +136,12 @@ def desktop_only_wsgi(application, token: str):
             return [b""]
         path = environ.get("PATH_INFO", "")
         if path in ("/api/health", "/mcp/oauth/callback"):
+            return application(environ, respond)
+        # The resource handler validates its exact, opened page nonce. Plugin
+        # subframes receive static assets only, never the desktop owner token.
+        if environ.get('REQUEST_METHOD') == 'GET' and re.fullmatch(
+            r'/api/plugins/pages/content/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+', path
+        ):
             return application(environ, respond)
         supplied = environ.get("HTTP_X_STELLA_DESKTOP_TOKEN", "")
         authorization = environ.get("HTTP_AUTHORIZATION", "")
@@ -345,7 +348,7 @@ def _get_upload_dir() -> str:
 
 def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
     """Resolve the same working root used by the Agent and tool gateway."""
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     return str(resolve_context(session_id, agent_id).root)
 
 
@@ -454,7 +457,8 @@ def _serve_allowed_roots() -> list:
 
 def _is_path_allowed(real_path: str, session_id: str = '', agent_id: str = '') -> bool:
     try:
-        from agent.workspace.context import private_access, resolve_context
+        from agent.workspace.context import private_access
+        from core.workspace.service import resolve_context
         context = resolve_context(session_id or None, agent_id or None)
         access = private_access(real_path, context)
         if access == 'deny':
@@ -1992,6 +1996,14 @@ class DesktopChannel(ChatChannel):
         urls = (
             '/', 'RootHandler',
             '/api/health', 'HealthHandler',
+            '/api/plugins/runtime', 'PluginRuntimeHandler',
+            '/api/plugins/dual-update-plan', 'PluginDualUpdatePlanHandler',
+            '/api/plugins/manage', 'PluginManagementHandler',
+            '/api/plugins/settings', 'PluginSettingsHandler',
+            '/api/plugins/authorization', 'PluginAuthorizationHandler',
+            '/api/plugins/pages/open', 'PluginPageOpenHandler',
+            '/api/plugins/pages/content/(.*)/(.*)', 'PluginPageContentHandler',
+            '/api/plugins/bridge/invoke', 'PluginBridgeInvokeHandler',
             '/auth/login', 'AuthLoginHandler',
             '/auth/check', 'AuthCheckHandler',
             '/auth/logout', 'AuthLogoutHandler',
@@ -2022,7 +2034,9 @@ class DesktopChannel(ChatChannel):
             '/api/channels', 'ChannelsHandler',
             '/api/weixin/qrlogin', 'WeixinQrHandler',
             '/api/feishu/register', 'FeishuRegisterHandler',
+            '/api/capabilities', 'CapabilitiesHandler',
             '/api/tools', 'ToolsHandler',
+            '/api/mcp', 'McpCatalogHandler',
             '/api/skills', 'SkillsHandler',
             '/api/memory', 'MemoryHandler',
             '/api/memory/content', 'MemoryContentHandler',
@@ -2035,14 +2049,15 @@ class DesktopChannel(ChatChannel):
             '/api/scheduler/destinations', 'SchedulerDestinationsHandler',
             '/api/scheduler/test-delivery', 'SchedulerTestDeliveryHandler',
             '/api/runs/pending', 'PendingRunsHandler',
-            '/api/security/activity', 'SecurityActivityHandler',
-            '/api/security/center', 'SecurityCenterHandler',
-            '/api/security/policy', 'SecurityPolicyHandler',
-            '/api/security/connections', 'SecurityConnectionsHandler',
-            '/api/security/secrets', 'SecuritySecretsHandler',
-            '/api/security/confirmations', 'SecurityConfirmationsHandler',
-            '/api/security/privacy', 'SecurityPrivacyHandler',
+            '/api/run-policy', 'RunPolicyHandler',
+            '/api/confirmations', 'OperationConfirmationsHandler',
+            '/api/data', 'DataManagementHandler',
+            '/api/data/records', 'DataRecordsHandler',
+            '/api/data/resources', 'DataResourcesHandler',
+            '/api/data/command', 'DataCommandHandler',
+            '/api/data/elearning/sync-files', 'DataElearningSyncFilesHandler',
             '/api/scheduler/run', 'SchedulerRunHandler',
+            '/api/scheduler/runs', 'SchedulerRunsHandler',
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
@@ -2063,6 +2078,9 @@ class DesktopChannel(ChatChannel):
             '/api/briefings/rules', 'BriefingRulesHandler',
             '/api/briefings/rules/update', 'BriefingRuleUpdateHandler',
             '/api/briefings/rules/delete', 'BriefingRuleDeleteHandler',
+            # Mailbox CRUD lives on email domain routes; briefing paths remain as aliases for tests.
+            '/api/email/accounts', 'EmailAccountsHandler',
+            '/api/email/accounts/test', 'EmailAccountsTestHandler',
             '/api/briefings/settings', 'BriefingSettingsHandler',
             '/api/briefings/settings/test', 'BriefingSettingsTestHandler',
             '/api/briefings/([^/]+)/revisions/([0-9]+)', 'BriefingRevisionHandler',
@@ -2136,6 +2154,7 @@ class DesktopChannel(ChatChannel):
             '/api/sessions/(.*)', 'SessionDetailHandler',
             '/api/history', 'HistoryHandler',
             '/api/messages/delete', 'MessageDeleteHandler',
+            '/api/logs/entries', 'LogsEntriesHandler',
             '/api/logs/download', 'LogsDownloadHandler',
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
@@ -2227,6 +2246,238 @@ class HealthHandler:
         return json.dumps({"status": "ok"})
 
 
+def _plugin_manager():
+    from core.plugins.bootstrap import _default_catalog_path
+    from core.plugins.lifecycle import PluginManager
+    from core.plugins.management import default_store
+
+    return PluginManager(default_store(), catalog_path=_default_catalog_path())
+
+
+def _plugin_settings_service():
+    from core.plugins.management import default_store
+    from core.plugins.settings import PluginSettingsService
+
+    return PluginSettingsService(default_store())
+
+
+def _plugin_user():
+    from common.runtime_identity import current_identity
+
+    return current_identity().user_id or 'local-default'
+
+
+class PluginRuntimeHandler:
+    """Installed state remains available when no plugin worker can start."""
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            return json.dumps({'status': 'ok', 'plugins': _plugin_manager().inventory(_plugin_user())}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginManagement] Inventory failed: %s', exc)
+            return json.dumps({'status': 'degraded', 'plugins': [], 'error': str(exc)}, ensure_ascii=False)
+
+
+class PluginDualUpdatePlanHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            return json.dumps(_plugin_manager().update_plan(_plugin_user()), ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({'status': 'degraded', 'error': str(exc)}, ensure_ascii=False)
+
+
+class PluginManagementHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            allowed = {'action', 'pluginId', 'operationId'}
+            if not isinstance(body, dict) or set(body) - allowed:
+                raise ValueError('unsupported management fields: ' + ', '.join(sorted(set(body) - allowed)))
+            action = body.get('action')
+            manager, user = _plugin_manager(), _plugin_user()
+            if action in {'install', 'update', 'reinstall'}:
+                result = manager.install(body['pluginId'], user_id=user)
+                if action == 'reinstall':
+                    manager.set_intent(body['pluginId'], user, 'enabled')
+            elif action in {'enable', 'disable', 'remove'}:
+                intent = {'enable': 'enabled', 'disable': 'disabled', 'remove': 'removed'}[action]
+                result = manager.set_intent(body['pluginId'], user, intent)
+            elif action == 'resume':
+                operation = manager.management.operation(body['operationId'])
+                if operation['userId'] != user:
+                    raise PermissionError('operation belongs to another user')
+                result = manager.resume(operation['operationId'])
+            else:
+                raise ValueError('unknown plugin management action')
+            return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginManagement] Operation failed: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+
+class PluginAuthorizationHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        return json.dumps({'status': 'error', 'code': 'gone',
+            'message': 'Plugins use the Agent permission mode; independent plugin authorization has been removed.'})
+
+
+class PluginSettingsHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from core.plugins.management import RevisionConflict
+        try:
+            from core.security.control import require_owner
+            require_owner()
+            body = json.loads(web.data() or b'{}')
+            allowed = {'action', 'pluginId', 'settingsId', 'category', 'expectedRevision', 'changes', 'field'}
+            if not isinstance(body, dict) or set(body) - allowed:
+                raise ValueError('unsupported settings fields')
+            service, user = _plugin_settings_service(), _plugin_user()
+            action = body.get('action')
+            if action == 'describe':
+                result = service.descriptors(body['pluginId'])
+            elif action == 'read':
+                result = service.read(body['pluginId'], user, body['settingsId'], body['category'], credential_status=True)
+            elif action == 'credentials':
+                result = service.credentials(body['pluginId'], user)
+            elif action == 'remove-secret':
+                result = service.remove_secret(body['pluginId'], user, body['settingsId'], body['category'], body['field'],
+                                               expected_revision=body['expectedRevision'])
+            elif action == 'save':
+                result = service.save(body['pluginId'], user, body['settingsId'], body['category'], body['changes'],
+                                      expected_revision=body['expectedRevision'])
+                if body.get('pluginId') == 'stella.agent-hub' and body.get('settingsId') == 'agent-hub.preferences':
+                    try:
+                        from core.services import agent_hub_gateway
+
+                        if agent_hub_gateway.agent_hub_plugin_enabled():
+                            agent_hub_gateway.apply_user_preferences(owner_user_id=user)
+                    except Exception as sync_exc:
+                        logger.warning('[PluginSettings] agent-hub preference sync failed: %s', sync_exc)
+            else:
+                raise ValueError('unknown settings action')
+            return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
+        except RevisionConflict as exc:
+            return json.dumps({'status': 'conflict', 'message': str(exc)}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+_PAGE_HOST = None
+_PAGE_CONTENT: dict[str, dict] = {}
+
+
+def _plugin_page_host():
+    global _PAGE_HOST
+    if _PAGE_HOST is None:
+        from core.plugins.bridge import BridgeRegistry
+        from core.plugins.page_host import PluginPageHost
+        _PAGE_HOST = PluginPageHost(bridges=BridgeRegistry())
+    return _PAGE_HOST
+
+
+class PluginPageOpenHandler:
+    """Open a restricted plugin page channel and return a content URL."""
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            plugin_id = body.get('pluginId')
+            page_id = body.get('pageId')
+            if not plugin_id or not page_id:
+                raise ValueError('pluginId and pageId are required')
+            generation = int(body.get('generation') or 1)
+            opened = _plugin_page_host().open_page(
+                plugin_id=plugin_id, page_id=page_id, user_id=_plugin_user(),
+                instance_id=body.get('instanceId') or 'desktop', generation=generation)
+            token = opened['channelNonce']
+            _PAGE_CONTENT[token] = opened
+            from urllib.parse import urlencode
+            query = urlencode(dict(nonce=token, pluginId=plugin_id, pageId=page_id,
+                                   channelNonce=token, generation=opened['generation']))
+            opened = {
+                **opened,
+                'contentUrl': f"/api/plugins/pages/content/{plugin_id}/{page_id}?{query}",
+            }
+            return json.dumps({'status': 'ok', 'result': opened}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginPage] open failed: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
+class PluginPageContentHandler:
+    """Serve package ui/pages HTML/JS for an opened Bridge channel."""
+
+    def GET(self, plugin_id, page_id):
+        from pathlib import Path
+
+        params = web.input(nonce='', file='')
+        opened = _PAGE_CONTENT.get(params.nonce)
+        if not opened or opened['pluginId'] != plugin_id or opened['pageId'] != page_id:
+            raise web.forbidden()
+        root = Path(opened['resourcePath']).parent
+        name = params.file or 'index.html'
+        if name not in {'index.html', 'app.js'}:
+            raise web.forbidden()
+        target = (root / name).resolve()
+        if not str(target).startswith(str(root.resolve())):
+            raise web.forbidden()
+        if name.endswith('.js'):
+            web.header('Content-Type', 'application/javascript; charset=utf-8')
+            return target.read_text(encoding='utf-8')
+        web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Content-Security-Policy',
+                   "default-src 'none'; script-src 'self' 'nonce-" + params.nonce +
+                   "'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; "
+                   "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
+        web.header('Referrer-Policy', 'no-referrer')
+        html = target.read_text(encoding='utf-8')
+        # Point the page script at the authenticated content endpoint.
+        html = html.replace(
+            'src="./app.js"',
+            f'src="/api/plugins/pages/content/{plugin_id}/{page_id}?nonce={params.nonce}&file=app.js"')
+        # Embed host-bound identity for the Bridge postMessage handshake.
+        inject = (
+            f'<script nonce="{params.nonce}">window.__STELLA_BRIDGE__={json.dumps({"pluginId": plugin_id, "pageId": page_id, "channelNonce": params.nonce, "generation": opened["generation"]}, ensure_ascii=True)};</script>'
+        )
+        return html.replace('</head>', inject + '</head>', 1)
+
+class PluginBridgeInvokeHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data() or b'{}')
+            value = _plugin_page_host().invoke(
+                channel_nonce=body['channelNonce'],
+                plugin_id=body['pluginId'],
+                page_id=body['pageId'],
+                generation=int(body.get('generation') or 0),
+                method=body['method'],
+                input=body.get('input') or {},
+            )
+            return json.dumps({'status': 'ok', 'value': value}, ensure_ascii=False, default=str)
+        except PermissionError as exc:
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning('[PluginBridge] invoke failed: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)}, ensure_ascii=False)
+
+
 class McpOAuthCallbackHandler:
     """OAuth redirect target for MCP servers requiring authorization.
 
@@ -2238,9 +2489,14 @@ class McpOAuthCallbackHandler:
 
     def GET(self):
         web.header('Content-Type', 'text/html; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        web.header('Referrer-Policy', 'no-referrer')
+        web.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
         params = web.input(code="", state="", error="", error_description="")
 
         def _page(title: str, message: str) -> str:
+            from html import escape
+            title, message = escape(title), escape(message)
             return (
                 "<!doctype html><html><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -2252,6 +2508,11 @@ class McpOAuthCallbackHandler:
 
         if params.error:
             logger.warning("[MCP-OAuth] callback returned an error")
+            if params.state:
+                from agent.tools.mcp.mcp_oauth import pop_pending, cancel_pending
+                handler = pop_pending(params.state)
+                if handler is not None:
+                    cancel_pending(handler=handler)
             return _page("授权失败", f"{params.error}: {params.error_description or ''}")
 
         if not params.code or not params.state:
@@ -2259,7 +2520,6 @@ class McpOAuthCallbackHandler:
 
         try:
             from agent.tools.mcp.mcp_oauth import pop_pending
-            from agent.tools.mcp.mcp_client import notify_server_authorized
         except Exception as e:
             logger.warning(f"[MCP-OAuth] callback import failed: {e}")
             return _page("内部错误", "OAuth 模块不可用。")
@@ -2273,11 +2533,13 @@ class McpOAuthCallbackHandler:
         except Exception as e:
             logger.warning(f"[MCP-OAuth] token exchange crashed: {e}")
             ok = False
+        finally:
+            handler._authorization_in_progress = False
 
         if not ok:
             return _page("授权失败", "换取令牌失败，请重试。")
 
-        notify_server_authorized(handler.server_name)
+        handler.notify_authorized()
         logger.info(f"[MCP-OAuth] Server '{handler.server_name}' authorized via web callback")
         return _page(
             "授权成功",
@@ -2619,138 +2881,7 @@ class StreamHandler:
 
 class ConfigHandler:
 
-    _RECOMMENDED_MODELS = [
-        const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
-        const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
-        # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
-        const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
-        const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
-        const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
-        const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
-        const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
-        const.MIMO_V2_5_PRO, const.MIMO_V2_5,
-    ]
-
-    # Generic placeholder hints surfaced in the web console. We deliberately
-    # show the version-path tail (e.g. "/v1") so users are reminded to type
-    # the full base URL. The form is intentionally vague (`...../v1`) so it
-    # never looks like a real default a user might paste verbatim — and we
-    # never auto-rewrite anything on the server side.
-    _PLACEHOLDER_V1 = "https://...../v1"
-    _PLACEHOLDER_QIANFAN = "https://...../v2"
-    _PLACEHOLDER_ZHIPU = "https://...../api/paas/v4"
-    _PLACEHOLDER_DOUBAO = "https://...../api/v3"
-    _PLACEHOLDER_GEMINI = "https://....."
-
-    PROVIDER_MODELS = OrderedDict([
-        ("deepseek", {
-            "label": "DeepSeek",
-            "api_key_field": "deepseek_api_key",
-            "api_base_key": "deepseek_api_base",
-            "api_base_default": "https://api.deepseek.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
-        }),
-        ("claudeAPI", {
-            "label": "Claude",
-            "api_key_field": "claude_api_key",
-            "api_base_key": "claude_api_base",
-            "api_base_default": "https://api.anthropic.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
-        }),
-        ("openai", {
-            "label": "OpenAI",
-            "api_key_field": "open_ai_api_key",
-            "api_base_key": "open_ai_api_base",
-            "api_base_default": "https://api.openai.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
-        }),
-        ("gemini", {
-            "label": "Gemini",
-            "api_key_field": "gemini_api_key",
-            "api_base_key": "gemini_api_base",
-            "api_base_default": "https://generativelanguage.googleapis.com",
-            "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
-        }),
-        ("minimax", {
-            "label": "MiniMax",
-            "api_key_field": "minimax_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.MINIMAX_M3, const.MINIMAX_M2_7, const.MINIMAX_M2_7_HIGHSPEED],
-        }),
-        ("zhipu", {
-            "label": {"zh": "智谱AI", "en": "GLM"},
-            "api_key_field": "zhipu_ai_api_key",
-            "api_base_key": "zhipu_ai_api_base",
-            "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
-            "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
-        }),
-        ("dashscope", {
-            "label": {"zh": "通义千问", "en": "Qwen"},
-            "api_key_field": "dashscope_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
-        }),
-        ("moonshot", {
-            "label": "Kimi",
-            "api_key_field": "moonshot_api_key",
-            "api_base_key": "moonshot_base_url",
-            "api_base_default": "https://api.moonshot.cn/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
-        }),
-        ("doubao", {
-            "label": {"zh": "豆包", "en": "Doubao"},
-            "api_key_field": "ark_api_key",
-            "api_base_key": "ark_base_url",
-            "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_base_placeholder": _PLACEHOLDER_DOUBAO,
-            "models": [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE],
-        }),
-        ("qianfan", {
-            "label": {"zh": "百度千帆", "en": "ERNIE"},
-            "api_key_field": "qianfan_api_key",
-            "api_base_key": "qianfan_api_base",
-            "api_base_default": "https://qianfan.baidubce.com/v2",
-            "api_base_placeholder": _PLACEHOLDER_QIANFAN,
-            "models": [const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K],
-        }),
-        ("mimo", {
-            "label": {"zh": "小米 MiMo", "en": "MiMo"},
-            "api_key_field": "mimo_api_key",
-            "api_base_key": "mimo_api_base",
-            "api_base_default": "https://api.xiaomimimo.com/v1",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
-        }),
-        ("linkai", {
-            "label": "LinkAI",
-            "api_key_field": "linkai_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": _RECOMMENDED_MODELS,
-        }),
-        ("custom", {
-            "label": {"zh": "自定义", "en": "Custom"},
-            "api_key_field": "custom_api_key",
-            "api_base_key": "custom_api_base",
-            "api_base_default": "",
-            "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [],
-        }),
-    ])
+    from models.catalog import PROVIDER_MODELS, _RECOMMENDED_MODELS
 
     EDITABLE_KEYS = {
         "stella_lang",
@@ -2775,8 +2906,10 @@ class ConfigHandler:
     @staticmethod
     def _mask_key(value: str) -> str:
         """Mask the middle part of an API key for display."""
-        if not value or len(value) <= 8:
-            return value
+        if not value:
+            return ''
+        if len(value) <= 8:
+            return '********'
         return value[:4] + "*" * (len(value) - 8) + value[-4:]
 
     def GET(self):
@@ -2786,7 +2919,7 @@ class ConfigHandler:
             from agent.subagent import SubagentSettings
             from agent.evolution.config import get_evolution_config
 
-            local_config = conf()
+            local_config = deepcopy(conf())
             use_agent = local_config.get("agent", True)
             title = "Stella" if use_agent else "AI Assistant"
 
@@ -2896,7 +3029,7 @@ class ConfigHandler:
             if not updates:
                 return json.dumps({"status": "error", "message": "no updates provided"})
 
-            local_config = conf()
+            local_config = deepcopy(conf())
             applied = {}
             nested = {}
             for key, value in updates.items():
@@ -2948,9 +3081,8 @@ class ConfigHandler:
                 file_cfg[section] = merged
                 local_config[section] = merged
                 applied[section] = merged
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(file_cfg, f, indent=4, ensure_ascii=False)
-            os.chmod(config_path, 0o600)
+            from core.security.config_credentials import save_runtime
+            save_runtime(config_path, file_cfg, conf())
 
             if any(key.endswith(("_api_key", "_api_base")) for key in applied):
                 sync_model_config_to_env(
@@ -3399,15 +3531,15 @@ class ModelsHandler:
 
     @classmethod
     def _write_file_config(cls, data: dict) -> None:
-        with open(cls._config_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        from core.security.config_credentials import save_runtime
+        save_runtime(cls._config_path(), data, conf())
 
     @staticmethod
     def _is_real_key(value: str) -> bool:
         return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
 
     @classmethod
-    def _custom_provider_cards(cls, local_config: dict) -> List[dict]:
+    def _custom_provider_cards(cls, local_config: dict, credential_states=None) -> List[dict]:
         """Expand ``custom_providers`` into one card per provider.
 
         Each user-defined OpenAI-compatible provider becomes its own card with
@@ -3445,6 +3577,7 @@ class ModelsHandler:
                 "id": f"custom:{pid}",
                 "label": {"zh": name, "en": name},
                 "configured": configured,
+                "credential_status": (credential_states or {}).get(f'CUSTOM:{pid}', 'configured' if configured else 'not-configured'),
                 "is_custom": True,
                 "custom_id": pid,
                 "custom_name": name,
@@ -3486,8 +3619,10 @@ class ModelsHandler:
         ``_custom_provider_cards``). Otherwise the legacy single ``custom``
         card is shown unchanged.
         """
-        local_config = conf()
-        custom_cards = cls._custom_provider_cards(local_config)
+        local_config = deepcopy(conf())
+        from core.security.config_credentials import public_states
+        credential_states = public_states(cls._config_path())
+        custom_cards = cls._custom_provider_cards(local_config, credential_states)
         # Keep the legacy single "custom" card visible alongside the expanded
         # ones when the flat custom_api_key/base config is active or filled,
         # so existing single-provider setups never disappear from the UI.
@@ -3509,6 +3644,7 @@ class ModelsHandler:
                 "id": pid,
                 "label": p["label"],
                 "configured": configured,
+                "credential_status": credential_states.get(key_field, 'configured' if configured else 'not-configured'),
                 "is_custom": (pid == "custom"),
                 "api_key_field": key_field,
                 "api_base_field": base_field,
@@ -4106,7 +4242,7 @@ class ModelsHandler:
         _require_auth()
         web.header("Content-Type", "application/json; charset=utf-8")
         try:
-            local_config = conf()
+            local_config = deepcopy(conf())
             return json.dumps({
                 "status": "success",
                 "providers": self._provider_overview(),
@@ -4122,6 +4258,16 @@ class ModelsHandler:
         try:
             data = json.loads(web.data() or b"{}")
             action = data.get("action") or ""
+            if action == "credential":
+                from config import MODEL_CONFIG_TO_ENV
+                name = data.get('name')
+                allowed = {env for field, env in MODEL_CONFIG_TO_ENV.items() if field.endswith('_api_key')} | {'BOCHA_API_KEY'}
+                if not isinstance(name, str) or (name not in allowed and not name.startswith('CUSTOM:')):
+                    raise ValueError('Unknown model credential')
+                from agent.permission.center import set_secret
+                set_secret(name, data.get('value'))
+                self._reset_bridge()
+                return json.dumps({'status': 'success'})
             if action == "set_provider":
                 return self._handle_set_provider(data)
             if action == "delete_provider":
@@ -4161,7 +4307,7 @@ class ModelsHandler:
         api_base = (data.get("api_base") or "").strip() if api_base_present else None
 
         applied = {}
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         if "protocol_id" in data:
@@ -4221,7 +4367,7 @@ class ModelsHandler:
         if not meta:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         cleared = []
@@ -4262,7 +4408,7 @@ class ModelsHandler:
                 out.append(p)
         return out
 
-    def _persist_custom_providers(self, providers: List[dict], bot_type=None) -> None:
+    def _persist_custom_providers(self, providers: List[dict], bot_type=None, *, document=None) -> None:
         """Write the providers list to both in-memory conf and the on-disk
         config, then reset the bridge so bots rebuild.
 
@@ -4272,8 +4418,8 @@ class ModelsHandler:
         agent, vision) automatically use the correct model."""
         from models.custom_provider import parse_custom_bot_type
 
-        local_config = conf()
-        file_cfg = self._read_file_config()
+        local_config = deepcopy(conf())
+        file_cfg = document if document is not None else self._read_file_config()
         local_config["custom_providers"] = providers
         file_cfg["custom_providers"] = providers
         if bot_type is not None:
@@ -4319,19 +4465,13 @@ class ModelsHandler:
                         "model",
                         "",
                     )
-                os.environ.pop(
-                    "SKILL_IMAGE_GENERATION_PROVIDER",
-                    None,
-                )
-                os.environ.pop(
-                    "SKILL_IMAGE_GENERATION_MODEL",
-                    None,
-                )
-        sync_image_generation_custom_provider_env(
-            local_config,
-            overwrite=True,
-        )
         self._write_file_config(file_cfg)
+        sync_image_generation_custom_provider_env(conf(), overwrite=True)
+        if image_provider.startswith('custom:') and not any(
+            'custom:' + str(provider.get('id')) == image_provider for provider in providers
+        ):
+            os.environ.pop('SKILL_IMAGE_GENERATION_PROVIDER', None)
+            os.environ.pop('SKILL_IMAGE_GENERATION_MODEL', None)
         self._reset_bridge()
 
     def _handle_set_custom_provider(self, data: dict) -> str:
@@ -4380,8 +4520,9 @@ class ModelsHandler:
         if protocol_id not in PROTOCOLS:
             return json.dumps({"status": "error", "message": "unsupported upstream protocol"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        local_config = deepcopy(conf())
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
 
         existing = next((p for p in providers if p.get("id") == provider_id), None) if provider_id else None
         if models is not None:
@@ -4441,7 +4582,7 @@ class ModelsHandler:
         elif existing and local_config.get("bot_type") == f"custom:{provider_id}" and models is not None:
             new_bot_type = f"custom:{provider_id}"
 
-        self._persist_custom_providers(providers, new_bot_type)
+        self._persist_custom_providers(providers, new_bot_type, document=file_cfg)
         logger.info(
             f"[ModelsHandler] custom provider {name!r} (id={provider_id}) "
             f"{'created' if created else 'updated'}"
@@ -4461,8 +4602,9 @@ class ModelsHandler:
         if not provider_id:
             return json.dumps({"status": "error", "message": "id is required"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        local_config = deepcopy(conf())
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
         remaining = [p for p in providers if p.get("id") != provider_id]
         if len(remaining) == len(providers):
             return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
@@ -4476,7 +4618,7 @@ class ModelsHandler:
             else:
                 new_bot_type = "custom"  # revert to legacy
 
-        self._persist_custom_providers(remaining, new_bot_type)
+        self._persist_custom_providers(remaining, new_bot_type, document=file_cfg)
         logger.info(f"[ModelsHandler] custom provider id={provider_id} deleted")
         return json.dumps({"status": "success", "id": provider_id})
 
@@ -4486,13 +4628,13 @@ class ModelsHandler:
         if not provider_id:
             return json.dumps({"status": "error", "message": "id is required"})
 
-        local_config = conf()
-        providers = self._normalize_custom_providers(local_config.get("custom_providers"))
+        file_cfg = self._read_file_config()
+        providers = self._normalize_custom_providers(file_cfg.get("custom_providers"))
         if not any(p.get("id") == provider_id for p in providers):
             return json.dumps({"status": "error", "message": f"unknown custom provider id: {provider_id}"})
 
         new_bot_type = f"custom:{provider_id}"
-        self._persist_custom_providers(providers, new_bot_type)
+        self._persist_custom_providers(providers, new_bot_type, document=file_cfg)
         logger.info(f"[ModelsHandler] active custom provider set to id={provider_id}")
         return json.dumps({"status": "success", "active_id": provider_id})
 
@@ -4525,7 +4667,7 @@ class ModelsHandler:
         # provider field is persisted so users picking a custom model under
         # a specific vendor still get routed there — runtime falls back to
         # model-name prefix inference only when provider is empty.
-        local_config = conf()
+        local_config = deepcopy(conf())
         if provider_id.startswith("custom:"):
             custom_id = provider_id[len("custom:"):]
             providers = self._normalize_custom_providers(
@@ -4617,7 +4759,7 @@ class ModelsHandler:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         applied = {}
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
 
         if protocol_id is not None:
@@ -4692,7 +4834,7 @@ class ModelsHandler:
                 "message": "vision model is required when a provider is selected",
             })
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(file_cfg, "tools", "vision", "model", model)
         self._set_nested_namespace_value(local_config, "tools", "vision", "model", model)
@@ -4739,7 +4881,7 @@ class ModelsHandler:
             return json.dumps({"status": "error", "message": f"invalid mode: {mode!r}"})
         always = (mode == "always")
         if_voice = (mode == "voice_if_voice")
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["always_reply_voice"] = always
         local_config["voice_reply_voice"] = if_voice
@@ -4753,7 +4895,7 @@ class ModelsHandler:
         return json.dumps({"status": "success", "mode": mode})
 
     def _set_simple(self, key: str, value: str) -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config[key] = value
         file_cfg[key] = value
@@ -4765,7 +4907,7 @@ class ModelsHandler:
         return json.dumps({"status": "success", key: value})
 
     def _set_asr(self, provider_id: str, model: str) -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["voice_to_text"] = provider_id
         file_cfg["voice_to_text"] = provider_id
@@ -4789,7 +4931,7 @@ class ModelsHandler:
         })
 
     def _set_tts(self, provider_id: str, model: str, voice: str = "") -> str:
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["text_to_voice"] = provider_id
         file_cfg["text_to_voice"] = provider_id
@@ -4838,7 +4980,7 @@ class ModelsHandler:
                 "status": "error",
                 "message": "embedding model is required when a provider is selected",
             })
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         local_config["embedding_provider"] = provider_id
         file_cfg["embedding_provider"] = provider_id
@@ -4866,7 +5008,7 @@ class ModelsHandler:
         else:
             provider = ""
 
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(local_config, "tools", "web_search", "strategy", strategy)
         self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "strategy", strategy)
@@ -4884,11 +5026,12 @@ class ModelsHandler:
         model-vendor flow.
         """
         api_key = (data.get("api_key") or "").strip() if isinstance(data.get("api_key"), str) else ""
-        local_config = conf()
+        local_config = deepcopy(conf())
         file_cfg = self._read_file_config()
         self._set_nested_namespace_value(local_config, "tools", "web_search", "bocha_api_key", api_key)
         self._set_nested_namespace_value(file_cfg,     "tools", "web_search", "bocha_api_key", api_key)
         self._write_file_config(file_cfg)
+        sync_model_config_to_env(conf(), overwrite=True, fields={'BOCHA_API_KEY'})
         logger.info(f"[ModelsHandler] search credential set: bocha_api_key={'***' if api_key else ''}")
         return json.dumps({"status": "success", "provider": "bocha"})
 
@@ -5684,7 +5827,60 @@ class FeishuRegisterHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _capability_catalog():
+    from core.capabilities.catalog import CapabilityCatalog
+    return CapabilityCatalog(_get_state_root())
+
+
+class CapabilitiesHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        query = web.input(kind='', id='')
+        try:
+            catalog = _capability_catalog()
+            if query.kind or query.id:
+                return json.dumps({'status': 'success', 'detail': catalog.detail(query.kind, query.id)}, ensure_ascii=False)
+            return json.dumps(catalog.list(), ensure_ascii=False)
+        except KeyError:
+            return json.dumps({'status': 'error', 'code': 'not_found', 'message': 'Capability not found'})
+        except ValueError:
+            return json.dumps({'status': 'error', 'code': 'invalid_argument', 'message': 'Invalid capability request'})
+        except Exception:
+            logger.warning('[Capabilities] Inventory could not be read')
+            return json.dumps({'status': 'error', 'message': 'Capability inventory is unavailable'})
+
+
 class ToolsHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.tools.catalog import CATALOG
+            from agent.tools.capability_settings import CapabilitySettings
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) not in ({'id', 'enabled'}, {'id', 'enabled', 'kind', 'provider'}):
+                raise ValueError('id and enabled with optional provider context are required')
+            if type(body['enabled']) is not bool:
+                raise ValueError('enabled must be a boolean')
+            identifier = body['id']
+            if 'kind' in body:
+                if body['kind'] not in {'mcp', 'plugins'}:
+                    raise ValueError('Invalid tool provider')
+                detail = _capability_catalog().detail(body['kind'], body['provider'])
+                feature = next((row for row in detail['features'] if row['id'] == identifier and row.get('toggleId')), None)
+                if feature is None:
+                    raise ValueError('Tool is not registered by this provider')
+                identifier = feature['toggleId']
+            elif identifier not in {row['id'] for row in CATALOG}:
+                raise ValueError('unknown tool')
+            CapabilitySettings().set_enabled('tool', identifier, body['enabled'])
+            return json.dumps({'status': 'success', **body})
+        except Exception as exc:
+            logger.warning('[Capabilities] Tool setting rejected: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)})
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -5694,6 +5890,50 @@ class ToolsHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] Tools API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class McpCatalogHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        try:
+            from agent.tools.tool_manager import ToolManager
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or not isinstance(body.get('name'), str):
+                raise ValueError('MCP name is required')
+            if set(body) == {'name', 'action'} and body['action'] in {'oauth-status', 'oauth-authorize', 'oauth-cancel', 'oauth-remove'}:
+                result = ToolManager().manage_mcp_authorization(body['name'], body['action'].removeprefix('oauth-'))
+                return json.dumps({'status': 'success', 'oauth': result}, ensure_ascii=False)
+            if set(body) == {'name', 'action'} and body['action'] == 'credential-status':
+                result = ToolManager().manage_mcp_credentials(body['name'], 'status')
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
+            if (set(body) == {'name', 'action', 'area', 'key', 'value', 'expectedRevision'}
+                    and body['action'] == 'credential-save'):
+                result = ToolManager().manage_mcp_credentials(body['name'], 'save', area=body['area'], key=body['key'],
+                    value=body['value'], expected_revision=body['expectedRevision'])
+                return json.dumps({'status': 'success', 'credentials': result}, ensure_ascii=False)
+            if set(body) == {'name', 'action'} and body['action'] == 'discover':
+                ToolManager().discover_mcp_tools(body['name'])
+            elif set(body) == {'name', 'enabled'} and type(body['enabled']) is bool:
+                ToolManager().set_mcp_enabled(body['name'], body['enabled'])
+            else:
+                raise ValueError('Invalid MCP management input')
+            server = next(row for row in ToolManager().mcp_catalog() if row['name'] == body['name'])
+            return json.dumps({'status': 'success', **body, 'server': server})
+        except Exception as exc:
+            logger.warning('[Capabilities] MCP setting rejected: %s', exc)
+            return json.dumps({'status': 'error', 'message': str(exc)})
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.tools.tool_manager import ToolManager
+            return json.dumps({"status": "success", "servers": ToolManager().mcp_catalog()}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[DesktopChannel] MCP catalog error: {e}")
+            return json.dumps({"status": "error", "message": "Could not load MCP capabilities"})
 
 
 class SkillsHandler:
@@ -5750,7 +5990,7 @@ class MemoryHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.memory.service import MemoryService
+            from core.services.memory_facade import MemoryPort as MemoryService
             params = web.input(page='1', page_size='20', category='memory')
             workspace_root = _get_state_root()
             service = MemoryService(workspace_root)
@@ -5769,7 +6009,7 @@ class MemoryContentHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.memory.service import MemoryService
+            from core.services.memory_facade import MemoryPort as MemoryService
             params = web.input(filename='', category='memory')
             if not params.filename:
                 return json.dumps({"status": "error", "message": "filename required"})
@@ -5800,161 +6040,42 @@ def _scheduler_store():
     return TaskStore(store_path)
 
 
-class SecurityActivityHandler:
+def _permission_control():
+    from core.security.control import PermissionControl
+    def tasks(agent):
+        from application.api import Application
+        from common.runtime_identity import identity_scope
+        with identity_scope(agent_id=agent):
+            return Application.scheduler(_scheduler_store())
+    return PermissionControl(task_service=tasks)
+
+
+class RunPolicyHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Cache-Control', 'no-store')
-        from agent.permission.audit import activity_counts, recent
-        params = web.input(limit="100", agent="", project="", tool="", risk="", decision="", conversation="", since="")
-        filters = {key: getattr(params, key, "") for key in ("agent", "project", "tool", "risk", "decision", "conversation")}
-        records = recent(limit=params.limit, filters=filters)
-        if params.since:
-            try:
-                records = [row for row in records if row["at"] >= float(params.since)]
-            except ValueError:
-                return json.dumps({"status": "error", "message": "invalid since timestamp"})
-        return json.dumps({
-            "status": "success",
-            "records": records,
-            "counts": activity_counts(days=7),
-        }, ensure_ascii=False)
-
-
-class SecurityCenterHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.center import overview
-        params = web.input(session='', agent='')
+        params = web.input(kind='session', subject='', agent='')
         try:
-            return json.dumps({"status": "success", **overview(params.session or None, params.agent or None)}, ensure_ascii=False)
-        except (ValueError, OSError) as error:
-            return _api_reject("Security", error)
-
-
-class SecurityPolicyHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.audit import record
-        from agent.permission.center import save_global_policy, overview
-        from agent.permission.security_policy import validate_patch
-        from agent.workspace import project_store
-        try:
-            body = json.loads(web.data() or b"{}")
-            target = body.get("target")
-            policy = body.get("policy")
-            from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
-            if target == "global":
-                saved = save_global_policy(policy)
-            elif target == "project":
-                path = str(body.get("project") or "")
-                if not path:
-                    raise ValueError("project path required")
-                saved = project_store.set_security_policy(path, snapshot_policy(validate_patch(policy)))
-                migrate_project_conversation_policies(path)
-                record(operation="update", resource="project policy", project=path, decision="policy_change",
-                       reason="Project security policy updated.")
-            elif target == "conversation":
-                session = str(body.get("session") or "")
-                if not session:
-                    raise ValueError("conversation required")
-                from agent.permission.center import save_conversation_policy
-                saved = save_conversation_policy(session, policy, body.get("agent"))
-            else:
-                raise ValueError("invalid policy target")
-            return json.dumps({"status": "success", "policy": saved,
-                               "center": overview(body.get("session"), body.get("agent"))}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError, OSError) as error:
-            return _api_reject("Security", error)
-
-
-class SecurityConnectionsHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import save_global_policy, connections
-        from agent.permission.security_policy import LEGACY_PRESETS, default_policy, validate_patch
-        from config import conf, get_data_root, read_config_template
-        try:
-            body = json.loads(web.data() or b"{}")
-            connection_id = str(body.get("id") or "")
-            if connection_id not in {item["id"] for item in connections()}:
-                raise ValueError("unknown connection")
-            allowed = body.get("allowed")
-            if not isinstance(allowed, bool):
-                raise ValueError("allowed must be a boolean")
-            stored = dict(conf().get("security_policy") or default_policy())
-            stored.setdefault("connections", {})[connection_id] = {"allowed": allowed,
-                "scopes": [str(item) for item in body.get("scopes", [])] if isinstance(body.get("scopes", []), list) else []}
-            legacy = stored.get("preset") == "custom" or stored.get("preset") in LEGACY_PRESETS
-            if legacy:
-                clean = validate_patch(stored, global_policy=False)
-                path = __import__("pathlib").Path(get_data_root()) / "config.json"
-                data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-                data["security_policy"] = clean
-                from agent.permission.center import _write_config
-                _write_config(path, data)
-                conf()["security_policy"] = clean
-            else:
-                save_global_policy(stored)
-            return json.dumps({"status": "success", "connections": connections()}, ensure_ascii=False)
-        except ValueError as error:
-            return _api_reject("Security", error)
-
-
-class SecuritySecretsHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import set_secret, secrets
-        try:
-            body = json.loads(web.data() or b"{}")
-            if "value" not in body or not isinstance(body["value"], str) or not body["value"]:
-                raise ValueError("credential value required")
-            set_secret(str(body.get("name") or ""), body["value"])
-            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
-            return _api_reject("Security", error)
-
-    def DELETE(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.center import set_secret, secrets
-        try:
-            body = json.loads(web.data() or b"{}")
-            set_secret(str(body.get("name") or ""), None)
-            return json.dumps({"status": "success", "secrets": secrets()}, ensure_ascii=False)
-        except ValueError as error:
-            return _api_reject("Security", error)
-
-
-class SecurityPrivacyHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        web.header('Cache-Control', 'no-store')
-        from agent.permission.privacy import inventory
-        try:
-            return json.dumps({"status": "success", **inventory()}, ensure_ascii=False)
-        except (ValueError, OSError) as error:
-            return _api_reject("Security", error, available=False)
+            return json.dumps({'status': 'success', **_permission_control().read(
+                params.kind, params.subject, params.agent or None)}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permissions', error)
 
     def POST(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from agent.permission.privacy import cleanup, inventory
         try:
-            body = json.loads(web.data() or b"{}")
-            result = cleanup(str(body.get("action") or ""))
-            return json.dumps({**result, **inventory()}, ensure_ascii=False)
-        except ValueError as error:
-            return _api_reject("Security", error)
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) - {'kind', 'subject', 'agent', 'policy'}:
+                raise ValueError('Invalid permission control fields')
+            return json.dumps({'status': 'success', **_permission_control().save(body.get('kind'),
+                body.get('subject'), body.get('policy'), body.get('agent'))}, ensure_ascii=False)
+        except (ValueError, PermissionError, OSError) as error:
+            return _api_reject('Permissions', error)
 
 
-class SecurityConfirmationsHandler:
+class OperationConfirmationsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -6043,7 +6164,12 @@ class SchedulerHandler:
             if not content:
                 return json.dumps({"status": "error", "message": "content is required"})
 
+            task_id = uuid.uuid4().hex[:8]
+            independent = action_in.get('conversation_mode') == 'independent'
             session_id = (body.get("session_id") or action_in.get("receiver") or "").strip()
+            if independent:
+                session_id = f'task_{task_id}'
+
             if not session_id:
                 return json.dumps({
                     "status": "error",
@@ -6056,13 +6182,16 @@ class SchedulerHandler:
             now = datetime.now()
             from agent.scheduler.delivery import normalize_destination
             from agent.scheduler.conversation import validate_conversation_action
-            action = normalize_destination({**action_in,
+            destination = {**action_in,
                 "channel_type": action_in.get("channel_type") or "web",
-                "receiver": action_in.get("receiver") or session_id}, current_identity().agent_id)
+                "receiver": action_in.get("receiver") or session_id}
+            action = destination if independent and destination["channel_type"] == "web" else normalize_destination(destination, current_identity().agent_id)
             action.update(type=action_type, execution_session_id=session_id)
-            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir"):
+            for field in ("conversation_mode", "source_session_id", "conversation_space", "execution_project_dir", "workspace_version"):
                 if field in action_in:
                     action[field] = action_in[field]
+            if action.get("conversation_mode") == "source":
+                action["workspace_version"] = 1
             action = validate_conversation_action(action)
             if action_type == "send_message":
                 action["content"] = content
@@ -6070,7 +6199,7 @@ class SchedulerHandler:
                 action["task_description"] = content
 
             task = {
-                "id": uuid.uuid4().hex[:8],
+                "id": task_id,
                 "name": name,
                 "enabled": bool(body.get("enabled", True)),
                 "created_at": now.isoformat(),
@@ -6080,6 +6209,9 @@ class SchedulerHandler:
             }
             if "run_permission_mode" in body:
                 task["run_permission_mode"] = body.get("run_permission_mode")
+            if 'run_policy' in body:
+                from core.security.control import mode_patch
+                task['run_policy'] = mode_patch(body['run_policy'])
             store = _scheduler_store()
             next_run = SchedulerService(store, lambda _t: None)._calculate_next_run(task, now)
             if not next_run:
@@ -6097,6 +6229,19 @@ class SchedulerHandler:
         except Exception as e:
             logger.error(f"[DesktopChannel] Scheduler create error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
+
+
+class SchedulerRunsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Cache-Control', 'no-store')
+        params = web.input(task_id='')
+        store = _scheduler_store()
+        if not store.get_task(params.task_id):
+            return _api_reject('Scheduler', ValueError('Task not found'))
+        runs = store.list_runs(params.task_id) if hasattr(store, 'list_runs') else []
+        return json.dumps({'status': 'success', 'runs': runs}, ensure_ascii=False)
 
 
 class SchedulerRunHandler:
@@ -6156,6 +6301,9 @@ class SchedulerUpdateHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             body = json.loads(web.data())
+            if 'run_policy' in body:
+                from core.security.control import mode_patch
+                body['run_policy'] = mode_patch(body['run_policy'])
             task_id = body.get("task_id")
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
@@ -6171,7 +6319,7 @@ class SchedulerUpdateHandler:
             
             from application import Application
             patch = {key: body[key] for key in (
-                "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode")
+                "name", "enabled", "schedule", "action", "notification_route", "run_permission_mode", "run_policy")
                      if key in body}
             task = Application.scheduler(store).update(
                 task_id, patch, agent_id=current_identity().agent_id, origin="user")
@@ -6798,6 +6946,16 @@ def _briefing_service():
     return Application.port("briefing")
 
 
+def _email_settings():
+    from application import Application
+    return Application.port('email')
+
+
+def _elearning_settings():
+    from application import Application
+    return Application.port('elearning')
+
+
 def _briefing_pipeline(service):
     from agent.briefing.pipeline import BriefingPipeline
     from agent.briefing.sources.registry import configured_sources
@@ -6900,21 +7058,17 @@ class BriefingSourcesHandler:
 
 class BriefingElearningHandler:
     def GET(self):
-        from agent.briefing.elearning_settings import public_settings
-        return _briefing_response(lambda: {"settings": public_settings()})
+        return _briefing_response(lambda: {"settings": _elearning_settings().get_settings()})
 
     def POST(self):
         def operation():
-            from agent.briefing import elearning_settings
+            elearning = _elearning_settings()
             body = _briefing_body()
             action = body.get("action", "save")
             if action == "delete":
-                elearning_settings.delete_settings()
-                settings = elearning_settings.public_settings()
+                settings = elearning.delete_settings()
             elif action == "save":
-                if "file_sync_enabled" in body or "file_sync_root" in body:
-                    raise ValueError("课件保存授权请在 Agent 设置中管理")
-                settings = elearning_settings.save_settings(body)
+                settings = elearning.save_settings(body)
             else:
                 raise ValueError("未知的来源操作")
             return {"settings": settings}
@@ -6923,23 +7077,21 @@ class BriefingElearningHandler:
 
 class ElearningFileSyncSettingsHandler:
     def GET(self):
-        from agent.briefing.elearning_settings import public_settings
-        return _briefing_response(lambda: {"settings": public_settings()})
+        return _briefing_response(lambda: {"settings": _elearning_settings().get_settings()})
 
     def POST(self):
         def operation():
-            from agent.briefing.elearning_settings import save_file_sync_settings
             body = _briefing_body()
-            if set(body) != {"file_sync_enabled", "file_sync_root"}:
-                raise ValueError("只能修改课件保存开关和目录")
-            return {"settings": save_file_sync_settings(body["file_sync_enabled"], body["file_sync_root"])}
+            if set(body) != {"file_sync_root"}:
+                raise ValueError("只能修改课件保存目录")
+            return {"settings": _elearning_settings().save_file_sync_settings(
+                body["file_sync_root"])}
         return _briefing_response(operation)
 
 
 class BriefingElearningTestHandler:
     def POST(self):
-        from agent.briefing.elearning_settings import check_connection
-        return _briefing_response(lambda: {"connected": True, "courses": check_connection(_briefing_body())})
+        return _briefing_response(lambda: {"connected": True, "courses": _elearning_settings().test_connection(_briefing_body())})
 
 
 class BriefingRulesHandler:
@@ -6967,32 +7119,37 @@ class BriefingRuleDeleteHandler:
         return _briefing_response(operation)
 
 
-class BriefingSettingsHandler:
+class EmailAccountsHandler:
+    """Email plugin mailbox accounts — primary HTTP surface for desktop UI."""
+
     def GET(self):
         def operation():
-            from agent.briefing.settings import public_mailboxes
-            return {"settings": public_mailboxes()}
+            return {"settings": _email_settings().list_accounts()}
         return _briefing_response(operation)
 
     def POST(self):
         def operation():
-            from agent.briefing.settings import delete_mailbox, public_mailboxes, save_mailbox
+            email = _email_settings()
             body = _briefing_body()
             if body.get("action") == "delete":
-                delete_mailbox(_briefing_id(body))
-                return {"settings": public_mailboxes()}
-            saved = save_mailbox(body)
-            return {"settings": public_mailboxes(), "mailbox": saved}
+                email.delete_account(_briefing_id(body))
+                return {"settings": email.list_accounts()}
+            saved = email.save_account(body)
+            return {"settings": email.list_accounts(), "mailbox": saved}
         return _briefing_response(operation)
 
 
-class BriefingSettingsTestHandler:
+class EmailAccountsTestHandler:
     def POST(self):
         def operation():
-            from agent.briefing.settings import check_mailbox_connection
-            result = check_mailbox_connection(_briefing_body())
+            result = _email_settings().test_connection(_briefing_body())
             return result if isinstance(result, dict) else {"connected": True}
         return _briefing_response(operation)
+
+
+# Compatibility aliases — product UI must use /api/email/accounts*.
+BriefingSettingsHandler = EmailAccountsHandler
+BriefingSettingsTestHandler = EmailAccountsTestHandler
 
 
 def _bills_service():
@@ -7044,9 +7201,7 @@ class BillsLedgerExportHandler:
                 web.header('Content-Type', 'application/json; charset=utf-8')
                 return json.dumps({"status": "error", "message": "start and end are required"})
             lang = "en" if str(params.lang or "").lower().startswith("en") else "zh"
-            entries = _bills_service().list_ledger_between(start, end)
-            from agent.bills.export import build_ledger_xlsx
-            data = build_ledger_xlsx(entries, start=start, end=end, lang=lang)
+            data = _bills_service().export_ledger(start, end, lang=lang)
             fname = f"bills-{start}-{end}.xlsx"
             web.header(
                 'Content-Type',
@@ -7362,22 +7517,11 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
         global_provider = "linkai"
     global_model = local_config.get("model") or ""
-    global_permission = permission_global_mode()
-    from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve
-    from agent.workspace import project_store
-    project_dir = project_store.get_project_dir(session_id, agent_id)
-    effective_policy = resolve(global_permission, project_dir=project_dir, session_id=session_id, agent_id=agent_id)
-    global_policy = resolve(global_permission)
-    project_policy = project_store.get_security_policy(project_dir) if project_dir else {}
-    session_policy = prefs.get("security_policy") or {}
-    layers = [name for name, patch in (("project", project_policy), ("session", session_policy)) if patch]
-    source = "mixed" if len(layers) > 1 else layers[0] if layers else "global"
-    from agent.permission.process_sandbox import capability
-    isolation = capability()
-    if effective_mode(effective_policy) == "full-access":
-        isolation = {**isolation, "status": "full-access" if isolation["status"] == "enabled" else "unavailable",
-                     "reason": "Full access permits general filesystem writes; protected controls remain blocked."
-                     if isolation["status"] == "enabled" else isolation["reason"]}
+    from agent.permission.security_policy import MODE_DEFINITIONS
+    from core.security.run_policy import resolve_run_policy
+    from core.security.control import public_policy
+    effective_policy = resolve_run_policy(session_id, agent_id)
+    mode = effective_policy['filesystem_mode']
 
     return {
         "model": {
@@ -7388,18 +7532,11 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "providers": _session_model_catalog(),
         },
         "permission": {
-            "source": source,
-            "preset": effective_policy["preset"],
-            "global_preset": global_policy["preset"],
-            "mode": effective_mode(effective_policy),
-            "base_preset": effective_policy.get("base_preset", "workspace-write" if effective_policy["preset"] == "custom" else effective_policy["preset"]),
-            "rules": effective_rules(effective_policy),
-            "policy": effective_policy,
+            "source": "independent",
+            "mode": mode,
+            "policy": public_policy(effective_policy),
             "mode_definitions": MODE_DEFINITIONS,
-            "authorized_roots": [_get_workspace_root(session_id, agent_id), *(effective_policy.get("extra_roots") or [])],
-            "project": project_dir,
-            "error": effective_policy.get("error"),
-            "process_isolation": isolation,
+            "error": 'Permissions require confirmation' if effective_policy.get('migration_status') == 'needs_confirmation' else None,
             "presets": [row["id"] for row in MODE_DEFINITIONS],
         },
     }
@@ -7445,8 +7582,7 @@ class SessionSettingsHandler:
 
             updates = {}
             if "security_policy" in body:
-                from agent.permission.security_policy import validate_patch
-                updates["security_policy"] = validate_patch(body["security_policy"]) if body["security_policy"] else None
+                raise ValueError('Use the three-mode permission selector')
             if "model" in body or "provider" in body:
                 model = (body.get("model") or "").strip() or None
                 provider = (body.get("provider") or "").strip() or None
@@ -7458,15 +7594,10 @@ class SessionSettingsHandler:
             if not updates:
                 return json.dumps({
                     "status": "error",
-                    "message": "security_policy, model or provider required",
+                    "message": "model or provider required",
                 })
 
-            if "security_policy" in updates:
-                from agent.permission.center import save_conversation_policy
-                save_conversation_policy(session_id, updates["security_policy"], agent_id)
-            other_updates = {key: value for key, value in updates.items() if key != "security_policy"}
-            if other_updates:
-                session_prefs.set_prefs(session_id, agent_id, **other_updates)
+            session_prefs.set_prefs(session_id, agent_id, **updates)
 
             # Retarget the live agent so the change lands on the next message
             # without waiting for a fresh get_agent.
@@ -7633,6 +7764,8 @@ class MessageDeleteHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+
+
 class LogsHandler:
     def GET(self):
         _require_auth()
@@ -7652,7 +7785,8 @@ class LogsHandler:
                 with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
                     lines = f.readlines()
                 tail_lines = lines[-200:]
-                chunk = ''.join(tail_lines)
+                from core.log_redaction import redact_lines
+                chunk = redact_lines(''.join(tail_lines))
                 payload = json.dumps({"type": "init", "content": chunk}, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode('utf-8')
             except Exception as e:
@@ -7667,7 +7801,7 @@ class LogsHandler:
                     while time.time() < deadline:
                         line = f.readline()
                         if line:
-                            payload = json.dumps({"type": "line", "content": line}, ensure_ascii=False)
+                            payload = json.dumps({"type": "line", "content": redact_lines(line)}, ensure_ascii=False)
                             yield f"data: {payload}\n\n".encode('utf-8')
                         else:
                             yield b": keepalive\n\n"
@@ -7700,6 +7834,8 @@ class LogsDownloadHandler:
             logger.error(f"[DesktopChannel] Log download error: {e}")
             raise web.internalerror()
 
+        from core.log_redaction import redact_lines
+        data = redact_lines(data.decode('utf-8', errors='replace')).encode('utf-8')
         # Timestamped name so multiple downloads don't overwrite each other.
         fname = f"stella-{time.strftime('%Y%m%d-%H%M%S')}.log"
         web.header('Content-Type', 'text/plain; charset=utf-8')
@@ -7710,7 +7846,7 @@ class LogsDownloadHandler:
 
 
 def _workspace_service(session_id: str = None, agent_id: str = None):
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     return WorkspaceService(_get_workspace_root(session_id, agent_id))
 
 
@@ -7729,7 +7865,7 @@ def _is_system_asset_rel(rel_path: str) -> bool:
 
 
 def _system_workspace_service():
-    from agent.workspace.service import WorkspaceService
+    from core.workspace.service import WorkspaceService
     from common.state_dir import state_root_str
     return WorkspaceService(state_root_str())
 
@@ -8160,7 +8296,7 @@ class KnowledgeListHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             svc = KnowledgeService(_get_state_root())
             result = svc.list_tree()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
@@ -8175,7 +8311,7 @@ class KnowledgeReadHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from pathlib import Path
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             params = web.input(path='')
             svc = KnowledgeService(_get_state_root())
             result = svc.read_file(params.path)
@@ -8197,7 +8333,7 @@ class KnowledgeGraphHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             svc = KnowledgeService(_get_state_root())
             return json.dumps(svc.build_graph(), ensure_ascii=False)
         except Exception as e:
@@ -8213,7 +8349,7 @@ class KnowledgeActionHandler:
             body = json.loads(web.data() or b"{}")
             action = body.get("action", "")
             payload = body.get("payload") or {}
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
             result = KnowledgeService(_get_state_root()).dispatch(action, payload)
             return json.dumps({
                 "status": "success" if result["code"] < 300 else "error",
@@ -8229,9 +8365,10 @@ class KnowledgeImportHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.knowledge.service import KnowledgeService
+            from core.services.knowledge_facade import KnowledgePort as KnowledgeService
+            from core.services import knowledge_facade as knowledge_limits
             content_length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
-            if content_length > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+            if content_length > knowledge_limits.MAX_IMPORT_TOTAL_SIZE:
                 return json.dumps({
                     "status": "error",
                     "code": 413,
@@ -8247,11 +8384,11 @@ class KnowledgeImportHandler:
                 uploaded.append(single)
             if not uploaded:
                 return json.dumps({"status": "error", "code": 400, "message": "No files uploaded", "payload": None})
-            if len(uploaded) > KnowledgeService.MAX_IMPORT_FILES:
+            if len(uploaded) > knowledge_limits.MAX_IMPORT_FILES:
                 return json.dumps({
                     "status": "error",
                     "code": 400,
-                    "message": f"too many files: max {KnowledgeService.MAX_IMPORT_FILES}",
+                    "message": f"too many files: max {knowledge_limits.MAX_IMPORT_FILES}",
                     "payload": None,
                 })
 
@@ -8261,9 +8398,9 @@ class KnowledgeImportHandler:
                 if file_obj is None:
                     continue
                 filename = getattr(file_obj, "filename", "") or getattr(file_obj, "name", "")
-                content = _read_uploaded_file_bytes_limited(file_obj, KnowledgeService.MAX_IMPORT_FILE_SIZE)
+                content = _read_uploaded_file_bytes_limited(file_obj, knowledge_limits.MAX_IMPORT_FILE_SIZE)
                 total_size += len(content)
-                if total_size > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
+                if total_size > knowledge_limits.MAX_IMPORT_TOTAL_SIZE:
                     return json.dumps({
                         "status": "error",
                         "code": 413,
@@ -8386,3 +8523,72 @@ class BriefingPreferencesHandler:
 
     def POST(self):
         return _briefing_response(lambda: {"preferences": _briefing_service().update_preferences(_briefing_body())})
+
+
+
+def _data_response(operation):
+    _require_auth()
+    web.header('Content-Type','application/json; charset=utf-8')
+    web.header('Cache-Control','no-store')
+    try:
+        from core.data.native import native_data_access
+        with native_data_access():
+            return json.dumps({'status':'success',**operation()},ensure_ascii=False)
+    except (ValueError,KeyError,PermissionError,RuntimeError,OSError) as error:
+        return _api_reject('Data',error)
+
+
+class DataManagementHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params = web.input(refresh='0', storage='1')
+            include_storage = getattr(params, 'storage', '1')
+            if include_storage not in {'0', '1'}:
+                raise ValueError('Invalid storage inventory selection')
+            return current_controller().snapshot(params.refresh == '1', include_storage=include_storage == '1')
+        return _data_response(operation)
+
+
+class DataRecordsHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params=web.input(source_id='',q='',limit='50',offset='0')
+            return current_controller().records(params.source_id,params.q,int(params.limit),int(params.offset))
+        return _data_response(operation)
+
+
+class DataResourcesHandler:
+    def GET(self):
+        def operation():
+            from core.data.api import current_controller
+            params = web.input(source_id='', resource_id='', q='', limit='50', offset='0', kind='')
+            controller = current_controller()
+            if getattr(params, 'resource_id', ''):
+                return controller.read_resource(params.source_id, params.resource_id)
+            return controller.resources(params.source_id, getattr(params, 'q', ''),
+                                        int(getattr(params, 'limit', '50')), int(getattr(params, 'offset', '0')),
+                                        kind=getattr(params, 'kind', '') or None)
+        return _data_response(operation)
+
+
+class DataCommandHandler:
+    def POST(self):
+        def operation():
+            from core.data.api import current_controller
+            return current_controller().command(json.loads(web.data() or b'{}'))
+        return _data_response(operation)
+
+
+class DataElearningSyncFilesHandler:
+    def POST(self):
+        def operation():
+            body = json.loads(web.data() or b'{}')
+            if not isinstance(body, dict) or set(body) - {
+                'course_ids', 'file_ids', 'file_extensions', 'layout', 'offset', 'limit'
+            }:
+                raise ValueError('Unsupported eLearning file sync parameters')
+            from core.data.api import current_controller
+            return {'sync': current_controller().owner_operation('elearning', 'sync_files', body)}
+        return _data_response(operation)

@@ -15,6 +15,7 @@ from agent.briefing.models import SourceItem
 from agent.protocol.agent import Agent
 from agent.protocol.cancel import AgentCancelledError
 from agent.tools.base_tool import BaseTool, ToolResult
+from core.security.capabilities import CapabilityDescriptor
 
 SYSTEM_PROMPT = """你是每日简报 Agent。按照用户提供的规则文稿筛选信息并撰写简报。
 用户规则可用普通文字或 Markdown；遵循其中的保留、排除、后缀匹配、重要性和写作要求。
@@ -77,6 +78,7 @@ class BriefingAgent(Agent):
 
 class ReadSourceTool(BaseTool):
     required_capability = "read"
+    capability_descriptor = CapabilityDescriptor('plugin:stella.briefing', 'plugin', 'read')
     name = "read_briefing_source"
     description = "阅读本批候选原文；只读，支持 offset 分页。"
     params = {"type": "object", "properties": {
@@ -100,6 +102,7 @@ class ReadSourceTool(BaseTool):
 
 class ResultTool(BaseTool):
     required_capability = "read"
+    capability_descriptor = CapabilityDescriptor('plugin:stella.briefing', 'plugin', 'read')
     def __init__(self, name, schema, validate):
         self.name = name
         self.description = "提交本批完整结果；所有 ID 必须来自当前批次，且恰好覆盖一次。"

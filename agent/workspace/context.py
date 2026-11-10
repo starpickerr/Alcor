@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 import hashlib
 import os
 from pathlib import Path
@@ -15,6 +17,8 @@ from common.state_dir import personal_work_dir
 
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _EXTERNAL_ID = re.compile(r"^[A-Za-z0-9_:@.-]{1,80}$")
+_LINKED_TASK = ContextVar("linked_task_workspace", default=None)
+
 _RESERVED = frozenset({"sessions", "shared", "automations"})
 
 
@@ -82,19 +86,48 @@ def _safe_segment(value: str | None, label: str) -> str:
     return "~" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:40]
 
 
+@contextmanager
+def scheduled_workspace_scope(task):
+    """Only the trusted scheduler selects a task's associated workspace."""
+    identity = current_identity()
+    if identity.task_id != str(task.get('id') or ''):
+        raise PermissionError('Task workspace requires the trusted task identity')
+    action = task.get('action') or {}
+    linked = None
+    if action.get('conversation_mode') == 'source' and action.get('workspace_version') == 1:
+        from agent.scheduler.conversation import validate_conversation_action
+        action = validate_conversation_action(action)
+        linked = (identity.task_id, identity.agent_id, action['source_session_id'])
+    token = _LINKED_TASK.set(linked)
+    try:
+        yield
+    finally:
+        _LINKED_TASK.reset(token)
+
+
 def resolve_context(session_id: str | None, agent_id: str | None = None,
                     task_id: str | None = None, ensure: bool = False) -> WorkContext:
     """Use a bound project, stable task folder, or private conversation folder."""
     from agent.registry import get_agent_registry
 
     agent_id = _valid(get_agent_registry().default_agent_id if agent_id is None else agent_id, "agent ID")
+    linked = _LINKED_TASK.get()
+    if linked and task_id == linked[0] and agent_id == linked[1]:
+        associated = resolve_context(linked[2], agent_id, ensure=ensure)
+        return replace(associated, task_id=task_id)
     session_segment = _safe_segment(session_id, "session ID") if session_id is not None else None
     task_segment = _safe_segment(task_id, "task ID") if task_id is not None else None
     identity = current_identity().derive(agent_id=agent_id)
     work_root = personal_work_dir(identity=identity, ensure=False)
     private_root = (work_root / "automations" / agent_id / task_segment if task_segment else
                     work_root / "sessions" / agent_id / session_segment if session_segment else None)
-    binding = project_store.get_project_binding(session_id, agent_id) if session_id else None
+    if private_root is not None:
+        current = work_root
+        for segment in private_root.relative_to(work_root).parts:
+            current = current / segment
+            if current.is_symlink():
+                raise PermissionError('private Work directories cannot use symlinks')
+    binding = project_store.get_project_binding(session_id, agent_id) if session_id and not task_id else None
     if binding:
         project = Path(os.path.realpath(os.path.expanduser(binding)))
         if not project.is_dir():

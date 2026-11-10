@@ -23,7 +23,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-import requests
+from core.security.requests_transport import web_requests as requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
 from common.log import logger
@@ -253,7 +253,7 @@ class WebSearch(BaseTool):
         if self.is_cancelled():
             raise _Cancelled()
         response = requests.post(
-            url, timeout=_CANCEL_SOCKET_TIMEOUT if self.cancel_event is not None else DEFAULT_TIMEOUT,
+            url, timeout=_CANCEL_SOCKET_TIMEOUT if self.cancel_event is not None else DEFAULT_TIMEOUT, _cancel_event=self.cancel_event,
             **kwargs,
         )
         if self.is_cancelled():

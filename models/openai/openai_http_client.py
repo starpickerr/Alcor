@@ -27,7 +27,7 @@ import os
 from typing import Any, Dict, Generator, Optional
 from urllib.parse import urlparse
 
-import requests
+from models import transport_requests as requests
 
 from common.log import logger
 

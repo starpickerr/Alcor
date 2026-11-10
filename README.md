@@ -1,98 +1,52 @@
-<p align="center"><img src="docs/images/logo.jpg" alt="Stella" width="160" /></p>
+<p align="center"><img src="packages/alcor-secretary/src/assets/alcor-avatar.svg" alt="Alcor" width="112" /></p>
 
-# Stella
+# Alcor
 
 [English](README.md) · [中文](docs/zh/README.md) · [繁體中文](docs/zh/README-Hant.md) · [日本語](docs/ja/README.md)
 
-**Stella is a private desktop AI assistant** centered on intelligent chat, bringing tasks, calendars, bills, smart briefings, and automation together in one workspace.
+Alcor is a personal assistant for DeepSeek Harness (DSH). Its native plugins add task lists, a calendar, bills, briefings and automation to the desktop client. You can switch between Alcor and DSH in the same window and keep using the host’s models, conversations and workspaces.
 
-## Features
+On Alcor pages, hover over or click the bear to chat in your current workspace. Drag it to move it. Its settings are under **Settings → Alcor**.
 
-### Chat
+## Desktop installation
 
-Talk with AI in natural language for questions, writing, information lookup, and complex tasks, with project and conversation management.
+The supported desktop target is macOS on Apple Silicon. Use an official DSH release listed in the [compatibility manifest](product/desktop-release.lock.json).
 
-### Apps
+1. Open the plugin manager in an initialized DSH profile and install the `@alcor/secretary` bundle from its `.tgz` file.
+2. Install any optional plugins you need from the table below.
+3. Quit and reopen DSH, then select **Alcor** in the mode menu at the top of the window.
 
-| Module | Description |
-| ------ | ----------- |
-| **Tasks** | Manage personal tasks and nested subtasks with due dates, priorities, and reminders. Track progress and sync with Apple Reminders. |
-| **Calendar** | Manage schedules and time with calendar views, categories, and reminders. Sync with Apple Calendar. |
-| **Briefings** | Combine email, eLearning, calendar, and task information to surface important items, to-dos, and upcoming deadlines in a personalized briefing. |
-| **Bills** | Record income and expenses with categories, search, and basic analytics. |
-| **Health** | Personal health information and analysis — **planned**. |
-| **Scheduler** | Manage automation that runs at chosen times, review execution history, and deliver results through configured messaging channels. |
+Existing Stella profiles need to be migrated before installing the renamed bundles. See the [native product guide](product/README.md) for installation and packaging details.
 
-### Information
+| Plugin | What it adds |
+| --- | --- |
+| `@alcor/secretary` | Manage tasks and subtasks, view events, record bills, generate briefings and schedule updates. |
+| `@alcor/apple-sync` | Sync events and tasks with Apple Calendar and Reminders after selecting and authorizing sources. |
+| `@alcor/elearning` | Connect a Fudan eLearning account to read courses, assignments and announcements. |
+| `@alcor/mail` | Connect IMAP mailboxes for read-only queries and briefing sources. |
+| `@alcor/agent-hub` | Track development tasks and agent execution in the DSH workbench. |
 
-| Module | Description |
-| ------ | ----------- |
-| **Memory** | Manage long-term AI memory for preferences and important context, enabling more personal interactions. |
-| **Knowledge** | Manage a personal knowledge base with storage, retrieval, and citation so AI can use your sources. |
+## Local development
 
-### Channels
+Use Node.js 24.9 or later and Python 3.9 or later. Building the macOS helpers also requires the Xcode Command Line Tools. From the repository root:
 
-Connect and manage external messaging platforms such as WeChat, Feishu, and Telegram for cross-platform chat and notifications.
-
-### System
-
-| Module | Description |
-| ------ | ----------- |
-| **Capabilities** | View and manage AI tools, Skills, and other extensions that improve information access and task execution. |
-| **Security** | Manage global, project, conversation, and background-task permissions. Control tool calls and sensitive actions, and review security activity. |
-| **Settings** | Configure AI model providers, custom models, capability assignment, Apple integrations, briefings, and other app settings. |
-| **Logs** | View runtime logs, errors, and execution records for troubleshooting and status checks. |
-
-## Get started
-
-### Download an installer
-
-Available installers are in [GitHub Releases](https://github.com/starpickerr/Stella/releases). For installation, first-run setup, and everyday use, see the [user guide](docs/guide.md).
-
-### Run from source
-
-Requirements:
-
-- **Python 3.10+**
-- **Node.js 22.13+**
-- **macOS**: also install Xcode Command Line Tools with `xcode-select --install`.
-
-The commands below are for macOS. Windows commands are in the [user guide](docs/guide.md).
-
-```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
-npm --prefix desktop ci
-npm --prefix desktop run dev
+```sh
+npm ci --ignore-scripts
+npm run product:build
+npm test
+npm run dev
 ```
 
-For UI hot reload during development:
+The development preview uses an isolated DSH profile. To build the secretary plugin for desktop installation, run `npm run product:pack`. The tarball is written to `.local/artifacts/`. The school and mail bundles also require the adjacent MCP repositories and their pinned build dependencies. See the [connector guide](product/mcp-connections.md).
 
-```bash
-npm --prefix desktop run dev:hot
-```
-
-Browser setup and local data details are in the [user guide](docs/guide.md).
-
-Model calls may incur provider charges. Tools can access local files and external services; configure permissions before using them.
-
-## Documentation and development
-
-- [User guide](docs/guide.md): installation, configuration, and everyday use.
-- [Documentation index](docs/README.md): architecture, business modules, and security boundaries.
-- [Desktop development](desktop/README.md): builds and packaging.
-- [Contributing](CONTRIBUTING.md): development setup and checks. Develop from `develop`; `main` is for releases.
-- [Issues](https://github.com/starpickerr/Stella/issues): remove credentials and personal data from logs before filing a report.
+Native plugin sources live under `packages/`, build scripts under `scripts/product/`, and integration tests under `product/tests/`. The earlier standalone Python/Electron application is documented in the [legacy guide](docs/guide.md).
 
 ## Source and license
 
-Stella is independently developed from [CowAgent](https://github.com/zhayujie/CowAgent) (formerly `chatgpt-on-wechat`) by zhayujie and contributors. It reuses the upstream Agent, model, tool, skill, memory, and messaging foundations, and adds desktop workflows plus shared business services for tasks, calendars, bills, briefings, and security management.
+Alcor is independently developed from [CowAgent](https://github.com/zhayujie/CowAgent) (formerly `chatgpt-on-wechat`) by zhayujie and contributors. It reuses the upstream Agent, model, tool, skill, memory, and messaging foundations, and adds desktop workflows plus shared business services for tasks, calendars, bills, briefings, and security management.
 
 See [third-party notices](THIRD_PARTY_NOTICES.md) for source attribution and the [MIT license](LICENSE) for license terms.
 
 ## A note from the author
 
-This is the first open-source project I completed on my own. Thanks to Codex and Cursor for help during development. There is still work to do; suggestions and bug reports through [Issues](https://github.com/starpickerr/Stella/issues) are welcome.
+This is the first open-source project I completed on my own. Thanks to Codex and Cursor for help during development. There is still work to do; suggestions and bug reports through [Issues](https://github.com/starpickerr/Alcor/issues) are welcome.

@@ -7,10 +7,18 @@ from agent.scheduler import delivery, integration
 from agent.tools.base_tool import ToolResult
 
 
-@pytest.mark.parametrize('source,folder', [('source','project'),(None,'work/automations/alpha/write')])
-def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder):
+@pytest.fixture
+def scheduler_owner():
+    from common.runtime_identity import identity_scope
+    with identity_scope(user_id='scheduler-test-user'):
+        yield
+
+
+@pytest.mark.parametrize('source,folder', [('source','work/automations/alpha/write'),(None,'work/automations/alpha/write')])
+def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch, source, folder, registered_agent, scheduler_owner):
     from agent.tools.write.write import Write
     from agent.runtime.run_record import RunRecord
+    registered_agent('alpha')
     workspace = tmp_path / 'work'
     project = tmp_path / 'project'
     workspace.mkdir()
@@ -23,18 +31,21 @@ def test_scheduled_relative_write_uses_same_cwd_as_policy(tmp_path, monkeypatch,
     monkeypatch.setattr(integration,'_resolve_working_dir',lambda **_:str(workspace))
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:Write()))
-    task={'id':'write','action':{'execution_session_id':source}}
+    from core.security.run_policy import save_run_policy
+    save_run_policy('task', 'write', {'filesystem_mode': 'workspace-write', 'capabilities': {}}, agent_id='alpha')
+    task={'id':'write','run_policy_version':1,'run_policy_revision':1,'action':{'execution_session_id':source}}
     integration._run_scheduled_tool(task,'write',{'path':'scheduled-probe.txt','content':'saved'},'alpha',None,None)
     assert (tmp_path/folder/'scheduled-probe.txt').read_text()=='saved'
     assert not (tmp_path/('work/automations/alpha/write' if folder=='project' else 'project')/'scheduled-probe.txt').exists()
     assert permission_denial('write',{'path':str(Path.home()/'stella-policy-escape.txt')},session_id=source,workspace=str(workspace))
 
 
-def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
+def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch, registered_agent, scheduler_owner):
     import threading
     from agent.permission.gateway import SecurityGateway
     from agent.runtime.run_record import RunRecord
     from agent.runtime.tool_invocation import permission_denial, scheduled_permission_scope
+    registered_agent('alpha')
     workspace = tmp_path / 'work'
     workspace.mkdir()
     monkeypatch.setattr('agent.workspace.context.personal_work_dir', lambda **kwargs: workspace)
@@ -45,7 +56,7 @@ def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr('agent.runtime.run_record.RunRecord', lambda: RunRecord(tmp_path / 'runs.db'))
     calls = []
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager', lambda: SimpleNamespace(
-        create_tool=lambda _name: SimpleNamespace(execute=lambda params: calls.append(params) or ToolResult.success('ok'),
+        create_tool=lambda _name: SimpleNamespace(execute_tool=lambda params: calls.append(params) or ToolResult.success('ok'),
                                                   config={})))
     inherited = {'id': 'inherit', 'action': {'execution_session_id': 'source', 'silent': True}}
     started = threading.Event()
@@ -66,13 +77,16 @@ def test_task_permission_applies_only_during_the_run(tmp_path, monkeypatch):
                                               'alpha', threading.Event(), None)
     assert allowed == 'ok'
     assert calls == [{'command': 'git push origin main'}]
+    from core.security.run_policy import save_run_policy
+    save_run_policy('session', 'source', {'filesystem_mode': 'workspace-write'})
     later = permission_denial('bash', {'command': 'git push origin main'}, session_id='source', noninteractive=True)
     assert later and 'Authorization required' in later
     from agent.workspace.context import resolve_context
     owner = resolve_context('owner', 'alpha', ensure=True)
     secret = owner.root / 'secret.txt'
     secret.write_text('secret')
-    with scheduled_permission_scope('full-access'):
+    from common.runtime_identity import identity_scope
+    with identity_scope(task_id='full', agent_id='alpha'), scheduled_permission_scope(explicit):
         denied = permission_denial('read', {'path': str(secret)}, session_id='source', noninteractive=True)
     assert denied and 'private' in denied.lower()
     readonly = integration._run_scheduled_tool(
@@ -90,7 +104,8 @@ def test_scheduled_confirmation_exits_as_pending_without_running_tool(tmp_path, 
                         lambda *_args, **_kwargs: 'Authorization required. Adjust the policy and rerun manually.')
     monkeypatch.setattr(integration, '_resolve_working_dir', lambda **_: str(tmp_path))
     monkeypatch.setattr('agent.tools.tool_manager.ToolManager',
-                        lambda: SimpleNamespace(create_tool=lambda _: pytest.fail('tool must not run')))
+                        lambda: SimpleNamespace(create_tool=lambda _: SimpleNamespace(
+                            execute_tool=lambda _params: pytest.fail('tool must not run'))))
     logger.addHandler(caplog.handler)
     try:
         with caplog.at_level("WARNING", logger=logger.name):
@@ -248,7 +263,7 @@ def test_delivery_retry_reuses_completed_tool_output(tmp_path,monkeypatch):
     def send(reply,context):
         sent.append(context['receive_id_type'])
         return len(sent)>1
-    monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:SimpleNamespace(execute=execute)))
+    monkeypatch.setattr('agent.tools.tool_manager.ToolManager',lambda:SimpleNamespace(create_tool=lambda _:SimpleNamespace(execute_tool=execute)))
     monkeypatch.setattr('agent.runtime.tool_invocation.permission_denial',lambda *_a,**_k:None)
     monkeypatch.setattr('agent.runtime.run_record.RunRecord',lambda:RunRecord(tmp_path/'runs.db'))
     monkeypatch.setattr('agent.scheduler.result_cache.runs_dir',lambda **_:tmp_path)

@@ -61,15 +61,13 @@ def _load() -> Dict:
         raise ValueError(f"Session preferences are invalid: {e}") from e
     data.setdefault("sessions", {})
     from agent.permission.security_policy import legacy_policy
-    changed = False
     for entry in data["sessions"].values():
         if isinstance(entry, dict) and "permission" in entry:
             if not entry.get("security_policy"):
                 entry["security_policy"] = legacy_policy(entry["permission"])
             del entry["permission"]
-            changed = True
-    if changed:
-        _save(data)
+    # Legacy input is projected in memory. The permission migration retains
+    # original files; reading a preview must never rewrite the old metadata.
     return data
 
 

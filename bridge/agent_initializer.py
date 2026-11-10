@@ -3,7 +3,6 @@ Agent Initializer - Handles agent initialization logic
 """
 
 import os
-import asyncio
 import datetime
 import threading
 import time
@@ -17,13 +16,6 @@ from common.utils import expand_path
 # Module-level lock to serialize scheduler init across concurrent sessions
 _scheduler_init_lock = threading.Lock()
 
-# Guards the in-flight memory-sync set below so concurrent session inits for
-# the same workspace don't each dispatch a redundant background sync thread.
-_memory_sync_lock = threading.Lock()
-# Workspaces with a memory sync currently running in the background. A new
-# request for the same workspace is dropped instead of forking another thread,
-# so a burst of messages can't stack up dozens of embedding HTTP calls.
-_memory_sync_inflight: set = set()
 
 
 class AgentInitializer:
@@ -69,9 +61,6 @@ class AgentInitializer:
         identity = current_identity()
         profile = get_agent_registry().get(agent_id or identity.agent_id)
         workspace_root = profile.workspace
-        
-        # Migrate API keys
-        self._migrate_config_to_env(workspace_root)
         
         # Load environment variables
         self._load_env_file()
@@ -136,7 +125,7 @@ class AgentInitializer:
         if memory_manager:
             agent.memory_manager = memory_manager
             if hasattr(agent, 'model') and agent.model:
-                memory_manager.flush_manager.llm_model = agent.model
+                memory_manager.model = agent.model
 
         agent.agent_id = profile.id
         agent.agent_profile = profile
@@ -202,6 +191,8 @@ class AgentInitializer:
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
+        except PermissionError:
+            raise
         except Exception as e:
             logger.warning(
                 f"[AgentInitializer] Failed to restore conversation history for "
@@ -288,8 +279,8 @@ class AgentInitializer:
         env_file = expand_path("~/.stella/.env")
         if os.path.exists(env_file):
             try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file, override=True)
+                from core.security.env_store import load_environment
+                load_environment(env_file, override=True)
             except ImportError:
                 logger.warning("[AgentInitializer] python-dotenv not installed")
             except Exception as e:
@@ -302,109 +293,27 @@ class AgentInitializer:
         Returns:
             (memory_manager, memory_tools) tuple
         """
-        memory_manager = None
-        memory_tools = []
-        
-        try:
-            from agent.memory import MemoryManager, MemoryConfig, register_memory_config
-            from agent.tools import MemorySearchTool, MemoryGetTool
+        from core.services.memory_facade import MemoryPort
+        from agent.tools import MemorySearchTool, MemoryGetTool
+        from common.runtime_identity import current_identity
+        from agent.registry import get_agent_registry
+        identity = current_identity()
+        profile = next((item for item in get_agent_registry().list() if item.workspace == workspace_root), None)
+        bound = identity.derive(agent_id=profile.id if profile else identity.agent_id)
+        memory = MemoryPort(identity=bound)
+        from agent.tools.memory import MemoryWriteTool
+        tools = [MemorySearchTool(memory), MemoryGetTool(memory), MemoryWriteTool(memory)]
+        from agent.tools.knowledge import KnowledgeSearchTool, KnowledgeGetTool, KnowledgeWriteTool
+        tools.extend([KnowledgeSearchTool(), KnowledgeGetTool(), KnowledgeWriteTool()])
+        return memory, tools
 
-            memory_config = MemoryConfig(workspace_root=workspace_root)
-            # Publish per workspace, not process-wide: this runs once per Agent,
-            # and a single global slot would leave the last one to initialize
-            # owning where every Agent's memory is written.
-            register_memory_config(memory_config)
-
-            embedding_provider = self._init_embedding_provider(
-                memory_config, session_id=session_id
-            )
-
-            memory_manager = MemoryManager(memory_config, embedding_provider=embedding_provider)
-            self._sync_memory(memory_manager, session_id)
-
-            memory_tools = [
-                MemorySearchTool(memory_manager),
-                MemoryGetTool(memory_manager)
-            ]
-            
-            if session_id is None:
-                logger.info("[AgentInitializer] Memory system initialized")
-        
-        except Exception as e:
-            logger.warning(f"[AgentInitializer] Memory system not available: {e}")
-        
-        return memory_manager, memory_tools
-
-    def _init_embedding_provider(self, memory_config, session_id: Optional[str] = None):
-        """
-        Initialize the embedding provider for memory.
-
-        Delegates to the shared factory so agent init, knowledge sync and
-        index rebuild all select the same provider:
-          A. Default (no `embedding_provider` in config.json):
-             Auto-init OpenAI -> LinkAI fallback.
-          B. Explicit (`embedding_provider` is set):
-             Initialize the requested vendor.
-        """
-        from agent.memory import create_default_embedding_provider
-        return create_default_embedding_provider()
-
-    def _sync_memory(self, memory_manager, session_id: Optional[str] = None):
-        """Bring the memory index up to date with the workspace files.
-
-        Runs entirely on a background daemon thread. sync() re-embeds any file
-        whose hash changed (MEMORY.md / memory/*.md / knowledge/*.md), and each
-        embed_batch is a blocking HTTP call that can take 20-50s from China-side
-        networks. Daily memory files change on nearly every session, so keeping
-        this on the init path made every user's first message wait for that
-        round-trip. The index is only read on the *next* memory search, so a
-        slightly stale index for the current turn is an acceptable trade-off —
-        the same design MCP tool loading already uses.
-
-        Idempotent per workspace: a burst of concurrent session inits dispatches
-        at most one sync thread, so messages can't stack up embedding calls.
-        """
-        workspace_key = None
-        try:
-            workspace_key = str(memory_manager.config.get_workspace())
-        except Exception:
-            workspace_key = None
-
-        with _memory_sync_lock:
-            if workspace_key is not None and workspace_key in _memory_sync_inflight:
-                return
-            if workspace_key is not None:
-                _memory_sync_inflight.add(workspace_key)
-
-        def _run():
-            try:
-                loop = asyncio.new_event_loop()
-                try:
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(memory_manager.sync())
-                finally:
-                    loop.close()
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Memory sync failed: {e}")
-            finally:
-                if workspace_key is not None:
-                    with _memory_sync_lock:
-                        _memory_sync_inflight.discard(workspace_key)
-
-        threading.Thread(
-            target=_run, daemon=True, name="memory-sync"
-        ).start()
-    
     def _load_tools(self, workspace_root: str, memory_manager, memory_tools: List, session_id: Optional[str] = None):
         """Load all tools"""
         tool_manager = ToolManager()
         tool_manager.load_tools()
         
         tools = []
-        file_config = {
-            "cwd": workspace_root,
-            "memory_manager": memory_manager
-        } if memory_manager else {"cwd": workspace_root}
+        file_config = {"cwd": workspace_root}
         
         for tool_name in tool_manager.tool_classes.keys():
             try:
@@ -423,12 +332,7 @@ class AgentInitializer:
                         logger.debug("[AgentInitializer] evolution_undo skipped - self-evolution disabled")
                         continue
 
-                # Special handling for EnvConfig tool
-                if tool_name == "env_config":
-                    from agent.tools import EnvConfig
-                    tool = EnvConfig({"agent_bridge": self.agent_bridge})
-                else:
-                    tool = tool_manager.create_tool(tool_name)
+                tool = tool_manager.create_tool(tool_name)
 
                 if tool:
                     # Apply workspace config to file operation tools.
@@ -448,8 +352,6 @@ class AgentInitializer:
                             # for any tool that has one (not name-gated to grep,
                             # so a future tool with a .timeout attribute isn't missed).
                             tool.timeout = merged_config.get("timeout", getattr(tool, 'timeout', None))
-                        if 'memory_manager' in merged_config:
-                            tool.memory_manager = merged_config['memory_manager']
                         # Re-derive config-derived attributes that were set during
                         # __init__ (before tool.config was populated from user config).
                         # bash is the only tool with such attributes (default_timeout,
@@ -613,69 +515,6 @@ class AgentInitializer:
             "_get_current_time": get_current_time  # Dynamic time function
         }
     
-    def _migrate_config_to_env(self, workspace_root: str):
-        """Migrate API keys from config.json to .env file"""
-        from config import conf
-        
-        key_mapping = {
-            "open_ai_api_key": "OPENAI_API_KEY",
-            "open_ai_api_base": "OPENAI_API_BASE",
-            "gemini_api_key": "GEMINI_API_KEY",
-            "claude_api_key": "CLAUDE_API_KEY",
-            "linkai_api_key": "LINKAI_API_KEY",
-        }
-        
-        env_file = expand_path("~/.stella/.env")
-        
-        # Read existing env vars (key -> value)
-        existing_env_vars = {}
-        if os.path.exists(env_file):
-            try:
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, val = line.split('=', 1)
-                            existing_env_vars[key.strip()] = val.strip()
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Failed to read .env file: {e}")
-        
-        # Sync config.json values into .env (add/update/remove)
-        updated = False
-        for config_key, env_key in key_mapping.items():
-            raw = conf().get(config_key, "")
-            value = raw.strip() if raw else ""
-            old_value = existing_env_vars.get(env_key)
-
-            if value:
-                if old_value == value:
-                    continue
-                existing_env_vars[env_key] = value
-                os.environ[env_key] = value
-                updated = True
-            else:
-                if old_value is None:
-                    continue
-                existing_env_vars.pop(env_key, None)
-                os.environ.pop(env_key, None)
-                updated = True
-
-        if updated:
-            try:
-                env_dir = os.path.dirname(env_file)
-                os.makedirs(env_dir, exist_ok=True)
-
-                # Rewrite the entire .env file to ensure consistency
-                with open(env_file, 'w', encoding='utf-8') as f:
-                    f.write('# Environment variables for agent\n')
-                    f.write('# Auto-managed - synced from config.json on startup\n\n')
-                    for key, value in sorted(existing_env_vars.items()):
-                        f.write(f'{key}={value}\n')
-
-                logger.info("[AgentInitializer] Synced API keys from config.json to .env")
-            except Exception as e:
-                logger.warning(f"[AgentInitializer] Failed to sync API keys: {e}")
-
     def _start_daily_flush_timer(self):
         """Start a background thread that flushes all agents' memory daily at 23:55."""
         if getattr(self.agent_bridge, '_daily_flush_started', False):

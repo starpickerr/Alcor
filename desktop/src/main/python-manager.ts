@@ -7,6 +7,8 @@ import fs from 'fs'
 import http from 'http'
 import net from 'net'
 import { randomBytes } from 'crypto'
+import { findDevelopmentPython } from './python-runtime'
+import { getRuntimeLog, RuntimeLog } from './runtime-log'
 
 // The installed app and source checkout use the same writable state.
 const STELLA_DATA_DIR = path.join(os.homedir(), '.stella')
@@ -112,7 +114,7 @@ export class PythonBackend extends EventEmitter {
   // We captured that stderr already, but never wrote it anywhere durable, so the
   // "open log folder" button showed a stale run.log with no trace of the crash.
   // Mirroring here closes that gap without touching the Python side.
-  private logStream: fs.WriteStream | null = null
+  private logStream: RuntimeLog | null = null
   // The failure that put us in 'error', kept so it can be fetched later. The
   // renderer subscribes to 'backend-status' only after React mounts, which is
   // hundreds of milliseconds after launch — every error raised before that
@@ -200,16 +202,8 @@ export class PythonBackend extends EventEmitter {
   private openLogStream(dataDir: string): void {
     this.closeLogStream()
     try {
-      fs.mkdirSync(dataDir, { recursive: true })
-      const logPath = path.join(dataDir, 'run.log')
-      // Append across launches without truncating previous diagnostics.
-      this.logStream = fs.createWriteStream(logPath, { flags: 'a' })
-      // A logging error must never crash the app; drop the stream instead.
-      this.logStream.on('error', () => {
-        this.logStream = null
-      })
-      const stamp = new Date().toISOString()
-      this.logStream.write(`\n[SHELL][${stamp}] --- launching backend (stdout/stderr mirrored below) ---\n`)
+      this.logStream = getRuntimeLog(dataDir)
+      this.logStream.event('shell', 'INFO', 'Launching backend')
     } catch {
       this.logStream = null
     }
@@ -227,7 +221,7 @@ export class PythonBackend extends EventEmitter {
       this.openLogStream(this.getDataDir())
     }
     try {
-      this.logStream?.write(`[SHELL][${new Date().toISOString()}] ${line}\n`)
+      this.logStream?.event('shell', 'INFO', line)
     } catch {
       // ignore — logging must never break startup
     }
@@ -290,6 +284,42 @@ export class PythonBackend extends EventEmitter {
    * We recover the real login-shell PATH (macOS/Linux) and merge in common bin
    * dirs, so the agent can find these commands regardless of how the app started.
    */
+  /**
+   * Official plugin catalog for first-boot install. Prefer an explicit env,
+   * then a packaged Resources copy, then a sibling Stella-Plugins checkout
+   * (monorepo / local development). Absolute machine paths never belong in the
+   * published catalog itself.
+   */
+  private resolvePluginCatalogPath(): string | undefined {
+    const fromEnv = process.env.STELLA_PLUGIN_CATALOG?.trim()
+    if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
+    const packaged = path.join(process.resourcesPath, 'plugin-catalog.json')
+    if (fs.existsSync(packaged)) return packaged
+    const siblings = [
+      path.resolve(app.getAppPath(), '..', '..', '..', 'Stella-Plugins', 'catalog', 'official.json'),
+      path.resolve(process.resourcesPath, '..', '..', '..', '..', 'Stella-Plugins', 'catalog', 'official.json'),
+      path.resolve(process.cwd(), '..', 'Stella-Plugins', 'catalog', 'official.json'),
+    ]
+    for (const candidate of siblings) {
+      if (fs.existsSync(candidate)) return candidate
+    }
+    return undefined
+  }
+
+  /**
+   * First-edition HMAC material for verifying official signed plugin ZIPs.
+   * Prefer an explicit env, then the packaged Resources secret next to the catalog.
+   */
+  private resolvePluginSigningSecret(): string | undefined {
+    const fromEnv = process.env.STELLA_PLUGIN_SIGNING_SECRET?.trim()
+    if (fromEnv) return fromEnv
+    const packaged = path.join(process.resourcesPath, 'plugin-signing.secret')
+    if (fs.existsSync(packaged)) {
+      return fs.readFileSync(packaged, 'utf8').trim() || undefined
+    }
+    return undefined
+  }
+
   private resolveEnvPath(): string {
     if (this.resolvedPath !== null) {
       return this.resolvedPath
@@ -399,20 +429,7 @@ export class PythonBackend extends EventEmitter {
   }
 
   private findPython(): string {
-    const venvPaths = [
-      path.join(this.backendPath, '.venv', 'bin', 'python'),
-      path.join(this.backendPath, '.venv', 'Scripts', 'python.exe'),
-      path.join(this.backendPath, 'venv', 'bin', 'python'),
-      path.join(this.backendPath, 'venv', 'Scripts', 'python.exe'),
-    ]
-
-    for (const p of venvPaths) {
-      if (fs.existsSync(p)) {
-        return p
-      }
-    }
-
-    return process.platform === 'win32' ? 'python' : 'python3'
+    return findDevelopmentPython(this.backendPath)
   }
 
   /** Read an optional desktop-only backend port override. */
@@ -669,7 +686,13 @@ export class PythonBackend extends EventEmitter {
       cwd = STELLA_DATA_DIR
       this.emit('log', `Starting bundled backend: ${bundled} (cwd=${cwd})`)
     } else {
-      const pythonPath = this.findPython()
+      let pythonPath: string
+      try {
+        pythonPath = this.findPython()
+      } catch (error) {
+        this.fail('backend_missing', `Cannot start the development backend: ${String(error)}`)
+        return
+      }
       const appPath = path.join(this.backendPath, 'app.py')
       if (!fs.existsSync(appPath)) {
         this.fail('backend_missing', 'app.py not found — this is a source checkout with no backend', appPath)
@@ -681,6 +704,8 @@ export class PythonBackend extends EventEmitter {
       this.emit('log', `Starting Python backend: ${pythonPath} ${appPath}`)
     }
 
+    const pluginCatalog = this.resolvePluginCatalogPath()
+    const signingSecret = this.resolvePluginSigningSecret()
     this.process = spawn(command, args, {
       cwd,
       // STELLA_DESKTOP enables the lighter desktop runtime (no plugins, no MCP).
@@ -698,6 +723,8 @@ export class PythonBackend extends EventEmitter {
         // two sides can never disagree (and we avoid the 9899 web-console clash).
         STELLA_BACKEND_PORT: String(this.port),
         STELLA_DATA_DIR: dataDir,
+        ...(pluginCatalog ? { STELLA_PLUGIN_CATALOG: pluginCatalog } : {}),
+        ...(signingSecret ? { STELLA_PLUGIN_SIGNING_SECRET: signingSecret } : {}),
         ...(this.clientSource() ? { STELLA_CLIENT_SOURCE: this.clientSource() } : {}),
         STELLA_CLIENT_VERSION: app.getVersion(),
       },

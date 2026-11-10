@@ -20,6 +20,12 @@ held_history = [None]
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     body = route.request.post_data_json if route.request.method == 'POST' else {}
     data = {'status': 'success'}
     if path == '/api/health':
@@ -44,7 +50,7 @@ def backend(route):
             data.update(stream=True, request_id='long-request')
         else:
             data.update(stream=False, inline_reply='已处理：' + body['message'])
-    elif path == '/api/security/confirmations':
+    elif path == '/api/confirmations':
         data['pending'] = [dict(id='approval-1', tool='AppleTool', session=pending[0],
                                 summary='写入日程', resource='calendar', risk='write', reason='需要确认',
                                 expanded_scope='', effect='添加条目')] if pending[0] else []
@@ -93,6 +99,9 @@ with sync_playwright() as playwright:
         }""")
         embedded = page.locator('#embedded-test-root')
         expect(embedded.get_by_text('已处理：请创建读书日程')).to_be_visible()
+        # The synthetic settings response has no permission metadata. Keep the
+        # composer usable while permission controls stay in the loading state.
+        expect(embedded.locator('#permission-selector-chip')).to_contain_text('正在读取权限')
         assert len(sent) == 1 and sent[0]['message'] == '请创建读书日程'
         calendar_session = sent[0]['session_id']
         hold_todo_history[0] = True
@@ -162,7 +171,7 @@ with sync_playwright() as playwright:
         assert len(event_reads) > prior_calendar_reads
         calendar_agent.get_by_role('button', name='Apple 日历').click()
         calendar_agent.get_by_role('menuitem', name='管理 Apple 日历').click()
-        expect(page).to_have_url(url + '/#/settings?tab=connections&section=apple-calendar')
+        expect(page).to_have_url(url + '/#/skills/plugins/stella.calendar?section=configuration&integration=apple-calendar')
         page.goto(url + '/#/todos', wait_until='networkidle')
         expect(page.locator('#todo-quick-title')).to_have_count(0)
         page.get_by_role('button', name='新建事务').click()
@@ -181,7 +190,7 @@ with sync_playwright() as playwright:
         assert len(todo_reads) > prior_todo_reads
         todos_agent.get_by_role('button', name='Apple 提醒事项').click()
         todos_agent.get_by_role('menuitem', name='管理 Apple 提醒事项').click()
-        expect(page).to_have_url(url + '/#/settings?tab=connections&section=apple-reminders')
+        expect(page).to_have_url(url + '/#/skills/plugins/stella.tasks?section=configuration&integration=apple-reminders')
         assert errors == [], errors
         print('Embedded Agent UI: sessions, streams, approval and page actions passed')
     finally:

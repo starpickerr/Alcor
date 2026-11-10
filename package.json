@@ -1,0 +1,46 @@
+{
+  "name": "alcor-product",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "dev": "node scripts/product/web.mjs",
+    "test": "npm run product:test",
+    "product:web": "node scripts/product/web.mjs",
+    "preproduct:test": "node scripts/product/build-agent-hub.mjs",
+    "product:test": "node --test product/tests/*.test.mjs",
+    "product:build": "node scripts/product/build-client.mjs",
+    "product:pack": "npm run product:build && npm pack --workspace @alcor/secretary --pack-destination .local/artifacts",
+    "product:privacy:pack": "node scripts/product/build-privacy.mjs && npm pack --workspace @alcor/privacy --pack-destination .local/artifacts",
+    "product:privacy:test": "python3 product/tests/keychain_check.py",
+    "product:apple:pack": "node scripts/product/build-apple-sync.mjs && npm pack --workspace @alcor/apple-sync --pack-destination .local/artifacts",
+    "product:preview:build": "npm run product:build && node scripts/product/sync-client.mjs",
+    "product:prepare": "node scripts/product/prepare-upstream.mjs",
+    "product:desktop": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
+    "product:ui:build": "node scripts/product/build-native-ui.mjs",
+    "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @alcor/elearning --pack-destination .local/artifacts && npm pack --workspace @alcor/mail --pack-destination .local/artifacts",
+    "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
+    "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.2-alpha.3",
+    "@deepseek-ai/dsh-atomic-write": "0.2.2-alpha.3",
+    "@deepseek-ai/dsh-home-paths": "0.2.2-alpha.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.0",
+    "pnpm": "11.28.5"
+  },
+  "overrides": {
+    "fflate": "0.8.3",
+    "@modelcontextprotocol/client": "2.3.0",
+    "undici@>=8.0.0 <8.12.2": "8.12.2",
+    "zod@>=4.0.0 <4.6.6": "4.6.7"
+  }
+}

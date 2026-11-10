@@ -1,0 +1,3 @@
+- insert:
+    - id: alcor-apple-sync
+      name: '@alcor/apple-sync'

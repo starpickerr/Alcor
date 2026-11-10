@@ -2,6 +2,8 @@
 .DS_Store
 .idea
 .vscode
+.superpowers
+.c2cignore
 .venv
 /.venv 2/
 .vs
@@ -40,11 +42,13 @@ client_config.json
 .preview_secret
 /references/
 **/.dev.vars
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
 local/
 node_modules/
+/.local/
+/packages/*/lib/
+/packages/stella-elearning/server/
+/packages/stella-mail/server/
+/packages/stella-privacy/native/keychain-bridge
 
 # stella cli
 dist/
@@ -71,9 +75,24 @@ desktop/resources/bin/
 
 .wrangler/
 evals/reports/
+# Native build output
+packages/stella-apple-sync/python/apple_sync/StellaCalendarBridge
+packages/stella-apple-sync/python/**/__pycache__/
+packages/stella-secretary/business/**/__pycache__/
 
-# Development-agent specifications stay on this machine and are not product source.
-/AGENTS.md
-/.agents/
-/.cursor/
-/.codex/
+# Keep native Apple sync source despite the legacy python-directory ignore.
+!/packages/stella-apple-sync/python/
+
+/packages/stella-apple-sync/python/apple_sync/Stella Apple Sync.app/
+
+# Alcor package paths (retain legacy patterns above for compatibility).
+/packages/alcor-elearning/server/
+/packages/alcor-mail/server/
+/packages/alcor-privacy/native/keychain-bridge
+packages/alcor-apple-sync/python/apple_sync/StellaCalendarBridge
+packages/alcor-apple-sync/python/**/__pycache__/
+packages/alcor-secretary/business/**/__pycache__/
+!/packages/alcor-apple-sync/python/
+/packages/alcor-apple-sync/python/apple_sync/Stella Apple Sync.app/
+/packages/alcor-apple-sync/python/apple_sync/Alcor Apple Sync.app/
+/packages/alcor-secretary/native/Alcor Confirm.app/

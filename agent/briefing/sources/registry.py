@@ -1,16 +1,30 @@
 """One source registry for desktop, scheduled tasks and Agent tools."""
 import sqlite3
 
-from agent.briefing import settings, elearning_settings
 from agent.briefing.sources.calendar_agenda import CalendarAgendaSource
-
 
 def source_key(source):
     return source.name + ":" + source.account_id
 
 
+def _email_sources():
+    from core.services.email_gateway import email_mcp_enabled
+    if email_mcp_enabled():
+        from core.data.runtime import consumer_sources
+        return consumer_sources(provider_ids={'email'}, consumer_id='stella.briefing')
+    return []
+
+
+def _elearning_sources():
+    from core.services.elearning_gateway import elearning_mcp_enabled
+    if elearning_mcp_enabled():
+        from core.services.elearning_facade import elearning_sources
+        return elearning_sources()
+    return []
+
+
 def configured_sources():
-    sources = settings.email_sources() + elearning_settings.elearning_sources()
+    sources = _email_sources() + _elearning_sources()
     if apple_calendar_connected():
         sources.append(CalendarAgendaSource())
     return sources

@@ -1,0 +1,317 @@
+.alcor-desk {
+  width:100%; max-width:1120px; flex:1; min-height:0; overflow:auto; margin:0 auto;
+  padding:28px 40px 40px; box-sizing:border-box;
+  font-family:var(--dsw-font-family); color:var(--dsw-alias-label-primary); font-size:14px; line-height:22px;
+}
+.alcor-desk *, .alcor-sidebar * { box-sizing:border-box; }
+.alcor-desk button, .alcor-sidebar button, .alcor-settings-content button { font-family:inherit; }
+.alcor-desk-header { display:flex; justify-content:space-between; gap:12px; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; margin-bottom:20px; }
+.alcor-page-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:24px; }
+.alcor-page-heading h1 { margin:0; font-size:24px; line-height:32px; font-weight:500; }
+.alcor-page-heading p { margin:6px 0 0; color:var(--dsw-alias-label-secondary); }
+.alcor-heading-chat { flex-shrink:0; }
+.alcor-desk h2 { font-size:16px; line-height:24px; font-weight:500; margin:0; }
+.alcor-muted, .alcor-empty { color:var(--dsw-alias-label-secondary); }
+.alcor-section { margin-top:24px; }
+.alcor-empty { padding:56px 24px; margin:24px 0; text-align:center; border:1px dashed var(--dsw-alias-border-l4); border-radius:18px; background:var(--dsw-alias-bg-layer-1); }
+.alcor-empty h2 { color:var(--dsw-alias-label-primary); }
+.alcor-connection-intro p { color:var(--dsw-alias-label-secondary); }
+.alcor-sidebar {
+  --dsh-sidebar-inline-padding:8px; --dsh-sidebar-row-padding:12px; --dsh-sidebar-label-gap:6px; --dsh-sidebar-paint-inset:3px;
+  display:flex; flex-direction:column; height:100%; max-width:100%; box-sizing:border-box; padding:18px 12px 10px; overflow:hidden;
+  background:var(--dsw-specific-sidebar-fill); color:var(--dsw-alias-label-primary);
+  font-family:var(--dsw-font-family); font-size:14px; line-height:22px;
+}
+.alcor-sidebar { border-right:1px solid var(--dsw-alias-border-l3); }
+.alcor-sidebar svg { display:block; flex-shrink:0; }
+.alcor-sidebar-brand { display:flex; align-items:center; gap:10px; min-height:36px; margin:0 8px 22px; flex-shrink:0; }
+.alcor-sidebar-brand > span:nth-child(2) { font-size:20px; font-weight:600; letter-spacing:-.5px; line-height:24px; }
+.alcor-emblem { display:flex; align-items:center; justify-content:center; width:34px; height:34px; flex-shrink:0; }
+.alcor-sidebar-brand button { display:flex; align-items:center; justify-content:center; margin-left:auto; border:0; border-radius:var(--dsw-radius-sm); color:var(--dsw-alias-label-secondary); background:none; width:28px; height:28px; padding:0; cursor:pointer; }
+.alcor-sidebar-brand button:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-sidebar .alcor-sidebar-chat { display:flex; align-items:center; justify-content:center; gap:8px; flex-shrink:0; height:40px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); background:var(--alcor-brand); color:var(--dsw-alias-label-primary-inverted); padding:0 12px; margin:0 3px 10px; font:inherit; font-weight:500; white-space:nowrap; cursor:pointer; }
+.alcor-sidebar .alcor-sidebar-chat:hover { background:var(--alcor-brand-hover); }
+.alcor-sidebar nav { display:flex; flex-direction:column; gap:20px; min-height:0; overflow-y:auto; overflow-x:hidden; flex:0 1 auto; scrollbar-width:thin; scrollbar-color:transparent transparent; }
+.alcor-sidebar nav:hover, .alcor-sidebar nav:focus-within { scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent; }
+.alcor-nav-group { display:flex; flex-direction:column; gap:4px; }
+.alcor-sidebar nav button { position:relative; display:flex; align-items:center; gap:10px; width:100%; min-height:40px; background:transparent; background-clip:padding-box; border:0; border-inline:3px solid transparent; padding:7px 9px; border-radius:var(--dsw-radius-md); text-align:left; font:inherit; color:inherit; white-space:nowrap; cursor:pointer; }
+.alcor-sidebar nav button[aria-current='page'] { background-color:var(--alcor-surface); color:var(--alcor-brand); font-weight:600; box-shadow:var(--alcor-shadow); }
+.alcor-sidebar nav small { margin-left:auto; min-width:18px; border-radius:var(--dsw-radius-xs); background:var(--dsw-alias-interactive-bg-active); font-size:11px; line-height:18px; text-align:center; }
+.alcor-nav-group > p { margin:0 12px 6px; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
+.alcor-sidebar-workspaces { --dsh-sidebar-inline-padding:8px; --dsh-sidebar-row-padding:12px; --dsh-sidebar-label-gap:6px; --dsh-sidebar-paint-inset:3px; display:flex; flex:1; min-height:100px; margin-top:24px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); overflow:hidden; }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-workspaces { flex:none; min-height:0; margin-top:12px; }
+.alcor-sidebar footer { display:flex; flex-direction:column; margin-top:auto; padding-top:12px; flex-shrink:0; }
+.alcor-sidebar nav button:hover { background-color:var(--dsw-alias-interactive-bg-hover); }
+.alcor-sidebar[data-collapsed] { width:56px; min-width:56px; padding:18px 10px 6px; }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-brand { flex-direction:column; justify-content:center; gap:0; margin:0 0 12px; min-height:36px; }
+.alcor-sidebar[data-collapsed] .alcor-emblem { display:none; }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-brand button { margin:0; width:36px; height:36px; border-radius:var(--dsw-radius-md); }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-chat { width:36px; height:36px; margin:0 0 12px; padding:0; justify-content:center; border-color:transparent; background:transparent; color:var(--alcor-brand); }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-chat:hover { background:var(--alcor-brand-soft); }
+.alcor-sidebar[data-collapsed] nav { flex:0 1 auto; overflow-x:hidden; }
+.alcor-sidebar[data-collapsed] .alcor-nav-group { gap:8px; }
+.alcor-sidebar[data-collapsed] nav button { width:36px; height:36px; min-height:36px; flex-shrink:0; justify-content:center; padding:0; border-inline:0; }
+.alcor-sidebar[data-collapsed] .alcor-sidebar-workspaces { width:36px; flex-shrink:0; }
+.alcor-settings-content { font-family:var(--dsw-font-family); font-size:14px; line-height:22px; color:var(--dsw-alias-label-primary); }
+.alcor-preference-form { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.alcor-preference-form h2, .alcor-preference-form label, .alcor-preference-form p { flex-basis:100%; margin:0; }
+.alcor-preference-form label { margin-top:10px; }
+.alcor-preference-form p { margin-top:4px; }
+.alcor-settings-content > section, .alcor-settings-content > details { margin-top:24px; padding-top:18px; border-top:0.5px solid var(--dsw-alias-border-l3); }
+.alcor-settings-content h2 { font-size:16px; line-height:24px; font-weight:500; }
+.alcor-settings-content h3 { font-size:14px; font-weight:500; margin:0; }
+.alcor-settings-content summary { cursor:pointer; font-weight:500; }
+.alcor-workspace-settings { font-family:var(--dsw-font-family); font-size:14px; line-height:22px; color:var(--dsw-alias-label-primary); min-width:0; }
+.alcor-workspace-settings form { margin:16px 0; }
+.alcor-workspace-settings p { overflow-wrap:anywhere; }
+.alcor-workspace-settings select { width:100%; min-width:0; padding:8px; font:inherit; color:inherit; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); }
+.alcor-workspace-settings .alcor-field { display:grid; gap:6px; margin:12px 0; min-width:0; }
+.alcor-workspace-settings .alcor-field input { width:100%; min-width:0; }
+.alcor-workspace-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font:inherit; font-size:12px; }
+.alcor-workspace-preview li { overflow-wrap:anywhere; font-size:12px; }
+.alcor-workspace-settings .alcor-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.alcor-business-toolbar, .alcor-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.alcor-business-toolbar { margin:0 0 24px; padding:0 0 12px; border-bottom:0.5px solid var(--dsw-alias-border-l3); }
+.alcor-business-toolbar .alcor-checkbox { margin-left:auto; }
+.alcor-editor { max-width:720px; padding:24px; border:0.5px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); background:var(--dsw-alias-bg-layer-1); box-shadow:var(--alcor-shadow); margin:0 0 24px; }
+.alcor-field { display:flex; flex-direction:column; gap:6px; font-size:14px; margin:16px 0; min-width:0; }
+.alcor-field > span { min-width:0; }
+.alcor-field textarea, .alcor-field select { box-sizing:border-box; width:100%; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-layer-1); border:0.5px solid var(--dsw-alias-border-l4); border-radius:var(--dsw-radius-md); padding:8px; min-width:0; }
+.alcor-field select { height:32px; padding:0 8px; }
+.alcor-field textarea { resize:vertical; }
+.alcor-field textarea:focus, .alcor-field select:focus { border-color:var(--dsw-alias-state-business-primary); }
+.alcor-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+.alcor-records { list-style:none; padding:0; margin:24px 0; }
+.alcor-records > li { padding:18px 0; border-bottom:0.5px solid var(--dsw-alias-border-l3); }
+.alcor-records .alcor-actions { margin-top:10px; }
+.alcor-records h2 { overflow-wrap:anywhere; }
+.alcor-records p { margin:6px 0; color:var(--dsw-alias-label-secondary); }
+.alcor-record-notes { white-space:pre-wrap; overflow-wrap:anywhere; }
+.alcor-ledger-totals { padding:12px 16px; background:var(--dsw-alias-interactive-bg-hover); border-radius:var(--dsw-radius-md); }
+.alcor-report { border:0.5px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); padding:24px; }
+.alcor-report pre, .alcor-job-output { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; }
+.alcor-delete-confirm { border:0.5px solid var(--dsw-alias-border-l3); padding:20px; border-radius:var(--dsw-radius-lg); }
+.alcor-error { color:var(--dsw-alias-state-error-primary); border-left:2px solid currentColor; padding-left:12px; }
+.alcor-desk button:focus-visible, .alcor-sidebar button:focus-visible, .alcor-settings-content button:focus-visible, .alcor-settings-content summary:focus-visible, .alcor-field textarea:focus-visible, .alcor-field select:focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset:2px; }
+.alcor-sidebar button:focus-visible { outline-offset:-2px; }
+@media(max-width:760px) {
+  .alcor-desk { padding:24px 22px 32px; }
+  .alcor-page-heading { align-items:flex-start; flex-direction:column; gap:14px; }
+  .alcor-form-grid { grid-template-columns:1fr; gap:0; }
+  .alcor-editor { padding:18px; }
+  .alcor-business-toolbar .alcor-checkbox { margin-left:0; }
+}
+
+@media(max-width:767px) {
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) { grid-template-areas:"alcor-title alcor-header" "alcor-nav alcor-nav" "alcor-options alcor-options"; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto minmax(0,1fr); }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > :first-child { grid-area:alcor-title; padding:20px 0 8px 16px; }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > nav { grid-area:alcor-nav; padding:0; }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > nav > div { flex-direction:row; overflow-x:auto; padding:8px 16px 12px; }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > nav button { flex:0 0 auto; }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > :nth-last-child(2) { grid-area:alcor-header; height:auto; padding:18px 12px 8px; }
+  [data-shortcut-modal=settings]:has(.alcor-settings-content) > :last-child { grid-area:alcor-options; padding:0 16px 24px; }
+}
+
+.alcor-sidebar-workspaces { flex-direction: column; }
+.alcor-qq-browser button { width:100%; font:inherit; text-align:start; background-color:transparent; border-block:0; }
+.alcor-qq-browser section { --dsh-workspace-indent:16px; }
+.alcor-qq-browser h3 { margin:6px 0 2px; padding-inline-start:calc(var(--dsh-sidebar-row-padding) + 16px); color:var(--dsw-alias-label-secondary); font-size:11px; font-weight:500; }
+.alcor-qq-browser button[aria-current],.alcor-qq-browser section button:hover { background-color:var(--dsw-alias-interactive-bg-hover); }
+.alcor-qq-browser button:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:-2px; }
+.alcor-memory-settings, .alcor-space-settings { margin: 32px 0; padding-top: 24px; border-top: 1px solid var(--dsw-alias-border-l4); }
+.alcor-memory-settings h2, .alcor-space-settings h2 { font-size: 16px; margin: 0 0 20px; }
+.alcor-memory-settings h3, .alcor-space-settings h3 { margin: 28px 0 12px; font-size: 13px; font-weight: 500; }
+.alcor-memory-settings label { display: block; margin: 0 0 8px; font-size: 13px; }
+.alcor-memory-settings textarea, .alcor-memory-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 13px; line-height: 1.6; padding: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-l2); border: 1px solid var(--dsw-alias-border-l4); border-radius: 10px; margin-bottom: 12px; }
+.alcor-memory-settings textarea:focus-visible, .alcor-memory-editor textarea:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.alcor-memory-row, .alcor-space-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--dsw-alias-border-l4); }
+.alcor-memory-row > div, .alcor-space-row > span { flex: 1; min-width: 0; }
+.alcor-space-row > span { overflow-wrap: anywhere; font-size: 13px; }
+.alcor-memory-row p { margin: 0 0 5px; line-height: 1.6; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.alcor-memory-row small { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.alcor-memory-editor > div { display: flex; gap: 10px; justify-content: flex-end; }
+.alcor-followup { position:fixed; bottom:108px; right:18px; z-index:10; max-width:min(320px,85vw); padding:14px; border:1px solid var(--dsw-alias-border-l4); border-radius:12px; background:var(--dsw-alias-bg-l1,#fff); color:var(--dsw-alias-label-primary); }
+.alcor-followup p { margin:0 0 8px; line-height:1.55; overflow-wrap:anywhere; }
+
+.alcor-memory-settings .alcor-bear-option-row small { display: block; color: var(--dsw-alias-label-secondary); margin-top: 3px; }
+
+/* Shared navigation and settings inside the native desktop shell. */
+.alcor-settings-content { container-type:inline-size; color:var(--dsw-alias-label-primary); min-width:0; }
+.alcor-settings-content > nav {
+  position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+  padding:6px 0 10px; border-bottom:1px solid var(--dsw-alias-border-l3);
+  background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-bg-layer-2));
+}
+.alcor-settings-content > nav button {
+  appearance:none; border:1px solid transparent; border-radius:var(--dsw-radius-md,8px); padding:7px 12px;
+  background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; cursor:pointer;
+}
+.alcor-settings-content > nav button[aria-pressed="true"] { background:var(--dsw-alias-interactive-bg-active); color:var(--dsw-alias-label-primary); font-weight:600; }
+.alcor-settings-content :is(button,input,select,textarea,summary):focus-visible,
+.alcor-workbench button:focus-visible,.alcor-qq-history button:focus-visible {
+  outline:2px solid var(--dsw-alias-state-business-primary,var(--alcor-brand)); outline-offset:2px;
+}
+.alcor-settings-content > [hidden] { display:none; }
+.alcor-settings-content .alcor-space-settings { margin:0; border:none; padding:20px 0 8px; }
+.alcor-settings-group ~ .alcor-settings-group { margin-top:22px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-persona-page .alcor-settings-group h2,.alcor-settings-content .alcor-space-settings h2 { margin:0 0 14px; font-size:15px; letter-spacing:-.2px; }
+.alcor-persona-page .alcor-memory-settings :is(input:not([type="file"]),select),.alcor-memory-editor textarea {
+  display:block; width:100%; max-width:100%; min-width:0; border:1px solid var(--dsw-alias-border-l4); border-radius:8px;
+  background:var(--dsw-alias-bg-layer-1); color:inherit; padding:8px 10px; box-sizing:border-box; font:inherit; font-size:13px;
+}
+
+.alcor-field-caption,.alcor-identity-actions { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.alcor-field-caption small,.alcor-space-row small,.alcor-settings-group small { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-space-row > span small { display:block; margin-top:3px; overflow-wrap:anywhere; }
+.alcor-settings-group details { margin:12px 0; }
+.alcor-settings-group summary,.alcor-space-settings summary { padding:7px 0; cursor:pointer; color:var(--dsw-alias-label-secondary); }
+.alcor-settings-group .alcor-bear-option-row { min-height:42px; }
+.alcor-settings-group select { margin:5px 0 9px; }
+.alcor-settings-group .alcor-memory-row { align-items:flex-start; padding:12px 0; }
+.alcor-settings-group .alcor-identity-actions { align-items:center; gap:6px; }
+.alcor-identity-actions button:first-child { margin-right:auto; }
+.alcor-workbench { flex:1; min-width:0; min-height:0; overflow:auto; width:100%; max-width:920px; margin:0 auto; padding:clamp(24px,5vw,64px); box-sizing:border-box; color:var(--dsw-alias-label-primary); }
+.alcor-workbench header,.alcor-workbench-title { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.alcor-workbench header { justify-content:space-between; padding-bottom:18px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-workbench h1 { margin:0; font-size:24px; line-height:1.35; letter-spacing:-.5px; }
+.alcor-workbench section { margin-top:24px; }
+.alcor-workbench h2 { margin:0 0 12px; font-size:14px; }
+.alcor-workbench-projects { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:10px; }
+.alcor-workbench-projects button,.alcor-workbench-chat { cursor:pointer; font:inherit; text-align:start; color:inherit; overflow-wrap:anywhere; }
+.alcor-workbench-projects button { display:grid; gap:6px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:10px; background:var(--dsw-alias-bg-layer-1); }
+.alcor-workbench-projects small { color:var(--dsw-alias-label-secondary); }
+.alcor-workbench-chat { display:block; width:100%; padding:10px 8px; border:none; border-bottom:1px solid var(--dsw-alias-border-l3); background:transparent; }
+.alcor-workbench :is(.alcor-workbench-projects button,.alcor-workbench-chat):hover { background:var(--dsw-alias-interactive-bg-hover); }
+@container (max-width:380px) {
+  .alcor-space-row { align-items:flex-start; flex-wrap:wrap; }
+  .alcor-settings-content > nav button { padding-inline:8px; }
+}
+
+.alcor-settings-content .alcor-bear-options { padding:18px 0 8px; }
+.alcor-settings-content .alcor-settings-group input[type="file"] { max-width:100%; }
+.alcor-settings-content > nav button,.alcor-workbench-chat { display:flex; align-items:center; gap:7px; }
+.alcor-profile-heading { display:flex; align-items:center; gap:14px; padding:0 0 16px; }
+.alcor-profile-heading > div:last-child { flex:1; min-width:0; }
+.alcor-profile-avatar { flex:none; width:62px; height:62px; display:grid; place-items:center; border-radius:15px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); color:var(--dsw-alias-label-primary); }
+.alcor-profile-heading #alcor-identity-name { margin:0; max-width:min(100%,24em); }
+.alcor-project-filter { width:100%; padding:8px 12px; margin:0 0 10px; border:1px solid var(--dsw-alias-border-l4); border-radius:8px; background:var(--dsw-alias-bg-layer-1); color:inherit; }
+.alcor-space-row strong { font-weight:550; }
+.alcor-space-row > svg,.alcor-workbench-projects svg { flex:none; color:var(--dsw-alias-label-secondary); }
+.alcor-workbench-projects button { grid-template-columns:auto 1fr; align-items:center; column-gap:10px; }
+.alcor-workbench-projects small { grid-column:2; }
+.alcor-workbench-chat svg { flex:none; color:var(--dsw-alias-label-secondary); }
+.alcor-business-title { display:flex; align-items:center; gap:10px; }
+.alcor-business-title > svg { flex:none; color:var(--alcor-brand,var(--dsw-alias-label-secondary)); }
+.alcor-show-projects { padding:8px 2px; border:0; color:var(--alcor-brand,var(--dsw-alias-label-primary)); background:none; font:inherit; cursor:pointer; }
+
+/* A narrow reading column keeps short replies together, even in a wide desktop window. */
+.alcor-qq-history { display:flex; flex-direction:column; width:min(100%,760px); height:100%; min-height:0; margin-inline:auto; padding:0 clamp(12px,3vw,28px); box-sizing:border-box; color:var(--dsw-alias-label-primary); }
+.alcor-qq-heading { display:flex; align-items:center; gap:9px; padding:12px 0 10px; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-qq-avatar { display:grid; place-items:center; flex:0 0 34px; height:34px; border-radius:11px; font-size:15px; font-weight:600; color:var(--alcor-brand); background:var(--alcor-brand-soft); }
+.alcor-qq-identity { flex:1; min-width:0; }
+.alcor-qq-identity h1 { margin:0; font-size:17px; font-weight:600; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.alcor-qq-identity small,.alcor-qq-readonly,.alcor-qq-attributes dt,.alcor-message-author time,.alcor-message-author small { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.alcor-qq-heading button { border:0; border-radius:7px; background:transparent; color:inherit; cursor:pointer; min-height:30px; padding:4px 7px; font:inherit; font-size:12px; }
+.alcor-qq-heading button:hover,.alcor-qq-heading button[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-qq-refresh { display:grid; place-items:center; }
+.alcor-qq-attributes { border-bottom:1px solid var(--dsw-alias-border-l3); padding:8px 2px; }
+.alcor-qq-attributes dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(106px,1fr)); gap:6px 12px; margin:0; }
+.alcor-qq-attributes dd { margin:2px 0 0; font-size:12px; }
+.alcor-qq-transcript { min-height:0; overflow:auto; flex:1; padding-block:4px 12px; scrollbar-width:thin; }
+.alcor-qq-thread { display:grid; align-content:start; gap:5px; }
+.alcor-history-day { display:flex; align-items:center; gap:9px; margin-block:7px 2px; font-size:11px; color:var(--dsw-alias-label-secondary); }
+.alcor-history-day::before,.alcor-history-day::after { content:""; flex:1; height:1px; background:var(--dsw-alias-border-l3); }
+.alcor-qq-thread article { display:grid; grid-template-columns:26px minmax(0,1fr); column-gap:8px; min-width:0; padding:3px 2px; }
+.alcor-qq-speaker-avatar { grid-column:1; grid-row:1 / 3; display:grid; place-items:center; align-self:start; width:26px; height:26px; border-radius:8px; background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-qq-thread article > :not(.alcor-qq-speaker-avatar) { grid-column:2; }
+.alcor-qq-thread article[data-speaker="assistant"] .alcor-qq-speaker-avatar { background:var(--alcor-brand-soft); }
+.alcor-message-author { display:flex; align-items:baseline; gap:8px; line-height:16px; }
+.alcor-message-author strong { font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+.alcor-qq-thread article[data-speaker="assistant"] strong { color:var(--alcor-brand); }
+.alcor-qq-thread p { margin:2px 0 0; font-size:14px; line-height:1.48; white-space:pre-wrap; overflow-wrap:anywhere; }
+.alcor-message-author button { padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.alcor-message-author button:hover strong { text-decoration:underline; text-underline-offset:2px; }
+.alcor-qq-message-meta { display:block; margin:3px 0; color:var(--dsw-alias-label-secondary); font-size:11px; }
+
+[data-sidebar-drawer] .alcor-qq-heading { padding-top:max(12px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-initiative-card,.alcor-persona-page .alcor-memory-card { padding:12px 14px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
+.alcor-initiative-card + .alcor-initiative-card { margin-top:8px; }
+.alcor-initiative-card .alcor-bear-option-row { padding:0; min-height:30px; border:0; }
+.alcor-card-caption { display:flex; align-items:center; gap:9px; font-weight:500; }
+.alcor-card-caption svg { color:var(--alcor-brand); flex:none; }
+.alcor-memory-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); align-items:start; gap:10px; }
+.alcor-persona-page .alcor-memory-card { display:block; min-width:0; }
+.alcor-memory-card header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; font-weight:500; }
+.alcor-memory-card header time { color:var(--dsw-alias-label-secondary); font-size:11px; font-weight:400; }
+.alcor-memory-card header button { margin-left:auto; flex:none; }
+.alcor-memory-card p { margin:0; font-size:13px; line-height:1.65; }
+.alcor-memory-preview { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.alcor-memory-expand { border:0; border-radius:4px; padding:6px 0 0; background:none; font:inherit; font-size:12px; color:var(--alcor-brand); cursor:pointer; }
+
+.alcor-memory-body { overflow-wrap:anywhere; }
+.alcor-memory-body :is(h1,h2,h3,h4) { font-size:14px; line-height:1.5; margin:10px 0 4px; }
+.alcor-memory-body :is(ul,ol) { padding-left:18px; margin:5px 0; }
+.alcor-memory-card .alcor-memory-body p { margin:0; }
+
+.alcor-channel-target { display:flex; align-items:center; gap:9px; min-width:0; }
+.alcor-channel-target > svg { color:var(--alcor-brand); flex:none; }
+.alcor-channel-target > div { flex:1; min-width:0; }
+.alcor-channel-target strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.alcor-channel-target small,.alcor-channel-consent { display:block; font-size:11px; color:var(--dsw-alias-label-secondary); line-height:1.6; }
+.alcor-channel-consent { margin-top:7px; }
+.alcor-channel-target button { flex:none; }
+.alcor-delivery-history > div { padding:10px 0; border-bottom:1px solid var(--dsw-alias-border-l3); font-size:12px; }
+.alcor-delivery-history span { float:right; color:var(--dsw-alias-label-secondary); }
+.alcor-delivery-history p { margin:4px 0; overflow-wrap:anywhere; }
+
+.alcor-channel-target small { overflow-wrap:anywhere; }
+
+.alcor-persona-page { max-width:860px; }
+.alcor-persona-page .alcor-memory-settings { margin:20px 0 0; padding:0; border:0; }
+.alcor-persona-page .alcor-memory-settings > .alcor-settings-group { margin:0; padding:0; border:0; }
+.alcor-persona-page .alcor-identity-actions { justify-content:flex-end; }
+.alcor-persona-page .alcor-identity-actions button { margin-right:0; }
+.alcor-persona-page .alcor-identity-actions span { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-persona-page #alcor-soul { margin-bottom:0; }
+.alcor-persona-page #alcor-soul-help { margin:4px 0 16px; font-size:12px; }
+[data-sidebar-drawer] .alcor-persona-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-persona-examples { margin:20px 0; }
+.alcor-persona-page .alcor-example-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.alcor-persona-page .alcor-example-heading h2 { margin:0; }
+.alcor-persona-examples fieldset { margin:12px 0; min-width:0; padding:10px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); }
+.alcor-persona-examples legend { padding-inline:5px; font-size:13px; }
+.alcor-persona-examples textarea { margin:4px 0 0; }
+
+.alcor-channels-page { max-width:860px; }
+.alcor-channels-page .alcor-section h2 { margin:0 0 12px; }
+[data-sidebar-drawer] .alcor-channels-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-channel-actions { display:flex;align-items:center;gap:6px; }
+
+.alcor-capability-fields { display:flex;flex-direction:column;gap:20px;margin:24px 0;border:0;padding:0; }
+.alcor-capability-fields label { display:flex;flex-direction:column;gap:8px;font-size:13px; }
+.alcor-capability-fields select { width:100%;max-width:520px;min-width:0;font:inherit;color:inherit;background:var(--dsw-alias-bg-l1);border:1px solid var(--dsw-alias-border-l3);border-radius:7px;padding:8px 10px; }
+.alcor-capability-fields select:disabled { opacity:.6; }
+.alcor-capability-fields small { color:var(--dsw-alias-label-secondary); }
+.alcor-capability-card { display:flex;flex-direction:column;gap:18px;padding:22px;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-layer-1); }
+.alcor-capability-card select { max-width:none;min-height:40px;border-radius:8px;background:var(--dsw-alias-bg-l2); }
+.alcor-capability-card label { color:var(--dsw-alias-label-secondary);font-weight:500; }
+.alcor-capability-card select { color:var(--dsw-alias-label-primary);font-weight:400; }
+.alcor-capability-card select:focus-visible { outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--alcor-brand));outline-offset:2px; }
+.alcor-capability-save { display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-bottom:8px; }
+@media(max-width:600px) { .alcor-capability-card { padding:18px;gap:16px; } }
+
+.alcor-icon-action { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer; }
+.alcor-icon-action:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-icon-action:disabled { cursor:default;opacity:.45; }
+.alcor-icon-action svg { width:18px;height:18px;flex-shrink:0; }
+.alcor-capability-heading { display:flex;align-items:center;gap:12px;margin-bottom:2px; }
+.alcor-capability-icon { display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:none;border-radius:10px;background:var(--alcor-brand-soft);color:var(--alcor-brand); }
+.alcor-capability-heading h2 { margin:0;font-size:16px;line-height:22px;font-weight:600; }
+.alcor-capability-heading p { margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] { width:32px;min-width:32px;height:32px;min-height:32px;padding:0;gap:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] [class*="toolbarLabel"] { display:none; }
+[data-plugin-toolbar] button[aria-label][aria-busy]:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-capability-heading > div { min-width:0; }

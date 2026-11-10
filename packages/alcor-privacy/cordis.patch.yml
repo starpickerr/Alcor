@@ -1,0 +1,4 @@
+- insert:
+    - id: alcor-keychain
+      name: '@alcor/privacy'
+      disabled: true

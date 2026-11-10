@@ -1,0 +1,28 @@
+{
+  "scope": "One independent assistant-generated response per phase in fresh contexts, without fixture expected answers. Not the configured DSH model; no provider usage. First-generation only.",
+  "fixture_compact_sha256": "6211ea37ca0ac589de787a4d7c42d52602706957e5e9289511540a4162ce6f9f",
+  "generation_inputs": {
+    "baseline-decisions": {
+      "prompt_sha256": "ce539f0e3a99984fcc1324881512e977b04b9e764ac8031ff70ad4d0800d5afa",
+      "schema_compact_sha256": "37e7b273eea438541faf72d4a12473b3548e4a2e850ecc6c4d2366714cab64ce"
+    },
+    "baseline-writing": {
+      "prompt_sha256": "39a978ebe3d793b26b6ef0ca131ab252daf5696567e198797f182dc2f9f29a8b",
+      "schema_compact_sha256": "e377eea627bb8b337a237b862759fb18717d994ee32a5a2d9781338151d6070a"
+    },
+    "candidate-global": {
+      "prompt_sha256": "28cea46bb37b069f3ce73651ff74bec6863f1704a723313f08c5347711dd4f42",
+      "schema_compact_sha256": "9195be3ae6286720692ea087df6bbad323f3362b714b061c4935415195f49dad"
+    }
+  },
+  "outputs_sha256": {
+    "baseline-decisions": "1cfe1d3f830dcc5df22761a7625787973f17953de59900912f0a76c55bf50ed6",
+    "baseline-writing": "af2937aacdbf654b70e19ab046734525b1a4d296c1cf363c790efd6ed7714cad",
+    "candidate-global": "b354c3c1a782323dcb9c10f7a0ba3e255348f4d59765049097a53116e05eac35"
+  },
+  "historical_candidate_source_sha256": {
+    "generator.py": "4e0a99456cac5cbb4fb862904d6a55654d064609fbe98791a19194463ba96588",
+    "worker.py": "8db98c1bae9e56a0466505ebe57e977cd22bb3e5f7a7e3dcd734d7d49e4889cc"
+  },
+  "historical_prompt_compatibility": "Candidate response preceded insertion of 不要重复每日大标题，. Evaluation removes only that later clause to verify the original input hash; it does not claim new model generation."
+}

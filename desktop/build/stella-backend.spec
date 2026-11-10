@@ -11,6 +11,16 @@ onedir preserves that layout, while onefile's temp-extraction would break it.
 
 Build from the repo root:
     pyinstaller desktop/build/stella-backend.spec --noconfirm
+
+Sibling packaging (G5): the plugin worker is NOT launched from this bundle.
+`desktop/build/stella-plugin-runner.spec` freezes `core/plugins/runner/cli.py`
+into a separate `stella-plugin-runner/` onedir that must ship NEXT TO
+`stella-backend/` (or be pointed at via STELLA_PLUGIN_RUNNER); the host resolves
+it in core.plugins.host.resolve_runner_command. Re-launching this backend as a
+worker would re-enter app init, the legacy PluginManager watcher and scheduler
+recovery (R01). Business plugin bytes come from Stella-Plugins via
+resources/default-plugins.json. Email and eLearning ship as independent sibling
+MCP executables, outside this host bundle. Electron ships all sibling runtimes.
 """
 import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
@@ -52,17 +62,31 @@ hiddenimports = [
 # Agent tools and model providers are imported lazily in places; collect their
 # submodules so nothing is missed at runtime.
 hiddenimports += collect_submodules('agent.tools')
-hiddenimports += collect_submodules('agent.calendar')
-hiddenimports += collect_submodules('agent.briefing')
+# agent.calendar / agent.briefing are no longer blanket-collected (G5): neither
+# package needs blanket collection. Domain stores live in their plugins. The Apple
+# EventKit bridge must stay in Core (it needs host OS access), so list it
+# explicitly in case it is only reached lazily.
+hiddenimports += [
+    'agent.calendar.apple_bridge',
+    'agent.calendar.apple_preview',
+    'agent.calendar.apple_runtime',
+    'agent.calendar.apple_sync',
+    'common.timezones',
+]
 hiddenimports += collect_submodules('models')
 hiddenimports += collect_submodules('voice')
 hiddenimports += collect_submodules('bridge')
 
-# Plugin framework + plugins. DesktopChannel -> ChatChannel imports
-# `from plugins import *`, and desktop mode loads plugins (in a background
-# thread) so command plugins like stella_cli/godcmd (/status, #help) work. Plugin
-# modules are imported dynamically by name in scan_plugins(), so list them
-# explicitly. The `cli` package is a stella_cli dependency (`from cli import ...`).
+# Legacy chat-command plugin framework (top-level `plugins/`). DesktopChannel ->
+# ChatChannel imports `from plugins import *`, and desktop mode loads plugins (in a
+# background thread) so command plugins like stella_cli/godcmd (/status, #help)
+# work. This is NOT the Plugin Runtime: business plugins, package install, the
+# registry and worker lifecycle live in `core.plugins` (see core/plugins/__init__.py)
+# and run in the separate stella-plugin-runner. The legacy PluginManager only
+# imports command plugins from ./plugins and skips plugin.json packages
+# (see plugins/plugin_manager.py). Plugin modules are imported dynamically by
+# name in scan_plugins(), so list them explicitly. The `cli` package is a
+# stella_cli dependency (`from cli import ...`).
 hiddenimports += [
     'plugins',
     'plugins.event',
@@ -93,6 +117,9 @@ hiddenimports += [
 # requests pulls it in, but naming it keeps stdlib TLS working even if that ever
 # stops being true — without it every HTTPS call through urllib/websockets fails.
 hiddenimports += ['certifi']
+
+# Core-pinned connector snapshots import these outside static analysis.
+hiddenimports += ['html.parser']
 
 # zoneinfo falls back to the tzdata package when the OS has no IANA database
 # (frozen Windows builds, minimal Linux images). Without these files even UTC
@@ -136,19 +163,24 @@ hiddenimports += collect_submodules('playwright')
 # Runtime-read files/dirs that must travel with the executable. Paths are
 # (source, dest_dir_in_bundle).
 datas = [
+    (rp('THIRD_PARTY_NOTICES.md'), '.'),
+    (rp('licenses'), 'licenses'),
     (rp('config-template.json'), '.'),
+    # First-boot plugin bootstrap list (bytes still come from Stella-Plugins catalog).
+    (rp('resources', 'default-plugins.json'), 'resources'),
+    (rp('desktop', 'build', 'connector-resources', 'mcp-providers.json'), 'resources'),
+    (rp('desktop', 'build', 'connector-resources', 'trusted-connectors'), 'resources/trusted-connectors'),
     (rp('skills'), 'skills'),
-    # PluginManager.scan_plugins() walks the on-disk ./plugins dir at runtime
-    # (it doesn't rely solely on imports), so ship the package directory too.
+    # Legacy PluginManager.scan_plugins() walks the on-disk ./plugins dir at
+    # runtime for chat-command plugins (it doesn't rely solely on imports), so
+    # ship that directory. Runtime ability to load external plugins is unchanged:
+    # that path is core.plugins (PluginRegistry/PluginSession) + the runner, which
+    # reads packages from the user data dir, not from this bundle.
     (rp('plugins'), 'plugins'),
     # Ship the `cli` package as loose files too: onedir adds _internal to
     # sys.path, so `import cli.commands.*` resolves even if PyInstaller's
     # submodule collection misses the lazily-imported command modules.
     (rp('cli'), 'cli'),
-    # BillStore reads this non-Python file at runtime to initialize SQLite.
-    (rp('agent', 'bills', 'schema.sql'), 'agent/bills'),
-    (rp('agent', 'briefing', 'schema.sql'), 'agent/briefing'),
-    (rp('agent', 'briefing', 'actions.sql'), 'agent/briefing'),
     # Scaffold templates for first-run subagent assets (README + example).
     (rp('agent', 'subagent', 'assets'), 'agent/subagent/assets'),
 ]

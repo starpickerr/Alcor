@@ -7,7 +7,7 @@ import random
 from typing import Optional
 
 import dashscope
-import requests
+from core.security.requests_transport import voice_requests as requests
 from dashscope import MultiModalConversation
 
 from bridge.reply import Reply, ReplyType

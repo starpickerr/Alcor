@@ -1,0 +1,20 @@
+.capability-directory { container-type: inline-size; }
+@container (max-width: 400px) {
+  .capability-directory .capability-row { display: block; position: relative; }
+  .capability-directory .capability-row-icon { margin-bottom: 0.875rem; }
+  .capability-directory .capability-row-chevron { position: absolute; right: 1rem; top: 1.5rem; }
+}
+
+[data-capability-features] { container-type: inline-size; }
+@container (max-width: 260px) {
+  .capability-feature-row { gap: 0.5rem; padding: 0.75rem 0.625rem; align-items: flex-start; }
+  .capability-feature-icon { width: 1.5rem; height: 1.5rem; }
+  .capability-feature-chevron { display: none; }
+  .capability-feature-row h3 { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .capability-feature-row p {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}

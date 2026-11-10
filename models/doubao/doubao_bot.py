@@ -4,13 +4,14 @@ import json
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 from models.bot import Bot
 from models.session_manager import SessionManager
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, load_config
 from .doubao_session import DoubaoSession
 
@@ -29,7 +30,7 @@ class DoubaoBot(Bot):
 
     @property
     def api_key(self):
-        return conf().get("ark_api_key")
+        return model_key("ark_api_key")
 
     @property
     def base_url(self):
@@ -260,6 +261,8 @@ class DoubaoBot(Bot):
             else:
                 return self._handle_sync_response(request_body)
 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[DOUBAO] call_with_tools error: {e}")
             import traceback
@@ -391,6 +394,8 @@ class DoubaoBot(Bot):
         except requests.exceptions.Timeout:
             logger.error("[DOUBAO] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[DOUBAO] stream response error: {e}")
             import traceback
@@ -453,6 +458,8 @@ class DoubaoBot(Bot):
         except requests.exceptions.Timeout:
             logger.error("[DOUBAO] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[DOUBAO] sync response error: {e}")
             import traceback

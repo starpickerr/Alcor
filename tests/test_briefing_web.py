@@ -8,10 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from agent.briefing.pipeline import BriefingPipeline
-from agent.briefing.service import BriefingService
+from tests.briefing_domain import BriefingService
 from agent.briefing.sources.base import FetchedItem
 from briefing_fakes import StaticSource
-from agent.briefing.store import BriefingStore
+from tests.briefing_domain import BriefingStore
 from channel.desktop import desktop_channel as web_channel
 
 pytestmark = pytest.mark.usefixtures("deterministic_briefing_generator")
@@ -26,7 +26,7 @@ def fixed_briefing_clock(monkeypatch):
 
 
 @pytest.fixture
-def api(tmp_path):
+def api(tmp_path, email_mcp_env, elearning_mcp_env):
     service = BriefingService(BriefingStore(tmp_path / "briefing.db"))
     source = StaticSource([FetchedItem(
         source="email", source_id="<hello@x>", title="请确认合同", sender="Ada",
@@ -35,7 +35,6 @@ def api(tmp_path):
     with ExitStack() as stack:
         stack.enter_context(patch.object(web_channel, "_briefing_service", return_value=service))
         stack.enter_context(patch.object(web_channel, "_briefing_pipeline", return_value=BriefingPipeline(service, [source])))
-        stack.enter_context(patch("agent.briefing.settings.mailbox_path", return_value=tmp_path / "mailbox.json"))
         auth = stack.enter_context(patch.object(web_channel, "_require_auth"))
         stack.enter_context(patch.object(web_channel.web, "header"))
         yield service, auth
@@ -65,12 +64,10 @@ def test_run_list_detail_and_mark(api):
     assert auth.call_count == 4
 
 
-def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path):
+def test_decisions_targets_authorizations_and_preferences_use_authenticated_service(api, tmp_path, todos_plugin, calendar_plugin):
     service, auth = api
-    from agent.briefing.actions import BriefingActions
-    from agent.todos.service import TodoService
-    from agent.calendar.service import CalendarService
-    service._actions = BriefingActions(service.store, TodoService(tmp_path/'todos.db',tmp_path/'calendar.db'), CalendarService(tmp_path/'calendar.db'))
+    from tests.briefing_domain import BriefingActions
+    service._actions = BriefingActions(service.store, todos_plugin, calendar_plugin)
     ran = call(web_channel.BriefingRunHandler, body={'briefing_date':'2026-09-09'})
     item_id = ran['items'][0]['id']
     receipt = call(web_channel.BriefingActionsHandler,body={'id':item_id,'decision':{'operation':'create','kind':'todo'}})['receipt']
@@ -157,52 +154,56 @@ def test_source_selection_is_passed_to_pipeline_and_source_discovery_is_authenti
 
 
 def test_elearning_settings_api_masks_credentials_and_loads_courses_only_on_test(api, tmp_path):
-    from agent.briefing import elearning_settings
-    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
-        created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
-            "username": "student", "password": "campus-secret", "courses": ["42"]})
-        assert created["status"] == "success" and created["settings"]["configured"]
-        assert "campus-secret" not in json.dumps(created)
-        updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
-        assert updated["settings"]["enabled"] is False
-        with patch.object(elearning_settings, "check_connection", return_value=[{"id": "42", "name": "课程"}]) as check:
-            tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
-            assert tested["connected"] and tested["courses"][0]["id"] == "42"
-            check.assert_called_once_with({"username": "student"})
-        removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
-        assert not removed["settings"]["configured"]
-        assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
+    from core.services.elearning_facade import ElearningMcpFacade
+    created = call(web_channel.BriefingElearningHandler, body={"enabled": True, "base_url": "https://elearning.fudan.edu.cn",
+        "username": "student", "password": "campus-secret", "courses": ["42"]})
+    assert created["status"] == "success" and created["settings"]["configured"]
+    assert "campus-secret" not in json.dumps(created)
+    updated = call(web_channel.BriefingElearningHandler, body={"password": "********", "enabled": False})
+    assert updated["settings"]["enabled"] is False
+    with patch.object(ElearningMcpFacade, "test_connection", create=True, return_value=[{"id": "42", "name": "课程"}]) as check:
+        tested = call(web_channel.BriefingElearningTestHandler, body={"username": "student"})
+        assert tested["connected"] and tested["courses"][0]["id"] == "42"
+        check.assert_called_once_with({"username": "student"})
+    repaired = call(web_channel.BriefingElearningHandler, body={'credential_field': 'password',
+        'credential_value': 'SYNTHETIC_REPAIRED', 'credential_revision': updated['settings']['credential_revision']})
+    assert repaired['settings']['credential_states']['password'] == 'configured'
+    assert 'SYNTHETIC_REPAIRED' not in json.dumps(repaired)
+    cleared = call(web_channel.BriefingElearningHandler, body={'credential_field': 'password', 'credential_value': '',
+        'credential_revision': repaired['settings']['credential_revision']})
+    assert cleared['settings']['credential_states']['password'] == 'not_configured'
+    assert cleared['settings']['courses'] == ['42'] and not cleared['settings']['enabled']
+    from agent.tools.tool_manager import ToolManager
+    ToolManager()._teardown_mcp_server('elearning')
+    assert call(web_channel.BriefingElearningHandler, 'GET')['settings']['credential_states']['password'] == 'not_configured'
+    removed = call(web_channel.BriefingElearningHandler, body={"action": "delete"})
+    assert not removed["settings"]["configured"]
+    assert call(web_channel.BriefingElearningHandler, body={"action": "unknown"})["status"] == "error"
 
 
-def test_elearning_file_grant_is_managed_outside_briefing_settings(api, tmp_path):
-    from agent.briefing import elearning_settings
+def test_elearning_directory_configuration_has_no_extra_write_switch(api, tmp_path):
+    from core.services.elearning_facade import ElearningMcpFacade
     root = tmp_path / "course-files"
     root.mkdir()
-    with patch.object(elearning_settings, "settings_path", return_value=tmp_path / "elearning.json"):
-        created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
-            "base_url": "https://elearning.fudan.edu.cn", "username": "student",
-            "password": "campus-secret", "courses": ["42"]})
-        assert created["status"] == "success"
-        forbidden = call(web_channel.BriefingElearningHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        assert forbidden["status"] == "error"
-        assert elearning_settings.load_settings()["file_sync_enabled"] is False
-
-        granted = call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        assert granted["status"] == "success"
-        assert granted["settings"]["file_sync_root"] == str(root)
-        saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
-        assert saved["settings"]["file_sync_enabled"] is True
-        call(web_channel.BriefingElearningHandler, body={"enabled": False})
-        assert elearning_settings.load_settings()["file_sync_enabled"] is True
-        call(web_channel.BriefingElearningHandler, body={"courses": ["43"]})
-        assert elearning_settings.load_settings()["file_sync_enabled"] is False
-        call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": True, "file_sync_root": str(root)})
-        revoked = call(web_channel.ElearningFileSyncSettingsHandler,
-            body={"file_sync_enabled": False, "file_sync_root": str(root)})
-        assert revoked["settings"]["file_sync_enabled"] is False
+    created = call(web_channel.BriefingElearningHandler, body={"enabled": True,
+        "base_url": "https://elearning.fudan.edu.cn", "username": "student",
+        "password": "campus-secret", "courses": ["42"]})
+    assert created["status"] == "success"
+    configured = call(web_channel.BriefingElearningHandler, body={"file_sync_root": str(root)})
+    assert configured["status"] == "success"
+    saved = call(web_channel.ElearningFileSyncSettingsHandler, "GET")
+    assert saved["settings"]["file_sync_root"] == str(root)
+    assert "file_sync_enabled" not in saved["settings"]
+    for changes in ({"enabled": False}, {"courses": ["43"]}):
+        call(web_channel.BriefingElearningHandler, body=changes)
+        assert ElearningMcpFacade().get_settings()["file_sync_root"] == str(root)
+    missing = call(web_channel.ElearningFileSyncSettingsHandler,
+        body={"file_sync_root": str(root / "not-present")})
+    assert missing["status"] == "error"
+    assert ElearningMcpFacade().get_settings()["file_sync_root"] == str(root)
+    cleared = call(web_channel.ElearningFileSyncSettingsHandler, body={"file_sync_root": ""})
+    assert cleared["settings"]["file_sync_root"] == ""
+    assert ElearningMcpFacade().get_settings()["username"] == "student"
 
 
 @pytest.mark.parametrize("handler,body", [
@@ -250,7 +251,12 @@ def test_auth_failure_precedes_all_operations(api):
         service.assert_not_called()
 
 
-def test_settings_do_not_expose_credentials(api, monkeypatch):
+def test_settings_do_not_expose_credentials(api, monkeypatch, tmp_path):
+    from common import utils
+    original_expand = utils.expand_path
+    path = tmp_path / 'declared.env'
+    path.write_text('IMAP_HOST=private.example.com\nIMAP_USER=private-user\nIMAP_PASSWORD=secret-password\n')
+    monkeypatch.setattr(utils, 'expand_path', lambda value: str(path) if value == '~/.stella/.env' else original_expand(value))
     monkeypatch.setenv("IMAP_HOST", "private.example.com")
     monkeypatch.setenv("IMAP_USER", "private-user")
     monkeypatch.setenv("IMAP_PASSWORD", "secret-password")
@@ -261,7 +267,11 @@ def test_settings_do_not_expose_credentials(api, monkeypatch):
     assert result["settings"]["mailboxes"][0]["password_set"] is True
     assert result["settings"]["mailboxes"][0]["password_masked"] == "********"
     monkeypatch.delenv("IMAP_PASSWORD")
-    assert call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]["missing"] == ["IMAP_PASSWORD"]
+    from agent.tools.tool_manager import ToolManager
+    ToolManager()._teardown_mcp_server('email')
+    # Successful migration retains the Keychain-backed account independently of env.
+    account = call(web_channel.BriefingSettingsHandler, "GET")["settings"]["mailboxes"][0]
+    assert account['missing'] == [] and account['credential_status'] == 'configured'
 
 
 def test_settings_save_preserves_password_on_blank_update(api):
@@ -286,7 +296,7 @@ def test_mailbox_crud_and_masked_passwords(api):
     assert "second-secret" not in json.dumps(updated)
     disabled = call(web_channel.BriefingSettingsHandler, body={"id": mailbox_id, "enabled": False})
     assert not disabled["mailbox"]["enabled"] and disabled["mailbox"]["password_set"]
-    with patch("agent.briefing.elearning_settings.elearning_sources", return_value=[]):
+    with patch("agent.briefing.sources.registry._elearning_sources", return_value=[]):
         enabled_sources = call(web_channel.BriefingSourcesHandler, "GET")["sources"]
     assert len(enabled_sources) == 1 and "bob@example.com" in enabled_sources[0]["name"]
     deleted = call(web_channel.BriefingSettingsHandler, body={"action": "delete", "id": mailbox_id})
@@ -310,7 +320,8 @@ def test_revision_endpoint_is_authenticated_and_snapshot_is_immutable(api):
 
 def test_connection_endpoint_reports_success_and_configuration_errors(api):
     _, auth = api
-    with patch("agent.briefing.settings.check_mailbox_connection") as check:
+    from core.services.email_facade import EmailMcpFacade
+    with patch.object(EmailMcpFacade, 'test_connection', create=True) as check:
         check.return_value = {"connected": True, "folder_accessible": False,
                               "folders": [{"name": "INBOX", "label": "INBOX"}], "message": "select denied"}
         result = call(web_channel.BriefingSettingsTestHandler, body={"host": "imap.gmail.com", "password": ""})

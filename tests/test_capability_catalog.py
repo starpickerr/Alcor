@@ -1,0 +1,260 @@
+"""Unified inventory exposes registered metadata, never arbitrary files or secrets."""
+import json
+from types import SimpleNamespace
+
+import pytest
+
+
+@pytest.fixture
+def catalog(tmp_path):
+    from core.capabilities.catalog import CapabilityCatalog
+    from core.plugins.package_ops import _sha256_tree
+    package = tmp_path / 'package'
+    package.mkdir()
+    (package / 'README.md').write_text('# Fixture plugin\n\nReal package documentation.')
+    plugin = {'pluginId': 'fixture.plugin', 'name': 'Fixture', 'version': '1.2.3',
+              'intent': 'enabled', 'state': 'stopped', 'generation': 0, 'services': [],
+              'manifest': {'description': 'Plugin description', 'contributes': {'tools': ['fixture.tool']}},
+              'digest': 'a' * 64, 'contributes': {}, 'error': None}
+    manager = SimpleNamespace(inventory=lambda user: [{**plugin, 'digest': _sha256_tree(package)}],
+        packages=SimpleNamespace(current_package=lambda name: {'path': str(package), 'digest': _sha256_tree(package)}))
+    skill = SimpleNamespace(get_skills_config=lambda: {'review': {'name': 'review', 'description': 'Review changes',
+        'source': 'custom', 'enabled': True}},
+        get_skill=lambda name: SimpleNamespace(skill=SimpleNamespace(content='# Review\nCheck changes.')))
+    tools = [dict(id='read', enabled=True, available=True, title={'zh': '读取文件', 'en': 'Read'},
+                  intro={'zh': '读取内容'}, detail={'zh': '仅在授权范围读取文件。'}, source={'type': 'builtin', 'plugin_ids': []}),
+             dict(id='fixture.tool', enabled=True, available=False, title={'zh': '插件工具'},
+                  intro={'zh': '插件功能'}, detail={'zh': '说明'}, source={'type': 'plugin', 'plugin_ids': ['fixture.plugin']})]
+    mcp = [dict(name='docs', transport='stdio', enabled=True, state='not_started', tools=[],
+                env={'SECRET': 'DO_NOT_EXPOSE'}, url='https://DO_NOT_EXPOSE', headers={'Authorization': 'DO_NOT_EXPOSE'})]
+    service = CapabilityCatalog(tmp_path, plugin_manager=manager, skill_manager=skill,
+                                tool_rows=lambda: tools, mcp_rows=lambda: mcp)
+    return service, package
+
+
+def test_list_has_four_types_and_does_not_duplicate_plugin_adapters(catalog):
+    service, _ = catalog
+    result = service.list()
+    assert result['errors'] == {}
+    assert {(row['kind'], row['id']) for row in result['items']} == {
+        ('plugins', 'fixture.plugin'), ('mcp', 'docs'), ('skills', 'review'), ('tools', 'read')}
+    assert 'DO_NOT_EXPOSE' not in json.dumps(result)
+    assert next(row for row in result['items'] if row['kind'] == 'mcp')['state'] == 'not_started'
+
+
+def test_builtin_has_no_tabs_and_real_localized_copy(catalog):
+    detail = catalog[0].detail('tools', 'read')
+    assert detail['tabs'] == []
+    assert detail['overview'] == {'zh': '仅在授权范围读取文件。'}
+    assert detail['source'] == 'builtin'
+
+
+def test_plugin_features_use_registered_package_without_reading_docs(catalog):
+    service, _ = catalog
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert detail['overview'] == 'Plugin description'
+    assert detail['state'] == 'stopped' and 'technical' not in detail
+    assert detail['tabs'] == ['features', 'configuration', 'about']
+    assert any(item['id'] == 'fixture.tool' for item in detail['features'])
+
+
+def test_skill_content_and_mcp_runtime_are_real_metadata(catalog):
+    service, _ = catalog
+    assert service.detail('skills', 'review')['content'] == '# Review\nCheck changes.'
+    mcp = service.detail('mcp', 'docs')
+    assert mcp['runtime'] == {'state': 'not_started'}
+    assert 'technical' not in mcp
+    assert 'DO_NOT_EXPOSE' not in json.dumps(mcp)
+    assert not mcp['features']
+
+
+@pytest.mark.parametrize('kind,name', [('unknown', 'read'), ('plugins', '../../outside'),
+                                     ('tools', '../secret'), ('skills', '/etc/passwd'), ('mcp', 'missing')])
+def test_unknown_or_traversal_ids_do_not_resolve_files(catalog, kind, name):
+    with pytest.raises((KeyError, ValueError)):
+        catalog[0].detail(kind, name)
+
+
+def test_one_inventory_failure_keeps_other_categories(catalog):
+    service, _ = catalog
+    def fail():
+        raise RuntimeError('DO_NOT_EXPOSE password /private/user')
+    service.mcp_rows = fail
+    result = service.list()
+    assert {row['kind'] for row in result['items']} == {'plugins', 'skills', 'tools'}
+    assert 'mcp' in result['errors']
+    assert 'DO_NOT_EXPOSE' not in json.dumps(result)
+
+
+def test_plugin_readme_symlink_does_not_read_outside_package(catalog, tmp_path):
+    service, package = catalog
+    secret = tmp_path / 'outside.md'
+    secret.write_text('DO_NOT_EXPOSE')
+    (package / 'README.md').unlink()
+    (package / 'README.md').symlink_to(secret)
+    assert 'DO_NOT_EXPOSE' not in json.dumps(service.detail('plugins', 'fixture.plugin'))
+
+
+def test_plugin_readme_is_bounded(catalog):
+    service, package = catalog
+    (package / 'README.md').write_text('x' * 300_000)
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert len(detail['overview']) <= 262_144
+
+
+def test_handler_authenticates_before_inventory(monkeypatch):
+    from channel.desktop import desktop_channel as desktop
+    def deny():
+        raise PermissionError('Authentication required')
+    monkeypatch.setattr(desktop, '_require_auth', deny)
+    with pytest.raises(PermissionError, match='Authentication required'):
+        desktop.CapabilitiesHandler().GET()
+
+
+def test_handler_list_and_detail_contract(monkeypatch, catalog):
+    from channel.desktop import desktop_channel as desktop
+    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
+    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
+    monkeypatch.setattr(desktop, '_capability_catalog', lambda: catalog[0])
+    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: SimpleNamespace(kind='', id=''))
+    assert len(json.loads(desktop.CapabilitiesHandler().GET())['items']) == 4
+    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: SimpleNamespace(kind='tools', id='read'))
+    response = json.loads(desktop.CapabilitiesHandler().GET())
+    assert response['status'] == 'success' and response['detail']['tabs'] == []
+
+
+def test_plugin_adapters_appear_as_features_without_duplicate_builtin_rows(catalog):
+    service, _ = catalog
+    service.plugin_manager.inventory('local-default')[0]['manifest']['contributes'] = {}
+    assert any(feature['id'] == 'fixture.tool' for feature in service.detail('plugins', 'fixture.plugin')['features'])
+
+
+def test_http_plugin_store_failure_does_not_hide_builtin_inventory(monkeypatch, tmp_path):
+    from channel.desktop import desktop_channel as desktop
+    from core.capabilities.catalog import CapabilityCatalog
+    monkeypatch.setattr(desktop, '_require_auth', lambda: None)
+    monkeypatch.setattr(desktop.web, 'header', lambda *args: None)
+    monkeypatch.setattr(desktop.web, 'input', lambda **kwargs: SimpleNamespace(kind='', id=''))
+    monkeypatch.setattr(desktop, '_get_state_root', lambda: str(tmp_path))
+    def fail():
+        raise RuntimeError('DO_NOT_EXPOSE')
+    monkeypatch.setattr('core.plugins.management.default_store', fail)
+    monkeypatch.setattr(CapabilityCatalog, '_tools', staticmethod(lambda: [dict(id='read', title='Read', intro='Read', enabled=True, available=True)]))
+    monkeypatch.setattr(CapabilityCatalog, '_mcp', staticmethod(lambda: []))
+    monkeypatch.setattr(CapabilityCatalog, '_skills', lambda self: [])
+    result = json.loads(desktop.CapabilitiesHandler().GET())
+    assert result['status'] == 'success'
+    assert result['items'][0]['id'] == 'read'
+    assert 'plugins' in result['errors']
+    assert 'DO_NOT_EXPOSE' not in json.dumps(result)
+
+
+def test_package_selection_change_cannot_read_docs_under_old_metadata(catalog, tmp_path):
+    from core.plugins.package_ops import _sha256_tree
+    service, package = catalog
+    replacement = tmp_path / 'replacement'
+    replacement.mkdir()
+    (replacement / 'README.md').write_text('DO_NOT_EXPOSE replacement package')
+    service.plugin_manager.packages.current_package = lambda name: {'path':str(replacement), 'digest':_sha256_tree(replacement)}
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert 'DO_NOT_EXPOSE' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('plugin_id', [
+    'stella.bills', 'stella.calendar', 'stella.tasks', 'stella.briefing',
+    'stella.automation', 'stella.agent-hub', 'stella.knowledge', 'stella.memory',
+])
+def test_plugin_description_is_owned_by_the_package_even_for_first_party_ids(catalog, plugin_id):
+    service, package = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row['pluginId'] = plugin_id
+    row['manifest'].pop('description', None)
+    service.plugin_manager.inventory = lambda user: [row]
+    (package / 'README.md').unlink()
+    detail = service.detail('plugins', plugin_id)
+    assert '尚未提供介绍' in detail['overview']['zh']
+    row['manifest']['description'] = {'zh': '由插件作者提供的用途', 'en': 'Purpose supplied by the package author'}
+    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
+    assert summary['description'] == row['manifest']['description']
+    assert service.detail('plugins', plugin_id)['overview'] == row['manifest']['description']
+
+
+@pytest.mark.parametrize('server,keyword', [('email', '邮件'), ('elearning', '课程')])
+def test_managed_mcp_description_is_available_before_connection(catalog, server, keyword):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name=server, transport='stdio', enabled=False, state='disabled', tools=[],
+                                   description={'zh': f'来自 MCP 包的{keyword}介绍', 'en': 'Package-owned introduction'})]
+    detail = service.detail('mcp', server)
+    assert keyword in detail['overview']['zh']
+    assert detail['state'] == 'disabled' and detail['features'] == []
+
+
+def test_custom_mcp_keeps_discovered_tool_details_in_features(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[
+        dict(name='search', description='Search published research documents')])]
+    detail = service.detail('mcp', 'docs')
+    assert detail['features'][0]['description'] == 'Search published research documents'
+    assert detail['overview'] == detail['description']
+    assert 'search' in detail['description']['zh']
+
+
+def test_empty_or_invalid_localizations_do_not_hide_overview_fallbacks(catalog):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row['manifest']['description'] = {'zh': '  ', 'en': None, 'private': 'DO_NOT_EXPOSE'}
+    service.plugin_manager.inventory = lambda user: [row]
+    summary = next(item for item in service.list()['items'] if item['kind'] == 'plugins')
+    assert summary['description']['zh'].strip()
+    assert 'DO_NOT_EXPOSE' not in json.dumps(summary)
+
+
+def test_whitespace_readme_does_not_hide_the_plugin_description(catalog):
+    service, package = catalog
+    (package / 'README.md').write_text(' \n\t ')
+    assert service.detail('plugins', 'fixture.plugin')['overview'] == 'Plugin description'
+
+
+def test_plugin_runtime_separates_registration_and_redacts_real_diagnostics(catalog):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row.update(state='failed', generation=7, services=['fixture.service@1'],
+               error='Load failed: token=private-test-secret')
+    service.plugin_manager.inventory = lambda user: [row]
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert 'technical' not in detail
+    assert detail['runtime'] == {'state': 'failed', 'error': 'Load failed: token=[REDACTED]'}
+    assert 'private-test-secret' not in json.dumps(detail)
+
+
+@pytest.mark.parametrize('state,error,has_runtime', [('', None, False), ('stopped', None, True), ('', 'Load failed', True)])
+def test_runtime_tab_is_removed_for_all_states(catalog, state, error, has_runtime):
+    service, _ = catalog
+    row = service.plugin_manager.inventory('local-default')[0]
+    row.update(state=state, error=error)
+    service.plugin_manager.inventory = lambda user: [row]
+    detail = service.detail('plugins', 'fixture.plugin')
+    assert 'runtime' not in detail['tabs']
+
+
+def test_mcp_without_connection_state_has_no_empty_runtime_tab(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='', tools=[])]
+    assert service.detail('mcp', 'docs')['tabs'] == ['features', 'configuration', 'about']
+
+
+@pytest.mark.parametrize('kind,identifier,tabs', [
+    ('plugins', 'fixture.plugin', ['features', 'configuration', 'about']),
+    ('mcp', 'docs', ['features', 'configuration', 'about']),
+    ('skills', 'review', ['content']), ('tools', 'read', []),
+])
+def test_detail_uses_content_specific_tabs_without_technical(catalog, kind, identifier, tabs):
+    detail = catalog[0].detail(kind, identifier)
+    assert detail['tabs'] == tabs
+    assert 'technical' not in detail
+
+
+def test_mcp_version_is_provider_reported(catalog):
+    service, _ = catalog
+    service.mcp_rows = lambda: [dict(name='docs', transport='stdio', enabled=True, state='ready', tools=[], version='3.4')]
+    assert service.detail('mcp', 'docs')['version'] == '3.4'

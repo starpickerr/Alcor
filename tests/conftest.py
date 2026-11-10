@@ -18,7 +18,24 @@ from pathlib import Path
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def isolated_run_policy_store(tmp_path_factory, monkeypatch):
+    """Persistent subject snapshots must not leak into another test case."""
+    policy = tmp_path_factory.mktemp('authorization') / 'authorization.sqlite'
+    monkeypatch.setattr('core.security.policy_store.policy_path', lambda: policy)
+
+@pytest.fixture(autouse=True)
+def _managed_mcp_opt_in_for_tests(monkeypatch):
+    monkeypatch.setenv('STELLA_MANAGED_MCP','0')
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+for _domain in ('memory', 'knowledge'):
+    _backend = Path(__file__).resolve().parents[2] / 'Stella-Plugins' / 'plugins' / _domain / 'backend'
+    if not _backend.is_dir():
+        _backend = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace' / 'plugins' / _domain / 'backend'
+    sys.path.insert(0, str(_backend))
+
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -53,11 +70,9 @@ def workspace_out_of_the_way():
 
 def _forget_resolved_paths():
     from agent.memory import clear_conversation_store_cache
-    from agent.memory.config import reset_memory_configs
     from agent.registry import set_agent_registry
 
     set_agent_registry(None)
-    reset_memory_configs()
     clear_conversation_store_cache()
 
 
@@ -71,6 +86,26 @@ def security_audit_path(monkeypatch):
 
 
 @pytest.fixture
+def registered_agent(tmp_path):
+    """Register test identities against isolated state without bypassing lookup."""
+    from agent.registry import AgentProfile, AgentRegistry, get_agent_registry, set_agent_registry
+
+    previous = get_agent_registry()
+    registry = AgentRegistry(previous.list(), previous.default_agent_id)
+    set_agent_registry(registry)
+
+    def register(agent_id):
+        profile = AgentProfile(agent_id, agent_id, str(tmp_path / 'agents' / agent_id))
+        registry.upsert(profile)
+        return profile
+
+    try:
+        yield register
+    finally:
+        set_agent_registry(previous)
+
+
+@pytest.fixture
 def deterministic_briefing_generator(monkeypatch):
     """Run the production generator with scripted tool calls, never a provider."""
     from agent.briefing.generator import AgentBriefingGenerator
@@ -81,3 +116,117 @@ def deterministic_briefing_generator(monkeypatch):
 
     monkeypatch.setattr("agent.briefing.pipeline.AgentBriefingGenerator", generator)
     return generator
+
+
+@pytest.fixture
+def todos_plugin_env(monkeypatch):
+    """Route the Tasks port to the real ``stella.tasks`` worker (workspace mirror)."""
+    from core.services import todos_gateway
+
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN", "1")
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_ROOT", str(repo / "stella-plugins-workspace" / "plugins" / "tasks"))
+    monkeypatch.setenv("STELLA_REPO_ROOT", str(repo))
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_SCHEDULER_SYNC", "0")
+    yield
+    todos_gateway.shutdown_todos_session()
+
+
+@pytest.fixture
+def todos_plugin(todos_plugin_env, tmp_path, monkeypatch):
+    """Real-worker Tasks facade over ``tmp_path/todos.db``.
+
+    Reminder links are reconciled by the host into a ``TaskStore`` under
+    ``tmp_path/scheduler``, exposed as ``facade.scheduler_store``.
+    """
+    from agent.scheduler.store import TaskStore
+    from agent.todos import scheduler_link
+    from core.services import todos_facade
+
+    store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
+    monkeypatch.setattr(todos_facade, "_db_paths", lambda: (tmp_path / "todos.db", tmp_path / "calendar.db"))
+    monkeypatch.setattr(scheduler_link, "default_scheduler_store", lambda: store)
+    monkeypatch.setenv("STELLA_TODOS_PLUGIN_SCHEDULER_SYNC", "1")
+    facade = todos_facade.TodosPluginFacade()
+    facade.scheduler_store = store
+    return facade
+
+
+@pytest.fixture(scope="session")
+def tasks_domain():
+    """The vendored stella.tasks domain package, for seeding legacy rows in Core tests only."""
+    import importlib
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "tasks" / "backend" / "domain"
+    name = "stella_tasks_domain_core_seed"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, root / "__init__.py",
+                                                      submodule_search_locations=[str(root)])
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[name] = package
+        spec.loader.exec_module(package)
+    return importlib.import_module(name + ".service")
+
+
+@pytest.fixture
+def calendar_plugin_env(monkeypatch):
+    """Route Calendar to the real workspace worker, without any host fallback."""
+    from core.services import calendar_gateway
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_CALENDAR_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_CALENDAR_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/calendar'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    yield
+    calendar_gateway.shutdown_calendar_session()
+
+
+@pytest.fixture
+def calendar_plugin(calendar_plugin_env, tmp_path, monkeypatch):
+    from core.services import calendar_facade
+    monkeypatch.setattr(calendar_facade, '_db_path', lambda: tmp_path / 'calendar.db')
+    return calendar_facade.CalendarPluginFacade()
+
+
+@pytest.fixture
+def briefing_plugin_env(monkeypatch):
+    from core.services import briefing_gateway
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN', '1')
+    monkeypatch.setenv('STELLA_BRIEFING_PLUGIN_ROOT', str(repo / 'stella-plugins-workspace/plugins/briefing'))
+    monkeypatch.setenv('STELLA_REPO_ROOT', str(repo))
+    yield
+    briefing_gateway.shutdown_briefing_session()
+
+
+@pytest.fixture
+def email_mcp_env(monkeypatch, tmp_path):
+    from core.services import email_facade
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setenv('STELLA_MANAGED_MCP','1')
+    monkeypatch.setattr(email_facade, '_paths', lambda: (tmp_path / 'email.db', tmp_path / 'mailbox.json'))
+    yield
+    for manager in ToolManager.instances():
+        manager._teardown_mcp_server('email')
+
+
+@pytest.fixture
+def elearning_mcp_env(monkeypatch, tmp_path):
+    from core.services import elearning_facade
+    from agent.tools.tool_manager import ToolManager
+    monkeypatch.setenv('STELLA_MANAGED_MCP','1')
+    monkeypatch.setattr(elearning_facade, '_paths', lambda: (tmp_path / 'elearning', tmp_path / 'briefing'))
+    yield
+    for manager in ToolManager.instances():
+        manager._teardown_mcp_server('elearning')
+
+
+@pytest.fixture
+def native_settings_action():
+    """A direct feature-settings operation, distinct from Agent execution."""
+    from core.plugins.caller import caller_origin_scope
+    with caller_origin_scope('desktop'):
+        yield
+
+# Optional real dependency integration uses hash-verified, offline public artifacts.
+pytest_plugins = ['tests.fixtures.runtime_artifacts', 'tests.fixtures.keychain']

@@ -29,27 +29,14 @@ from agent.tools.briefing.briefing_tool import BriefingTool
 from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.apple.apple_tool import AppleTool
 from agent.tools.todos.todos_tool import TodosTool
-from agent.tools.elearning.elearning_tool import ElearningTool
 from agent.tools.skill.skill_tool import SkillTool
+from agent.tools.agent_hub.agent_hub_tool import AgentHubTool
 
 # Import tools with optional dependencies
 def _import_optional_tools():
     """Import tools that have optional dependencies"""
     from common.log import logger
     tools = {}
-    
-    # EnvConfig Tool (requires python-dotenv)
-    try:
-        from agent.tools.env_config.env_config import EnvConfig
-        tools['EnvConfig'] = EnvConfig
-    except ImportError as e:
-        logger.error(
-            f"[Tools] EnvConfig tool not loaded - missing dependency: {e}\n"
-            f"  To enable environment variable management, run:\n"
-            f"    pip install python-dotenv>=1.0.0"
-        )
-    except Exception as e:
-        logger.error(f"[Tools] EnvConfig tool failed to load: {e}")
     
     # Scheduler Tool (requires croniter)
     try:
@@ -95,7 +82,6 @@ def _import_optional_tools():
 
 # Load optional tools
 _optional_tools = _import_optional_tools()
-EnvConfig = _optional_tools.get('EnvConfig')
 SchedulerTool = _optional_tools.get('SchedulerTool')
 WebSearch = _optional_tools.get('WebSearch')
 WebFetch = _optional_tools.get('WebFetch')
@@ -155,9 +141,8 @@ __all__ = [
     'CalendarTool',
     'AppleTool',
     'TodosTool',
-    'ElearningTool',
     'SkillTool',
-    'EnvConfig',
+    'AgentHubTool',
     'SchedulerTool',
     'WebSearch',
     'WebFetch',

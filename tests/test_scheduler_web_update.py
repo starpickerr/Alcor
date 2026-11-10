@@ -277,13 +277,14 @@ def test_desktop_persists_run_permission_and_reload_keeps_it(tmp_path):
     task_id = created["task"]["id"]
     assert created["task"]["run_permission_mode"] == "full-access"
     store = TaskStore(str(tmp_path / "scheduler" / "tasks.json"))
-    assert store.get_task(task_id)["run_permission_mode"] == "full-access"
+    from agent.scheduler.mutations import SchedulerMutations
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'full-access'
     updated = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "read-only"})
     assert updated["status"] == "success", updated
-    assert store.get_task(task_id)["run_permission_mode"] == "read-only"
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'read-only'
     inherited = _post_update(tmp_path, {"task_id": task_id, "run_permission_mode": "inherit"})
     assert inherited["status"] == "success", inherited
-    assert "run_permission_mode" not in store.get_task(task_id)
+    assert SchedulerMutations(store).get(task_id)['run_policy']['filesystem_mode'] == 'read-only'
 
 
 def test_old_task_without_permission_field_stays_inherited(tmp_path):
@@ -315,12 +316,17 @@ def test_shared_mutation_refuses_agent_elevation(tmp_path):
         mutations.create(task, origin="agent")
     assert store.get_task("agent-task") is None
     saved = mutations.create({key: value for key, value in task.items() if key != "run_permission_mode"}, origin="agent")
-    assert "run_permission_mode" not in saved
+    assert saved['run_policy']['filesystem_mode'] == 'read-only'
     user = mutations.create({**task, "id": "user-task"}, origin="user")
     assert user["run_permission_mode"] == "full-access"
-    with pytest.raises(ValueError, match="运行权限"):
-        mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
-    assert store.get_task("user-task")["run_permission_mode"] == "full-access"
+    from core.security.run_policy import save_run_policy
+    from common.runtime_identity import identity_scope
+    save_run_policy('session', 'caller', {'filesystem_mode': 'workspace-write'})
+    with identity_scope(session_id='caller'):
+        reduced = mutations.update("user-task", {"run_permission_mode": "workspace-write"}, origin="agent")
+    assert reduced['run_policy']['filesystem_mode'] == 'workspace-write'
+    with pytest.raises((ValueError, PermissionError)):
+        mutations.update("user-task", {"run_permission_mode": "full-access"}, origin="agent")
 
 
 def test_create_is_exposed_by_desktop_controls():
@@ -333,3 +339,47 @@ def test_create_is_exposed_by_desktop_controls():
     assert "def POST(self):" in handler
     assert "async createTask" in desktop_client
     assert "setEditing('new')" in desktop_page
+
+
+def test_independent_web_task_can_be_created_without_any_session(tmp_path):
+    result = _post_create(tmp_path, {'name': 'independent',
+        'schedule': {'type': 'interval', 'seconds': 3600},
+        'action': {'type': 'agent_task', 'task_description': 'report', 'conversation_mode': 'independent'}})
+    assert result['status'] == 'success', result
+    assert result['task']['run_permission_mode'] == 'read-only'
+    assert not result['task']['action'].get('source_session_id')
+
+
+def test_independent_message_result_stays_in_task_record_without_chat(tmp_path, monkeypatch):
+    from agent.scheduler import integration, conversation
+    from agent.scheduler.result_cache import load_output
+    from agent.scheduler.automation_store import AutomationStore
+    store = AutomationStore(tmp_path / 'scheduler/tasks.json', 'default')
+    task = {'id': 'solo', 'name': 'solo', 'action': {'type': 'send_message',
+        'content': 'hello', 'channel_type': 'web', 'conversation_mode': 'independent'}}
+    store.add_task(task)
+    task['job_run_id'] = store.claim_occurrence('solo', manual=True)
+    task = conversation.prepare_run(task)
+    monkeypatch.setattr(integration, 'get_task_store', lambda **kwargs: store)
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Independent task must not deliver to a chat')
+    monkeypatch.setattr(integration, '_channel_for_delivery', unexpected)
+    assert integration._execute_send_message(task, None) is True
+    assert load_output(store, task['job_run_id']) == 'hello'
+
+
+def test_task_run_records_are_scoped_to_task_owner(tmp_path):
+    from agent.scheduler.automation_store import AutomationStore
+    from common.runtime_identity import identity_scope
+    from agent.scheduler.result_cache import save_output
+    store = AutomationStore(tmp_path / 'scheduler/tasks.json', 'default')
+    store.add_task({'id': 'history', 'name': 'History', 'action': {}})
+    job = store.claim_occurrence('history', manual=True)
+    save_output(store, job, 'Saved report')
+    store.finish_occurrence(job, True)
+    rows = store.list_runs('history')
+    assert rows[0]['output'] == 'Saved report'
+    assert rows[0]['status'] == 'completed'
+    with identity_scope(user_id='someone-else'):
+        assert store.list_runs('history') == []
+    assert AutomationStore(tmp_path / 'scheduler/tasks.json', 'other-agent').list_runs('history') == []

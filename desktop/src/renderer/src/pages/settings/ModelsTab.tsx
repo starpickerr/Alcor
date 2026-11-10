@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
   MessageSquare,
   Eye,
@@ -8,20 +8,20 @@ import {
   Database,
   Search as SearchIcon,
   Plus,
-  Check,
   Loader2,
   Pencil,
-  Eye as EyeIcon,
-  EyeOff,
   X,
   ExternalLink,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { SECURITY_POLICY_CHANGED } from '../../store/securityPolicyEvents'
 import { t, localizedLabel } from '../../i18n'
 import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
-import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
+import { Card, Field, Dropdown, TextInput, Modal, Btn } from './primitives'
+import ModelCredentialLink, { modelSecretName } from './ModelCredentialLink'
 import CapabilityCard from './CapabilityCard'
-import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
+import { normEntries, providerLabel, resolveModels, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
 const allowCustomProviders = product.models?.allowCustomProviders !== false
@@ -79,6 +79,8 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     apiClient.setBaseUrl(baseUrl)
     load()
   }, [baseUrl, load])
+
+  useEffect(() => { const refresh = () => { void load() }; window.addEventListener(SECURITY_POLICY_CHANGED, refresh); return () => window.removeEventListener(SECURITY_POLICY_CHANGED, refresh) }, [load])
 
   const flash = (key: string, msg: string) => {
     setStatusMap((m) => ({ ...m, [key]: msg }))
@@ -229,16 +231,13 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         onSaveStrategy={(strategy, provider) =>
           run('search', { action: 'set_capability', capability: 'search', strategy, provider })
         }
-        onSaveBochaKey={(key) => run('search_key', { action: 'set_search_credential', api_key: key })}
-        keyStatus={statusMap.search_key}
-        keyBusy={busy === 'search_key'}
       />
     </div>
   )
 }
 
 // ============================================================
-// Layer 1 — vendor credentials
+// Layer 1 — model providers
 // ============================================================
 
 interface VendorSectionProps {
@@ -256,9 +255,21 @@ const VendorSection: React.FC<VendorSectionProps> = ({ data, onChanged }) => {
   // Custom provider modal: 'new' to create, or a provider to edit.
   const [customEditing, setCustomEditing] = useState<ModelProvider | 'new' | null>(null)
 
+  const location = useLocation()
+  const requestedCredential = new URLSearchParams(location.search).get('credential') || ''
+  const focusedCredential = useRef('')
+  useEffect(() => {
+    if (!requestedCredential || focusedCredential.current === requestedCredential) return
+    const provider = data.providers.find(row => requestedCredential === (row.is_custom ? `CUSTOM:${row.custom_id}` : modelSecretName(row.api_key_field)))
+    if (!provider) return
+    focusedCredential.current = requestedCredential
+    if (provider.is_custom) setCustomEditing(provider)
+    else setEditing(provider)
+  }, [requestedCredential, data.providers])
+
   const isCustomCard = (p: ModelProvider) => p.is_custom && !!p.custom_name
   // Unified grid: configured built-ins + all custom provider cards (web parity).
-  const shown = data.providers.filter((p) => p.configured || isCustomCard(p))
+  const shown = data.providers.filter((p) => p.configured || isCustomCard(p) || p.credential_status === 'repair-required' || p.credential_status === 'unavailable')
 
   return (
     <Card icon={<Database size={16} />} title={t('models_vendors')} subtitle={t('models_vendors_sub')}>
@@ -341,9 +352,6 @@ const VendorModal: React.FC<{
 
   const effective: ModelProvider | undefined = provider || builtins.find((p) => p.id === pickId)
 
-  const [apiKey, setApiKey] = useState('')
-  const [keyDirty, setKeyDirty] = useState(false)
-  const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
   const [protocolId, setProtocolId] = useState('openai_chat')
   const [protocolDirty, setProtocolDirty] = useState(false)
@@ -355,12 +363,9 @@ const VendorModal: React.FC<{
     if (!open) return
     const init = provider || (addMode ? firstUnconfigured : undefined)
     setPickId(provider ? provider.id : firstUnconfigured?.id || '')
-    setApiKey(init?.api_key_masked || '')
     setApiBase(init?.api_base || '')
     setProtocolId(init?.protocol_id || 'openai_chat')
     setProtocolDirty(false)
-    setKeyDirty(false)
-    setKeyVisible(false)
     setSaveError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, addMode, open])
@@ -385,11 +390,9 @@ const VendorModal: React.FC<{
     }
     setPickId(val)
     const p = builtins.find((x) => x.id === val)
-    setApiKey(p?.api_key_masked || '')
     setApiBase(p?.api_base || '')
     setProtocolId(p?.protocol_id || 'openai_chat')
     setProtocolDirty(false)
-    setKeyDirty(false)
   }
 
   const hasBase = !!effective?.api_base_field
@@ -399,11 +402,10 @@ const VendorModal: React.FC<{
     setSaving(true)
     setSaveError('')
     try {
-      const payload: { action: 'set_provider'; provider_id: string; api_key?: string; api_base?: string; protocol_id?: string } = {
+      const payload: { action: 'set_provider'; provider_id: string; api_base?: string; protocol_id?: string } = {
         action: 'set_provider',
         provider_id: effective.id,
       }
-      if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
       if (canSelectProtocol(effective.id) && protocolDirty) payload.protocol_id = protocolId
       const result = await apiClient.modelsAction(payload)
@@ -463,31 +465,7 @@ const VendorModal: React.FC<{
         label="API Key"
         labelAction={effective?.id === 'linkai' ? <ManageLinkAIKeyLink /> : undefined}
       >
-        <div className="relative">
-          <TextInput
-            type={keyVisible ? 'text' : 'password'}
-            className="pr-10 font-mono"
-            value={apiKey}
-            placeholder="sk-..."
-            onFocus={() => {
-              if (!keyDirty && MASK_RE.test(apiKey)) setApiKey('')
-            }}
-            onBlur={() => {
-              if (!keyDirty) setApiKey(effective?.api_key_masked || '')
-            }}
-            onChange={(e) => {
-              setApiKey(e.target.value)
-              setKeyDirty(true)
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => setKeyVisible((v) => !v)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-tertiary hover:text-content-secondary cursor-pointer p-1"
-          >
-            {keyVisible ? <EyeOff size={14} /> : <EyeIcon size={14} />}
-          </button>
-        </div>
+        <ModelCredentialLink name={modelSecretName(effective?.api_key_field)} configured={effective?.credential_status === 'unavailable' ? null : !!effective?.api_key_masked} needsRepair={effective?.credential_status === 'repair-required'} />
       </Field>
       {hasBase && (
         <Field label="API Base">
@@ -520,11 +498,9 @@ const CustomProviderModal: React.FC<{
   const editing = target && target !== 'new' ? target : null
   const [name, setName] = useState('')
   const [apiBase, setApiBase] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [protocolId, setProtocolId] = useState('openai_chat')
   const [modelRows, setModelRows] = useState<string[]>([''])
   const [defaultIndex, setDefaultIndex] = useState(0)
-  const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -533,7 +509,6 @@ const CustomProviderModal: React.FC<{
     if (editing) {
       setName(editing.custom_name || localizedLabel(editing.label))
       setApiBase(editing.api_base || '')
-      setApiKey(editing.api_key_masked || '')
       setProtocolId(editing.protocol_id || 'openai_chat')
       const models = normEntries(editing.models).map((entry) => entry.value)
       setModelRows(models.length ? models : [''])
@@ -541,12 +516,10 @@ const CustomProviderModal: React.FC<{
     } else {
       setName('')
       setApiBase('')
-      setApiKey('')
       setProtocolId('openai_chat')
       setModelRows([''])
       setDefaultIndex(0)
     }
-    setKeyDirty(false)
     setSaveError('')
   }, [target, editing])
 
@@ -564,7 +537,6 @@ const CustomProviderModal: React.FC<{
         name: string
         id?: string
         api_base: string
-        api_key?: string
         protocol_id: string
         model: string
         models: string[]
@@ -577,7 +549,6 @@ const CustomProviderModal: React.FC<{
         models,
       }
       if (editing) payload.id = editing.custom_id
-      if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       const result = await apiClient.modelsAction(payload)
       if (result.status !== 'success') throw new Error(String(result.message || t('config_save_error')))
       await onSaved()
@@ -641,19 +612,8 @@ const CustomProviderModal: React.FC<{
         <Dropdown value={protocolId} options={UPSTREAM_PROTOCOLS} onChange={setProtocolId} />
       </Field>
       <Field label="API Key">
-        <TextInput
-          type="text"
-          className="font-mono"
-          value={apiKey}
-          placeholder="sk-..."
-          onFocus={() => {
-            if (!keyDirty && MASK_RE.test(apiKey)) setApiKey('')
-          }}
-          onChange={(e) => {
-            setApiKey(e.target.value)
-            setKeyDirty(true)
-          }}
-        />
+        {editing ? <ModelCredentialLink name={`CUSTOM:${editing.custom_id}`} configured={editing.credential_status === 'unavailable' ? null : !!editing.api_key_masked} needsRepair={editing.credential_status === 'repair-required'} /> :
+          <p className="text-xs text-content-secondary">{localizedLabel({ zh: '保存厂商后，可在此配置凭据。', en: 'Save this provider, then configure its credential here.' })}</p>}
       </Field>
       <Field label={t('models_custom_models')} hint={t('models_custom_models_hint')}>
         <div className="space-y-2">
@@ -703,21 +663,24 @@ const TtsCard: React.FC<{
 }> = ({ state, data, busy, status, onSaveVoice, onSaveMode, modeStatus, modeBusy }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
-  // Custom (OpenAI-compatible) vendors have no preset catalog: type the model.
-  // Covers expanded custom:<id> cards and the legacy flat "custom" entry.
   const isCustomProvider = (id: string) => id.startsWith('custom:') || id === 'custom'
-  const [customModel, setCustomModel] = useState(
-    isCustomProvider(state.current_provider || '') ? state.current_model || '' : ''
-  )
+  const [customModel, setCustomModel] = useState('')
+  const [showCustom, setShowCustom] = useState(false)
   const [voice, setVoice] = useState(state.current_voice || '')
   const [mode, setMode] = useState<'off' | 'voice_if_voice' | 'always'>(state.reply_mode || 'off')
 
   const providerOptions = (state.providers || []).map((id) => ({ value: id, label: providerLabel(data, id) }))
-  const modelOptions = normEntries(state.provider_models?.[provider]).map((o) => ({
+  const modelOptions = resolveModels(data, provider, state.provider_models).map((o) => ({
     value: o.value,
     label: o.value,
     hint: o.hint,
   }))
+  if (model && !showCustom && !modelOptions.some((o) => o.value === model)) {
+    modelOptions.unshift({ value: model, label: model, hint: undefined })
+  }
+  if (isCustomProvider(provider)) {
+    modelOptions.push({ value: CUSTOM_OPTION, label: t('config_custom_option'), hint: undefined })
+  }
   const voiceOptions = resolveVoices(provider, model, state.provider_voices).map((o) => ({
     value: o.value,
     label: o.value,
@@ -726,24 +689,20 @@ const TtsCard: React.FC<{
 
   const handleProvider = (id: string) => {
     setProvider(id)
-    if (isCustomProvider(id)) {
-      // Prefill with the saved model when re-selecting the same provider.
-      setCustomModel(id === state.current_provider ? state.current_model || '' : '')
-      setModel('')
-      setVoice('')
-      return
-    }
+    setShowCustom(false)
     setCustomModel('')
-    const first = normEntries(state.provider_models?.[id])[0]
-    const fm = first?.value || ''
+    const first = resolveModels(data, id, state.provider_models)[0]
+    const fm = id === state.current_provider ? state.current_model || first?.value || '' : first?.value || ''
     setModel(fm)
     setVoice(resolveVoices(id, fm, state.provider_voices)[0]?.value || '')
   }
   const handleModel = (m: string) => {
-    setModel(m)
-    setVoice(resolveVoices(provider, m, state.provider_voices)[0]?.value || '')
+    setShowCustom(m === CUSTOM_OPTION)
+    setModel(m === CUSTOM_OPTION ? '' : m)
+    setCustomModel('')
+    setVoice(resolveVoices(provider, m === CUSTOM_OPTION ? '' : m, state.provider_voices)[0]?.value || '')
   }
-  const finalModel = isCustomProvider(provider) ? customModel.trim() : model
+  const finalModel = showCustom ? customModel.trim() : model
 
   return (
     <Card icon={<Volume2 size={16} />} title={t('models_cap_tts')} subtitle={t('models_cap_tts_sub')}>
@@ -774,20 +733,18 @@ const TtsCard: React.FC<{
               />
             </Field>
             <Field label={t('models_model')}>
-              {isCustomProvider(provider) ? (
-                // Custom vendors have no preset catalog: type the model directly.
+              <Dropdown
+                value={showCustom ? CUSTOM_OPTION : model}
+                options={modelOptions}
+                placeholder={t('models_select_model')}
+                onChange={handleModel}
+              />
+              {showCustom && (
                 <TextInput
-                  className="font-mono"
+                  className="mt-2 font-mono"
                   value={customModel}
                   onChange={(e) => setCustomModel(e.target.value)}
                   placeholder={t('config_custom_model_hint')}
-                />
-              ) : (
-                <Dropdown
-                  value={model}
-                  options={modelOptions}
-                  placeholder={t('models_select_model')}
-                  onChange={handleModel}
                 />
               )}
             </Field>
@@ -849,13 +806,9 @@ const SearchCard: React.FC<{
   busy: boolean
   status?: string
   onSaveStrategy: (strategy: string, provider: string) => void
-  onSaveBochaKey: (key: string) => void
-  keyStatus?: string
-  keyBusy: boolean
-}> = ({ state, busy, status, onSaveStrategy, onSaveBochaKey, keyStatus, keyBusy }) => {
+}> = ({ state, busy, status, onSaveStrategy }) => {
   const [strategy, setStrategy] = useState<string>(state.strategy || 'auto')
   const [provider, setProvider] = useState<string>(state.fixed_provider || state.current_provider || '')
-  const [bochaOpen, setBochaOpen] = useState(false)
 
   const providerOptions = useMemo(
     () => state.providers.map((p) => ({ value: p.id, label: localizedLabel(p.label) })),
@@ -887,13 +840,7 @@ const SearchCard: React.FC<{
           </Field>
         )}
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => setBochaOpen(true)}
-            className="text-xs text-accent hover:text-accent-hover cursor-pointer inline-flex items-center gap-1"
-          >
-            {t('models_search_bocha_key')}
-            {bocha?.configured && <Check size={12} />}
-          </button>
+          <ModelCredentialLink name="BOCHA_API_KEY" configured={bocha?.configured} />
           <div className="flex items-center gap-3">
             <span className={`text-xs text-accent transition-opacity ${status ? 'opacity-100' : 'opacity-0'}`}>
               {status}
@@ -910,68 +857,7 @@ const SearchCard: React.FC<{
         </div>
       </div>
 
-      <BochaKeyModal
-        open={bochaOpen}
-        masked={bocha?.api_key_masked || ''}
-        busy={keyBusy}
-        status={keyStatus}
-        onClose={() => setBochaOpen(false)}
-        onSave={(k) => {
-          onSaveBochaKey(k)
-          setBochaOpen(false)
-        }}
-      />
     </Card>
-  )
-}
-
-const BochaKeyModal: React.FC<{
-  open: boolean
-  masked: string
-  busy: boolean
-  status?: string
-  onClose: () => void
-  onSave: (key: string) => void
-}> = ({ open, masked, busy, onClose, onSave }) => {
-  const [key, setKey] = useState('')
-  const [dirty, setDirty] = useState(false)
-  useEffect(() => {
-    if (open) {
-      setKey(masked)
-      setDirty(false)
-    }
-  }, [open, masked])
-  return (
-    <Modal
-      open={open}
-      title={t('models_search_bocha_key')}
-      onClose={onClose}
-      footer={
-        <>
-          <Btn variant="ghost" onClick={onClose}>
-            {t('config_cancel')}
-          </Btn>
-          <Btn variant="primary" disabled={busy} onClick={() => onSave(dirty && !MASK_RE.test(key) ? key : '')}>
-            {busy ? <Loader2 size={14} className="animate-spin" /> : t('config_save')}
-          </Btn>
-        </>
-      }
-    >
-      <Field label="Bocha API Key" hint={t('models_search_bocha_hint')}>
-        <TextInput
-          className="font-mono"
-          value={key}
-          placeholder="sk-..."
-          onFocus={() => {
-            if (!dirty && MASK_RE.test(key)) setKey('')
-          }}
-          onChange={(e) => {
-            setKey(e.target.value)
-            setDirty(true)
-          }}
-        />
-      </Field>
-    </Modal>
   )
 }
 

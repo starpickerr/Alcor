@@ -82,6 +82,12 @@ todo_rows = [dict(dict(parent_id=None), **row, series_id=None, sort_order=index,
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     if path == '/api/briefings/' + briefing['id'] and fail_next_detail[0]:
         fail_next_detail[0] = False
         route.fulfill(status=503, content_type='application/json', body='{}',
@@ -230,6 +236,15 @@ with sync_playwright() as playwright:
         expect(checkbox).to_be_checked()
         expect(create).to_be_disabled()
         checkbox.uncheck()
+        previous_business=actions[item['id']]['todo']['business']
+        actions[item['id']]['todo']['business']={'id':'private-target','unresolved':True,'access':'denied'}
+        page.get_by_role('button',name='刷新',exact=True).click()
+        expect(page.get_by_text('已关联事务 · 未授权读取',exact=True)).to_be_visible()
+        actions[item['id']]['todo']['business']={'id':'private-target','unresolved':True}
+        page.get_by_role('button',name='刷新',exact=True).click()
+        expect(page.get_by_text('已关联事务 · 暂不可用',exact=True)).to_be_visible()
+        actions[item['id']]['todo']['business']=previous_business
+        page.get_by_role('button',name='刷新',exact=True).click()
 
         informational = add_item('info', '课程资料通知', category='attention', todo=False)
         informational['section'] = 'fyi'

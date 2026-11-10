@@ -33,9 +33,15 @@ def normalize_mode(value: Any, default: Optional[str] = None) -> str:
     return value if value in MODES else _ALIASES.get(value, READ_ONLY)
 
 
-def global_mode() -> str:
+def legacy_global_mode() -> str:
     try:
         from config import conf
         return normalize_mode(conf().get(CONFIG_KEY))
     except Exception:
         return DEFAULT_MODE
+
+
+def global_mode() -> str:
+    """Current owner default's base; callers resolve the full independent policy."""
+    from core.security.run_policy import default_template
+    return default_template()['filesystem_mode']

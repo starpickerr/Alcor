@@ -1,6 +1,6 @@
 # encoding:utf-8
 
-import requests
+from models import transport_requests as requests
 
 from models.bot import Bot
 from bridge.reply import Reply, ReplyType

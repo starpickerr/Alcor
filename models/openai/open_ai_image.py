@@ -3,6 +3,7 @@ import time
 from common.log import logger
 from common.token_bucket import TokenBucket
 from config import conf
+from core.security.config_credentials import model_key
 from models.openai.openai_compat import RateLimitError, wrap_http_error
 from models.openai.openai_http_client import OpenAIHTTPClient, OpenAIHTTPError
 
@@ -29,8 +30,8 @@ class OpenAIImage(object):
                 return False, "请求太快了，请休息一下再问我吧"
             logger.info("[OPEN_AI] image_query={}".format(query))
             response = self._image_client.images_generate(
-                api_key=api_key or None,
-                api_base=api_base or None,
+                api_key=api_key if api_key is not None else model_key("open_ai_api_key"),
+                api_base=api_base or conf().get("open_ai_api_base") or "https://api.openai.com/v1",
                 prompt=query,  # image description
                 n=1,
                 model=conf().get("text_to_image") or "dall-e-2",

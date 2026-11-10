@@ -19,9 +19,15 @@ def test_renderer_change_selects_ui_and_typecheck():
 
 
 def test_todo_change_selects_its_behavior_tests():
-    checks = affected_checks(["agent/todos/service.py"])
+    for adapter in ("agent/todos/apple_sync.py", "agent/todos/scheduler_link.py"):
+        checks = affected_checks([adapter])
 
-    assert "tests/test_todos.py" in checks["pytest"]
+        assert "tests/test_todos.py" in checks["pytest"]
+        assert "tests/test_todos_plugin_gateway.py" in checks["pytest"]
+        assert "tests/test_apple_reminder_sync.py" in checks["pytest"]
+    facade = affected_checks(["core/services/todos_facade.py"])
+    assert "tests/test_todos_plugin_gateway.py" in facade["pytest"]
+    assert "tests/test_todos.py" in facade["pytest"]
 
 
 def test_runtime_permission_change_selects_denial_and_recovery_tests():
@@ -49,20 +55,8 @@ def test_provider_and_channel_changes_select_matching_tests():
     assert "tests/test_feishu_progress_card.py" in channel["pytest"]
 
 
-def test_skill_reference_change_validates_skills_without_linting_vendored_examples():
-    checks = affected_checks([".agents/skills/webapp-testing/examples/console_logging.py"])
-
-    assert checks["ruff"] == []
-    assert "tests/test_quality_check.py" in checks["pytest"]
-    assert checks["policy"]
 
 
-def test_project_policy_change_selects_policy_preflight():
-    for path in ("AGENTS.md", ".agents/AGENTS.md", ".agents/rules/git.md",
-                 ".agents/workflows/development.md", ".codex/config.toml",
-                 ".agents/skills/sources.json", ".cursor/rules/stella-development.mdc",
-                 "scripts/check_dev_policy.py"):
-        assert affected_checks([path])["policy"], path
 
 
 def test_changed_files_uses_explicit_ci_base(monkeypatch):
@@ -80,14 +74,6 @@ def test_changed_files_uses_explicit_ci_base(monkeypatch):
     assert commands[0] == ["git", "diff", "--name-only", "abc123...HEAD"]
 
 
-def test_project_skills_have_codex_metadata():
-    from scripts.quality_check import ROOT
-
-    for skill in (ROOT / ".agents" / "skills").glob("*/SKILL.md"):
-        text = skill.read_text(encoding="utf-8")
-        assert text.startswith("---\n"), skill
-        assert f"name: {skill.parent.name}" in text.split("---", 2)[1], skill
-        assert "description:" in text.split("---", 2)[1], skill
 
 
 def test_isolated_env_never_points_at_real_state(tmp_path):
@@ -121,10 +107,10 @@ def test_nested_isolation_preserves_installed_browser_cache(tmp_path, monkeypatc
 
 def test_removed_backend_and_dependency_changes_expand_checks():
     deleted = affected_checks(["agent/briefing/removed.py"])
-    assert "tests/test_briefing_service.py" in deleted["pytest"]
+    assert "tests/test_briefing_plugin_gateway.py" in deleted["pytest"]
     dependencies = affected_checks(["requirements.txt"])
     assert "tests/test_todos.py" in dependencies["pytest"]
-    assert "tests/test_briefing_service.py" in dependencies["pytest"]
+    assert "tests/test_briefing_plugin_gateway.py" in dependencies["pytest"]
 
 
 def test_frontend_checks_include_lint_build_and_new_node_tests():
@@ -154,7 +140,46 @@ def test_isolation_redirects_windows_profile_and_temp_state(tmp_path):
     assert env['TMP'] == str(tmp_path / 'tmp')
 
 
-def test_quality_tools_select_native_virtualenv(tmp_path):
+def test_quality_tools_select_explicit_interpreter(tmp_path, monkeypatch):
     from scripts.check_runtime import python_path
-    assert python_path(tmp_path, 'nt') == tmp_path / '.venv/Scripts/python.exe'
-    assert python_path(tmp_path, 'posix') == tmp_path / '.venv/bin/python'
+    interpreter = tmp_path / 'ci-python'
+    interpreter.touch()
+    interpreter.chmod(0o755)
+    monkeypatch.setenv('STELLA_PYTHON', str(interpreter))
+    assert python_path(tmp_path) == interpreter
+
+
+def test_isolation_preserves_resolved_python_for_nested_checks(tmp_path):
+    from scripts.quality_check import PYTHON
+
+    assert isolated_env(tmp_path)['STELLA_PYTHON'] == str(PYTHON)
+
+
+def test_python_selection_changes_run_environment_regressions():
+    checks = affected_checks(['scripts/check_runtime.py'])
+    assert 'tests/test_python_environment.py' in checks['pytest']
+    assert 'tests/test_quality_check.py' in checks['pytest']
+    assert checks['node']
+
+
+def test_runtime_node_regressions_are_in_incremental_and_full_gates(monkeypatch):
+    import sys
+    from scripts import quality_check
+
+    commands = []
+
+    def record(name, command, _env, _timeout):
+        commands.append((name, command))
+        return name, 'PASS', command, ''
+
+    monkeypatch.setattr(quality_check, 'run_check', record)
+    monkeypatch.setattr(quality_check, 'markdown_report', lambda *_: None)
+    for mode in ('incremental', 'full'):
+        commands.clear()
+        args = ['quality_check.py', mode]
+        if mode == 'incremental':
+            args += ['--files', 'scripts/check_runtime.py']
+        monkeypatch.setattr(sys, 'argv', args)
+        assert quality_check.main() == 0
+        node = next(command for name, command in commands if name == 'node')
+        assert 'tests/pythonRuntime.test.mjs' in node

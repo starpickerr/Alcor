@@ -1,9 +1,4 @@
+"""Public source DTOs; connection implementations live in their plugins."""
 from agent.briefing.sources.base import FetchResult, FetchedItem, Source
-from agent.briefing.sources.email import EmailSource
 
-__all__ = [
-    "EmailSource",
-    "FetchResult",
-    "FetchedItem",
-    "Source",
-]
+__all__ = ['FetchResult', 'FetchedItem', 'Source']

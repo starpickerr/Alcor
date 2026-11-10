@@ -16,6 +16,10 @@ dependencies = [
 [tool.ruff]
 target-version = "py310"
 
+[tool.pytest.ini_options]
+# Reference checkouts are documentation, not Stella build or test inputs.
+testpaths = ["tests"]
+
 [project.scripts]
 stella = "cli.cli:main"
 

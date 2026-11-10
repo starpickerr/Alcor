@@ -1,10 +1,12 @@
-"""User-facing catalog of built-in tools.
+"""User-facing tool catalog, including Core adapters to plugin-owned features.
 
-The catalog is display copy. It does not register tools or change which
-tools an agent receives.
+Source ownership is shared with execution admission; listing never registers
+or starts tools, plugins or MCP servers.
 """
 
 from __future__ import annotations
+
+from agent.tools.provenance import plugin_tool_available, tool_source
 
 MEMORY_IDS = frozenset({"memory_search", "memory_get"})
 MEMORY_REASON = {
@@ -63,15 +65,15 @@ CATALOG = [
            "在工作区范围内查找匹配的文件。结果是文件位置，不是对文件的修改。",
            "Searches within the workspace. The result is where a file matches, not a change to that file."),
     _entry("memory_search", "搜索记忆", "Search Memory",
-           "检索 Agent 的长期记忆；启用知识库时也可检索知识内容。",
-           "Search the agent's long-term memory and, when enabled, knowledge base.",
-           "只在带有记忆能力的对话中可用。它可以查找记忆和已启用的知识内容，但不会因此把这项能力加进所有对话。",
-           "Available only in a conversation that has memory. It can search memory and enabled knowledge, without adding that ability to every conversation."),
+           "检索记忆插件中的长期记忆。",
+           "Search the Memory plugin's long-term records.",
+           "只在带有记忆能力的对话中可用。记忆与知识使用独立检索工具。",
+           "Available only in a conversation that has memory. It searches memory separately from knowledge."),
     _entry("memory_get", "读取记忆", "Read Memory",
-           "读取指定记忆文件或行段；启用知识库时也可读取知识页面。",
-           "Read a memory file or line range and, when enabled, knowledge pages.",
-           "只读取已经定位到的记忆或知识页面。没有记忆上下文时不可用，也不会改写这些内容。",
-           "Reads a memory file or knowledge page that has already been located. It is unavailable without a memory context and does not rewrite that content."),
+           "读取指定记忆文件或行段，知识文档使用 knowledge_get。",
+           "Read a memory document or line range. Knowledge documents use knowledge_get.",
+           "只读取已经定位到的记忆页面。没有记忆上下文时不可用，也不会改写这些内容。",
+           "Reads a memory document that has already been located. It is unavailable without a memory context and does not rewrite that content."),
     _entry("evolution_undo", "撤销自主学习", "Undo Self-Learning",
            "根据已有备份撤销一次自主学习对记忆或技能文件的修改。",
            "Restore memory or skill files from a backup before a self-learning change.",
@@ -107,21 +109,11 @@ CATALOG = [
            "Create, break down, order, and update tasks and their status.",
            "管理 Stella 事务清单中的事项、子事项和状态。它不代替用户完成事项，也不会删除没有明确要求删除的记录。",
            "Manages items, subitems, and status in the Stella task list. It does not complete an item for the user or delete a record that was not explicitly requested."),
-    _entry("elearning", "读取课程资料", "Read Course Materials",
-           "查询 eLearning 课程信息与文件，并在授权后保存课程文件。",
-           "Read eLearning course information and files, and save files when authorized.",
-           "先读取课程信息。保存课程文件需要已经授予的授权；没有授权时不会下载。",
-           "Reads course information first. Saving a course file requires an authorization that is already granted; otherwise nothing is downloaded."),
     _entry("skill", "管理技能", "Manage Skills",
            "创建或更新 Stella 自定义技能及其资源。",
            "Create or update Stella custom skills and their resources.",
            "只修改 Stella 的自定义技能。启用或停用现有技能仍由能力页面的开关完成，这个工具不会偷偷切换开关。",
            "Changes Stella custom skills. Enabling or disabling an existing skill stays on the capability page switch; this tool does not flip that switch quietly."),
-    _entry("env_config", "管理密钥配置", "Manage Key Settings",
-           "查看或更新受保护的 API 密钥和相关配置。",
-           "View or update protected API keys and related settings.",
-           "配置值受现有保护机制约束。目录和界面只说明这项能力，不会展示已保存的密钥。",
-           "Stored values stay behind the existing protection. The catalog and the page describe the capability and never display a saved key."),
     _entry("scheduler", "管理定时任务", "Manage Scheduled Tasks",
            "创建、查询和维护提醒或周期性任务。",
            "Create, inspect, and manage reminders or recurring tasks.",
@@ -147,12 +139,21 @@ CATALOG = [
            "Navigate pages, interact with elements, and read web content.",
            "通过受控浏览器打开页面并与可见元素交互。它遵守现有权限，不会绕过登录或站点限制。",
            "Opens pages in the controlled browser and interacts with visible elements. It stays inside the existing permissions and does not bypass a login or a site restriction."),
+    _entry("agent_hub", "外部智能体", "External Agents",
+           "向已配置的外部智能体提交任务，查询进度或请求取消。",
+           "Delegate tasks to configured external agents, inspect progress, or request cancellation.",
+           "需要启用智能体插件并配置接入方式。外部调用遵守连接权限；未实现的能力会明确返回不支持。",
+           "Requires the Agent Hub plugin and a configured access mode. External calls follow connection permissions; unimplemented capabilities return unsupported."),
+
 ]
 
 
-def build_catalog(loaded_ids):
+def build_catalog(loaded_ids, settings=None, *, definitions=None):
     """Return the public catalog. ``loaded_ids`` are tools the process can construct."""
     loaded = set(loaded_ids)
+    if settings is None:
+        from agent.tools.capability_settings import CapabilitySettings
+        settings = CapabilitySettings()
     rows = []
     for item in CATALOG:
         row = {
@@ -160,11 +161,20 @@ def build_catalog(loaded_ids):
             "title": dict(item["title"]),
             "intro": dict(item["intro"]),
             "detail": dict(item["detail"]),
+            "enabled": settings.enabled('tool', item['id']),
+            "source": tool_source(item['id']),
         }
+        definition = (definitions or {}).get(item['id'])
+        schema = getattr(definition, 'params', None)
+        description = getattr(definition, 'description', None)
+        if isinstance(schema, dict):
+            row['inputSchema'] = schema
+        if isinstance(description, str):
+            row['toolDescription'] = description
         if item["id"] in MEMORY_IDS:
             row["available"] = False
             row["reason"] = dict(MEMORY_REASON)
-        elif item["id"] in loaded:
+        elif item["id"] in loaded and plugin_tool_available(item['id']):
             row["available"] = True
             row["reason"] = None
         else:
@@ -179,5 +189,6 @@ def tools_payload():
     from agent.tools.tool_manager import ToolManager
 
     manager = ToolManager()
-    manager.load_tools()
-    return {"status": "success", "tools": build_catalog(set(manager.tool_classes))}
+    manager.load_tools(load_mcp=False)
+    return {"status": "success", "tools": build_catalog(set(manager.tool_classes), manager.capability_settings,
+                                                       definitions=manager.tool_classes)}

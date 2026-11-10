@@ -153,7 +153,7 @@ SAFETY:
         # Security check: Prevent direct access to the credential file
         if re.search(r'\.stella[/\\]\.env', command):
             return ToolResult.fail(
-                "Error: Access denied. API keys and credentials must be accessed through the env_config tool only."
+                "Error: Access denied. API keys and credentials must be accessed through their owning feature settings only."
             )
 
         # Optional safety check - only warn about extremely dangerous commands
@@ -164,8 +164,8 @@ SAFETY:
                     f"Safety Warning: {warning}\n\nIf you believe this command is safe and necessary, please ask the user for confirmation first, explaining what the command does and why it's needed.")
 
         try:
-            # Prepare environment with .env file variables
-            env = os.environ.copy()
+            from core.security.process_environment import core_process_environment
+            env = core_process_environment()
 
             # Anchor artifact outputs to the workspace/project dir regardless of
             # any `cd` inside the command, so tools (e.g. image-generation) can
@@ -202,8 +202,9 @@ SAFETY:
                     pass
                 except Exception as e:
                     logger.debug(f"[Bash] Could not inspect credential names: {e}")
+            credential_names = {key.upper() for key in dotenv_vars}
             for key in list(env):
-                if key in dotenv_vars or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
+                if key.upper() in credential_names or re.search(r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH)", key, re.I):
                     env.pop(key, None)
 
             # getuid() only exists on Unix-like systems
@@ -442,16 +443,19 @@ SAFETY:
         return f"Error: no background command with id {bash_id}. Currently tracked: {known}."
 
     def _run_streaming(self, command, timeout: int, env: dict, dotenv_vars: dict, *, shell=True, plan=None):
-        process = subprocess.Popen(
-            command,
-            shell=shell,
-            cwd=self.cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            start_new_session=not self._IS_WIN,
-        )
+        from core.security.protected_paths import launch_guard, current_revision
+        with launch_guard(plan.protection_revision if plan is not None else current_revision()) as launch:
+            process = subprocess.Popen(
+                command,
+                shell=shell,
+                cwd=self.cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                start_new_session=not self._IS_WIN,
+            )
+            launch.bind(process)
         from agent.permission.process_sandbox import register_share_process, unregister_share_process
         try:
             if plan is not None:

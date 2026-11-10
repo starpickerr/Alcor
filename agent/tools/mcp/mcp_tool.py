@@ -20,25 +20,56 @@ class McpTool(BaseTool):
         self.client = client
         self.server_name = server_name
         self.remote_name = tool_schema["name"]
-        slug = re.sub(r"[^A-Za-z0-9_-]", "_", self.remote_name)[:55].strip("_") or "tool"
-        digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
-        tool_digest = hashlib.sha256(self.remote_name.encode()).hexdigest()[:8]
-        self.name = f"mcp_{digest}_{slug}_{tool_digest}"
+        self.title = tool_schema.get('title')
+        self.output_schema = tool_schema.get('outputSchema')
+        self.name = self.name_for(server_name, self.remote_name)
         self.read_only = (tool_schema.get("annotations") or {}).get("readOnlyHint") is True
         self.description = tool_schema.get("description", "")
         self.params = tool_schema.get("inputSchema", {})
 
+    @staticmethod
+    def name_for(server_name, remote_name):
+        slug = re.sub(r"[^A-Za-z0-9_-]", "_", remote_name)[:55].strip("_") or "tool"
+        digest = hashlib.sha256(server_name.encode()).hexdigest()[:10]
+        tool_digest = hashlib.sha256(remote_name.encode()).hexdigest()[:8]
+        return f"mcp_{digest}_{slug}_{tool_digest}"
+
+    def is_available(self):
+        from agent.tools.capability_settings import tool_enabled
+        check = getattr(self, '_admission_check', None)
+        return tool_enabled(self.name, tool=self) and (check is None or check())
+
     def execute(self, params: dict) -> ToolResult:
+        try:
+            if not self.is_available():
+                return ToolResult.fail('MCP server is disabled or this connection was replaced.')
+        except Exception:
+            return ToolResult.fail('Cannot resolve MCP enablement; the tool did not run.')
         if self.is_cancelled():
             return ToolResult.fail("MCP call cancelled")
         logger.info(f"[McpTool] server={self.server_name} tool={self.name} started")
         try:
-            if self.cancel_event is None:
+            from core.security.service import SecurityService
+            policy_binding = SecurityService.policy_binding()
+            resource_check = getattr(self, '_resource_check', None)
+            if resource_check is not None:
+                resource_check()
+            managed = getattr(self, '_managed_invoke', None)
+            if managed is not None:
+                import json
+                result = json.dumps({'value':managed(self.remote_name,params,self.cancel_event)},ensure_ascii=False)
+            elif self.cancel_event is None:
                 result = self.client.call_tool(self.remote_name, params)
             else:
                 result = self.client.call_tool(self.remote_name, params, cancel_event=self.cancel_event)
+            if SecurityService.policy_binding() != policy_binding:
+                return ToolResult.fail('MCP authorization changed during the call; result discarded.')
             if self.is_cancelled():
                 return ToolResult.fail("MCP call cancelled")
+            if not self.is_available():
+                return ToolResult.fail('MCP authorization changed during the call; result discarded.')
+            if resource_check is not None:
+                resource_check()
             return ToolResult.success(result)
         except Exception as e:
             logger.error(f"[McpTool] server={self.server_name} tool={self.name} error: {e}")

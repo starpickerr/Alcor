@@ -41,7 +41,7 @@ def test_sessions_projects_and_tasks_get_distinct_lazy_roots(work_root, tmp_path
     project.mkdir()
     project_store.set_project_dir("one", str(project), "alpha")
     assert resolve_context("one", "alpha").root == project
-    assert resolve_context("one", "alpha", task_id="scheduled").root == project
+    assert resolve_context("one", "alpha", task_id="scheduled").root == task.root
     assert resolve_context("one", "alpha").kind == "project"
     assert resolve_context("two", "alpha", ensure=True).root.is_dir()
 
@@ -64,8 +64,7 @@ def test_missing_bound_project_is_an_error(work_root, tmp_path):
     assert project_store.get_project_binding("one", "alpha") == str(project)
     with pytest.raises(FileNotFoundError, match="project"):
         resolve_context("one", "alpha")
-    with pytest.raises(FileNotFoundError, match="project"):
-        resolve_context("one", "alpha", task_id="scheduled")
+    assert resolve_context("one", "alpha", task_id="scheduled").kind == 'automation'
     assert not work_root.exists()
 
 

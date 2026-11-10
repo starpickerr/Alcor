@@ -18,16 +18,17 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
                                 "connections": {"browser": {"allowed": False}}}}
     monkeypatch.setattr("config.conf", lambda: live)
     monkeypatch.setattr("agent.prompt.builder.conf", lambda: live)
-    monkeypatch.setattr("agent.briefing.elearning_settings.public_settings", lambda: {
-        "enabled": False, "configured": True, "file_sync_enabled": True,
+    monkeypatch.setattr('core.services.elearning_gateway.elearning_mcp_enabled',lambda:True)
+    monkeypatch.setattr("core.services.elearning_facade.ElearningMcpFacade.get_settings", lambda self: {
+        "enabled": False, "configured": True, "file_sync_enabled": False,
         "file_sync_root": str(tmp_path / "selected"),
         "password": "TOPSECRET",
-    })
+    }, raising=False)
     project_store.set_project_dir("conversation", str(project))
     project_store.set_security_policy(str(project), {"extra_roots": [str(tmp_path / "extra")]})
     with identity_scope(session_id="conversation"):
         kwargs = {"workspace_dir": str(state), "project_dir": str(project),
-                  "permission_mode": "workspace-write", "tools": [SimpleNamespace(name="elearning")]}
+                  "permission_mode": "workspace-write", "tools": [SimpleNamespace(name="mcp_elearning_fetch",server_name="elearning")]}
         first = build_agent_system_prompt(**kwargs)
         assert "network=deny" in first
         assert "background=confirm" in first
@@ -36,7 +37,7 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
         assert str(tmp_path / "selected") in first
         assert "TOPSECRET" not in first
         assert "不要用脚本或换工具绕过拒绝" in first
-        # Project-internal chats share one project policy; rule changes save on the project.
+        # Existing conversations keep their independent snapshot after project metadata edits.
         project_store.set_security_policy(str(project), {
             "preset": "workspace-write",
             "rules": {"network": "allow"},
@@ -44,8 +45,11 @@ def test_security_prompt_uses_current_conversation_policy_and_file_grant(tmp_pat
             "extra_roots": [str(tmp_path / "extra")],
         })
         second = build_agent_system_prompt(**kwargs)
-        assert "network=allow" in second
-        assert "network=deny" not in second
+        assert "network=deny" in second
+        from agent.permission.center import save_conversation_policy
+        with identity_scope(session_id=None):
+            save_conversation_policy('conversation', {'rules': {'network': 'allow'}})
+        assert "network=allow" in build_agent_system_prompt(**kwargs)
 
 
 def test_security_prompt_explains_disabled_sync_and_hard_boundaries():
@@ -55,5 +59,5 @@ def test_security_prompt_explains_disabled_sync_and_hard_boundaries():
     assert "受保护凭据读取和提权仍被禁止" in text
     assert "会话文件读取被拒绝不代表连接器被拒绝" in text
     assert "不要建议开放 workspace_outside" in text
-    assert "elearning list_files" in text
+    assert "eLearning MCP list_files" in text
     assert "不要读取 Cookie、用脚本直连 Canvas" in text

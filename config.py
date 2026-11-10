@@ -38,19 +38,31 @@ MODEL_CONFIG_TO_ENV = {
     "ark_base_url": "ARK_API_BASE",
     "dashscope_api_key": "DASHSCOPE_API_KEY",
     "dashscope_api_base": "DASHSCOPE_API_BASE",
+    "modelscope_api_key": "MODELSCOPE_API_KEY",
+    "modelscope_base_url": "MODELSCOPE_BASE_URL",
 }
 MODEL_CONFIG_FIELDS = set(MODEL_CONFIG_TO_ENV) | {
     "custom_api_key", "custom_api_base", "custom_providers",
 }
 
 
-def sync_model_config_to_env(settings, *, overwrite=False):
+def sync_model_config_to_env(settings, *, overwrite=False, fields=None):
     """Expose model settings to subprocesses; desktop saves replace stale values."""
     synced = 0
-    for config_key, env_key in MODEL_CONFIG_TO_ENV.items():
+    entries = [*MODEL_CONFIG_TO_ENV.items(), ('zhipu_ai_api_key', 'ZHIPUAI_API_KEY'),
+               ('custom_api_key', 'CUSTOM_API_KEY'), ('BOCHA_API_KEY', 'BOCHA_API_KEY')]
+    for config_key, env_key in entries:
+        if fields is not None and config_key not in fields:
+            continue
         if not overwrite and env_key in os.environ:
             continue
-        value = settings.get(config_key, "")
+        if config_key == 'BOCHA_API_KEY':
+            search = (settings.get('tools') or {}).get('web_search') or {}
+            if 'bocha_api_key' not in search:
+                continue
+            value = search['bocha_api_key']
+        else:
+            value = settings.get(config_key, "")
         if value:
             value = str(value)
             if os.environ.get(env_key) != value:
@@ -82,7 +94,8 @@ available_setting = {
     # Multiple custom (OpenAI-compatible) providers. Activated via bot_type: "custom:<id>".
     # Each item: {"id": "3f2a9c1b", "name": "my-provider", "api_key": "sk-...", "api_base": "https://api.example.com/v1", "model": "model-name"}
     "custom_providers": [],
-    "proxy": "",  # proxy used by openai
+    "proxy": "",  # Owner-selected HTTP/Mixed proxy for configured models and remote MCP.
+    "local_service_networks": {},  # Canonical origin -> explicit private CIDRs for configured model services.
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "deepseek-v4-flash",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
     "bot_type": "",  # optional; for OpenAI-compatible third-party services set "openai" or "custom" (in custom mode switching model won't auto-switch bot_type). See common/const.py for bot names; inferred from model name if left empty
@@ -323,7 +336,6 @@ available_setting = {
     # Default permission mode for sessions that have not picked one of their own:
     # Historical mode key. Existing installs are migrated to an exact policy
     # snapshot; new installs start with project-scoped access.
-    "agent_permission_mode": "workspace-write",
     "agent_tool_allowlist": [],
     "agent_account_allowlist": [],
     # In-process sub agents: the Agent hands a self-contained task to a
@@ -372,6 +384,8 @@ class Config(dict):
         return super().__getitem__(key)
 
     def __setitem__(self, key, value):
+        if key in {'proxy', 'local_service_networks'} and super().get(key) != value:
+            self.network_revision = getattr(self, 'network_revision', 0) + 1
         return super().__setitem__(key, value)
 
     def get(self, key, default=None):
@@ -543,6 +557,15 @@ def load_config():
             # in-memory config, so run with it and retry the write next launch.
             logger.warning("[INIT] failed to write recovered config.json: {}".format(write_err))
 
+    # Credential access is separate from JSON validation: a locked/missing
+    # Keychain item is repairable state, never a corrupted configuration.
+    from core.security.config_credentials import resolve as resolve_credentials, reference_fields, bind_runtime
+    referenced_model_fields = reference_fields(config)
+    credential_document = dict(config)
+    config_values, _credential_states = resolve_credentials(user_config_path, dict(config))
+    config = Config(config_values)
+    bind_runtime(user_config_path, credential_document, config)
+
     # Migrate legacy singular keys (`tool`, `skill`) into the canonical
     # plural buckets so the rest of the codebase only reads one schema.
     # Deep-merge so existing `tools`/`skills` entries are preserved and
@@ -561,7 +584,10 @@ def load_config():
             # A configured desktop install owns its model credentials. An
             # inherited environment variable (or one exported by an earlier
             # load_config call) must not restore a key the user replaced.
-            if desktop_mode and config_path == user_config_path and name in MODEL_CONFIG_FIELDS:
+            if config_path == user_config_path and name in MODEL_CONFIG_FIELDS and (
+                desktop_mode or name in referenced_model_fields or
+                (name == 'custom_providers' and any(key.startswith('CUSTOM:') for key in referenced_model_fields))
+            ):
                 continue
             logger.info("[INIT] override config by environ args: {}".format(name))
             try:
@@ -676,6 +702,8 @@ def load_config():
     injected = sync_model_config_to_env(
         config, overwrite=desktop_mode and config_path == user_config_path
     )
+    # Encrypted settings own their runtime value on source deployments too.
+    injected += sync_model_config_to_env(config, overwrite=True, fields=referenced_model_fields)
     for conf_key, env_key in _CONFIG_TO_ENV.items():
         if env_key not in os.environ:
             val = config.get(conf_key, "")
@@ -684,7 +712,9 @@ def load_config():
                 injected += 1
 
     injected += _sync_skill_config_to_env(config.get("skills", {}))
-    injected += sync_image_generation_custom_provider_env(config)
+    injected += sync_image_generation_custom_provider_env(
+        config, overwrite=desktop_mode or any(key.startswith('CUSTOM:') for key in referenced_model_fields)
+    )
 
     if injected:
         logger.info("[INIT] Synced {} config values to environment variables".format(injected))

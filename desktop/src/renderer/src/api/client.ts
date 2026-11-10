@@ -1,3 +1,7 @@
+import type { CapabilityDetail, CapabilityInventory, CapabilityKind } from './capabilityTypes'
+import type { DataSnapshot, DataRecords, DataCommandResult, DataResources, DataResourceContent } from './dataTypes'
+import type { LogPage, LogQuery } from '../pages/log-viewer/logTypes'
+import type { McpServerInfo } from '../types'
 import type {
   ConfigData,
   ChannelInfo,
@@ -31,7 +35,7 @@ import type {
   Briefing, BriefingDetail, BriefingItem, BriefingItemStatus, BriefingRunProgress,
   BriefingDecision, BriefingActionReceipt, BriefingAuthorization, BriefingPreferences,
   BriefingRule, BriefingRuleInput, BriefingSettings, BriefingMailboxInput, BriefingMailbox, BriefingMailboxCheck,
-  BriefingSource, ElearningSettings, ElearningSettingsInput,
+  BriefingSource, ElearningSettings, ElearningSettingsInput, ElearningCredentialInput,
   CalendarCategory, CalendarEvent, CalendarEventInput, AppleCalendarConnection, AppleCalendarSyncResult, AppleReminderConnection,
   Todo, TodoInput, UncertainReminder,
 } from '../types'
@@ -43,107 +47,30 @@ interface ApiResult {
   message?: string
 }
 
-export interface SecurityPolicy {
-  preset?: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-  base_preset?: 'read-only' | 'workspace-write' | 'full-access'
-  rules?: Record<string, 'allow' | 'confirm' | 'deny'>
-  connections?: Record<string, { allowed: boolean; scopes: string[] }>
-  extra_roots?: string[]
+export type FileMode = 'read-only' | 'workspace-write' | 'full-access'
+export type PermissionMode = FileMode
+export interface RunPolicy {
+  filesystem_mode: FileMode
+  permission_mode?: PermissionMode
+  policy_revision: number
 }
-
-export interface SecurityRecord {
-  at: number
-  agent: string
-  conversation: string | null
-  project: string | null
-  tool: string
-  operation: string
-  event: string
-  resource: string
-  risk: string
-  decision: string
-  reason: string
-  trace: string[]
+export interface RunPolicyState extends ApiResult {
+  policy: RunPolicy; migration_status: string
 }
-
-export interface SecurityCenterState extends ApiResult {
-  global_policy: SecurityPolicy
-  effective_policy: SecurityPolicy
-  effective_mode: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
-  effective_rules: Record<string, 'allow' | 'confirm' | 'deny'>
-  policy_source: 'global' | 'project' | 'session' | 'mixed'
-  mode_definitions: SecurityModeDefinition[]
-  authorized_roots: string[]
-  policy_error?: string | null
-  process_isolation: { status: 'enabled' | 'unavailable' | 'full-access'; reason: string }
-  project: string | null
-  project_policy: SecurityPolicy
-  projects: { path: string; name: string; policy: SecurityPolicy }[]
-  conversation_policy: SecurityPolicy
-  connections: { id: string; name: string; connected: boolean; allowed: boolean; available?: boolean; scopes: string[]; last_access: number | null }[]
-  secrets: { name: string; display_name?: string; source: string; configured: boolean }[]
-  background_tasks?: SecurityBackgroundTask[]
-  privacy?: SecurityPrivacyInventory
-  summary: { status: string; app_password_set: boolean; connection_count: number; secret_count: number;
-    recent_high_risk: SecurityRecord[]; recent_denials: SecurityRecord[];
-    activity_counts?: SecurityActivityCounts
-    background_tasks?: SecurityBackgroundTaskSummary }
+export interface McpAuthorizationState {
+  state: 'configured' | 'not-configured' | 'unavailable' | 'repair-required'
+  configured: boolean | null; saved: boolean; can_authorize: boolean; enabled: boolean
+  authorization_url: string | null; expires_at: number | null; reason: string
+  authorizing?: boolean
 }
-
-export interface SecurityBackgroundTask {
-  id: string
-  name: string
-  enabled: boolean
-  conversation_mode?: string | null
-  execution_session_id?: string | null
-  execution_project_dir?: string | null
-  run_permission_mode?: 'read-only' | 'workspace-write' | 'full-access' | null
-  effective_mode?: string | null
-  permission_source?: string
-  unknown?: boolean
-  policy_error?: string | null
+export interface McpCredentialState {
+  revision: string; transport: string
+  fields: { area: 'headers' | 'env'; key: string; state: 'configured' | 'not_configured' | 'unavailable' | 'repair_required' }[]
 }
-
-export interface SecurityBackgroundTaskSummary {
-  total: number | null
-  enabled: number | null
-  paused: number | null
-  modes: Record<string, number> | null
-  unknown: number | null
-  available: boolean
-}
-
-export interface SecurityPrivacyCategory {
-  id: string
-  name: { zh: string; en: string }
-  path: string
-  bytes: number
-  exists: boolean
-  retention: { zh: string; en: string }
-  actions: string[]
-  detail?: Record<string, unknown>
-}
-
-export interface SecurityPrivacyInventory {
-  available: boolean
-  categories: SecurityPrivacyCategory[]
-  external_transfers?: { id: string; name: string; available: boolean; note: { zh: string; en: string } }[]
-}
-
-export interface SecurityActivityCounts {
-  auto_allow: number
-  user_authorized: number
-  denied: number
-  uncertain: boolean
-  since: number
-  until: number
-}
-
 export interface SecurityModeDefinition {
-  id: 'read-only' | 'workspace-write' | 'full-access' | 'custom'
+  id: FileMode
   name: { zh: string; en: string }
   description: { zh: string; en: string }
-  rules: Record<string, 'allow' | 'confirm' | 'deny'>
 }
 
 const AUTH_TOKEN_KEY = 'cow_auth_token'
@@ -191,6 +118,15 @@ class ApiClient {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     }
     return res.json()
+  }
+
+  async pluginRequest<T>(resource: 'runtime' | 'dual-update-plan' | 'manage' | 'settings' | 'authorization', body?: Record<string, unknown>): Promise<T> {
+    const data = await this.request<{ status: string; result?: T; message?: string; error?: string }>(
+      `/api/plugins/${resource}`, body ? { method: 'POST', body: JSON.stringify(body) } : undefined)
+    if (data.status === 'error' || data.status === 'conflict' || data.status === 'degraded') {
+      throw new Error(data.message || data.error || '插件请求失败')
+    }
+    return (body ? data.result : data) as T
   }
 
   /** POST multipart form data.
@@ -484,7 +420,7 @@ class ApiClient {
    *  field to drop the override and follow the global default. */
   async updateSessionSettings(
     sessionId: string,
-    body: { provider?: string | null; model?: string | null; security_policy?: SecurityPolicy | null }
+    body: { provider?: string | null; model?: string | null }
   ): Promise<{ status: string } & Partial<SessionSettingsState> & { message?: string }> {
     return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
       method: 'POST',
@@ -517,56 +453,76 @@ class ApiClient {
     return this.request<{ status: string } & ConfigData>('/config')
   }
 
-  async getSecurityCenter(session?: string): Promise<SecurityCenterState> {
-    return this.request<SecurityCenterState>(`/api/security/center${session ? `?session=${encodeURIComponent(session)}` : ''}`)
-  }
-
-  async getSecurityRecords(filters: Record<string, string> = {}): Promise<{
-    records: SecurityRecord[]
-    counts?: SecurityActivityCounts
-  }> {
-    const query = new URLSearchParams(filters).toString()
-    const result = await this.request<{ status: string; records: SecurityRecord[]; counts?: SecurityActivityCounts }>(
-      `/api/security/activity${query ? `?${query}` : ''}`,
-    )
-    if (result.status !== 'success') throw new Error('Unable to load security activity')
-    return { records: result.records || [], counts: result.counts }
-  }
-
-  async saveSecurityPolicy(target: 'global' | 'project' | 'conversation', policy: SecurityPolicy,
-    options: { project?: string; session?: string } = {}): Promise<{ status: string; message?: string }> {
-    const result = await this.request<ApiResult>('/api/security/policy', { method: 'POST', body: JSON.stringify({ target, policy, ...options }) })
-    if (result.status === 'success') notifySecurityPolicyChanged()
+  async getDataSnapshot(refresh = false, signal?: AbortSignal, includeStorage = true): Promise<DataSnapshot> {
+    const result = await this.request<DataSnapshot & { message?: string }>(`/api/data?refresh=${refresh ? '1' : '0'}&storage=${includeStorage ? '1' : '0'}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Data Service unavailable')
     return result
   }
 
-  async updateSecurityConnection(id: string, allowed: boolean, scopes: string[]): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/connections', { method: 'POST', body: JSON.stringify({ id, allowed, scopes }) })
+  async getDataRecords(sourceId: string, q = '', offset = 0, signal?: AbortSignal): Promise<DataRecords> {
+    const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
+    const result = await this.request<DataRecords & { message?: string }>(`/api/data/records?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Data access denied')
+    return result
   }
 
-  async saveSecuritySecret(name: string, value: string): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/secrets', { method: 'POST', body: JSON.stringify({ name, value }) })
+  async getDataResources(sourceId: string, q = '', offset = 0, signal?: AbortSignal, kind = ''): Promise<DataResources> {
+    const params = new URLSearchParams({ source_id: sourceId, q, offset: String(offset), limit: '50' })
+    if (kind) params.set('kind', kind)
+    const result = await this.request<DataResources & { message?: string }>(`/api/data/resources?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
+    return result
   }
 
-  async deleteSecuritySecret(name: string): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/secrets', { method: 'DELETE', body: JSON.stringify({ name }) })
+  async readDataResource(sourceId: string, resourceId: string, signal?: AbortSignal): Promise<DataResourceContent> {
+    const params = new URLSearchParams({ source_id: sourceId, resource_id: resourceId })
+    const result = await this.request<DataResourceContent & { message?: string }>(`/api/data/resources?${params}`, { signal })
+    if (result.status !== 'success') throw new Error(result.message || 'Resource access denied')
+    return result
   }
 
-  async cleanupPrivacy(action: string): Promise<{ status: string; message?: string } & Partial<SecurityPrivacyInventory>> {
-    return this.request('/api/security/privacy', { method: 'POST', body: JSON.stringify({ action }) })
+  async syncElearningFiles(offset: number, signal?: AbortSignal) {
+    const result = await this.request<{ status: string; message?: string; sync: { processed: number; next_offset: number | null; errors: string[] } }>(
+      '/api/data/elearning/sync-files',
+      { method: 'POST', body: JSON.stringify({ offset, limit: 50 }), signal })
+    if (result.status !== 'success') throw new Error(result.message || 'File sync failed')
+    return result.sync
+  }
+
+  async dataCommand(body: Record<string, unknown>): Promise<DataCommandResult> {
+    const result = await this.request<DataCommandResult>('/api/data/command', { method: 'POST', body: JSON.stringify(body) })
+    if (result.status !== 'success') throw new Error(result.message || 'Data operation failed')
+    return result
+  }
+
+  async saveModelCredential(name: string, value: string | null): Promise<ApiResult> {
+    return this.request('/api/models', { method: 'POST', body: JSON.stringify({ action: 'credential', name, value }) })
+  }
+
+  async getRunPolicy(kind: 'session' | 'task', subject: string, agent?: string): Promise<RunPolicyState> {
+    const result = await this.request<RunPolicyState>(`/api/run-policy?${new URLSearchParams({ kind, subject, ...(agent ? { agent } : {}) })}`)
+    if (result.status !== 'success') throw new Error(result.message || '无法读取权限')
+    return result
+  }
+
+  async saveRunPolicy(kind: 'session' | 'task', subject: string, policy: RunPolicy, agent?: string): Promise<RunPolicyState> {
+    const result = await this.request<RunPolicyState>('/api/run-policy', { method: 'POST', body: JSON.stringify({ kind, subject, policy, agent }) })
+    if (result.status !== 'success') throw new Error(result.message || '保存权限失败')
+    notifySecurityPolicyChanged()
+    return result
   }
 
   async getSecurityConfirmations(): Promise<{ id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[]> {
-    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/security/confirmations')
+    const result = await this.request<{ status: string; pending: { id: string; tool: string; session: string | null; summary: string; resource: string; risk: string; reason: string; expanded_scope: string; effect: string }[] }>('/api/confirmations')
     return result.pending || []
   }
 
   async approveSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
+    return this.request('/api/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'approve' }) })
   }
 
   async rejectSecurityConfirmation(id: string, session: string | null): Promise<{ status: string; message?: string }> {
-    return this.request('/api/security/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
+    return this.request('/api/confirmations', { method: 'POST', body: JSON.stringify({ id, session, action: 'reject' }) })
   }
 
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {
@@ -651,10 +607,63 @@ class ApiClient {
   // Tools & skills
   // ---------------------------------------------------------
 
+  async getCapabilities(signal?: AbortSignal): Promise<CapabilityInventory> {
+    const data = await this.request<CapabilityInventory & { message?: string }>('/api/capabilities', { signal })
+    if (data.status !== 'success' || !Array.isArray(data.items)) throw new Error(data.message || 'Could not load capabilities')
+    return data
+  }
+
+  async getCapabilityDetail(kind: CapabilityKind, id: string, signal?: AbortSignal): Promise<CapabilityDetail> {
+    const query = new URLSearchParams({ kind, id })
+    const data = await this.request<{ status: string; detail?: CapabilityDetail; message?: string }>(`/api/capabilities?${query}`, { signal })
+    if (data.status !== 'success' || !data.detail) throw new Error(data.message || 'Capability not found')
+    return data.detail
+  }
+
   async getTools(): Promise<ToolInfo[]> {
     const data = await this.request<{ status: string; tools?: ToolInfo[]; message?: string }>('/api/tools')
     if (data.status !== 'success' || !Array.isArray(data.tools)) throw new Error(data.message || 'Could not load tools')
     return data.tools
+  }
+
+  async getMcpServers(): Promise<McpServerInfo[]> {
+    const data = await this.request<{ status: string; servers?: McpServerInfo[]; message?: string }>('/api/mcp')
+    if (data.status !== 'success' || !Array.isArray(data.servers)) throw new Error(data.message || 'Could not load MCP capabilities')
+    return data.servers
+  }
+
+  async toggleProviderTool(kind: string, provider: string, id: string, enabled: boolean): Promise<ApiResult> {
+    return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ kind, provider, id, enabled }) })
+  }
+
+  async toggleTool(id: string, enabled: boolean): Promise<ApiResult> {
+    return this.request('/api/tools', { method: 'POST', body: JSON.stringify({ id, enabled }) })
+  }
+
+  async discoverMcpTools(name: string): Promise<ApiResult> {
+    return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, action: 'discover' }) })
+  }
+
+  async manageMcpAuthorization(name: string, action: 'status' | 'authorize' | 'cancel' | 'remove', signal?: AbortSignal): Promise<McpAuthorizationState> {
+    const result = await this.request<ApiResult & { oauth: McpAuthorizationState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: `oauth-${action}` }), signal,
+    })
+    if (result.status !== 'success') throw new Error(result.message || 'OAuth authorization is unavailable')
+    return result.oauth
+  }
+
+  async manageMcpCredentials(name: string, change?: { area: 'headers' | 'env'; key: string; value: string; expectedRevision: string }, signal?: AbortSignal): Promise<McpCredentialState> {
+    const result = await this.request<ApiResult & { credentials: McpCredentialState }>('/api/mcp', {
+      method: 'POST', body: JSON.stringify({ name, action: change ? 'credential-save' : 'credential-status', ...change }), signal,
+    })
+    if (result.status !== 'success' || !result.credentials || !Array.isArray(result.credentials.fields)) {
+      throw new Error(result.message || 'MCP credential settings are unavailable')
+    }
+    return result.credentials
+  }
+
+  async toggleMcpServer(name: string, enabled: boolean): Promise<ApiResult & { server: McpServerInfo }> {
+    return this.request('/api/mcp', { method: 'POST', body: JSON.stringify({ name, enabled }) })
   }
 
   async getSkills(): Promise<SkillInfo[]> {
@@ -736,14 +745,20 @@ class ApiClient {
     return data.tasks
   }
 
+  async getTaskRuns(taskId: string): Promise<{ job_run_id: string; status: string; started_at: string; error?: string; output: string }[]> {
+    const result = await this.request<{ runs: { job_run_id: string; status: string; started_at: string; error?: string; output: string }[] }>(`/api/scheduler/runs?task_id=${encodeURIComponent(taskId)}`)
+    return result.runs || []
+  }
+
   async createTask(payload: {
     name: string
     enabled?: boolean
     schedule: TaskSchedule
     action: TaskAction
-    session_id: string
+    session_id?: string
     notification_route?: SchedulerTask['notification_route']
     run_permission_mode?: SchedulerTask['run_permission_mode'] | 'inherit'
+    run_policy?: Omit<RunPolicy, 'policy_revision'>
   }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler', {
       method: 'POST',
@@ -765,7 +780,7 @@ class ApiClient {
     })
   }
 
-  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action' | 'notification_route'>> & { run_permission_mode?: NonNullable<SchedulerTask['run_permission_mode']> | 'inherit' }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
+  async updateTask(taskId: string, updates: Partial<Pick<SchedulerTask, 'name' | 'enabled' | 'schedule' | 'action' | 'notification_route'>> & { run_permission_mode?: NonNullable<SchedulerTask['run_permission_mode']> | 'inherit'; run_policy?: RunPolicy }): Promise<{ status: string; task?: SchedulerTask; message?: string }> {
     return this.request('/api/scheduler/update', {
       method: 'POST',
       body: JSON.stringify({ task_id: taskId, ...updates }),
@@ -1130,7 +1145,7 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning')).settings
   }
 
-  async saveElearningSettings(payload: ElearningSettingsInput): Promise<ElearningSettings> {
+  async saveElearningSettings(payload: ElearningSettingsInput | ElearningCredentialInput): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/briefings/elearning', payload)).settings
   }
 
@@ -1138,9 +1153,9 @@ class ApiClient {
     return (await this.briefingRequest<{ settings: ElearningSettings }>('/api/elearning/file-sync')).settings
   }
 
-  async saveElearningFileSyncSettings(enabled: boolean, root: string): Promise<ElearningSettings> {
+  async saveElearningFileSyncSettings(root: string): Promise<ElearningSettings> {
     return (await this.briefingRequest<{ settings: ElearningSettings }>(
-      '/api/elearning/file-sync', { file_sync_enabled: enabled, file_sync_root: root })).settings
+      '/api/elearning/file-sync', { file_sync_root: root })).settings
   }
 
   async deleteElearningSource(): Promise<void> {
@@ -1176,19 +1191,19 @@ class ApiClient {
   }
 
   async saveBriefingSettings(payload: BriefingMailboxInput): Promise<{ settings: BriefingSettings; mailbox: BriefingMailbox }> {
-    return this.briefingRequest('/api/briefings/settings', payload)
+    return this.briefingRequest('/api/email/accounts', payload)
   }
 
   async testBriefingSettings(payload: BriefingMailboxInput): Promise<BriefingMailboxCheck> {
-    return this.briefingRequest('/api/briefings/settings/test', payload)
+    return this.briefingRequest('/api/email/accounts/test', payload)
   }
 
   async getBriefingSettings(): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings')).settings
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/email/accounts')).settings
   }
 
   async deleteBriefingMailbox(id: string): Promise<BriefingSettings> {
-    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/briefings/settings', { action: 'delete', id })).settings
+    return (await this.briefingRequest<{ settings: BriefingSettings }>('/api/email/accounts', { action: 'delete', id })).settings
   }
 
   // ---------------------------------------------------------
@@ -1305,6 +1320,14 @@ class ApiClient {
 
   createLogStream(): EventSource {
     return new EventSource(this.withToken(`${this.baseUrl}/api/logs`))
+  }
+
+  async queryLogs(query: LogQuery, signal?: AbortSignal): Promise<LogPage> {
+    const parameters = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value) parameters.set(key, value) })
+    const data = await this.request<LogPage & ApiResult>(`/api/logs/entries?${parameters}`, { signal })
+    if (data.status !== 'success') throw new Error(data.message || 'Unable to read logs')
+    return data
   }
 
   // Full run.log as a downloadable attachment. Carries the token in the query

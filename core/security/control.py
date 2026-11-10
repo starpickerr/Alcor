@@ -1,0 +1,202 @@
+"""Authenticated native controls. No plugin callback or Agent tool exposes this API."""
+from copy import deepcopy
+from pathlib import Path
+
+
+def require_owner():
+    from core.security.task_policy import trusted_user_edit
+    from core.execution.context import current_execution_context
+    active = current_execution_context()
+    if not trusted_user_edit('user') or active and active.origin != 'ui':
+        raise PermissionError('Permission settings require an authenticated user action')
+
+
+def public_policy(policy):
+    return {key: deepcopy(policy[key]) for key in ('filesystem_mode', 'policy_revision') if key in policy}
+
+
+def mode_patch(patch):
+    from core.security.run_policy import validate_policy
+    if not isinstance(patch, dict) or set(patch) - {'filesystem_mode', 'permission_mode', 'policy_revision'}:
+        raise ValueError('Only the three permission modes can be changed')
+    if 'filesystem_mode' not in patch:
+        raise ValueError('Permission mode is required')
+    return validate_policy(patch)
+
+
+class PermissionControl:
+    def __init__(self, *, task_service=None):
+        self.task_service = task_service
+
+    def _tasks(self, agent):
+        if self.task_service is None:
+            raise ValueError('Task service is unavailable')
+        return self.task_service(agent)
+
+    @staticmethod
+    def _prepare(kind, subject, agent):
+        require_owner()
+        from core.security.migration import ensure_migrated
+        from core.security.run_policy import subject_key
+        if kind not in {'session', 'task'}:
+            raise ValueError('Invalid policy subject')
+        ensure_migrated()
+        key = subject_key(kind, subject, agent)
+        from agent.registry import get_agent_registry
+        get_agent_registry().get(key[1], require_enabled=False)
+        return key
+
+    def read(self, kind, subject, agent=None):
+        self._prepare(kind, subject, agent)
+        from core.security.run_policy import resolve_run_policy
+        if kind == 'session':
+            policy = resolve_run_policy(subject, agent)
+        else:
+            task = self._tasks(agent).get(subject)
+            if not task:
+                raise ValueError('Task not found')
+            policy = task['run_policy']
+        return {'policy': public_policy(policy), 'migration_status': policy.get('migration_status', 'complete')}
+
+    def save(self, kind, subject, patch, agent=None):
+        require_owner()
+        if kind not in {'session', 'task'}:
+            raise ValueError('Invalid policy subject')
+        self._prepare(kind, subject, agent)
+        from core.security.run_policy import save_run_policy
+        clean = mode_patch(patch)
+        if type(clean.get('policy_revision')) is not int or clean['policy_revision'] < (0 if kind == 'task' else 1):
+            raise ValueError('Current policy revision is required')
+        if kind == 'task':
+            self._tasks(agent).update(subject, {'run_policy': clean}, agent_id=agent, origin='user')
+        else:
+            save_run_policy(kind, subject, clean, agent_id=agent, expected_revision=clean['policy_revision'])
+        from agent.permission.audit import record
+        record(event='policy_update', operation='update', resource=f'{kind} RunPolicy', decision='policy_change',
+               reason='Owner updated independent execution permissions.')
+        return self.read(kind, subject, agent)
+
+
+
+class RuntimeControl:
+    def inventory(self):
+        require_owner()
+        from common.runtime_identity import current_identity
+        from core.plugins.management import default_store
+        from core.plugins.package_ops import PackageStore
+        from core.plugins.host import _LIVE_SESSIONS
+        from agent.permission.process_sandbox import capability
+        from agent.tools.mcp.mcp_client import LIVE_CLIENTS
+        from agent.tools.tool_manager import ToolManager
+        from core.security.mcp_runtime import launch_identity
+        from core.plugins.lifecycle import dependency_rebuild_support
+        from core.plugins.manifest import load_manifest
+        from core.runtime.environments import EnvironmentStore
+        user = current_identity().user_id or 'local-default'
+        packages = PackageStore(default_store().root)
+        rows = []
+        for pointer in packages.packages.glob('*/current.json'):
+            identifier = pointer.parent.name
+            package = packages.current_package(identifier)
+            if not package:
+                continue
+            from core.plugins.package_ops import _sha256_tree
+            if _sha256_tree(Path(package['path'])) != package['digest']:
+                rows.append({'kind': 'plugin', 'id': identifier, 'mode': 'unavailable', 'reason': 'Package integrity changed.', 'running': False})
+                continue
+            session = next((row for row in list(_LIVE_SESSIONS) if row.plugin_id == identifier and row.user_id == user
+                            and row._proc is not None and row._proc.poll() is None), None)
+            supported, rebuild_reason = dependency_rebuild_support(load_manifest(Path(package['path'])))
+            store = default_store()
+            enrolled = store.has_instance(identifier, user)
+            if not enrolled or store.instance(identifier, user)['intent'] == 'removed':
+                supported, rebuild_reason = False, 'Enable or install this plugin before rebuilding'
+            pending = store.unfinished(identifier)
+            resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                      and pending[0]['kind'] == 'rebuild' and pending[0]['userId'] == user else None)
+            if pending or store.runtime_state(identifier, user) in {'maintenance', 'draining'}:
+                supported, rebuild_reason = False, 'A pending operation needs recovery first'
+            environment = getattr(session, 'environment', None)
+            environment_error = None
+            if environment is None:
+                try:
+                    environment = EnvironmentStore().current('plugin', identifier, user)
+                except (ValueError, OSError):
+                    environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+            rows.append({'kind': 'plugin', 'id': identifier, 'digest': package['digest'], 'environment': environment,
+                'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                **({'rebuild_operation': resume} if resume else {}),
+                **({'environment_error': environment_error} if environment_error else {}),
+                'running': session is not None, 'mode': session.sandbox_state['mode'] if session else 'stopped',
+                'reason': session.sandbox_state.get('reason') if session else 'Worker has not started.'})
+        from core.mcp.lifecycle import McpLifecycle, rebuild_support
+        from core.security.mcp_runtime import _verify_bound_implementation, environment_identity, private_storage
+        manager = ToolManager()
+        for config in manager._load_mcp_configs():
+            if config.get('type', 'stdio') != 'stdio':
+                from core.security.http_transport import configured_route
+                route_error = None
+                try:
+                    configured_route(config.get('url') or '', config=config)
+                except (ValueError, PermissionError):
+                    route_error = 'Repair endpoint, localNetworks or HTTP/Mixed proxy configuration in settings.'
+                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable' if route_error else 'remote', 'reason': route_error or 'Remote connection; local process isolation does not apply.',
+                             'can_rebuild': False, 'rebuild_reason': 'Remote MCP connections have no local dependency environment.'})
+                continue
+            try:
+                digest, package = launch_identity(config)
+                _verify_bound_implementation(config, package)
+                execution_digest = environment_identity(config)
+                client = next((row for row in list(LIVE_CLIENTS) if row._runtime_key and
+                               row._runtime_key['user_id'] == user and row._runtime_key['identifier'] == config['name']
+                               and row._runtime_key['digest'] == digest and row._proc is not None
+                               and row._proc.poll() is None), None)
+                supported, rebuild_reason = rebuild_support(config)
+                pending = McpLifecycle(manager).pending(config['name'])
+                resume = (pending[0]['operationId'] if supported and len(pending) == 1
+                          and pending[0]['kind'] == 'mcp-rebuild'
+                          and pending[0]['facts'].get('workspace') == str(manager.workspace_root) else None)
+                if pending:
+                    supported, rebuild_reason = False, 'A pending MCP operation needs recovery first'
+                package_launcher = Path(config['command']).name in {'npx', 'uvx'}
+                environment = getattr(client, 'environment', None)
+                environment_error = None
+                if environment is None:
+                    try:
+                        environment = EnvironmentStore().current('mcp', config['name'], user, launch_digest=execution_digest)
+                        if environment and not package_launcher and Path(environment['package']) != package:
+                            environment = None
+                    except (ValueError, OSError):
+                        environment_error = 'The selected dependency environment is invalid; rebuild it to recover'
+                storage_error = None
+                storage_migration = None
+                try:
+                    private_storage(config, user, execution_digest)
+                except (ValueError, OSError) as error:
+                    storage_error = str(error)
+                    from core.security.mcp_runtime import McpStorageMigrationRequired
+                    if isinstance(error, McpStorageMigrationRequired):
+                        storage_migration = McpLifecycle(manager).storage_preview(config['name'])
+                from core.security.runtime_trust import RuntimeTrustStore
+                from core.mcp.packages import package_spec
+                package_error = None
+                if package_launcher:
+                    try:
+                        package_spec(config)
+                    except ValueError as error:
+                        package_error = str(error)
+                rows.append({'kind': 'mcp', 'id': config['name'], 'digest': digest,
+                    'capabilities': RuntimeTrustStore().capabilities(user_id=user, kind='mcp', identifier=config['name'], digest=digest),
+                    'package_launcher': package_launcher, 'package_error': package_error,
+                    'mode': 'unavailable' if storage_error else client.sandbox_state['mode'] if client else 'stopped',
+                    'running': client is not None,
+                    'environment': environment, 'can_rebuild': supported, 'rebuild_reason': rebuild_reason,
+                    **({'rebuild_operation': resume} if resume else {}),
+                    **({'environment_error': environment_error} if environment_error else {}),
+                    **({'storage_migration': storage_migration} if storage_migration else {}),
+                    'reason': storage_error or (client.sandbox_state.get('reason') if client else 'Server has not started.')})
+            except (ValueError, OSError) as error:
+                rows.append({'kind': 'mcp', 'id': config['name'], 'mode': 'unavailable', 'reason': str(error)})
+        from core.security.isolation import application_isolation
+        return {'runtimes': rows, 'isolation': {**capability(), 'scope': 'child-process'},
+                'application_isolation': application_isolation()}

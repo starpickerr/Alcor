@@ -17,7 +17,6 @@ _tool_call_id = ContextVar("stella_tool_call_id", default=None)
 _shell_expansion = ContextVar("stella_shell_expansion", default=None)
 _browser_file_expansion = ContextVar("stella_browser_file_expansion", default=None)
 _permission_limit = ContextVar("stella_permission_limit", default=None)
-_scheduled_permission = ContextVar("stella_scheduled_permission", default=None)
 
 
 class ApprovalRejectedError(Exception):
@@ -39,16 +38,17 @@ def approved_browser_file(url: str) -> str | None:
 
 
 @contextmanager
-def scheduled_permission_scope(mode):
-    """Apply one task's explicit preset for this run, then restore the caller."""
-    if mode not in {"read-only", "workspace-write", "full-access"}:
-        yield
-        return
-    token = _scheduled_permission.set(mode)
-    try:
-        yield
-    finally:
-        _scheduled_permission.reset(token)
+def scheduled_permission_scope(task):
+    """Capture independent task permissions for this execution only."""
+    from common.runtime_identity import current_identity
+    from core.security.task_policy import initialize_scheduled_policy
+    if not isinstance(task, dict):
+        task = {'id': current_identity().task_id, 'run_permission_mode': task}
+    from agent.workspace.context import scheduled_workspace_scope
+    policy = initialize_scheduled_policy(task)
+    from core.security.run_policy import task_policy_scope
+    with scheduled_workspace_scope(task), task_policy_scope(task, current_identity().agent_id):
+        yield policy
 
 
 @contextmanager
@@ -70,14 +70,17 @@ def permission_limit_scope(policy: dict, roots: tuple[str, ...]):
 @contextmanager
 def invocation_scope(tool_call_id):
     token = _tool_call_id.set(tool_call_id)
+    from core.execution.context import execution_scope
+    from core.security.approvals import approved_invocation
     try:
-        yield
+        with execution_scope(), approved_invocation():
+            yield
     finally:
         _tool_call_id.reset(token)
 
 
 def execution_workspace(session_id=None, agent_id=None, workspace=None):
-    from agent.workspace.context import resolve_context
+    from core.workspace.service import resolve_context
     from common.runtime_identity import current_identity
     identity = current_identity()
     context = resolve_context(identity.execution_session_id or session_id, agent_id,
@@ -101,11 +104,8 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
         mode = global_mode()
         cwd, roots = execution_workspace(session_id, agent_id, workspace)
     scope_session_id = identity.execution_session_id or session_id
-    project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id else None
+    project_dir = project_store.get_project_dir(scope_session_id, agent_id) if scope_session_id and not identity.task_id else None
     policy = resolve(mode, project_dir=project_dir, session_id=scope_session_id, agent_id=agent_id)
-    override = _scheduled_permission.get()
-    if override:
-        policy = {**policy, "preset": override, "base_preset": override, "rules": {}}
     limit = _permission_limit.get()
     if limit:
         from agent.permission.security_policy import intersect
@@ -120,13 +120,15 @@ def _current_authorization(agent, agent_id, session_id, workspace, wait_for_appr
     kwargs = dict(cwd=cwd, scope=Scope(write_roots=tuple(roots), accounts=accounts),
                   session_id=session_id, allowlist=allowlist, policy=policy,
                   agent_id=agent_id, project_dir=project_dir, reserve_for_waiter=wait_for_approval)
+    from core.security.protected_paths import current_revision
+    protection_revision = current_revision()
     binding = (identity.user_id, identity.run_id, agent_id, session_id, project_dir,
                cwd, tuple(roots), accounts, tuple(allowlist or ()),
-               grant_version(), json.dumps(policy, sort_keys=True, ensure_ascii=False))
-    return mode, kwargs, binding
+               grant_version(), protection_revision, json.dumps(policy, sort_keys=True, ensure_ascii=False))
+    return policy.get('filesystem_mode', mode), kwargs, binding
 
 
-def permission_denial(
+def _permission_denial(
     tool_name: str,
     arguments: Dict[str, Any],
     *,
@@ -137,6 +139,9 @@ def permission_denial(
     wait_for_approval: bool = False,
     noninteractive: bool = False,
     cancel_event=None,
+    tool=None,
+    user_action: bool = False,
+    capability_descriptor=None,
 ) -> Optional[str]:
     """Return a refusal reason, resolving the current mode at call time.
 
@@ -145,15 +150,39 @@ def permission_denial(
     instance shared with an interactive turn.
     """
     try:
+        from core.security.approvals import clear_pending, inherited, remember
+        clear_pending()
         _shell_expansion.set(None)
         _browser_file_expansion.set(None)
         from common.runtime_identity import current_identity
         identity = current_identity()
         session_id = session_id or identity.session_id
         agent_id = agent_id or identity.agent_id
+        from agent.tools.capability_settings import tool_enabled
+        capability_scope = dict(tool=tool, agent_id=agent_id,
+                                workspace_root=getattr(agent, 'workspace_dir', None))
+        if not tool_enabled(tool_name, **capability_scope):
+            return f'Tool {tool_name} is disabled.'
         mode, check_kwargs, binding = _current_authorization(
             agent, agent_id, session_id, workspace, wait_for_approval)
+        from core.security.service import SecurityService
+        capability_descriptor = capability_descriptor or getattr(tool, 'capability_descriptor', None)
+        from core.security.capabilities import describe_tool
+        descriptor = capability_descriptor or describe_tool(tool_name, arguments)
+        if (SecurityService.native_user_operation() or
+                SecurityService.native_background_operation(descriptor, arguments)):
+            # UI and UI-rooted service calls do not borrow the default Agent
+            # mode. Gateway identity, private paths and connection constraints
+            # still run against the same trusted execution context.
+            native_policy = dict(check_kwargs['policy'])
+            native_policy.update(preset='full-access', filesystem_mode='full-access', rules={}, migration_status='complete')
+            native_policy.pop('error', None)
+            check_kwargs['policy'] = native_policy
+            mode = 'full-access'
+        inherited_approval = inherited(descriptor, binding, arguments)
         decision = SecurityGateway.check(mode, tool_name, arguments,
+                                         capability_descriptor=capability_descriptor,
+                                         inherited_approval=inherited_approval,
                                          create_pending=not noninteractive, **check_kwargs)
         if decision.kind is DecisionKind.CONFIRM and wait_for_approval:
             def policy_now_allows():
@@ -164,7 +193,7 @@ def permission_denial(
                 if fresh_binding[:-1] != binding[:-1] or fresh_binding[-1] == binding[-1]:
                     return False
                 return SecurityGateway.check(fresh_mode, tool_name, arguments,
-                                             create_pending=False, **fresh_kwargs).allowed
+                                             capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs).allowed
 
             outcome = SecurityGateway.wait_for_decision(
                 decision.request_id, cancel_event, policy_allows=policy_now_allows)
@@ -172,10 +201,10 @@ def permission_denial(
                 mode, fresh_kwargs, fresh_binding = _current_authorization(
                     agent, agent_id, session_id, workspace, wait_for_approval)
                 if fresh_binding[:-1] != binding[:-1] or not SecurityGateway.check(
-                        mode, tool_name, arguments, create_pending=False, **fresh_kwargs).allowed:
+                        mode, tool_name, arguments, capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs).allowed:
                     raise ApprovalRejectedError("权限或工作区在执行前再次变化，本轮已停止。")
                 decision = SecurityGateway.check(mode, tool_name, arguments,
-                                                 create_pending=False, **fresh_kwargs)
+                                                 capability_descriptor=capability_descriptor, create_pending=False, **fresh_kwargs)
             elif outcome == "approved":
                 if cancel_event is not None and cancel_event.is_set():
                     from agent.protocol.cancel import AgentCancelledError
@@ -187,7 +216,7 @@ def permission_denial(
                 if fresh_binding != binding:
                     raise ApprovalRejectedError("审批期间工作区或授权范围已变化，本轮已停止。")
                 decision = SecurityGateway.check(mode, tool_name, arguments,
-                                                 approval_request_id=decision.request_id, **fresh_kwargs)
+                                                 capability_descriptor=capability_descriptor, approval_request_id=decision.request_id, **fresh_kwargs)
                 if cancel_event is not None and cancel_event.is_set():
                     from agent.protocol.cancel import AgentCancelledError
                     raise AgentCancelledError("cancelled while waiting for approval")
@@ -203,9 +232,17 @@ def permission_denial(
                 raise AgentCancelledError("cancelled while waiting for approval")
             else:
                 raise ApprovalRejectedError(f"{tool_name} 审批已过期，本轮已停止；操作未执行。")
-        if decision.allowed:
+        # A native settings action is explicit confirmation by the authenticated
+        # owner, but it cannot override DENY or authorize Agent/background work.
+        owner_confirmed = (user_action and not any((identity.agent_id, identity.session_id,
+                            identity.task_id, identity.run_id)) and
+                           decision.kind is DecisionKind.CONFIRM)
+        if decision.allowed or owner_confirmed:
+            if not tool_enabled(tool_name, **capability_scope):
+                return f'Tool {tool_name} is disabled.'
+            remember(descriptor, binding, arguments)
             if tool_name in {"read", "write", "edit", "ls", "search_files", "bash", "vision"}:
-                from agent.workspace.context import resolve_context
+                from core.workspace.service import resolve_context
                 context = resolve_context(identity.execution_session_id or session_id, agent_id,
                                           task_id=identity.task_id)
                 if context.kind in ("session", "automation"):
@@ -232,3 +269,9 @@ def permission_denial(
         logger.error(f"[Permission] Failed to check {tool_name}: {exc}")
         # A failed policy check is never an authorization to run a tool.
         return f"Permission check failed for {tool_name}; the tool did not run."
+
+
+def permission_denial(tool_name, arguments, **kwargs):
+    """Compatibility entry point into the shared Core Security Service."""
+    from core.security.service import SecurityService
+    return SecurityService.authorize_tool(tool_name, arguments, **kwargs)

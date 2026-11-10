@@ -8,6 +8,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from core.security.file_access import checked_open
 from agent.tools.utils.credentials import credential_denial_message, is_credential_path
 from agent.tools.utils.file_state import note_read
 from agent.tools.utils.truncate import truncate_head, format_size, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES
@@ -418,7 +419,7 @@ class Read(BaseTool):
             # Read file (utf-8-sig strips BOM automatically on Windows)
             # Note: Truncation is unified via truncate_head (DEFAULT_MAX_LINES / DEFAULT_MAX_BYTES)
             # so that offset/limit can paginate the entire file correctly.
-            with open(absolute_path, 'r', encoding='utf-8-sig') as f:
+            with checked_open(absolute_path, 'r', encoding='utf-8-sig') as f:
                 content = f.read()
 
             result, error = self._paginate(
@@ -463,50 +464,51 @@ class Read(BaseTool):
     @staticmethod
     def _extract_office_text(absolute_path: str, file_ext: str) -> str:
         """Extract plain text from an Office document."""
-        if file_ext in ('.docx', '.doc'):
-            try:
-                from docx import Document
-            except ImportError:
-                raise ImportError("Error: python-docx library not installed. Install with: pip install python-docx")
-            doc = Document(absolute_path)
-            paragraphs = [p.text for p in doc.paragraphs]
-            for table in doc.tables:
-                for row in table.rows:
-                    paragraphs.append('\t'.join(cell.text for cell in row.cells))
-            return '\n'.join(paragraphs)
+        with checked_open(absolute_path, 'rb') as file:
+            if file_ext in ('.docx', '.doc'):
+                try:
+                    from docx import Document
+                except ImportError:
+                    raise ImportError("Error: python-docx library not installed. Install with: pip install python-docx")
+                doc = Document(file)
+                paragraphs = [p.text for p in doc.paragraphs]
+                for table in doc.tables:
+                    for row in table.rows:
+                        paragraphs.append('\t'.join(cell.text for cell in row.cells))
+                return '\n'.join(paragraphs)
 
-        if file_ext in ('.xlsx', '.xls'):
-            try:
-                from openpyxl import load_workbook
-            except ImportError:
-                raise ImportError("Error: openpyxl library not installed. Install with: pip install openpyxl")
-            wb = load_workbook(absolute_path, read_only=True, data_only=True)
-            parts = []
-            for ws in wb.worksheets:
-                parts.append(f"--- Sheet: {ws.title} ---")
-                for row in ws.iter_rows(values_only=True):
-                    parts.append('\t'.join(str(c) if c is not None else '' for c in row))
-            wb.close()
-            return '\n'.join(parts)
+            if file_ext in ('.xlsx', '.xls'):
+                try:
+                    from openpyxl import load_workbook
+                except ImportError:
+                    raise ImportError("Error: openpyxl library not installed. Install with: pip install openpyxl")
+                wb = load_workbook(file, read_only=True, data_only=True)
+                parts = []
+                for ws in wb.worksheets:
+                    parts.append(f"--- Sheet: {ws.title} ---")
+                    for row in ws.iter_rows(values_only=True):
+                        parts.append('\t'.join(str(c) if c is not None else '' for c in row))
+                wb.close()
+                return '\n'.join(parts)
 
-        if file_ext in ('.pptx', '.ppt'):
-            try:
-                from pptx import Presentation
-            except ImportError:
-                raise ImportError("Error: python-pptx library not installed. Install with: pip install python-pptx")
-            prs = Presentation(absolute_path)
-            parts = []
-            for i, slide in enumerate(prs.slides, 1):
-                parts.append(f"--- Slide {i} ---")
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        for para in shape.text_frame.paragraphs:
-                            text = para.text.strip()
-                            if text:
-                                parts.append(text)
-            return '\n'.join(parts)
+            if file_ext in ('.pptx', '.ppt'):
+                try:
+                    from pptx import Presentation
+                except ImportError:
+                    raise ImportError("Error: python-pptx library not installed. Install with: pip install python-pptx")
+                prs = Presentation(file)
+                parts = []
+                for i, slide in enumerate(prs.slides, 1):
+                    parts.append(f"--- Slide {i} ---")
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            for para in shape.text_frame.paragraphs:
+                                text = para.text.strip()
+                                if text:
+                                    parts.append(text)
+                return '\n'.join(parts)
 
-        return ""
+            return ""
 
     def _read_pdf(self, absolute_path: str, display_path: str, offset: int = None,
                   limit: int = None, pages: str = None) -> ToolResult:
@@ -529,50 +531,51 @@ class Read(BaseTool):
                 )
             
             # Read PDF
-            reader = PdfReader(absolute_path)
-            total_pages = len(reader.pages)
+            with checked_open(absolute_path, 'rb') as file:
+                reader = PdfReader(file)
+                total_pages = len(reader.pages)
 
-            try:
-                first_page, last_page = _parse_page_range(pages, total_pages)
-            except ValueError as e:
-                return ToolResult.fail(f"Error: {e}")
+                try:
+                    first_page, last_page = _parse_page_range(pages, total_pages)
+                except ValueError as e:
+                    return ToolResult.fail(f"Error: {e}")
 
-            # Only extract the requested window; a large PDF is expensive to
-            # parse in full and the model rarely needs every page.
-            text_parts = []
-            for page_num in range(first_page, last_page + 1):
-                page_text = reader.pages[page_num - 1].extract_text()
-                if page_text.strip():
-                    text_parts.append(f"--- Page {page_num} ---\n{page_text}")
+                # Only extract the requested window; a large PDF is expensive to
+                # parse in full and the model rarely needs every page.
+                text_parts = []
+                for page_num in range(first_page, last_page + 1):
+                    page_text = reader.pages[page_num - 1].extract_text()
+                    if page_text.strip():
+                        text_parts.append(f"--- Page {page_num} ---\n{page_text}")
 
-            if not text_parts:
-                scope = (
-                    f"pages {first_page}-{last_page} of {total_pages}"
-                    if (first_page, last_page) != (1, total_pages)
-                    else f"{total_pages} pages"
+                if not text_parts:
+                    scope = (
+                        f"pages {first_page}-{last_page} of {total_pages}"
+                        if (first_page, last_page) != (1, total_pages)
+                        else f"{total_pages} pages"
+                    )
+                    return ToolResult.success({
+                        "content": f"[PDF file with {scope}, but no text content could be extracted]",
+                        "total_pages": total_pages,
+                        "message": "PDF may contain only images or be encrypted"
+                    })
+
+                result, error = self._paginate(
+                    split_lines("\n\n".join(text_parts)), offset, limit, display_path
                 )
-                return ToolResult.success({
-                    "content": f"[PDF file with {scope}, but no text content could be extracted]",
-                    "total_pages": total_pages,
-                    "message": "PDF may contain only images or be encrypted"
-                })
+                if error:
+                    return ToolResult.fail(error)
 
-            result, error = self._paginate(
-                split_lines("\n\n".join(text_parts)), offset, limit, display_path
-            )
-            if error:
-                return ToolResult.fail(error)
+                result["total_pages"] = total_pages
+                result["pages_read"] = f"{first_page}-{last_page}"
+                if last_page < total_pages:
+                    result["content"] += (
+                        f"\n\n[Read pages {first_page}-{last_page} of {total_pages}. "
+                        f"Use pages=\"{last_page + 1}-\" to continue.]"
+                    )
 
-            result["total_pages"] = total_pages
-            result["pages_read"] = f"{first_page}-{last_page}"
-            if last_page < total_pages:
-                result["content"] += (
-                    f"\n\n[Read pages {first_page}-{last_page} of {total_pages}. "
-                    f"Use pages=\"{last_page + 1}-\" to continue.]"
-                )
+                note_read(absolute_path)
+                return ToolResult.success(result)
 
-            note_read(absolute_path)
-            return ToolResult.success(result)
-            
         except Exception as e:
             return ToolResult.fail(f"Error reading PDF file: {str(e)}")

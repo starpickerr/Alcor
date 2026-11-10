@@ -1,4 +1,6 @@
-# Stella 开发者架构导航
+# Alcor 开发者架构导航
+
+当前默认产品为 `packages/` 中的 DSH 原生 Alcor，开发、构建与安装入口见 [product/README.md](../../product/README.md) 和仓库根 [AGENTS.md](../../AGENTS.md)。本页描述保留的旧 Python／独立桌面运行路径，不能用于定位新版同名功能或作为新版验收入口。
 
 本文记录当前代码，产品使用方式见[使用指南](../guide.md)。目录名与入口均以仓库当前实现为准；未来设想不在此标为已实现。
 
@@ -11,7 +13,8 @@ flowchart LR
   Agent --> Tools[agent/tools/*]
   Tools --> App
   Scheduler[agent/scheduler/*] --> App
-  App --> Domain[agent/{todos,calendar,bills,briefing} services]
+  App --> Domain[agent/{todos,calendar,briefing} services]
+  App --> Bills[stella.bills plugin RPC]
   Domain --> Data[common.state_dir 管理的 SQLite]
   Agent --> Gate[agent/runtime + agent/permission]
 ```
@@ -22,7 +25,34 @@ flowchart LR
 | HTTP 与通道 | `app.py` 启动应用；`channel/desktop/desktop_channel.py` 暴露桌面 HTTP API，其他 `channel/` 处理外部与 Web 消息 | `app.py`, `channel/`, `tests/test_briefing_web.py` |
 | Agent/Harness | `bridge/` 组装模型、工具与会话；执行循环在 `agent/protocol/agent_stream.py` | [运行机制](agent-runtime.md) |
 | 共享业务边界 | `Application.port` 和 `Application.command` 将 Desktop、Agent 工具、自动化送入同一领域服务 | `application/api.py`, `tests/test_todos.py`, `tests/test_harness_runtime.py` |
-| 领域服务 | `agent/todos/`, `calendar/`, `bills/`, `briefing/`, `scheduler/` | [业务模块](../modules/core-business.md) |
+| 领域服务 | `agent/briefing/` 来源/生成适配、`scheduler/`；简报存储与决策通过 `core/services/briefing_facade.py`，日程通过 `core/services/calendar_facade.py`，账单与事务通过 `core/services/bills_facade.py`、`todos_facade.py` 调用外仓插件，`agent/calendar/`、`agent/todos/` 只保留 Apple 与 scheduler 适配 | [业务模块](../modules/core-business.md) |
 | 状态与权限 | `common/runtime_identity.py`、`common/state_dir.py` 分配身份与路径；运行时权限由 gateway 决定 | [数据与安全](security-and-storage.md) |
+| 知识与长期记忆 | `stella.knowledge`、`stella.memory` 各自提供文档、索引、检索、整理和上下文贡献，入口经 `core/services/*_facade.py` 与 gateway 调用独立 worker。Core 仅保留 `agent/memory/conversation_store.py` 的会话存储，以及 `models/plugin_service.py` 的授权模型接口 | `tests/test_knowledge_plugin_boundary.py`；外仓 `dsh-agent-hub/plugins/{knowledge,memory}` |
+
+知识和记忆默认安装，可独立停用；不可用时不回退到 Core 业务实现。管理页面由插件声明贡献，React 宿主复用现有页面。知识沿用用户的 `knowledge/`，长期记忆首次迁入用户根目录的 `plugins/memory/`，旧 Markdown 保留且不再作为运行时写入目标。Core 会话数据库留在原路径，停用长期记忆不影响对话记录。迁移及安装测试使用隔离数据，已有安装包需重新构建才能包含这两个默认插件。
 
 更详细的数据路径见 [数据流](data-flow.md)。修改跨模块写入时，先定位 `Application` 命令与对应领域服务，检查是否已有幂等与恢复机制。
+
+## 邮箱与 eLearning MCP
+
+邮箱与学校抓取分别由工作区 `MCP/email-mcp`、`MCP/dsh-fudan-elearning` 独立仓库发布本地 stdio Server。Core 的 `core/mcp/managed.py` 注册可信默认连接；设置、简报与 Agent 通过同一 `ToolManager.call_mcp_tool` 使用 MCP Runtime。管理工具不注入 Agent；公开工具保留来源、启停、权限及取消。旧插件不再安装或启动，原有账号、cookies、SQLite、游标及下载文件保持原路径格式，由 Server 接管。
+
+迁移不抹除旧连接拒绝、插件授权撤销、后台用途或课程/文件夹范围。既有 scoped grants 由 Core 兼容检查，并通过 MCP 请求元数据向 Server 传递实际资源约束；该元数据不属于 Agent 可写工具参数。原生设置点击仅确认需要确认的操作，不能覆盖拒绝或为 Agent/后台调用确认。eLearning 下载仍需 Core 文件写权限，Server 限定配置根目录并保护本地文件。独立 eLearning 客户端用跨进程锁保护共享游标、审计和下载 manifest。
+
+开发启动发现兄弟 MCP 仓库的环境；独立部署可安装 console script。桌面构建调用各仓库 `build_mcp.py`，将独立冻结 Server 产物放在 backend 同级目录；缺失环境会明确构建失败，不回退旧插件或把冻结 backend 当作 Python。测试：`tests/test_managed_mcp_domains.py`、`tests/test_mcp_bound_resources.py`。
+
+## 工作区、执行上下文与安全服务
+
+Core Workspace Service 统一运行目录与文件浏览，Execution Context 绑定不可变执行身份、工作区和调用约束，Security Service 复用现有 Gateway/Grant 进行实时授权。工具、插件 callback、子 Agent 和模型边界及旧数据兼容见[工作区与执行服务](execution-services.md)。
+
+子进程环境白名单、按用户与代次隔离的插件贡献，以及 Codex / DeepSeek Harness 源码参考与许可记录见[Runtime 安全与插件实例边界](runtime-reference-integration.md)。
+
+## 数据服务
+
+`core/data` 提供 Provider / Source / Resource 目录、采集检查点、去重记录与可靠变更通知。邮箱保留采集链路；eLearning、事务、日程、账单、简报、知识、记忆通过原 MCP 或插件 RPC 提供资源引用。正文仍由原所有者管理，读取前后复查当前授权与来源状态。契约、事件语义与性能限制见[数据服务](data-service.md)。
+
+数据目录按当前用户全局共享，Agent 通过已连接服务正常访问，外部连接中的限制仍实时生效；会话/任务工作区不注册为信息源。桌面「数据」依次为总览、信息源、数据使用和数据存储：以安全总览相同的卡片结构说明职责与状态、查看真实注册来源、选择功能消费哪些来源、查看实际存储位置。信息源按服务聚合，多个邮箱合并为一个 Email 卡片，点击整张卡片进入唯一配置页。桌面资源预览已移除；底层资源引用与消费 API 保留。消费关系是可撤销的使用选择，沿真实简报调用传递，不授予额外权限；旧事件订阅、游标及所有者数据保持兼容。
+
+模型、Agent 配置、能力、通用和日志位于系统区，各自承载对应配置。模型凭据直接在模型设置内编辑；安全页面已移除，Core 继续执行底层安全机制。旧设置页与来源路由保留兼容跳转。当前入口与表单归属见[信息架构与配置入口](information-architecture.md)。
+
+日志工作台支持功能/级别/时间筛选、检索、历史分页与诊断详情；跨进程采集、脱敏和保留窗口见[日志工作台](logging.md)。

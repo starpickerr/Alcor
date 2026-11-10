@@ -1,0 +1,31 @@
+{
+  "sources": [
+    {
+      "repo": "dsh-fudan-elearning",
+      "module": "elearning_mcp",
+      "package": "alcor-elearning",
+      "binary": "elearning-mcp",
+      "version": "1.0.8",
+      "sourceSha256": "972b29ed74fe99628a650ba71a34bba1eefb554a7bced06fe4c5f4001c56c7d6",
+      "dependencies": {
+        "mcp": "1.30.0",
+        "PyInstaller": "6.22.3",
+        "playwright": "1.52.0"
+      },
+      "sourceRevision": "f82d13de57518fac015903a45a3550267a83c279"
+    },
+    {
+      "repo": "dsh-email",
+      "module": "email_mcp",
+      "package": "alcor-mail",
+      "binary": "email-mcp",
+      "version": "1.0.6",
+      "sourceRevision": "7bb82f44f8c16d9b5494ed2748994a3ded4d98c2",
+      "sourceSha256": "7409f8d2100f7bd8bcb99bced4ea92960487efc4c71202ad2bc7a8b4c1a0fa70",
+      "dependencies": {
+        "mcp": "1.30.0",
+        "PyInstaller": "6.22.3"
+      }
+    }
+  ]
+}

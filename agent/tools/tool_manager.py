@@ -9,6 +9,10 @@ from common.log import logger
 from config import conf
 
 
+def _same_mcp_config(left, right):
+    return left == right and getattr(left, 'credential_source', None) == getattr(right, 'credential_source', None)
+
+
 def _normalize_mcp_configs(raw) -> list:
     """
     Convert MCP server config to internal list format.
@@ -45,8 +49,10 @@ class ToolManager:
 
     def __new__(cls):
         from common.state_dir import real_state_root
+        from common.runtime_identity import current_identity
 
-        key = real_state_root()
+        workspace_root = real_state_root()
+        key = (workspace_root, current_identity().user_id or 'local-default')
         instance = cls._instances.get(key)
         if instance is not None:
             return instance
@@ -54,7 +60,7 @@ class ToolManager:
             instance = cls._instances.get(key)
             if instance is None:
                 instance = super(ToolManager, cls).__new__(cls)
-                instance.workspace_root = key
+                instance.workspace_root = workspace_root
                 instance.tool_classes = {}  # Store tool classes instead of instances
                 instance._initialized = False
                 cls._instances[key] = instance
@@ -75,6 +81,12 @@ class ToolManager:
     def __init__(self):
         # Runs on every ToolManager() call, including the ones that get a
         # cached instance back, so every field is guarded.
+        if not hasattr(self, 'capability_settings'):
+            from common.runtime_identity import current_identity
+            from agent.tools.capability_settings import CapabilitySettings
+            self.identity = current_identity()
+            self.capability_settings = CapabilitySettings(getattr(self, 'workspace_root', None), user_id=self.identity.user_id)
+            self.workspace_root = self.capability_settings.workspace_root
         if not hasattr(self, 'tool_classes'):
             self.tool_classes = {}  # Dictionary to store tool classes
         if not hasattr(self, '_mcp_registry'):
@@ -84,7 +96,13 @@ class ToolManager:
         if not hasattr(self, '_mcp_lock'):
             # Guards _mcp_loaded check-then-set so concurrent callers
             # don't trigger duplicate background loaders.
-            self._mcp_lock = threading.Lock()
+            self._mcp_lock = threading.RLock()
+        if not hasattr(self, '_mcp_pending_clients'):
+            self._mcp_pending_clients = {}
+        if not hasattr(self, '_mcp_authorizations'):
+            self._mcp_authorizations = {}
+        if not hasattr(self, '_mcp_generations'):
+            self._mcp_generations = {}
         if not hasattr(self, '_mcp_loaded'):
             # Idempotency flag. Flipped to True the moment the first loader
             # is dispatched (synchronously, inside _mcp_lock). Subsequent
@@ -119,7 +137,7 @@ class ToolManager:
             self._embedding_provider_initialized = False
             self._embedding_provider = None
 
-    def load_tools(self, tools_dir: str = "", config_dict=None):
+    def load_tools(self, tools_dir: str = "", config_dict=None, *, load_mcp=True):
         """
         Load tools from both directory and configuration.
 
@@ -132,7 +150,8 @@ class ToolManager:
             self._load_tools_from_init()
             self._configure_tools_from_config(config_dict)
 
-        self._load_mcp_tools()
+        if load_mcp:
+            self._load_mcp_tools()
 
     def _load_tools_from_init(self) -> bool:
         """
@@ -300,280 +319,603 @@ class ToolManager:
 
     def _read_mcp_json_signature(self):
         """
-        Return (mtime, sha256_of_bytes) for ~/stella/mcp.json without parsing.
-        Returns (None, None) if the file doesn't exist or is unreadable.
+        Fingerprint the selected MCP file or config.json fallback without parsing.
+        Include its origin so copying identical references does not retain an old client.
         Cheap enough (one stat + one small read) to call on every agent init.
         """
         import os
         import hashlib
+        from config import get_data_root
         path = self._mcp_json_path()
+        if not os.path.exists(path):
+            fallback = Path(get_data_root()) / 'config.json'
+            if fallback.exists():
+                path = str(fallback)
+        source = str(Path(path).resolve())
+        revision = self.capability_settings.revision('mcp')
         try:
             mtime = os.path.getmtime(path)
         except OSError:
-            return (None, None)
+            return (source, None, None, revision)
         try:
             with open(path, "rb") as f:
                 digest = hashlib.sha256(f.read()).hexdigest()
         except OSError:
-            return (mtime, None)
-        return (mtime, digest)
+            return (source, mtime, None, revision)
+        return (source, mtime, digest, revision)
 
     def _load_mcp_configs(self) -> list:
+        from core.mcp.managed import configurations
+        managed = configurations(self)
+        reserved = {row['name'] for row in managed}
+        user = self._load_user_mcp_configs()
+        if any(row.get('name') in reserved for row in user):
+            raise ValueError('Managed MCP server names are reserved; configure their installation paths instead')
+        # Internal metadata cannot be asserted by a user-supplied server.
+        for row in user:
+            row.pop('settingsUrl', None)
+        return user + managed
+
+    def _load_user_mcp_configs(self) -> list:
         """
         Load MCP server configs with priority:
           1. ~/stella/mcp.json  (supports both mcpServers and mcp_servers keys)
           2. config.json mcp_servers field (fallback)
         """
-        import os
-        import json as _json
-
-        mcp_json_path = self._mcp_json_path()
-
-        if os.path.exists(mcp_json_path):
-            try:
-                with open(mcp_json_path, "r", encoding="utf-8") as f:
-                    data = _json.load(f)
-                raw = data.get("mcpServers") or data.get("mcp_servers") or data
-                logger.info(f"[ToolManager] Loading MCP config from {mcp_json_path}")
-                return _normalize_mcp_configs(raw)
-            except Exception as e:
-                logger.warning(f"[ToolManager] Failed to read {mcp_json_path}: {e}, falling back to config.json")
-
+        store = self._mcp_credential_store()
+        if store is not None:
+            return store.configs()
         raw = conf().get("mcp_servers", [])
         return _normalize_mcp_configs(raw)
 
-    def _load_mcp_tools(self):
-        """
-        Trigger MCP tool loading in a background thread (idempotent).
+    def _mcp_credential_store(self):
+        from core.security.mcp_credentials import McpCredentialStore
+        from config import get_data_root
+        import json
+        path = Path(self._mcp_json_path())
+        if path.exists():
+            return McpCredentialStore(path)
+        path = Path(get_data_root()) / 'config.json'
+        if path.exists():
+            data = json.loads(path.read_bytes())
+            if not isinstance(data, dict):
+                raise ValueError('Configuration must be an object; original file retained')
+            if 'mcp_servers' in data:
+                return McpCredentialStore(path, root_key='mcp_servers')
+        return None
 
-        Returns immediately. Booting MCP servers (npx, uvx, etc.) takes
-        seconds to tens of seconds on first run, which would otherwise
-        block agent initialization and the user's first message.
-        Built-in tools work fine without MCP, so we let the agent serve
-        traffic right away and let MCP servers come online in the
-        background. Per-session agents read a snapshot of whatever is
-        ready at construction time and gracefully ignore the rest.
-        """
+    def manage_mcp_credentials(self, name, action, *, area=None, key=None, value=None, expected_revision=None):
+        from core.security.control import require_owner
+        require_owner()
+        if not isinstance(name, str) or not name or action not in {'status', 'save'}:
+            raise ValueError('Invalid MCP credential action')
+        with self._mcp_lock:
+            store = self._mcp_credential_store()
+            if store is None:
+                raise ValueError('No persisted MCP configuration exists; configure this server first')
+            result = (store.inventory(name, migrate=True) if action == 'status' else
+                      store.save(name, area, key, value, expected_revision=expected_revision))
+            current = next(config for config in store.configs() if config['name'] == name)
+            active = self._mcp_active_configs.get(name)
+            if active is not None and not _same_mcp_config(active, current):
+                self._teardown_mcp_server(name)
+                if self._mcp_enabled(current):
+                    self._queue_mcp_servers([current])
+            return dict(result, transport=current.get('type', 'stdio'))
+
+    def _mcp_enabled(self, config):
+        default = config.get('enabled', not config.get('disabled', False)) is not False
+        return self.capability_settings.enabled('mcp', config.get('name', '<unnamed>'), default=default)
+
+    def _mcp_admitted(self, name, generation):
+        from core.mcp.lifecycle import check_admission
+        try:
+            check_admission(name, self.identity.user_id or 'local-default', config=self._mcp_active_configs.get(name))
+        except PermissionError:
+            return False
+        with self._mcp_lock:
+            config = self._mcp_active_configs.get(name)
+            return bool(config is not None and self._mcp_generations.get(name) == generation
+                        and self._mcp_enabled(config))
+
+    def _queue_mcp_servers(self, configs):
+        """Called under the manager lock; each queued load owns one generation."""
+        pending = []
+        generations = {}
+        for config in configs:
+            name = config.get('name', '<unnamed>')
+            if not self._mcp_enabled(config):
+                continue
+            if (_same_mcp_config(self._mcp_active_configs.get(name), config) and
+                    self._mcp_status.get(name) in {'pending', 'ready', 'needs_auth'}):
+                continue
+            if name in self._mcp_active_configs:
+                self._teardown_mcp_server(name)
+            generation = self._mcp_generations.get(name, 0) + 1
+            self._mcp_generations[name] = generation
+            self._mcp_active_configs[name] = config
+            self._mcp_status[name] = 'pending'
+            generations[name] = generation
+            pending.append(config)
+        if pending:
+            threading.Thread(target=self._run_mcp_loader, args=(pending, generations),
+                             daemon=True, name='mcp-loader').start()
+
+    def _check_mcp_authorization(self, name, generation):
+        with self._mcp_lock:
+            configured = next((row for row in self._load_mcp_configs() if row.get('name') == name), None)
+            if not self._mcp_admitted(name, generation) or not _same_mcp_config(configured, self._mcp_active_configs.get(name)):
+                raise PermissionError('MCP authorization expired because its provider or configuration changed')
+
+    def _publish_mcp_authorization(self, name, generation, operation):
+        with self._mcp_lock:
+            self._check_mcp_authorization(name, generation)
+            return operation()
+
+    def manage_mcp_authorization(self, name, action):
+        from core.security.control import require_owner
+        from agent.tools.mcp import mcp_oauth as oauth
+        require_owner()
+        if not isinstance(name, str) or not name or len(name) > 512 or '\0' in name or action not in {'status', 'authorize', 'cancel', 'remove'}:
+            raise ValueError('Invalid MCP authorization action')
+        with self._mcp_lock:
+            config = next((row for row in self._load_mcp_configs() if row.get('name') == name), None)
+            remote = config is not None and config.get('type') == 'streamable-http'
+            status = oauth.authorization_status(name, config.get('url') if remote else None)
+            enabled = bool(remote and self._mcp_enabled(config))
+            can_authorize = enabled and not status['requires_reset'] and status['state'] != 'unavailable'
+            if action == 'status':
+                pending = self._mcp_authorizations.get(name)
+                authorization = None
+                if pending and enabled:
+                    generation, handler = pending
+                    try:
+                        self._check_mcp_authorization(name, generation)
+                        authorization = oauth.pending_authorization(handler)
+                    except PermissionError:
+                        pass
+                return dict(status, can_authorize=can_authorize, enabled=enabled,
+                            authorizing=bool(authorization and authorization['authorizing']),
+                            authorization_url=authorization['authorization_url'] if authorization else None,
+                            expires_at=authorization['expires_at'] if authorization else None)
+            if action == 'remove':
+                oauth.clear_server_record(name)
+                self._teardown_mcp_server(name)
+                return self.manage_mcp_authorization(name, 'status')
+            pending = self._mcp_authorizations.pop(name, None)
+            if pending:
+                oauth.cancel_pending(handler=pending[1])
+            if action == 'cancel':
+                return self.manage_mcp_authorization(name, 'status')
+            if not can_authorize:
+                raise PermissionError(status['reason'] or 'Enable the configured HTTP MCP before authorizing it')
+            if not _same_mcp_config(self._mcp_active_configs.get(name), config):
+                self._teardown_mcp_server(name)
+                self._mcp_active_configs[name] = config
+            generation = self._mcp_generations.setdefault(name, 1)
+            def check():
+                self._check_mcp_authorization(name, generation)
+            from agent.tools.mcp.mcp_client import _oauth_redirect_uri
+            handler = oauth.OAuthHandler(name, config['url'], _oauth_redirect_uri(), scope=config.get('scope', ''),
+                check_active=check, check_authorization=check,
+                publish=lambda operation: self._publish_mcp_authorization(name, generation, operation),
+                on_authorized=lambda: self.reload_mcp_server(name, generation=generation))
+        try:
+            if not handler.ensure_registered() or not handler.build_authorization_url():
+                raise PermissionError('OAuth registration is unavailable; check the connection or remove the old authorization')
+            with self._mcp_lock:
+                check()
+                self._mcp_authorizations[name] = generation, handler
+                return self.manage_mcp_authorization(name, 'status')
+        except BaseException:
+            oauth.cancel_pending(handler=handler)
+            raise
+
+    def _run_mcp_loader(self, configs, generations):
+        from common.runtime_identity import use_identity
+        with use_identity(self.identity):
+            self._load_mcp_tools_async(configs, generations)
+
+    def _load_mcp_tools(self):
         with self._mcp_lock:
             if self._mcp_loaded:
                 return
-            mcp_servers_config = self._load_mcp_configs()
-            # Snapshot the signature now so future refresh_mcp_if_changed()
-            # calls can short-circuit when nothing has changed on disk.
+            configs = self._load_mcp_configs()
             self._mcp_signature = self._read_mcp_json_signature()
-            self._mcp_active_configs = {
-                cfg.get("name", "<unnamed>"): cfg for cfg in mcp_servers_config
-            }
-            if not mcp_servers_config:
-                # Mark as loaded even when there is nothing to load,
-                # so we don't re-read the config file on every call.
-                self._mcp_loaded = True
-                return
-
-            # Mark pending immediately so list_mcp_status() callers see
-            # the in-progress state instead of an empty dict.
-            for cfg in mcp_servers_config:
-                name = cfg.get("name", "<unnamed>")
-                self._mcp_status[name] = "pending"
-
+            self._queue_mcp_servers(configs)
             self._mcp_loaded = True
-            threading.Thread(
-                target=self._load_mcp_tools_async,
-                args=(mcp_servers_config,),
-                daemon=True,
-                name="mcp-loader",
-            ).start()
-            logger.info(
-                f"[ToolManager] MCP loading started in background "
-                f"({len(mcp_servers_config)} server(s) configured)"
-            )
 
     def refresh_mcp_if_changed(self):
-        """
-        Cheap check whether ~/stella/mcp.json has changed since last load.
-        If it has, do a diff-based reload: start newly added servers,
-        shut down removed ones, and restart any whose config was edited.
-        Untouched servers are left running.
-
-        Designed to be called on every agent creation. The fast path is
-        a single os.stat() — completely free when nothing has changed.
-        """
         with self._mcp_lock:
-            new_sig = self._read_mcp_json_signature()
-            if new_sig == self._mcp_signature:
-                return  # no-op fast path
-
-            try:
-                new_configs = self._load_mcp_configs()
-            except Exception as e:
-                logger.warning(f"[ToolManager] MCP reload — failed to parse config: {e}")
+            signature = self._read_mcp_json_signature()
+            if signature == self._mcp_signature:
                 return
+            configs = self._load_mcp_configs()
+            desired = {cfg.get('name', '<unnamed>'): cfg for cfg in configs if self._mcp_enabled(cfg)}
+            old = dict(self._mcp_active_configs)
+            for name, cfg in old.items():
+                if name not in desired or not _same_mcp_config(desired[name], cfg):
+                    self._teardown_mcp_server(name)
+            self._queue_mcp_servers([cfg for name, cfg in desired.items() if name not in old or not _same_mcp_config(old[name], cfg)])
+            self._mcp_signature = signature
 
-            new_by_name = {
-                cfg.get("name", "<unnamed>"): cfg for cfg in new_configs
-            }
-            old_by_name = self._mcp_active_configs
-
-            added = [n for n in new_by_name if n not in old_by_name]
-            removed = [n for n in old_by_name if n not in new_by_name]
-            changed = [
-                n for n in new_by_name
-                if n in old_by_name and new_by_name[n] != old_by_name[n]
-            ]
-
-            if not (added or removed or changed):
-                # Signature drifted but content is logically identical
-                # (e.g. user re-saved the file without edits). Just sync.
-                self._mcp_signature = new_sig
-                return
-
-            logger.info(
-                f"[ToolManager] mcp.json changed — "
-                f"adding={added}, removing={removed}, restarting={changed}"
-            )
-
-            # Tear down removed + changed servers (changed ones get restarted below)
-            for name in removed + changed:
+    def set_mcp_enabled(self, name, enabled):
+        if type(enabled) is not bool:
+            raise ValueError('enabled must be a boolean')
+        with self._mcp_lock:
+            configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
+            if name not in configs:
+                raise ValueError('MCP server is not configured')
+            self.capability_settings.set_enabled('mcp', name, enabled)
+            if enabled:
+                self._queue_mcp_servers([configs[name]])
+            else:
                 self._teardown_mcp_server(name)
+        return enabled
 
-            # Spin up newly added + changed servers in the background
-            to_start = [new_by_name[n] for n in added + changed]
-            if to_start:
-                for cfg in to_start:
-                    self._mcp_status[cfg.get("name", "<unnamed>")] = "pending"
-                threading.Thread(
-                    target=self._load_mcp_tools_async,
-                    args=(to_start,),
-                    daemon=True,
-                    name="mcp-loader-reload",
-                ).start()
+    def call_mcp_tool(
+        self, server_name, method, arguments, *, host=False, cancel_event=None, purpose=None, check_only=False
+    ):
+        import time
+        from common.runtime_identity import current_identity
+        from core.plugins.caller import remaining_invocation_seconds
 
-            self._mcp_active_configs = new_by_name
-            self._mcp_signature = new_sig
-
-    def _teardown_mcp_server(self, server_name: str):
-        """Shut down one MCP server and drop its tools from the registry."""
-        if self._mcp_registry is None:
-            return
-        client = None
-        with self._mcp_registry._registry_lock:
-            client = self._mcp_registry._clients.pop(server_name, None)
-        if client is not None:
-            try:
-                client.shutdown()
-            except Exception as e:
-                logger.warning(f"[MCP] Error shutting down '{server_name}': {e}")
-        # Drop tools that belonged to this server.
-        for tool_name in list(self._mcp_tool_instances.keys()):
-            tool = self._mcp_tool_instances.get(tool_name)
-            if tool is not None and getattr(tool, "server_name", None) == server_name:
-                self._mcp_tool_instances.pop(tool_name, None)
-        self._mcp_status.pop(server_name, None)
-
-    def _load_mcp_tools_async(self, mcp_servers_config):
-        """
-        Background worker: bring up each MCP server one-by-one and
-        publish ready tools to _mcp_tool_instances as they come online.
-
-        Server failures are isolated — one bad server cannot block
-        the others, and never raises out of the worker thread.
-        """
-        try:
-            from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry, set_reload_callback
-            from agent.tools.mcp.mcp_tool import McpTool
-
-            registry = McpClientRegistry()
-            self._mcp_registry = registry
-            # Let the OAuth web callback bring a server online once authorized.
-            set_reload_callback(self.reload_mcp_server)
-
-            for cfg in mcp_servers_config:
-                server_name = cfg.get("name", "<unnamed>")
-                try:
-                    client = McpClient(cfg)
-                    if not client.initialize():
-                        if getattr(client, "needs_auth", False):
-                            self._mcp_status[server_name] = "needs_auth"
-                            logger.info(
-                                f"[MCP] Server '{server_name}' needs authorization — "
-                                f"waiting for the user to complete the OAuth flow"
-                            )
-                        else:
-                            self._mcp_status[server_name] = "failed"
-                            logger.warning(
-                                f"[MCP] Server '{server_name}' failed to initialize — skipping"
-                            )
-                        continue
-
-                    tool_schemas = client.list_tools()
-                    added = []
-                    for schema in tool_schemas:
-                        tool_name = schema.get("name", "")
-                        if not tool_name:
-                            continue
-                        mcp_tool = McpTool(client, schema, server_name)
-                        public_name = mcp_tool.name
-                        # Atomic dict assignment is GIL-safe; readers iterate
-                        # over a list() snapshot to avoid concurrent mutation.
-                        self._mcp_tool_instances[public_name] = mcp_tool
-                        from agent.permission.gateway import Capability, register_tool
-                        try:
-                            register_tool(public_name, Capability.EXTERNAL, connection=f"mcp:{server_name}",
-                                          read_only=mcp_tool.read_only)
-                        except ValueError:
-                            logger.warning("[MCP] Skipped a tool with an invalid security declaration")
-                            self._mcp_tool_instances.pop(public_name, None)
-                            continue
-                        added.append(public_name)
-
-                    # Register client into the shared registry only after its
-                    # tools are visible, so callers never see a half-loaded server.
-                    with registry._registry_lock:
-                        registry._clients[server_name] = client
-                    self._mcp_status[server_name] = "ready"
-                    logger.info(
-                        f"[MCP] Server '{server_name}' ready — "
-                        f"{len(added)} tool(s): {added}"
-                    )
-                except Exception as e:
-                    self._mcp_status[server_name] = "failed"
-                    logger.warning(f"[MCP] Server '{server_name}' load failed: {e}")
-
-            ready = sum(1 for s in self._mcp_status.values() if s == "ready")
-            total = len(self._mcp_status)
-            logger.info(
-                f"[ToolManager] MCP loading complete: "
-                f"{ready}/{total} server(s) ready, "
-                f"{len(self._mcp_tool_instances)} tool(s) available"
-            )
-        except Exception as e:
-            logger.warning(f"[ToolManager] MCP background loader crashed: {e}")
-
-    def reload_mcp_server(self, server_name: str) -> None:
-        """Re-initialize a single MCP server (e.g. after OAuth authorization).
-
-        Tears down any existing client for the server and starts it again in
-        the background, so a freshly-stored access token is picked up and the
-        server's tools become available on the next message.
-        """
+        remaining_invocation_seconds()
+        current = current_identity()
+        if (current.user_id or "local-default") != (
+            self.identity.user_id or "local-default"
+        ):
+            raise PermissionError("MCP manager belongs to another user")
+        configs = {c["name"]: c for c in self._load_mcp_configs()}
+        cfg = configs.get(server_name)
+        if cfg is None or not self._mcp_enabled(cfg):
+            raise PermissionError("MCP server is disabled or not configured")
+        from agent.tools.mcp.mcp_tool import McpTool
+        if not self.capability_settings.enabled('tool', McpTool.name_for(server_name, method)):
+            raise PermissionError('MCP tool is disabled')
+        public = cfg.get("agentTools")
+        if not host and public is not None and method not in public:
+            raise PermissionError("MCP management tool is not available to agents")
         with self._mcp_lock:
-            cfg = self._mcp_active_configs.get(server_name)
-        if not cfg:
-            logger.warning(f"[MCP] reload requested for unknown server '{server_name}'")
-            return
-        logger.info(f"[MCP] Reloading server '{server_name}' after authorization")
-        self._teardown_mcp_server(server_name)
-        self._mcp_status[server_name] = "pending"
-        threading.Thread(
-            target=self._load_mcp_tools_async,
-            args=([cfg],),
-            daemon=True,
-            name=f"mcp-reload-{server_name}",
-        ).start()
+            self._queue_mcp_servers([cfg])
+        deadline = time.monotonic() + 30
+        while True:
+            remaining_invocation_seconds()
+            if cancel_event is not None and cancel_event.is_set():
+                from agent.protocol.cancel import AgentCancelledError
 
-    def list_mcp_status(self) -> dict:
-        """Return {server_name: status} snapshot for UI / debugging."""
+                raise AgentCancelledError("MCP call cancelled")
+            with self._mcp_lock:
+                if (
+                    not self._mcp_enabled(cfg)
+                    or server_name not in self._mcp_active_configs
+                ):
+                    raise PermissionError("MCP server was disabled")
+                status = self._mcp_status.get(server_name)
+                if status == "ready":
+                    client = self._mcp_registry._clients[server_name]
+                    generation = self._mcp_generations[server_name]
+                    schema = (
+                        getattr(self, "_mcp_schemas", {}).get(server_name, {}).get(method)
+                    )
+                    break
+                if status in ("failed", "needs_auth") or time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "MCP server is unavailable; check its installation and connection"
+                    )
+            threading.Event().wait(0.02)
+        if schema is None:
+            raise ValueError("MCP tool is not provided by this server")
+        tool = next(
+            (
+                t
+                for t in self._mcp_tool_instances.values()
+                if t.server_name == server_name and t.remote_name == method
+            ),
+            None,
+        )
+        if tool is None:
+            from agent.tools.mcp.mcp_tool import McpTool
+            from agent.permission.gateway import Capability, register_tool
+            from core.security.capabilities import mcp_descriptor
+
+            tool = McpTool(client, schema, server_name)
+            tool._capability_settings = self.capability_settings
+            from core.mcp.managed import LOCAL_READS
+            local_read = cfg.get("settingsUrl") == "/" + server_name and method in LOCAL_READS
+            register_tool(
+                tool.name,
+                Capability.READ if local_read else Capability.EXTERNAL,
+                connection=f"mcp:{server_name}",
+                read_only=tool.read_only,
+                descriptor=mcp_descriptor(server_name, method, cfg),
+            )
+        from core.security.capabilities import mcp_descriptor
+        tool.capability_descriptor = mcp_descriptor(server_name, method, cfg)
+        from agent.runtime.tool_invocation import permission_denial
+        from core.mcp.managed import native_user_action
+
+        denial = permission_denial(
+            tool.name,
+            arguments,
+            tool=tool,
+            noninteractive=True,
+            user_action=native_user_action(host,method,purpose),
+        )
+        if denial:
+            raise PermissionError(denial)
+        if not self._mcp_admitted(server_name, generation):
+            raise PermissionError("MCP connection was replaced")
+        meta = None
+        if cfg.get("settingsUrl") == "/" + server_name:
+            from core.mcp.authorization import check
+
+            def metadata(name, values):
+                reply = client.call_tool_result(name, values, cancel_event=cancel_event)
+                return reply["structuredContent"]["value"]
+
+            meta = check(
+                server_name,
+                method,
+                arguments,
+                current.user_id or "local-default",
+                metadata,
+                purpose,
+            )
+        else:
+            from core.security.service import SecurityService
+            SecurityService.authorize_connection(server_name, tool.capability_descriptor.operation)
+        if not self._mcp_admitted(server_name, generation):
+            raise PermissionError("MCP connection was replaced")
+        # Resource checks may wait on remote metadata; a tool switch can change
+        # without replacing the server generation. Recheck before cache/dispatch.
+        from agent.tools.capability_settings import tool_enabled
+        if not tool_enabled(tool.name, tool=tool):
+            raise PermissionError('MCP tool was disabled during authorization')
+        # Cache consumers need the same current authorization and admission
+        # without issuing a second upstream read. This is a Core-only option.
+        if check_only:
+            return None
+        from core.security.approvals import approved_invocation
+        with approved_invocation():
+            result = client.call_tool_result(
+                method, arguments, cancel_event=cancel_event, meta=meta
+            )
+        remaining_invocation_seconds()
+        if not self._mcp_admitted(server_name, generation) or not self._mcp_enabled(cfg):
+            raise PermissionError('MCP connection was disabled or replaced during the call')
+        denial = permission_denial(tool.name, arguments, tool=tool, noninteractive=True,
+                                  user_action=native_user_action(host, method, purpose))
+        if denial:
+            raise PermissionError(denial)
+        if cfg.get('settingsUrl') == '/' + server_name:
+            check(server_name, method, arguments, current.user_id or 'local-default', metadata, purpose)
+        else:
+            SecurityService.authorize_connection(server_name, tool.capability_descriptor.operation)
+        import json
+
+        structured = result.get("structuredContent")
+        if structured is None:
+            structured = json.loads(
+                "".join(
+                    row.get("text", "")
+                    for row in result.get("content", [])
+                    if row.get("type") == "text"
+                )
+            )
+        if cfg.get("settingsUrl") == "/" + server_name:
+            return structured["value"]
+        return structured
+
+    def _teardown_mcp_server(self, server_name):
+        with self._mcp_lock:
+            pending_authorization = self._mcp_authorizations.pop(server_name, None)
+            if pending_authorization:
+                from agent.tools.mcp.mcp_oauth import cancel_pending
+                cancel_pending(handler=pending_authorization[1])
+            self._mcp_generations[server_name] = self._mcp_generations.get(server_name, 0) + 1
+            self._mcp_active_configs.pop(server_name, None)
+            getattr(self,'_mcp_schemas',{}).pop(server_name,None)
+            client = None
+            if self._mcp_registry is not None:
+                with self._mcp_registry._registry_lock:
+                    client = self._mcp_registry._clients.pop(server_name, None)
+            for name, tool in list(self._mcp_tool_instances.items()):
+                if tool.server_name == server_name:
+                    self._mcp_tool_instances.pop(name, None)
+                    self._mcp_tool_vectors.pop(name, None)
+            self._mcp_status.pop(server_name, None)
+            for key, pending in list(self._mcp_pending_clients.items()):
+                if key[0] == server_name:
+                    self._mcp_pending_clients.pop(key, None)
+                    try:
+                        pending.shutdown()
+                    except Exception:
+                        logger.warning('[MCP] Failed to close initializing server %s', server_name)
+            if client:
+                try:
+                    client.shutdown()
+                except Exception:
+                    logger.warning('[MCP] Failed to close server %s', server_name)
+
+    def _load_mcp_tools_async(self, configs, generations=None):
+        from agent.tools.mcp.mcp_client import McpClient, McpClientRegistry
+        with self._mcp_lock:
+            if self._mcp_registry is None:
+                self._mcp_registry = McpClientRegistry()
+            if generations is None:
+                generations = {}
+                for cfg in configs:
+                    name = cfg.get('name', '<unnamed>')
+                    self._mcp_active_configs[name] = cfg
+                    self._mcp_generations[name] = self._mcp_generations.get(name, 0) + 1
+                    generations[name] = self._mcp_generations[name]
+        for cfg in configs:
+            name = cfg.get('name', '<unnamed>')
+            generation = generations[name]
+            client = None
+            published = False
+            try:
+                if not self._mcp_admitted(name, generation):
+                    continue
+                client = McpClient(cfg)
+                client.authorization_guard = lambda n=name, g=generation: self._check_mcp_authorization(n, g)
+                client.authorization_publish = lambda operation, n=name, g=generation: self._publish_mcp_authorization(n, g, operation)
+                client.on_authorized = lambda n=name, g=generation: self.reload_mcp_server(n, generation=g)
+                with self._mcp_lock:
+                    if not self._mcp_admitted(name, generation):
+                        continue
+                    self._mcp_pending_clients[(name, generation)] = client
+                if not client.initialize():
+                    with self._mcp_lock:
+                        if self._mcp_admitted(name, generation):
+                            self._mcp_status[name] = 'needs_auth' if getattr(client, 'needs_auth', False) else 'failed'
+                            if getattr(client, 'needs_auth', False) and getattr(client, '_oauth', None) is not None:
+                                self._mcp_authorizations[name] = generation, client._oauth
+                    continue
+                published = self._publish_mcp_tools(cfg, client, generation, client.list_tools())
+            except Exception:
+                with self._mcp_lock:
+                    if self._mcp_admitted(name, generation):
+                        self._mcp_status[name] = 'failed'
+                logger.warning('[MCP] Failed to load server %s', name)
+            finally:
+                with self._mcp_lock:
+                    self._mcp_pending_clients.pop((name, generation), None)
+                if client is not None and not published:
+                    try:
+                        client.shutdown()
+                    except Exception:
+                        logger.warning('[MCP] Failed to close unselected server %s', name)
+
+    def _publish_mcp_tools(self, cfg, client, generation, schemas):
+        """One generation-checked publication path for initial and refreshed tools."""
+        from agent.tools.mcp.mcp_tool import McpTool
+        name = cfg.get('name', '<unnamed>')
+        registry = self._mcp_registry
+        with self._mcp_lock:
+            if not self._mcp_admitted(name, generation):
+                return False
+            from core.security.mcp_runtime import check_mcp
+            check_mcp(client)
+            agent_tools = cfg.get('agentTools')
+            tools = []
+            from agent.permission.gateway import Capability, register_tool
+            from core.security.capabilities import mcp_descriptor
+            for schema in schemas:
+                if not schema.get('name') or (agent_tools is not None and schema['name'] not in agent_tools):
+                    continue
+                tool = McpTool(client, schema, name)
+                tool.capability_descriptor = mcp_descriptor(name, schema['name'], cfg)
+                tool._capability_settings = self.capability_settings
+                tool._admission_check = lambda n=name, g=generation, t=tool: (self._mcp_admitted(n, g) and self._mcp_status.get(n) == 'ready' and self._mcp_tool_instances.get(t.name) is t)
+                if cfg.get('settingsUrl') == '/' + name:
+                    tool._managed_invoke = lambda method, arguments, cancel, n=name: self.call_mcp_tool(
+                        n, method, arguments, cancel_event=cancel)
+                else:
+                    from core.security.service import SecurityService
+                    tool._resource_check = lambda n=name, op=tool.capability_descriptor.operation: SecurityService.authorize_connection(n, op)
+                try:
+                    from core.mcp.managed import LOCAL_READS
+                    local_read = cfg.get('settingsUrl')=='/'+name and schema['name'] in LOCAL_READS
+                    register_tool(tool.name, Capability.READ if local_read else Capability.EXTERNAL, connection=f'mcp:{name}', read_only=tool.read_only,
+                                  filesystem_write=name=='elearning' and schema['name']=='sync_files' and cfg.get('settingsUrl')=='/elearning',
+                                  descriptor=mcp_descriptor(name, schema['name'], cfg))
+                except ValueError as exc:
+                    raise ValueError('MCP tool registration failed') from exc
+                tools.append(tool)
+            for key, old in list(self._mcp_tool_instances.items()):
+                if old.server_name == name:
+                    self._mcp_tool_instances.pop(key, None)
+                    self._mcp_tool_vectors.pop(key, None)
+            for tool in tools:
+                self._mcp_tool_instances[tool.name] = tool
+            with registry._registry_lock:
+                registry._clients[name] = client
+            if not hasattr(self, '_mcp_schemas'):
+                self._mcp_schemas = {}
+            self._mcp_schemas[name] = {row['name']:row for row in schemas}
+            self._mcp_status[name] = 'ready'
+        return True
+
+    def discover_mcp_tools(self, server_name):
+        """Explicit discovery never changes the persisted enablement intent."""
+        with self._mcp_lock:
+            config = next((cfg for cfg in self._load_mcp_configs()
+                           if cfg.get('name') == server_name), None)
+            if config is None:
+                raise ValueError('MCP server not found')
+            if not self._mcp_enabled(config):
+                raise PermissionError('Enable this MCP server before discovering tools')
+            if self._mcp_status.get(server_name) == 'pending':
+                return
+            client = self._mcp_registry.get(server_name) if self._mcp_registry else None
+            if (client is None or not _same_mcp_config(self._mcp_active_configs.get(server_name), config)
+                    or self._mcp_status.get(server_name) != 'ready'):
+                if server_name in self._mcp_active_configs:
+                    self._teardown_mcp_server(server_name)
+                self._queue_mcp_servers([config])
+                return
+            generation = self._mcp_generations[server_name]
+            self._mcp_status[server_name] = 'pending'
+            self._mcp_pending_clients[(server_name, generation)] = client
+            from common.runtime_identity import use_identity
+            def refresh():
+                with use_identity(self.identity):
+                    try:
+                        self._publish_mcp_tools(config, client, generation, client.list_tools())
+                    except Exception:
+                        with self._mcp_lock:
+                            if self._mcp_admitted(server_name, generation):
+                                self._mcp_status[server_name] = 'failed'
+                        logger.warning('[MCP] Tool discovery failed for %s', server_name)
+                    finally:
+                        with self._mcp_lock:
+                            self._mcp_pending_clients.pop((server_name, generation), None)
+            threading.Thread(target=refresh, name='mcp-discovery', daemon=True).start()
+
+    def reload_mcp_server(self, server_name, *, generation=None):
+        with self._mcp_lock:
+            if generation is not None and not self._mcp_admitted(server_name, generation):
+                return
+            config = self._mcp_active_configs.get(server_name)
+            if config is None or not self._mcp_enabled(config):
+                return
+            self._teardown_mcp_server(server_name)
+            self._queue_mcp_servers([config])
+
+    def list_mcp_status(self):
         return dict(self._mcp_status)
+
+    def mcp_catalog(self):
+        """Inventory reads never connect servers or expose connection secrets."""
+        from core.capabilities.descriptions import clean_copy
+        from agent.tools.mcp.mcp_tool import McpTool
+        with self._mcp_lock:
+            configs = {cfg.get('name', '<unnamed>'): cfg for cfg in self._load_mcp_configs()}
+            configs = {**self._mcp_active_configs, **configs}
+            statuses = self.list_mcp_status()
+            tools = list(self._mcp_tool_instances.values())
+            result = []
+            for name in sorted(set(configs) | set(statuses) | {tool.server_name for tool in tools}):
+                config = configs.get(name, {'name': name})
+                enabled = self._mcp_enabled(config)
+                state = statuses.get(name, 'not_started') if enabled else 'disabled'
+                client = self._mcp_registry.get(name) if self._mcp_registry else None
+                version = getattr(client, 'server_version', None)
+                description = clean_copy(config.get('description'))
+                result.append({'name': name, 'transport': str(config.get('type', 'stdio')),
+                    **({'description': description} if description else {}),
+                    **({'version': version} if isinstance(version, str) and version else {}),
+                    'enabled': enabled, 'state': state, **({'settings_url': config['settingsUrl']} if config.get('settingsUrl') else {}), 'tools': sorted([
+                        {'name': tool.remote_name, 'description': tool.description,
+                         'enabled': self.capability_settings.enabled('tool', McpTool.name_for(name, tool.remote_name)),
+                         **({'title': tool.title} if getattr(tool, 'title', None) else {}),
+                         **({'inputSchema': tool.params} if isinstance(getattr(tool, 'params', None), dict) else {}),
+                         **({'outputSchema': tool.output_schema} if isinstance(getattr(tool, 'output_schema', None), dict) else {})}
+                        for tool in tools if tool.server_name == name and state == 'ready'
+                    ], key=lambda tool: tool['name'])})
+            return result
 
     def sync_mcp_into_agent(self, agent) -> tuple:
         """
@@ -603,7 +945,9 @@ class ToolManager:
             return ([], [])
 
         from agent.tools.mcp.mcp_tool import McpTool
-        current = self._mcp_tool_instances
+        with self._mcp_lock:
+            current = {name: tool for name, tool in self._mcp_tool_instances.items()
+                       if tool.is_available()}
         registry_names = set(current.keys())
 
         agent_tools = agent.tools
@@ -613,7 +957,10 @@ class ToolManager:
                 name for name, tool in agent_tools.items()
                 if isinstance(tool, McpTool)
             }
-            added = registry_names - agent_mcp_names
+            replaced = {name for name in registry_names & agent_mcp_names
+                        if (agent_tools[name].client is not current[name].client or
+                            agent_tools[name]._admission_check is not current[name]._admission_check)}
+            added = registry_names - agent_mcp_names | replaced
             removed = agent_mcp_names - registry_names
             if not (added or removed):
                 return ([], [])
@@ -626,8 +973,11 @@ class ToolManager:
             agent_mcp_names = {
                 t.name for t in agent_tools if isinstance(t, McpTool)
             }
-            added = registry_names - agent_mcp_names
-            removed = agent_mcp_names - registry_names
+            replaced = {tool.name for tool in agent_tools if tool.name in registry_names
+                        and isinstance(tool, McpTool) and (tool.client is not current[tool.name].client
+                            or tool._admission_check is not current[tool.name]._admission_check)}
+            added = registry_names - agent_mcp_names | replaced
+            removed = agent_mcp_names - registry_names | replaced
             if not (added or removed):
                 return ([], [])
             if removed:
@@ -720,7 +1070,7 @@ class ToolManager:
         """Lazily create and cache the shared embedding provider (or None)."""
         if not self._embedding_provider_initialized:
             try:
-                from agent.memory.embedding import create_default_embedding_provider
+                from models.embedding import create_default_embedding_provider
                 self._embedding_provider = create_default_embedding_provider()
             except Exception as e:
                 logger.warning(f"[ToolManager] embedding provider init failed: {e}")
@@ -739,6 +1089,7 @@ class ToolManager:
         if tool_class:
             # Create a new instance
             tool_instance = tool_class()
+            tool_instance._capability_settings = self.capability_settings
 
             # Apply configuration if available
             if hasattr(self, 'tool_configs') and name in self.tool_configs:
@@ -762,6 +1113,8 @@ class ToolManager:
         """
         result = {}
         for name, tool_class in self.tool_classes.items():
+            if not self.capability_settings.enabled('tool', name):
+                continue
             # Create a temporary instance to get schema
             temp_instance = tool_class()
             result[name] = {
@@ -770,7 +1123,9 @@ class ToolManager:
             }
 
         # Include MCP tool instances
-        for name, mcp_tool in self._mcp_tool_instances.items():
+        for name, mcp_tool in list(self._mcp_tool_instances.items()):
+            if not mcp_tool.is_available():
+                continue
             result[name] = {
                 "description": mcp_tool.description,
                 "parameters": mcp_tool.params,
@@ -779,6 +1134,9 @@ class ToolManager:
         return result
 
     def shutdown_mcp(self):
-        """Shut down all MCP server clients."""
-        if self._mcp_registry:
-            self._mcp_registry.shutdown_all()
+        with self._mcp_lock:
+            for name in list(self._mcp_active_configs):
+                self._teardown_mcp_server(name)
+            if self._mcp_registry:
+                self._mcp_registry.shutdown_all()
+            self._mcp_loaded = False

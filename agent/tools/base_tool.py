@@ -41,6 +41,14 @@ def is_tool_available(tool) -> bool:
     line, not a capability.
     """
     try:
+        from agent.tools.capability_settings import tool_enabled
+        from agent.tools.provenance import plugin_tool_available
+        if not tool_enabled(tool.name, tool=tool) or not plugin_tool_available(tool.name, tool=tool):
+            return False
+    except Exception:
+        logger.warning('[Capabilities] Cannot resolve enablement for %s', getattr(tool, 'name', '?'))
+        return False
+    try:
         return bool(tool.is_available())
     except Exception as e:
         logger.debug(f"[{getattr(tool, 'name', '?')}] availability check failed: {e}")
@@ -161,9 +169,18 @@ class BaseTool:
         }
 
     def execute_tool(self, params: dict) -> ToolResult:
+        from agent.tools.capability_settings import tool_enabled
+        try:
+            if not tool_enabled(self.name, tool=self):
+                return ToolResult.fail(f'Tool {self.name} is disabled.')
+            from agent.tools.provenance import plugin_tool_available
+            if not plugin_tool_available(self.name, params, tool=self):
+                return ToolResult.fail(f'Plugin for tool {self.name} is disabled or unavailable.')
+        except Exception:
+            return ToolResult.fail(f'Cannot resolve enablement for {self.name}; the tool did not run.')
         from agent.runtime.tool_invocation import current_tool_call_id, permission_denial
         if current_tool_call_id() is None:
-            denial = permission_denial(self.name, params, agent=getattr(self, "context", None))
+            denial = permission_denial(self.name, params, agent=getattr(self, "context", None), tool=self)
             if denial:
                 logger.warning(
                     "[Permission] Tool %s denied outside invocation scope: %s",
@@ -171,7 +188,12 @@ class BaseTool:
                 )
                 return ToolResult.fail(denial)
         try:
-            return self.execute(params)
+            from core.security.protected_paths import current_revision
+            revision = current_revision()
+            result = self.execute(params)
+            if current_revision() != revision:
+                return ToolResult.fail('Protection policy changed during execution; the result was stopped. Start a new operation.')
+            return result
         except Exception as e:
             logger.exception("[Tool] %s execute raised", self.name)
             return ToolResult.fail(str(e))

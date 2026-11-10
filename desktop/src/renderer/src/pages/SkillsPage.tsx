@@ -1,194 +1,92 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, Loader2, Puzzle } from 'lucide-react'
-import { getLang, t } from '../i18n'
+import './capabilities/capabilities.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronRight, Layers2, Loader2, Plus, Search } from 'lucide-react'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import apiClient from '../api/client'
-import type { LocalizedCopy, SkillInfo, ToolInfo } from '../types'
-import { Toggle } from './settings/primitives'
-import { SKILL_HUB_URL } from './settings/links'
+import type { CapabilityItem, CapabilityKind } from '../api/capabilityTypes'
 import PageHeader from '../components/PageHeader'
+import { currentSettingsOrigin } from './settings/origin'
+import CapabilityTabs from './capabilities/CapabilityTabs'
+import AddCapability from './capabilities/AddCapability'
+import { button, c, copy, detailPath, kindIcon, kindLabel, panel, capabilityStatusLabel } from './capabilities/presentation'
 
-interface SkillsPageProps {
-  baseUrl: string
-}
-
-const copyOf = (value: LocalizedCopy | null | undefined) => value?.[getLang() === 'en' ? 'en' : 'zh'] || ''
-
-const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
-  const [tools, setTools] = useState<ToolInfo[]>([])
-  const [skills, setSkills] = useState<SkillInfo[]>([])
-  const [toolsError, setToolsError] = useState('')
-  const [skillsError, setSkillsError] = useState('')
+export default function SkillsPage({ baseUrl }: { baseUrl: string }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const params = new URLSearchParams(location.search)
+  const requested = params.get('tab') || location.hash.slice(1)
+  const kinds: CapabilityKind[] = ['plugins', 'mcp', 'skills', 'tools']
+  const tab = kinds.includes(requested as CapabilityKind) ? requested : 'all'
+  const query = params.get('q') || ''
+  const [items, setItems] = useState<CapabilityItem[]>([])
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [openTool, setOpenTool] = useState('')
-
-  const loadTools = useCallback(async () => {
+  const [search, setSearch] = useState(Boolean(query))
+  const [adding, setAdding] = useState(false)
+  const request = useRef<AbortController | null>(null)
+  const load = useCallback(async () => {
+    request.current?.abort()
+    const controller = new AbortController(); request.current = controller
+    setLoading(true); setError('')
     try {
-      setTools(await apiClient.getTools())
-      setToolsError('')
-    } catch (err) {
-      setToolsError(err instanceof Error ? err.message : String(err))
-    }
+      const data = await apiClient.getCapabilities(controller.signal)
+      if (!controller.signal.aborted) { setItems(data.items); setErrors(data.errors || {}) }
+    } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { if (!controller.signal.aborted) setLoading(false) }
   }, [])
-
-  const loadSkills = useCallback(async () => {
-    try {
-      setSkills(await apiClient.getSkills())
-      setSkillsError('')
-    } catch (err) {
-      setSkillsError(err instanceof Error ? err.message : String(err))
-    }
-  }, [])
-
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    await Promise.all([loadTools(), loadSkills()])
-    setLoading(false)
-  }, [loadTools, loadSkills])
-
+  useEffect(() => { apiClient.setBaseUrl(baseUrl); void load(); return () => request.current?.abort() }, [baseUrl, load])
   useEffect(() => {
-    apiClient.setBaseUrl(baseUrl)
-    void loadData()
-  }, [baseUrl, loadData])
-
-  const toggle = async (skill: SkillInfo, enabled: boolean) => {
-    setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled } : item)))
-    try {
-      const res = await apiClient.toggleSkill(skill.name, enabled ? 'open' : 'close')
-      if (res.status !== 'success') throw new Error()
-    } catch {
-      setSkills((prev) => prev.map((item) => (item.name === skill.name ? { ...item, enabled: !enabled } : item)))
-    }
+    const scroll = (location.state as { restoreScroll?: number } | null)?.restoreScroll
+    if (!loading && typeof scroll === 'number') document.querySelector('[data-stella-scroll]')?.scrollTo(0, scroll)
+  }, [loading, location.state])
+  const select = (next: string, term = query) => {
+    const values = new URLSearchParams()
+    if (next !== 'all') values.set('tab', next)
+    if (term) values.set('q', term)
+    navigate(`/skills${values.size ? `?${values}` : ''}`, { replace: true, state: location.state })
   }
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <PageHeader className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-content">{t('skills_title')}</h1>
-          <p className="text-xs text-content-tertiary mt-1">{t('skills_desc')}</p>
-        </div>
-        <a href={SKILL_HUB_URL} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium text-accent bg-accent-soft">
-          <Puzzle size={12} />{t('skills_hub_btn')}
-        </a>
-      </PageHeader>
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-20 text-content-tertiary">
-              <Loader2 size={18} className="animate-spin mr-2" />{t('skills_loading')}
-            </div>
-          ) : (
-            <div className="space-y-10">
-              <Section title={t('tools_section_title')} count={tools.length}>
-                {toolsError ? <LoadError text={toolsError || t('capability_tools_error')} onRetry={() => void loadTools()} /> : tools.length === 0 ? (
-                  <Empty text={t('tools_empty')} />
-                ) : (
-                  <Grid>
-                    {tools.map((item) => (
-                      <ToolCard key={item.id} tool={item} open={openTool === item.id}
-                        onToggle={() => setOpenTool(openTool === item.id ? '' : item.id)} />
-                    ))}
-                  </Grid>
-                )}
-              </Section>
-              <Section title={t('skills_section_title')} count={skills.length}>
-                {skillsError ? <LoadError text={skillsError || t('capability_skills_error')} onRetry={() => void loadSkills()} /> : skills.length === 0 ? (
-                  <Empty text={t('skills_empty')} />
-                ) : (
-                  <Grid>
-                    {skills.map((item) => {
-                      const title = item.display_name || item.name
-                      return (
-                        <Card key={item.name} label={title}>
-                          <div className="flex items-start justify-between gap-3">
-                            <h3 className="text-sm font-semibold text-content break-words">{title}</h3>
-                            <Toggle label={title} checked={item.enabled} onChange={(value) => void toggle(item, value)} />
-                          </div>
-                          <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{item.description}</p>
-                        </Card>
-                      )
-                    })}
-                  </Grid>
-                )}
-              </Section>
-            </div>
-          )}
+  const plugin = params.get('plugin')
+  if (params.get('view') === 'settings') {
+    return <Navigate to={plugin ? detailPath('plugins', plugin, 'configuration') : '/skills?tab=plugins'} replace state={location.state} />
+  }
+  const rows = items.filter(item => (tab === 'all' || item.kind === tab) &&
+    `${copy(item.name)} ${copy(item.description)} ${item.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  return <div className="flex-1 flex min-h-0 flex-col">
+    <PageHeader className="flex items-center justify-between gap-4">
+      <h1 className="inline-flex items-center gap-2.5 text-xl font-bold"><Layers2 size={22} className="text-content-secondary" />{c('能力', 'Capabilities')}</h1>
+      <div className="flex items-center gap-1">
+        <button type="button" aria-label={c('搜索能力', 'Search capabilities')} aria-expanded={search} onClick={() => setSearch(value => !value)} className="rounded-btn p-2 text-content-secondary hover:bg-surface-2"><Search size={20} /></button>
+        <button type="button" aria-label={c('添加能力', 'Add capability')} onClick={() => setAdding(true)} className="rounded-btn p-2 text-content-secondary hover:bg-surface-2"><Plus size={21} /></button>
+      </div>
+    </PageHeader>
+    <main data-stella-scroll className="capability-directory flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
+        {search && <label className="flex items-center gap-2 rounded-btn border border-default bg-surface px-3 py-2 text-content-secondary">
+          <Search size={17} /><input type="search" aria-label={c('搜索能力', 'Search capabilities')} autoFocus value={query} onChange={event => select(tab, event.target.value)}
+            placeholder={c('搜索名称、功能或说明', 'Search names, functions or descriptions')} className="min-w-0 flex-1 bg-transparent text-sm text-content outline-none" /></label>}
+        <CapabilityTabs label={c('能力分类', 'Capability categories')} value={tab} onChange={value => select(value)} tabs={[{ id: 'all', label: c('全部', 'All') }, ...kinds.map(kind => ({ id: kind, label: kindLabel(kind) }))]} />
+        <div role="tabpanel" id="capability-content" aria-labelledby={`capability-tab-${tab}`} tabIndex={0} className="space-y-4">
+          {(error || Object.keys(errors).length > 0) && <div role="alert" className={`${panel} flex flex-wrap items-center justify-between gap-3 p-4 text-sm`}>
+            <p className="text-danger">{error || `${c('部分目录暂不可用', 'Some inventories are unavailable')}: ${Object.keys(errors).map(kind => kindLabel(kind as CapabilityKind)).join('、')}`}</p>
+            <button type="button" className={`${button} bg-surface-2`} disabled={loading} onClick={() => void load()}>{c('重试', 'Retry')}</button>
+          </div>}
+          {loading ? <p role="status" className="flex items-center justify-center gap-2 py-20 text-sm text-content-secondary"><Loader2 size={18} className="animate-spin" />{c('正在读取能力…', 'Loading capabilities…')}</p> : !rows.length ?
+            <div className={`${panel} p-8 text-center text-sm text-content-secondary`}>{query ? c('没有匹配的能力，试试其他关键词。', 'No matches. Try another search.') : c('此分类暂无能力。', 'No capabilities in this category.')}</div> :
+            <div className={`${panel} divide-y divide-default overflow-hidden`}>{rows.map(item => {
+              const Icon = kindIcon[item.kind]
+              return <Link key={`${item.kind}/${item.id}`} aria-label={copy(item.name)} to={detailPath(item.kind, item.id)} state={currentSettingsOrigin(location.pathname, location.search)}
+                className="capability-row group flex min-w-0 items-center gap-4 px-5 py-5 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:gap-5 sm:px-6 sm:py-6">
+                <span className="capability-row-icon flex size-12 shrink-0 items-center justify-center rounded-card bg-surface-2 text-content-secondary group-hover:text-accent"><Icon size={23} /></span>
+                <div className="min-w-0 flex-1 space-y-1"><h2 className="break-words text-base font-semibold text-content">{copy(item.name)}</h2>
+                  <p className="text-xs text-content-secondary">{kindLabel(item.kind)} · {capabilityStatusLabel(item)}</p>
+                  <p className="break-words text-sm leading-relaxed text-content-secondary">{copy(item.description)}</p></div>
+                <ChevronRight size={19} aria-hidden="true" className="capability-row-chevron shrink-0 text-content-tertiary group-hover:text-accent" />
+              </Link>
+            })}</div>}
         </div>
       </div>
-    </div>
-  )
-}
-
-const ToolCard: React.FC<{ tool: ToolInfo; open: boolean; onToggle: () => void }> = ({ tool, open, onToggle }) => {
-  const panelId = `tool-boundary-${tool.id}`
-  return (
-    <Card label={tool.id}>
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-mono text-[13px] font-semibold text-content break-all">{tool.id}</h3>
-        {/* Catalog availability is whether the tool loaded, not a preference the switch can change. */}
-        <Toggle label={tool.id} checked={tool.available} onChange={() => undefined} />
-      </div>
-      <p className="text-[13px] leading-relaxed text-content-secondary whitespace-pre-wrap break-words">{copyOf(tool.intro)}</p>
-      <div className="pt-1">
-        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle}
-          className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-content-secondary cursor-pointer">
-          {t('capability_boundary')}
-          <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
-        {open && (
-          <div id={panelId} className="mt-2 space-y-1.5 border-t border-default pt-2.5 text-xs leading-relaxed text-content-secondary">
-            <p className="whitespace-pre-wrap break-words">{copyOf(tool.detail)}</p>
-            {!tool.available && copyOf(tool.reason) && <p className="text-content-tertiary">{copyOf(tool.reason)}</p>}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
-}
-
-/** Two independent columns so a short card does not stretch to its neighbor. */
-const Grid: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const items = React.Children.toArray(children)
-  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 768px)').matches)
-  useEffect(() => {
-    const query = window.matchMedia('(min-width: 768px)')
-    const apply = () => setWide(query.matches)
-    query.addEventListener('change', apply)
-    return () => query.removeEventListener('change', apply)
-  }, [])
-  if (!wide) return <div className="flex flex-col gap-3">{items}</div>
-  return (
-    <div className="grid grid-cols-2 items-start gap-3">
-      <div className="flex flex-col gap-3">{items.filter((_, index) => index % 2 === 0)}</div>
-      <div className="flex flex-col gap-3">{items.filter((_, index) => index % 2 === 1)}</div>
-    </div>
-  )
-}
-
-const Card: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <article aria-label={label} className="flex flex-col gap-2 rounded-card border border-default bg-surface p-4">
-    {children}
-  </article>
-)
-
-const Section: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
-  <section className="space-y-3">
-    <div className="flex items-baseline gap-2">
-      <h2 className="text-sm font-semibold text-content">{title}</h2>
-      {count > 0 && <span className="text-xs text-content-tertiary tabular-nums">{count}</span>}
-    </div>
-    {children}
-  </section>
-)
-
-const LoadError: React.FC<{ text: string; onRetry: () => void }> = ({ text, onRetry }) => (
-  <div role="alert" className="rounded-card border border-default p-4 space-y-2">
-    <p className="text-sm text-danger">{text}</p>
-    <button type="button" onClick={onRetry} className="text-sm text-accent">{t('capability_retry')}</button>
+    </main>
+    {adding && <AddCapability onClose={() => setAdding(false)} onInstalled={id => { setAdding(false); navigate(detailPath('plugins', id)) }} />}
   </div>
-)
-
-const Empty: React.FC<{ text: string }> = ({ text }) => <p className="text-sm text-content-tertiary">{text}</p>
-
-export default SkillsPage
+}

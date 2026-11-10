@@ -30,6 +30,12 @@ categories = {
 
 def backend(route):
     path = urlparse(route.request.url).path
+    if path == '/api/capabilities':
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from capability_ui_fixtures import fulfill_capabilities
+        return fulfill_capabilities(route, backend, known_plugins=('stella.calendar','stella.tasks'), known_mcp=('email','elearning'))
     body = route.request.post_data_json if route.request.method == 'POST' else {}
     calls.append((path, body))
     data = {'status': 'success'}
@@ -94,11 +100,11 @@ with sync_playwright() as playwright:
         };""")
         page.route('http://127.0.0.1:9876/**', backend)
         page.goto(url + '/#/settings?tab=integrations&section=apple-calendar', wait_until='networkidle')
-        expect(page.get_by_role('navigation', name='设置分类').get_by_role('button', name='连接', exact=True)).to_be_visible()
+        expect(page).to_have_url(url + '/#/skills/plugins/stella.calendar?section=configuration&integration=apple-calendar')
         calendar = page.get_by_role('region', name='Apple 日历')
         reminders = page.get_by_role('region', name='Apple 提醒事项')
         expect(calendar).to_be_visible()
-        expect(reminders).to_be_visible()
+        expect(reminders).to_have_count(0)
         expect(calendar.get_by_role('checkbox', name='读书会')).to_have_count(0)
         calendar.get_by_role('button', name='添加映射').click()
         calendar.get_by_label('Apple 日历 1').select_option('cal-a')
@@ -115,6 +121,7 @@ with sync_playwright() as playwright:
         assert saved['links'][0]['stella_id'] == 'personal'
         assert saved['links'][0]['direction'] == 'import'
         assert 'item_ids' not in saved
+        page.goto(url + '/#/skills/plugins/stella.tasks?section=configuration&integration=apple-reminders', wait_until='networkidle')
         reminders.get_by_role('checkbox', name='自动同步').uncheck()
         assert connections['todos']['auto_enabled'] is False
         reminders.get_by_role('button', name='一次性导入').click()
@@ -128,10 +135,12 @@ with sync_playwright() as playwright:
         assert batch['selections'] == [{'apple_id': 'list-a', 'stella_id': 'life'}]
         assert 'item_ids' not in batch
         assert connections['todos']['connected'] is False
+        page.goto(url + '/#/skills/plugins/stella.calendar?section=configuration&integration=apple-calendar', wait_until='networkidle')
         calendar.get_by_role('button', name='一次性导入').click()
         year = page.evaluate('new Date().getFullYear()')
         assert calendar.get_by_label('开始日期').input_value() == f'{year}-01-01'
         assert calendar.get_by_label('结束日期').input_value() == f'{year + 1}-01-01'
+        page.goto(url + '/#/skills/plugins/stella.tasks?section=configuration&integration=apple-reminders', wait_until='networkidle')
         reminders.get_by_role('button', name='添加映射').click()
         reminders.get_by_label('Apple 列表 1').select_option('list-a')
         reminders.get_by_label('Stella 分类 1').select_option('life')

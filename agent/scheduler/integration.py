@@ -41,6 +41,34 @@ def _resolve_working_dir(agent_id: str = None):
     return str(personal_work_dir(current_identity().derive(agent_id=agent_id)))
 
 
+def _handler_plan(task: dict, task_store, agent_id: str = None) -> dict:
+    """Classify a due task: the automation plugin owns the rules when enabled.
+
+    Execution (agent turns, tools, delivery) stays in Core; only the domain
+    classification moves. A plugin failure falls back to the local rules so the
+    scheduler tick never stalls on the worker.
+    """
+    try:
+        from core.services.automation_gateway import automation_plugin_enabled
+        if automation_plugin_enabled() and getattr(task_store, "store_path", None):
+            from pathlib import Path
+            from core.services.automation_gateway import resolve_handler
+            from common.runtime_identity import current_identity
+            return resolve_handler(task, db_path=Path(task_store.store_path),
+                                   agent_id=getattr(task_store, "agent_id", None) or agent_id,
+                                   owner_user_id=current_identity().user_id or "")
+    except Exception as exc:
+        logger.warning(f"[Scheduler] automation plugin unavailable, using Core rules: {exc}")
+    action = task.get("action", {})
+    action_type = action.get("type")
+    silent = (action_type == "application_command" or
+              action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
+    persist_in_chat = "conversation_mode" in action
+    return {"handler": action_type, "silent": bool(silent), "persist_in_chat": persist_in_chat,
+            "needs_channel_ready": not silent and not task.get("notification_route") and not persist_in_chat,
+            "channel_type": action.get("channel_type", "unknown"), "receiver": action.get("receiver", "")}
+
+
 def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = None) -> bool:
     """
     Initialize scheduler service (idempotent).
@@ -111,16 +139,12 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                     with identity_scope(agent_id=agent_id, user_id=owner_user_id,
                                         session_id=owner_session_id, task_id=str(task.get("id") or "") or None,
                                         execution_session_id=owner_session_id), scheduled_permission_scope(
-                                            task.get("run_permission_mode")):
-                        action = task.get("action", {})
-                        action_type = action.get("type")
-                        channel_type = action.get("channel_type", "unknown")
-                        receiver = action.get("receiver", "")
-
-                        silent = (action_type == "application_command" or
-                                  action_type in ("agent_task", "tool_call", "skill_call") and action.get("silent", False))
-                        persist_in_chat = "conversation_mode" in action
-                        if not silent and not task.get("notification_route") and not persist_in_chat and not _is_channel_ready(channel_type, receiver, agent_id):
+                                            task):
+                        plan = _handler_plan(task, task_store, agent_id)
+                        action_type = plan["handler"]
+                        channel_type = plan["channel_type"]
+                        receiver = plan["receiver"]
+                        if plan["needs_channel_ready"] and not _is_channel_ready(channel_type, receiver, agent_id):
                             logger.warning(
                                 f"[Scheduler] Task {task.get('id')}: channel "
                                 f"'{channel_type}' not ready for receiver={receiver} "
@@ -239,6 +263,11 @@ def reset_scheduler_services(stop: bool = True) -> None:
         _task_store = None
 
 
+def _record_only(task):
+    return ((task.get('action') or {}).get('conversation_mode') == 'independent'
+            and not task.get('notification_route'))
+
+
 def _remember_delivered_output(
     agent_bridge,
     task: dict,
@@ -263,6 +292,8 @@ def _remember_delivered_output(
         return True
     action = task.get("action", {})
     action_type = action.get("type", "")
+    if action.get("conversation_mode") == "independent":
+        return True
 
     # send_message defaults to NOT being injected; explicit opt-in via config.
     if action_type == "send_message" and "conversation_mode" not in action:
@@ -463,7 +494,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
                 )
                 return True
 
-            if action.get("silent", False):
+            if action.get("silent", False) or _record_only(task):
                 logger.info(
                     f"[Scheduler] Task {task['id']} executed successfully in silent mode"
                 )
@@ -567,6 +598,10 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         elif channel_type == "qq":
             context["msg"] = None
 
+        from agent.scheduler.result_cache import save_output
+        save_output(get_task_store(agent_id=agent_id), task.get('job_run_id'), content)
+        if _record_only(task):
+            return True
         # Create reply
         reply = Reply(ReplyType.TEXT, content)
         if task.get("notification_route"):
@@ -666,23 +701,23 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
     tool_call_id = uuid.uuid4().hex
     try:
         from agent.runtime.tool_invocation import scheduled_permission_scope
-        with identity_scope(run_id=run_id, session_id=source_session,
+        with identity_scope(agent_id=agent_id or identity.agent_id, run_id=run_id, session_id=source_session,
                             task_id=str(task["id"]), execution_session_id=source_session), scheduled_permission_scope(
-                                task.get("run_permission_mode")):
+                                task):
+            tool = ToolManager().create_tool(tool_name)
+            if not tool:
+                error = f"Tool '{tool_name}' not found"
+                record.transition(run_id, 'failed', error)
+                logger.warning('[Scheduler] Scheduled tool not found: %s', tool_name)
+                return ExecutionOutcome('failed', error)
             denial = permission_denial(tool_name, tool_params, agent_id=agent_id,
                 session_id=source_session, workspace=_resolve_working_dir(agent_id=agent_id),
-                noninteractive=True)
+                noninteractive=True, tool=tool)
             if denial:
                 record.event(run_id, "permission_denied")
                 record.transition(run_id, "failed", denial)
                 logger.warning("[Permission] Scheduled deny tool=%s: %s", tool_name, denial)
                 return ExecutionOutcome("failed", denial)
-            tool = ToolManager().create_tool(tool_name)
-            if not tool:
-                error = f"Tool '{tool_name}' not found"
-                record.transition(run_id, "failed", error)
-                logger.warning("[Scheduler] Scheduled tool not found: %s", tool_name)
-                return ExecutionOutcome("failed", error)
             from agent.runtime.tool_invocation import execution_workspace
             cwd, _ = execution_workspace(source_session, agent_id, _resolve_working_dir(agent_id=agent_id))
             setter = getattr(tool, "set_cwd", None)
@@ -698,7 +733,7 @@ def _run_scheduled_tool(task, tool_name, tool_params, agent_id, cancel_event, st
             invoked = True
             from agent.runtime.tool_invocation import invocation_scope
             with invocation_scope(tool_call_id):
-                result = tool.execute(tool_params)
+                result = tool.execute_tool(tool_params)
             record.event(run_id, "tool_execution_end", tool_call_id=tool_call_id)
             content = result.result if hasattr(result, "result") else str(result)
             if getattr(result, "status", None) == "error":
@@ -754,7 +789,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None, cancel_ev
             from agent.scheduler.outcome import ExecutionOutcome
             if isinstance(content, ExecutionOutcome):
                 return content
-        if silent:
+        if silent or _record_only(task):
             return True
         if result_prefix:
             content = f"{result_prefix}\n\n{content}"
@@ -882,7 +917,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
             logger.error(f"[Scheduler] Task {task['id']}: No result from skill execution")
             return True
 
-        if action.get("silent", False):
+        if action.get("silent", False) or _record_only(task):
             return True
 
         if result_prefix:

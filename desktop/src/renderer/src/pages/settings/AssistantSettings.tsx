@@ -5,7 +5,6 @@ import apiClient from '../../api/client'
 import { product } from '@product'
 import type { ConfigData, ProviderMeta } from '../../types'
 import { Dropdown, Group, Row, SaveRow, TextInput, Toggle } from './primitives'
-import AgentElearningFileSettings from './AgentElearningFileSettings'
 
 const showManagedApiKey = product.models?.showManagedApiKey === true
 
@@ -117,7 +116,7 @@ const AssistantSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
 
   return (
     <div className="space-y-8">
-      <Group title={t('settings_group_memory')} description={t('settings_group_memory_desc')}>
+      <Group title={t('settings_group_context')} description={t('settings_group_context_desc')}>
         <Row
           label={t('config_max_tokens')}
           hint={t('config_max_tokens_hint')}
@@ -169,8 +168,6 @@ const AssistantSettings: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
           control={<Toggle label={t('config_evolution')} checked={evolution} onChange={setEvolution} />}
         />
       </Group>
-
-      <AgentElearningFileSettings />
     </div>
   )
 }

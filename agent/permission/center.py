@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
@@ -11,71 +10,40 @@ from pathlib import Path
 from agent.permission import global_mode
 from agent.permission.audit import activity_counts, record, recent
 from agent.permission.security_policy import MODE_DEFINITIONS, effective_mode, effective_rules, resolve, validate_patch
-from common.state_dir import mcp_config_file
 
 _KEY = re.compile(r"^[A-Z][A-Z0-9_]{1,79}$")
 
 
 def global_policy() -> dict:
-    from config import conf
-    raw = conf().get("security_policy")
-    return resolve(global_mode(), global_value=raw)
-
-
-def save_global_policy(value: dict) -> dict:
-    from config import conf, get_data_root, read_config_template
-    clean = validate_patch(value, global_policy=True)
-    current = conf()
-    path = Path(get_data_root()) / "config.json"
-    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-    data["security_policy"] = clean
-    _write_config(path, data)
-    current["security_policy"] = clean
-    record(operation="update", resource="global policy", decision="policy_change", reason="Global security policy updated.")
-    return clean
+    from core.security.run_policy import default_template, gateway_policy
+    return gateway_policy(default_template())
 
 
 def save_conversation_policy(session: str, value: dict | None, agent: str | None = None) -> dict:
-    """Use the same project or standalone policy for every human-facing editor."""
-    from agent.workspace import project_store, session_prefs
-    from agent.permission.security_policy import migrate_project_conversation_policies, snapshot_policy
-
-    patch = validate_patch(value) if value is not None else {}
-    project = project_store.get_project_dir(session, agent)
-    roots = patch.get("extra_roots")
-    fields = {key: patch[key] for key in ("preset", "base_preset", "rules", "connections") if key in patch}
-    if project and fields:
-        previous = project_store.get_security_policy(project)
-        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
-        saved = project_store.set_security_policy(project, snapshot_policy({**retained, **fields}))
-        migrate_project_conversation_policies(project)
-        if roots is not None:
-            session_prefs.set_prefs(session, agent, security_policy={"extra_roots": roots})
-        record(operation="update", resource="project policy", project=project, conversation=session,
-               decision="policy_change", reason="Project security policy updated from a project conversation.")
-    elif project:
-        saved = {"extra_roots": roots} if roots is not None else {}
-        session_prefs.set_prefs(session, agent, security_policy=saved or None)
-        record(operation="update", resource="conversation policy", conversation=session,
-               decision="policy_change", reason="Conversation authorized paths updated.")
+    """Update one conversation, independently of other chats in its project."""
+    from core.security.migration import ensure_migrated
+    ensure_migrated()
+    from core.security.run_policy import gateway_policy, resolve_run_policy, save_run_policy, validate_policy
+    current = resolve_run_policy(session, agent)
+    legacy_rules = None
+    if value is None:
+        from core.security.run_policy import default_template
+        template = default_template()
+        patch = {key: template[key] for key in ('filesystem_mode', 'capabilities', 'connections', 'extra_roots')}
+    elif 'filesystem_mode' in value or 'capabilities' in value:
+        patch = validate_policy(value)
     else:
-        previous = session_prefs.get_prefs(session, agent).get("security_policy") or {}
-        retained = {key: previous[key] for key in ("extra_roots", "connections") if key in previous}
-        saved = snapshot_policy({**retained, **patch}) if patch else {}
-        session_prefs.set_prefs(session, agent, security_policy=saved or None)
-        record(operation="update", resource="conversation policy", conversation=session,
-               decision="policy_change", reason="Standalone conversation security policy updated.")
-    return saved
-
-
-def _write_config(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".security-tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.chmod(tmp, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, ensure_ascii=False, indent=4)
-    os.replace(tmp, path)
+        legacy = validate_patch(value)
+        legacy_rules = legacy.get('rules')
+        patch = {key: legacy[key] for key in ('connections', 'extra_roots') if key in legacy}
+        if 'preset' in legacy:
+            patch['filesystem_mode'] = legacy.get('base_preset', 'workspace-write') if legacy['preset'] == 'custom' else legacy['preset']
+    saved = save_run_policy('session', session, patch, agent_id=agent,
+                            expected_revision=value.get('policy_revision', current['policy_revision']) if value else current['policy_revision'],
+                            legacy_rules=legacy_rules)
+    record(operation='update', resource='conversation policy', conversation=session,
+           decision='policy_change', reason='Independent conversation RunPolicy updated.')
+    return gateway_policy(saved)
 
 
 def _env_path() -> Path:
@@ -97,70 +65,99 @@ def _env_keys() -> set[str]:
 
 
 def secrets() -> list[dict]:
+    from core.security.control import require_owner
+    require_owner()
     from config import MODEL_CONFIG_TO_ENV, conf
-    names = {name: "credential store" for name in _env_keys()}
+    from core.security.env_store import environment_statuses
+    configured = environment_statuses(_env_path())
+    names = {name: "credential store" for name in configured}
     display_names = {}
-    cfg = conf()
-    for key, value in cfg.items():
-        if isinstance(key, str) and (key.endswith("_api_key") or key.endswith("_token")) and value:
+    from config import get_data_root
+    from core.security.config_credentials import read_document, statuses
+    path = Path(get_data_root()) / 'config.json'
+    cfg = read_document(path, default=dict(conf()))
+    model_states = statuses(path, cfg)
+    for key, state in model_states.items():
+        if key.startswith('CUSTOM:'):
+            name = key
+            names[name] = 'custom model provider'
+            entry = next(p for p in cfg.get('custom_providers', []) if 'CUSTOM:' + p['id'] == key)
+            display_names[name] = str(entry.get('name') or entry['id']).strip()
+        else:
             name = MODEL_CONFIG_TO_ENV.get(key, key.upper())
-            names[name] = "model configuration" if name not in names else "model configuration + credential store"
-    for entry in cfg.get("custom_providers") or []:
-        if not isinstance(entry, dict):
-            continue
-        key = str(entry.get("api_key") or "").strip()
-        provider_id = str(entry.get("id") or "").strip()
-        if not key or not provider_id:
-            continue
-        name = f"CUSTOM:{provider_id}"
-        names[name] = "custom model provider"
-        display_name = entry.get("name")
-        if isinstance(display_name, str) and display_name.strip():
-            display_names[name] = display_name.strip()
+            names[name] = 'model configuration' if name not in names else 'model configuration + credential store'
+        configured[name] = state
     return [
-        {"name": name, "source": source, "configured": True,
+        {"name": name, "source": source, "configured": configured[name],
          **({"display_name": display_names[name]} if name in display_names else {})}
         for name, source in sorted(names.items())
     ]
 
 
 def set_secret(name: str, value: str | None) -> None:
-    if not _KEY.fullmatch(name):
+    from core.security.control import require_owner
+    require_owner()
+    if not isinstance(name, str) or (not name.startswith("CUSTOM:") and not _KEY.fullmatch(name)):
         raise ValueError("invalid credential name")
     if value is not None and (not isinstance(value, str) or "\n" in value or "\r" in value):
         raise ValueError("invalid credential value")
-    from config import MODEL_CONFIG_TO_ENV, conf, get_data_root, read_config_template, sync_model_config_to_env
-    config_key = next((key for key, env_key in MODEL_CONFIG_TO_ENV.items() if env_key == name), name.lower())
+    from config import (MODEL_CONFIG_TO_ENV, conf, get_data_root, read_config_template,
+                        sync_model_config_to_env, sync_image_generation_custom_provider_env)
+    from core.security.config_credentials import read_document, save_runtime
+    path = Path(get_data_root()) / 'config.json'
+    data = read_document(path, default=read_config_template())
     current = conf()
-    if config_key in current and (config_key.endswith("_api_key") or config_key.endswith("_token")):
-        if name in _env_keys():
-            from agent.tools.env_config.env_config import EnvConfig
-            env_tool = EnvConfig()
-            entries = env_tool._read_env_file()
-            entries.pop(name, None)
-            env_tool._write_env_file(entries)
-        current[config_key] = value or ""
-        path = Path(get_data_root()) / "config.json"
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else read_config_template()
-        data[config_key] = value or ""
-        _write_config(path, data)
+    config_key = next((key for key, env_key in MODEL_CONFIG_TO_ENV.items() if env_key == name), name.lower())
+    is_model = config_key in MODEL_CONFIG_TO_ENV and config_key.endswith('_api_key') or config_key == 'custom_api_key'
+    if name.startswith('CUSTOM:') or name == 'BOCHA_API_KEY' or is_model:
+        if name.startswith('CUSTOM:'):
+            provider_id = name[len('CUSTOM:'):]
+            provider = next((p for p in data.get('custom_providers', [])
+                             if isinstance(p, dict) and p.get('id') == provider_id), None)
+            if provider is None:
+                raise ValueError('unknown custom model provider')
+            provider['api_key'] = value or ''
+        elif name == 'BOCHA_API_KEY':
+            data.setdefault('tools', {}).setdefault('web_search', {})['bocha_api_key'] = value or ''
+        else:
+            data[config_key] = value or ''
+        save_runtime(path, data, current)
         sync_model_config_to_env(current, overwrite=True)
-        record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
-               decision="policy_change", reason="Model credential status changed.")
+        sync_image_generation_custom_provider_env(current, overwrite=True)
+        if name == 'BOCHA_API_KEY' or (is_model and config_key not in MODEL_CONFIG_TO_ENV):
+            if value:
+                os.environ[name] = value
+            else:
+                os.environ.pop(name, None)
+        _refresh_model_clients()
+        # This is a separate, recoverable cleanup after the authoritative file
+        # and runtime agree. Its failure must not revive the retired env value.
+        if name in _env_keys():
+            from core.security.env_store import EnvironmentFile
+            try:
+                EnvironmentFile().update_secret(name, None)
+            except (OSError, PermissionError):
+                from common.log import logger
+                logger.warning('[Credentials] Legacy duplicate cleanup pending; model configuration remains authoritative')
+        record(operation='delete' if value is None else 'set', resource=f'credential:{name}', risk='L3',
+               decision='policy_change', reason='Model credential status changed.')
         return
-    from agent.tools.env_config.env_config import EnvConfig
-    tool = EnvConfig()
+    from core.security.env_store import EnvironmentFile
+    tool = EnvironmentFile()
     tool._ensure_env_file()
-    entries = tool._read_env_file()
+    tool.update_secret(name, value)
     if value is None:
-        entries.pop(name, None)
         os.environ.pop(name, None)
     else:
-        entries[name] = value
         os.environ[name] = value
-    tool._write_env_file(entries)
     record(operation="delete" if value is None else "set", resource=f"credential:{name}", risk="L3",
            decision="policy_change", reason="Credential status changed in the credential store.")
+
+
+def _refresh_model_clients() -> None:
+    # Existing clients cache credentials; subsequent calls must rebuild after a change.
+    from bridge.bridge import Bridge
+    Bridge().reset_bot()
 
 
 def _connection_row(entry_id: str, name: str, *, configured: bool, available: bool,
@@ -172,15 +169,26 @@ def _connection_row(entry_id: str, name: str, *, configured: bool, available: bo
 
 
 def connections(policy: dict | None = None) -> list[dict]:
+    from core.security.migration import ensure_migrated
+    if policy is None:
+        ensure_migrated()
     from config import conf
+    explicit_policy = policy is not None
     policy = policy or global_policy()
     cfg = conf()
     github_token = bool(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or cfg.get("github_token"))
     github_verified = bool(github_token and cfg.get("github_verified_at"))
     try:
-        from agent.briefing.settings import public_mailboxes
-        mail = public_mailboxes()
-        email_configured = bool(mail.get("configured"))
+        from core.services.email_gateway import email_mcp_enabled
+        if email_mcp_enabled():
+            from application import Application
+            accounts = Application.port("email").list_accounts()
+            if isinstance(accounts, dict):
+                email_configured = bool(accounts.get("configured") or accounts.get("accounts"))
+            else:
+                email_configured = bool(accounts)
+        else:
+            email_configured = False
     except Exception:
         email_configured = bool(cfg.get("email_password") or os.environ.get("EMAIL_PASSWORD"))
     try:
@@ -216,26 +224,37 @@ def connections(policy: dict | None = None) -> list[dict]:
         "plugins": _connection_row("plugins", "Plugins", configured=plugins_ready, available=plugins_ready),
         "external_api": _connection_row("external_api", "External API", configured=False, available=False),
     }
-    path = mcp_config_file()
-    if path.is_file():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            from agent.tools.tool_manager import ToolManager, _normalize_mcp_configs
-            servers = _normalize_mcp_configs(raw.get("mcpServers", raw.get("mcp_servers", raw)))
-            statuses = {}
-            for manager in ToolManager.instances():
-                statuses.update(manager.list_mcp_status())
-            for item in servers:
-                name = str(item.get("name") or "")
-                if name:
-                    ready = statuses.get(name) == "ready"
-                    entries[f"mcp:{name}"] = _connection_row(
-                        f"mcp:{name}", name, configured=True, available=ready,
-                    )
-        except (ValueError, OSError, TypeError):
-            pass
+    from agent.tools.tool_manager import ToolManager
+    for item in ToolManager().mcp_catalog():
+        name=item['name']
+        if name in {'email','elearning'}:
+            entries.pop(name,None)
+        entries['mcp:'+name]=_connection_row('mcp:'+name,name,configured=True,
+            available=item.get('enabled',False) and item.get('state')=='ready')
     for key, value in entries.items():
-        grant = policy.get("connections", {}).get(key, {})
+        grant = dict(policy.get("connections", {}).get(key, {}))
+        if key in {'mcp:email','mcp:elearning'}:
+            legacy=policy.get('connections',{}).get(key.removeprefix('mcp:'),{})
+            if legacy.get('allowed') is False:
+                grant['allowed'] = False
+            old_scopes=legacy.get('scopes')
+            if old_scopes and '*' not in old_scopes:
+                current=grant.get('scopes')
+                grant['scopes']=sorted(set(old_scopes) & set(current)) if current and '*' not in current else list(old_scopes)
+                if current and '*' not in current and not grant['scopes']:
+                    grant['allowed']=False
+        from core.security.migration import resource_authority_migrated
+        if resource_authority_migrated() and not explicit_policy:
+            from core.security.service import SecurityService
+            from core.security.resource_grants import ResourceGrantStore
+            from common.runtime_identity import current_identity
+            restrictions = SecurityService.legacy_connection_restrictions(key)
+            grant = {'allowed': all(row.get('allowed', True) for row in restrictions), 'scopes': []}
+            sets = [set(row['scopes']) for row in restrictions if row.get('scopes') and '*' not in row['scopes']]
+            if sets:
+                scopes = set.intersection(*sets)
+                grant.update(scopes=sorted(scopes), allowed=grant['allowed'] and bool(scopes))
+            value['revision'] = ResourceGrantStore().connection_revision(user_id=current_identity().user_id or 'local-default', connection=key)
         policy_scopes = grant.get("scopes")
         value.update({
             "allowed": grant.get("allowed", True),
@@ -268,7 +287,9 @@ def describe_task_permission(task: dict) -> dict:
             project = None
     explicit = task.get("run_permission_mode")
     conversation_mode = action.get("conversation_mode")
+    from agent.registry import get_agent_registry
     base = {
+        "owner_agent_id": task.get("owner_agent_id") or get_agent_registry().default_agent_id,
         "id": task.get("id"),
         "name": task.get("name") or task.get("id") or "",
         "enabled": bool(task.get("enabled")),
@@ -277,6 +298,16 @@ def describe_task_permission(task: dict) -> dict:
         "execution_project_dir": project,
         "run_permission_mode": explicit if explicit in {"read-only", "workspace-write", "full-access"} else None,
     }
+    from core.security.run_policy import subject_key
+    from core.security.policy_store import RunPolicyStore
+    policy = RunPolicyStore().get(subject_key('task', str(task.get('id') or ''), task.get('owner_agent_id')))
+    if task.get('run_policy_version') == 1 and (not policy or task.get('run_policy_revision') != policy['policy_revision']):
+        return {**base, 'effective_mode': None, 'permission_source': 'independent', 'unknown': True,
+                'policy_error': 'Task policy is missing or changed; repair permissions before rerunning.'}
+    if policy:
+        return {**base, 'effective_mode': policy.get('permission_mode', policy['filesystem_mode']), 'permission_source': 'independent',
+                'unknown': policy.get('migration_status') == 'needs_confirmation',
+                'policy_error': 'Legacy permissions need confirmation.' if policy.get('migration_status') == 'needs_confirmation' else None}
     if explicit in {"read-only", "workspace-write", "full-access"}:
         return {**base, "effective_mode": explicit, "permission_source": "independent", "unknown": False,
                 "policy_error": None}
@@ -332,19 +363,12 @@ def background_task_summary(tasks: list[dict] | None = None) -> dict:
 
 
 def overview(session_id: str | None = None, agent_id: str | None = None) -> dict:
-    from agent.workspace import project_store, session_prefs
+    from agent.workspace import project_store
     project = project_store.get_project_dir(session_id, agent_id) if session_id else None
     mode = global_mode()
     effective = resolve(mode, project_dir=project, session_id=session_id, agent_id=agent_id)
-    project_patch = project_store.get_security_policy(project) if project else {}
-    conversation_patch = session_prefs.get_prefs(session_id, agent_id).get("security_policy", {}) if session_id else {}
-    if project:
-        source = "project"
-    elif conversation_patch:
-        source = "session"
-    else:
-        source = "global"
-    from agent.workspace.context import resolve_context
+    source = "independent" if session_id else "template"
+    from core.workspace.service import resolve_context
     work_root = str(resolve_context(session_id, agent_id).root)
     from agent.permission.gateway import SecurityGateway
     from agent.permission.process_sandbox import capability
@@ -372,22 +396,24 @@ def overview(session_id: str | None = None, agent_id: str | None = None) -> dict
     try:
         from agent.permission.privacy import inventory as privacy_inventory
         privacy = privacy_inventory()
+        from agent.permission.privacy import data_access_inventory
+        data_access = data_access_inventory(all_connections)
     except (OSError, ValueError, TypeError):
         privacy = {"available": False, "categories": []}
+        data_access = {"available":False,"resources":[],"external_transfers":[]}
     return {
         "global_policy": global_policy(), "effective_policy": effective,
-        "effective_mode": effective_mode(effective), "effective_rules": effective_rules(effective),
+        "effective_mode": effective.get("permission_mode", effective.get("filesystem_mode", effective_mode(effective))), "effective_rules": effective_rules(effective),
         "policy_source": source, "mode_definitions": MODE_DEFINITIONS,
         "authorized_roots": [work_root, *(effective.get("extra_roots") or [])],
         "policy_error": effective.get("error"),
         "process_isolation": isolation,
-        "project": project, "project_policy": project_patch,
-        "projects": [{**item, "policy": project_store.get_security_policy(item["path"])}
-                     for item in project_store.list_known_projects()],
-        "conversation_policy": conversation_patch,
+        "project": project, "project_policy": {},
+        "projects": project_store.list_known_projects(),
+        "conversation_policy": effective if session_id else {},
         "connections": all_connections, "secrets": all_secrets,
         "background_tasks": task_rows,
-        "privacy": privacy,
+        "privacy": privacy, "data_access":data_access,
         "summary": {"status": "attention" if denials or active_pending else "normal",
                     "app_password_set": bool(__import__("config").conf().get("web_password")),
                     "connection_count": sum(1 for item in all_connections if item.get("connected")),

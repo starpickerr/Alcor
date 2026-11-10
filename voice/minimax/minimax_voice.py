@@ -3,17 +3,17 @@
 import datetime
 import json
 import random
-import requests
+from core.security.requests_transport import voice_requests as requests
 
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf
 from voice.voice import Voice
 
 
 class MinimaxVoice(Voice):
     def __init__(self):
-        self.api_key = conf().get("minimax_api_key")
         # Mainland endpoint matches `sk-api-0-...` keys; override via
         # `minimax_api_base` for international (api.minimax.io) workspaces.
         self.api_base = (conf().get("minimax_api_base") or "https://api.minimaxi.com").rstrip("/")
@@ -32,7 +32,7 @@ class MinimaxVoice(Voice):
             url = f"{self.api_base}/v1/t2a_v2"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {model_key('minimax_api_key')}",
             }
             payload = {
                 "model": model,

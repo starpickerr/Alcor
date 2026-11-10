@@ -6,14 +6,20 @@ without any external MCP SDK dependency.
 """
 
 import json
+import logging
+import re
+import contextvars
 import os
 import queue
 import subprocess
 import threading
 import time
+import socket
+import weakref
 import urllib.request
 import urllib.error
 from typing import Optional
+from contextlib import contextmanager
 
 from common.log import logger
 
@@ -21,6 +27,72 @@ from common.log import logger
 # Aliases accepted for the Streamable HTTP transport type
 _STREAMABLE_HTTP_ALIASES = {"streamable-http", "streamable_http", "streamablehttp", "http"}
 _CANCEL_SOCKET_TIMEOUT = 5
+_HTTP_REQUEST = contextvars.ContextVar('mcp_http_request', default=None)
+LIVE_CLIENTS = weakref.WeakSet()
+
+
+class _HttpRequest:
+    """Own only this request's responses, including a late-opened response."""
+
+    def __init__(self):
+        self.cancelled = threading.Event()
+        self.lock = threading.Lock()
+        self.responses = set()
+        self.connections = set()
+
+    def attach_connection(self, connection):
+        with self.lock:
+            if self.cancelled.is_set():
+                raise McpCancelledError('MCP request abandoned')
+            self.connections.add(connection)
+
+    def attach(self, response):
+        with self.lock:
+            if self.cancelled.is_set():
+                try:
+                    response.close()
+                except (OSError, ValueError):
+                    pass
+                raise McpCancelledError('MCP request abandoned')
+            self.responses.add(response)
+
+    def detach(self, response):
+        with self.lock:
+            self.responses.discard(response)
+
+    def cancel(self):
+        self.cancelled.set()
+        with self.lock:
+            responses = tuple(self.responses)
+            connections = tuple(self.connections)
+
+        def interrupt():
+            for connection in connections:
+                stream = connection.sock
+                if stream is not None:
+                    try:
+                        stream.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                connection.close()
+            for response in responses:
+                # Closing a buffered HTTPResponse can wait for its reader's
+                # lock. Interrupt the owned socket first, outside the waiter.
+                stream = getattr(response, 'fp', None)
+                raw = getattr(stream, 'raw', None)
+                connection = getattr(raw, '_sock', None)
+                if connection is not None:
+                    try:
+                        connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                try:
+                    response.close()
+                except (OSError, ValueError):
+                    pass
+
+        if responses or connections:
+            threading.Thread(target=interrupt, name='mcp-http-interrupt', daemon=True).start()
 
 
 class McpCancelledError(Exception):
@@ -28,8 +100,65 @@ class McpCancelledError(Exception):
 
 
 def _check_cancelled(cancel_event):
+    from core.plugins.caller import remaining_invocation_seconds
+    from agent.protocol.cancel import AgentCancelledError
+    try:
+        remaining_invocation_seconds()
+    except AgentCancelledError as exc:
+        raise McpCancelledError('MCP call cancelled') from exc
     if cancel_event is not None and cancel_event.is_set():
         raise McpCancelledError("MCP call cancelled")
+    request = _HTTP_REQUEST.get()
+    if request is not None and request.cancelled.is_set():
+        raise McpCancelledError('MCP request abandoned')
+
+
+def _bounded_timeout(timeout):
+    from core.plugins.caller import remaining_invocation_seconds
+    from agent.protocol.cancel import AgentCancelledError
+    try:
+        remaining = remaining_invocation_seconds()
+    except AgentCancelledError as exc:
+        raise McpCancelledError('MCP call cancelled') from exc
+    return min(timeout, remaining) if remaining is not None else timeout
+
+
+def _http_wait(operation, cancel_event, connection_lease=None):
+    """Bound open, headers and streaming reads by the original total budget."""
+    request = _HttpRequest()
+    if connection_lease is not None:
+        connection_lease.attach(request.cancel)
+    replies = queue.Queue(maxsize=1)
+    context = contextvars.copy_context()
+
+    def run():
+        token = _HTTP_REQUEST.set(request)
+        try:
+            _check_cancelled(cancel_event)
+            replies.put((True, operation()))
+        except BaseException as exc:
+            replies.put((False, exc))
+        finally:
+            _HTTP_REQUEST.reset(token)
+
+    threading.Thread(target=lambda: context.run(run), name='mcp-http-request', daemon=True).start()
+    try:
+        while True:
+            _check_cancelled(cancel_event)
+            try:
+                succeeded, value = replies.get(timeout=_bounded_timeout(.05))
+            except queue.Empty:
+                continue
+            _check_cancelled(cancel_event)
+            if succeeded:
+                return value
+            raise value
+    except BaseException:
+        request.cancel()
+        raise
+    finally:
+        if connection_lease is not None:
+            connection_lease.detach(request.cancel)
 
 
 # System env vars a stdio MCP subprocess legitimately needs to run
@@ -45,30 +174,6 @@ _STDIO_ENV_PASSTHROUGH = (
 )
 # Sensitive name patterns never forwarded, even under inherit_full_env.
 _STDIO_ENV_SENSITIVE = ("_KEY", "_SECRET", "_TOKEN", "_PASSWORD", "_PASSWD", "_CREDENTIAL")
-
-
-# Optional callback invoked after an OAuth authorization completes, so the
-# tool manager can bring the newly-authorized server online. Signature:
-# reload_fn(server_name: str) -> None. Installed by the tool manager.
-_reload_callback = None
-
-
-def set_reload_callback(fn) -> None:
-    """Register a callback fired after a server's OAuth flow succeeds."""
-    global _reload_callback
-    _reload_callback = fn
-
-
-def notify_server_authorized(server_name: str) -> None:
-    """Called by the web callback once tokens are stored for a server."""
-    fn = _reload_callback
-    if fn is None:
-        logger.debug(f"[MCP:{server_name}] Authorized but no reload callback registered")
-        return
-    try:
-        fn(server_name)
-    except Exception as e:
-        logger.warning(f"[MCP:{server_name}] reload callback failed: {e}")
 
 
 def _oauth_redirect_uri() -> str:
@@ -94,6 +199,12 @@ class McpClient:
           SSE:             {"name": "my-api",    "type": "sse",   "url": "http://localhost:8000/sse"}
           streamable-http: {"name": "pubmed",    "type": "streamable-http", "url": "https://x/mcp"}
         """
+        self._lifecycle_lock = threading.RLock()
+        self._closed = False
+        self._connection_lease = None
+        self._remote_responses = set()
+        self._operation_clients = set()
+        self.on_authorized = None
         self.config = config
         self.name: str = config.get("name", "unknown")
         raw_transport: str = config.get("type", "stdio")
@@ -108,6 +219,10 @@ class McpClient:
 
         # stdio state
         self._proc: Optional[subprocess.Popen] = None
+        self.sandbox_state = {'mode': 'unavailable', 'reason': 'Local runtime has not started.'}
+        self._runtime_key = None
+        self.environment = None
+        LIVE_CLIENTS.add(self)
         self._read_queue: queue.Queue = queue.Queue()
 
         # SSE state
@@ -122,8 +237,11 @@ class McpClient:
         # OAuth state (streamable-http only). Lazily created when the server
         # responds with 401 and the user has not supplied a static token.
         self._oauth = None  # OAuthHandler instance
+        self.authorization_guard = self._ensure_open
+        self.authorization_publish = None
         # Set to True once a 401 could not be satisfied and the user must
         # complete the browser authorization. Callers can surface this state.
+        self.server_version: str | None = None
         self.needs_auth: bool = False
 
         # Shared state
@@ -137,16 +255,24 @@ class McpClient:
         # concurrent streamable-http requests.
         self._http_lock = threading.Lock()
         self._initialized = False
+        self._initialization_cancel = None
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
-    def initialize(self) -> bool:
+    def initialize(self, cancel_event=None) -> bool:
         """Connect and perform the MCP handshake. Returns True on success."""
+        if self._closed:
+            return False
+        self._initialization_cancel = cancel_event
         try:
+            _check_cancelled(cancel_event)
+            self._ensure_open()
             if self.transport == "stdio":
-                return self._init_stdio()
+                from core.mcp.lifecycle import admission
+                with admission(self.config, key=self._runtime_key, environment=self.environment):
+                    return self._init_stdio()
             elif self.transport == "sse":
                 return self._init_sse()
             elif self.transport == "streamable-http":
@@ -155,73 +281,263 @@ class McpClient:
                 logger.warning(f"[MCP:{self.name}] Unknown transport type: {self.transport!r}")
                 return False
         except Exception as e:
-            logger.warning(f"[MCP:{self.name}] Initialization failed: {e}")
+            logger.warning("[MCP:%s] Initialization failed (%s)", self.name, type(e).__name__)
+            self.shutdown()
             return False
+        finally:
+            self._initialization_cancel = None
 
     def list_tools(self) -> list:
         """Return the tool list from this server.
 
         Each item is a dict: {"name": str, "description": str, "inputSchema": dict}
         """
+        from core.mcp.lifecycle import admission
+        with admission(self.config, key=self._runtime_key, environment=self.environment):
+            return self._list_tools()
+
+    def _list_tools(self):
+        tools, names, cursors = [], set(), set()
+        params = {}
+        while True:
+            response = self._send_request("tools/list", params)
+            result = response.get('result') if isinstance(response, dict) and 'error' not in response else None
+            if not isinstance(result, dict) or not isinstance(result.get('tools'), list):
+                raise ValueError('Invalid MCP tools/list response')
+            for tool in result['tools']:
+                if (not isinstance(tool, dict) or not isinstance(tool.get('name'), str)
+                        or not tool['name'].strip() or tool['name'] in names
+                        or not isinstance(tool.get('inputSchema', {}), dict)):
+                    raise ValueError('Invalid MCP tool definition')
+                names.add(tool['name'])
+                tools.append({
+                    'name': tool['name'],
+                    'description': tool.get('description', ''),
+                    'inputSchema': tool.get('inputSchema', {}),
+                    **({'title': tool['title']} if isinstance(tool.get('title'), str) else {}),
+                    **({'outputSchema': tool['outputSchema']} if isinstance(tool.get('outputSchema'), dict) else {}),
+                })
+            cursor = result.get('nextCursor')
+            if cursor is None:
+                return tools
+            if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                raise ValueError('Invalid MCP tools/list cursor')
+            cursors.add(cursor)
+            params = {'cursor': cursor}
+
+    def call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        started = time.monotonic()
         try:
-            resp = self._send_request("tools/list", {})
-            tools = resp.get("result", {}).get("tools", [])
-            return [
-                {
-                    "name": t.get("name", ""),
-                    "description": t.get("description", ""),
-                    "inputSchema": t.get("inputSchema", {}),
-                }
-                for t in tools
-            ]
-        except Exception as e:
-            logger.warning(f"[MCP:{self.name}] list_tools failed: {e}")
-            return []
+            from core.mcp.lifecycle import admission
+            with admission(self.config, key=self._runtime_key, environment=self.environment):
+                result = self._call_tool_result(name, arguments, cancel_event, meta=meta)
+        except Exception as exc:
+            logger.warning('[MCP:%s] tool=%s failed (%s)', self.name, name, type(exc).__name__)
+            raise
+        logger.info('[MCP:%s] tool=%s completed duration_ms=%d', self.name, name,
+                    (time.monotonic() - started) * 1000)
+        return result
+
+    def _call_tool_result(self, name: str, arguments: dict, cancel_event=None, *, meta=None) -> dict:
+        from core.security.mcp_runtime import check_mcp
+        check_mcp(self)
+        from core.mcp.managed import ManagedMcpConfig
+        if (self.transport == 'stdio' and isinstance(self.config, ManagedMcpConfig)
+                and name in self.config.filesystem_outputs):
+            return self._call_with_output_scope(name, arguments, cancel_event, meta=meta)
+        params = {"name": name, "arguments": arguments}
+        if meta is not None:
+            params["_meta"] = meta
+        response = (self._send_request("tools/call", params) if cancel_event is None else
+                    self._send_request("tools/call", params, cancel_event=cancel_event))
+        if response.get('error'):
+            raise RuntimeError((response['error'] or {}).get('message','MCP request failed'))
+        result=response.get('result',{})
+        check_mcp(self)
+        if result.get('isError'):
+            raise RuntimeError('\n'.join(item.get('text','') for item in result.get('content',[]) if item.get('type')=='text') or 'MCP tool failed')
+        return result
+
+    def _call_with_output_scope(self, name, arguments, cancel_event, *, meta):
+        """A short-lived child gets one output root; the control process does not."""
+        from core.mcp.managed import ManagedMcpConfig
+        from core.security.mcp_runtime import check_mcp, output_scope, output_temporary
+        _check_cancelled(cancel_event)
+        method, field = self.config.filesystem_outputs[name]
+        settings = self._call_tool_result(method, {}, cancel_event)['structuredContent']['value']
+        scope = output_scope(settings.get(field) or '')
+        with output_temporary(scope) as temporary:
+            config = ManagedMcpConfig(self.config, data_root=self.config.data_root,
+                legacy_roots=self.config.legacy_roots, package_digest=self.config.package_digest, output_scope=scope, output_temporary=temporary,
+                credential_env=self.config.credential_env, hosted_connector=self.config.hosted_connector)
+            child = McpClient(config)
+            with self._lifecycle_lock:
+                if self._closed:
+                    child.shutdown()
+                    raise RuntimeError('MCP connection is closed')
+                self._operation_clients.add(child)
+            try:
+                if not child.initialize(cancel_event=cancel_event):
+                    _check_cancelled(cancel_event)
+                    raise RuntimeError('MCP isolated output process could not start')
+                _check_cancelled(cancel_event)
+                check_mcp(self)
+                scope.check()
+                result = child._call_tool_result(name, arguments, cancel_event, meta=meta)
+                scope.check()
+                check_mcp(self)
+                return result
+            finally:
+                child.shutdown()
+                with self._lifecycle_lock:
+                    self._operation_clients.discard(child)
 
     def call_tool(self, name: str, arguments: dict, cancel_event=None) -> str:
-        """Call a tool and return the result as a string."""
-        try:
-            params = {"name": name, "arguments": arguments}
-            resp = (self._send_request("tools/call", params) if cancel_event is None else
-                    self._send_request("tools/call", params, cancel_event=cancel_event))
-            content = resp.get("result", {}).get("content", [])
-            parts = [item.get("text", "") for item in content if item.get("type") == "text"]
-            return "\n".join(parts)
-        except Exception as e:
-            logger.warning(f"[MCP:{self.name}] call_tool({name}) failed: {e}")
-            return f"Error: {e}"
+        result=self.call_tool_result(name,arguments,cancel_event=cancel_event)
+        return "\n".join(item.get('text','') for item in result.get('content',[]) if item.get('type')=='text')
 
     def shutdown(self):
-        """Close the connection / terminate the child process."""
+        """A closed generation cannot reconnect or spawn another process."""
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
+            for child in tuple(self._operation_clients):
+                child.shutdown()
+            self._operation_clients.clear()
+            lease, self._connection_lease = self._connection_lease, None
+            if lease is not None:
+                lease.close()
+            for response in tuple(self._remote_responses):
+                response.close()
+            self._remote_responses.clear()
+            self._shutdown_connection()
+
+    def _ensure_open(self):
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError('MCP connection is closed')
+            if self.transport in {'sse', 'streamable-http'}:
+                if self._connection_lease is None:
+                    from core.security.connections import ConnectionControl, service_id
+                    identifier, _ = service_id(self._http_url or self._sse_url or self.config.get('url', ''))
+                    self._connection_lease = ConnectionControl().begin(identifier, cancel=self.shutdown)
+                self._connection_lease.check()
+
+    @contextmanager
+    def _remote_response(self, request, timeout):
+        self._ensure_open()
+        response = self._open_remote(request, timeout=_bounded_timeout(timeout))
+        control = _HTTP_REQUEST.get()
+        if control is not None:
+            control.attach(response)
+        with self._lifecycle_lock:
+            abandoned = self._closed
+            # Capture the session before publishing the response, so shutdown
+            # cannot miss an id assigned by an in-flight initialize request.
+            session_id = response.headers.get('Mcp-Session-Id')
+            if not abandoned and self.transport == 'streamable-http' and session_id:
+                with self._http_lock:
+                    if not self._http_session_id:
+                        self._http_session_id = session_id
+            if not abandoned:
+                self._remote_responses.add(response)
+        if abandoned:
+            response.close()
+            self.shutdown()
+            raise RuntimeError('MCP connection closed while request was in flight')
+        try:
+            yield response
+        finally:
+            if control is not None:
+                control.detach(response)
+            with self._lifecycle_lock:
+                self._remote_responses.discard(response)
+            response.close()
+
+    def _open_remote(self, request, *, timeout):
+        from core.security.http_transport import open_request
+        from core.security.connections import service_id
+        from core.security.service import SecurityService
+        url = request.full_url
+        configured = self.config.get('url') or self._http_url or self._sse_url
+        origin = service_id(configured)[1]
+        if service_id(url)[1] != origin:
+            raise PermissionError('MCP transport cannot change the configured receiving service')
+        from core.security.http_transport import configured_route
+        route = configured_route(url, config=self.config)
+        from core.security.mcp_credentials import has_authentication, runtime_headers
+        for key, value in runtime_headers(self.config, url).items():
+            request.add_header(key, value)
+        body = request.data
+        permit = None
+        if body is not None:
+            message = json.loads(body)
+            # Only Core-generated protocol metadata receives this label.
+            method = message.get('method')
+            params = message.get('params') or {}
+            allowed = {
+                'initialize': {'protocolVersion', 'capabilities', 'clientInfo'},
+                'tools/list': {'cursor'}, 'ping': set(),
+                'notifications/initialized': set(),
+                'notifications/cancelled': {'requestId', 'reason'},
+            }
+            public_control = method in allowed and isinstance(params, dict) and not set(params) - allowed[method]
+            sources = ('public:mcp-protocol',) if public_control else ('private:mcp-tool-input',)
+            request_control = _HTTP_REQUEST.get()
+            transport_check = None
+            if method == 'tools/call' and isinstance(params, dict):
+                from copy import deepcopy
+                from core.security.approvals import inherited
+                from core.security.capabilities import mcp_descriptor
+                from agent.runtime.tool_invocation import _current_authorization
+                from common.runtime_identity import current_identity
+                configuration = deepcopy(dict(self.config))
+                arguments = deepcopy(params.get('arguments') or {})
+                descriptor = mcp_descriptor(self.name, params.get('name'), self.config)
+                identity = current_identity()
+                def transport_check():
+                    if dict(self.config) != configuration:
+                        raise PermissionError('MCP configuration changed during transport')
+                    binding = _current_authorization(None, identity.agent_id, identity.session_id, None, False)[2]
+                    allowed = SecurityService.native_user_operation() or inherited(descriptor, binding, arguments)
+                    if allowed:
+                        SecurityService.authorize_connection(self.name, descriptor.operation)
+                    return allowed
+            permit = SecurityService.authorize_egress(url, body, sources=sources,
+                cancel_event=request_control.cancelled if request_control else None,
+                method=request.get_method(), headers=dict(request.header_items()), transport_check=transport_check)
+        else:
+            permit = SecurityService.authorize_egress(url, b'', sources=('public:mcp-protocol',),
+                method=request.get_method(), headers=dict(request.header_items()))
+        control = _HTTP_REQUEST.get()
+        response = open_request(request.get_method(), url, body=body, headers=dict(request.header_items()),
+            timeout=timeout, permit=permit, **route,
+            cancel_event=control.cancelled if control else None)
+        if response.status >= 400:
+            if has_authentication(self.config, dict(request.header_items())):
+                # Authentication endpoints may echo submitted material in an
+                # error body or reason. Neither is an ordinary tool result.
+                status, headers = response.status, response.headers
+                response.close()
+                raise urllib.error.HTTPError(url, status, 'Authenticated MCP request failed', headers, None)
+            raise urllib.error.HTTPError(url, response.status, response.reason, response.headers, response)
+        return response
+
+    def _shutdown_connection(self):
         if self._proc is not None:
             try:
                 self._proc.stdin.close()
             except Exception:
                 pass
-            try:
-                self._proc.terminate()
-                self._proc.wait(timeout=5)
-            except Exception:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
+            from common.process_tree import stop_process_tree
+            stop_process_tree(self._proc, owned_session=True)
             self._proc = None
             logger.debug(f"[MCP:{self.name}] stdio process terminated")
 
-        # Best-effort streamable-http session termination
-        if self.transport == "streamable-http" and self._http_session_id and self._http_url:
-            try:
-                req = urllib.request.Request(
-                    self._http_url,
-                    method="DELETE",
-                    headers={"Mcp-Session-Id": self._http_session_id, **self._http_headers},
-                )
-                with urllib.request.urlopen(req, timeout=5):
-                    pass
-            except Exception:
-                pass
-            self._http_session_id = None
+        # Revocation closes owned sockets. It must not create a new HTTP
+        # request carrying credentials after the service was turned off.
+        self._http_session_id = None
 
         self._initialized = False
 
@@ -238,28 +554,48 @@ class McpClient:
         if not self._command_allowed(command):
             return False
 
-        args = self.config.get("args", [])
-        env = self._build_stdio_env(self.config.get("env", None))
+        from core.security.mcp_credentials import runtime_env
+        env = self._build_stdio_env(runtime_env(self.config))
+        from core.security.mcp_runtime import prepare_mcp
+        plan, self._runtime_key = prepare_mcp(self.config, env)
+        self.sandbox_state = plan.state
+        self.environment = plan.state.get("environment")
 
-        self._proc = subprocess.Popen(
-            [command] + list(args),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            env=env,
-        )
-        logger.debug(f"[MCP:{self.name}] stdio process started (pid={self._proc.pid})")
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            _check_cancelled(self._initialization_cancel)
+            from core.security.protected_paths import launch_guard
+            with launch_guard(plan.protection_revision) as launch:
+                process = self._proc = subprocess.Popen(
+                    plan.argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    env=plan.env,
+                    cwd=plan.cwd,
+                    start_new_session=True,
+                )
+                launch.bind(process)
+        logger.debug(f"[MCP:{self.name}] stdio process started (pid={process.pid})")
 
         threading.Thread(
-            target=self._drain_stderr, daemon=True, name=f"mcp-stderr-{self.name}"
+            target=self._drain_stderr, args=(process.stderr,), daemon=True, name=f"mcp-stderr-{self.name}"
         ).start()
         threading.Thread(
-            target=self._drain_stdout, daemon=True, name=f"mcp-stdout-{self.name}"
+            target=self._drain_stdout, args=(process.stdout,), daemon=True, name=f"mcp-stdout-{self.name}"
         ).start()
 
-        return self._handshake()
+        connected = self._handshake()
+        from core.mcp.lifecycle import McpMaintenanceConfig
+        if connected and self.environment and not isinstance(self.config, McpMaintenanceConfig):
+            from core.runtime.environments import EnvironmentStore
+            EnvironmentStore().activate(self.environment, validate=lambda candidate: not self._closed and self._proc is not None and self._proc.poll() is None)
+        if not connected:
+            self.shutdown()
+        return connected
 
     def _command_allowed(self, command: str) -> bool:
         """Check the executable against an optional command allowlist.
@@ -290,49 +626,48 @@ class McpClient:
     def _build_stdio_env(self, extra_env) -> dict:
         """Build the environment for a stdio MCP subprocess.
 
-        By default only safe system vars plus the user's explicit ``env``
-        block are passed through, so API keys in the agent's own environment
-        are not leaked to the subprocess. Set the per-server config
-        ``inherit_full_env: true`` to restore full inheritance (obviously
-        sensitive names are still stripped).
+        Only startup system vars and the explicit env block are considered.
+        Core resolves only this implementation’s explicitly granted credential fields.
+        Legacy full inheritance cannot expose arbitrary Core environment data.
         """
         extra_env = extra_env or {}
-        if self.config.get("inherit_full_env"):
-            env = {
-                k: v for k, v in os.environ.items()
-                if not any(p in k.upper() for p in _STDIO_ENV_SENSITIVE)
-            }
-        else:
-            env = {k: os.environ[k] for k in _STDIO_ENV_PASSTHROUGH if k in os.environ}
-        # User-declared env is explicit authorization, always applied last.
+        from core.security.credential_values import REFERENCE
+        if any(isinstance(value, str) and value.startswith(REFERENCE) for value in extra_env.values()):
+            raise PermissionError('Protected credentials cannot be injected into an ordinary local MCP; use its trusted connector')
+        env = {k: os.environ[k] for k in _STDIO_ENV_PASSTHROUGH if k in os.environ}
         env.update({str(k): str(v) for k, v in extra_env.items()})
         return env
 
     def _url_allowed(self, url: str) -> bool:
-        """SSRF guard for remote (SSE / streamable-http) MCP endpoints.
-
-        Delegates to the shared ``validate_url_safe`` helper, which is a no-op
-        unless ``web_security_ssrf_protection`` is enabled, so local/LAN MCP
-        servers keep working by default.
-        """
+        """Validate configuration without DNS; the controlled transport checks IO."""
         try:
-            from agent.tools.utils.url_safety import validate_url_safe
-            validate_url_safe(url)
+            from core.security.http_transport import configured_route
+            configured_route(url, config=self.config)
             return True
-        except ValueError as e:
-            logger.warning(f"[MCP:{self.name}] url blocked: {e}")
+        except (ValueError, PermissionError):
+            logger.warning('[MCP:%s] Repair endpoint or proxy in MCP settings', self.name)
             return False
 
-    def _drain_stderr(self):
-        for line in self._proc.stderr:
-            line = line.strip()
-            if line:
-                logger.warning(f"[MCP:{self.name}] stderr: {line}")
+    def _drain_stderr(self, stream):
+        try:
+            while line := stream.readline(16384):
+                if not line.endswith('\n') and len(line) >= 16384:
+                    while line and not line.endswith('\n'):
+                        line = stream.readline(16384)
+                    logger.warning('[MCP:%s] oversized diagnostic omitted', self.name)
+                    continue
+                line = line.strip()
+                if line:
+                    level = re.match(r'^(?:\[)?(DEBUG|INFO|WARNING|ERROR|CRITICAL)(?:\]|:|\s)', line)
+                    logger.log(getattr(logging, level[1]) if level else logging.WARNING,
+                               '[MCP:%s] %s', self.name, line)
+        except (OSError, ValueError):
+            pass  # Shutdown may close a process stream while it is being read.
 
-    def _drain_stdout(self):
+    def _drain_stdout(self, stream):
         """Background thread: read lines from stdout and put them into the queue."""
         try:
-            for line in self._proc.stdout:
+            for line in stream:
                 self._read_queue.put(line)
         except Exception:
             pass
@@ -348,7 +683,7 @@ class McpClient:
         Uses the per-server timeout from mcp.json config when no explicit
         timeout is provided.
         """
-        effective = timeout if timeout is not None else self._timeout
+        effective = _bounded_timeout(timeout if timeout is not None else self._timeout)
         deadline = time.monotonic() + effective
         while True:
             _check_cancelled(cancel_event)
@@ -356,7 +691,7 @@ class McpClient:
             if remaining <= 0:
                 raise TimeoutError(f"[MCP:{self.name}] stdio read timed out after {effective}s")
             try:
-                line = self._read_queue.get(timeout=min(remaining, 0.1) if cancel_event is not None else remaining)
+                line = self._read_queue.get(timeout=min(remaining, .05))
                 break
             except queue.Empty:
                 continue
@@ -367,6 +702,26 @@ class McpClient:
     def _stdio_send(self, message: dict, cancel_event=None) -> dict:
         """Send a JSON-RPC message over stdio and read the response."""
         _check_cancelled(cancel_event)
+        connector = None
+        from core.mcp.managed import ManagedMcpConfig
+        if (isinstance(self.config, ManagedMcpConfig) and self.config.hosted_connector in {'email', 'elearning'}
+                and message.get('method') == 'tools/call'):
+            from copy import deepcopy
+            from core.services.email_connector import EmailConnector
+            from core.services.elearning_connector import ElearningConnector
+            connector_type = {'email': EmailConnector, 'elearning': ElearningConnector}[self.config.hosted_connector]
+            params = deepcopy(message['params'])
+            def active():
+                self._ensure_open()
+                _check_cancelled(cancel_event)
+                from core.security.mcp_runtime import check_mcp
+                check_mcp(self)
+                if self._proc.poll() is not None:
+                    raise PermissionError('Managed account process stopped')
+            def connector():
+                return connector_type(self.config, check=active, cancel_event=cancel_event).invoke(
+                    params['name'], params['arguments'], meta=params.get('_meta'))
+            message = {**message, 'params': {**message['params'], 'arguments': {}}}
         raw = json.dumps(message) + "\n"
         self._proc.stdin.write(raw)
         self._proc.stdin.flush()
@@ -375,7 +730,7 @@ class McpClient:
         while True:
             try:
                 line = self._readline_with_timeout(cancel_event=cancel_event)
-            except McpCancelledError:
+            except (McpCancelledError, PermissionError, TimeoutError):
                 try:
                     self._send_notification("notifications/cancelled", {
                         "requestId": expected_id, "reason": "User cancelled"
@@ -394,6 +749,22 @@ class McpClient:
                 continue
             if "id" not in data:
                 logger.debug(f"[MCP:{self.name}] notification skipped: {data.get('method', '?')}")
+                continue
+            if 'method' in data:
+                # An extension cannot select a host operation, path, recipient
+                # or arguments. It can only complete this pending Core call once.
+                if (connector is not None and data.get('method') == f'stella/{self.config.hosted_connector}/invoke' and
+                        data.get('params') == {'requestId': expected_id}):
+                    pending, connector = connector, None
+                    try:
+                        reply = {'result': {'value': pending()}}
+                    except Exception:
+                        reply = {'error': {'code': -32001,
+                                           'message': '账号操作未完成，请检查原账号设置与当前授权。'}}
+                else:
+                    reply = {'error': {'code': -32601, 'message': 'Host operation is not available'}}
+                self._proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': data['id'], **reply}) + '\n')
+                self._proc.stdin.flush()
                 continue
             # Verify response id matches request id to avoid consuming a stale
             # response left over from a previously failed/timed-out request.
@@ -436,7 +807,7 @@ class McpClient:
             headers={"Accept": "text/event-stream"},
         )
         endpoint = None
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with self._remote_response(req, timeout=10) as resp:
             for raw_line in resp:
                 line = raw_line.decode("utf-8").rstrip("\n\r")
                 if line.startswith("data:"):
@@ -471,7 +842,7 @@ class McpClient:
             method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
+        with self._remote_response(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
             _check_cancelled(cancel_event)
             raw = resp.read().decode("utf-8")
             _check_cancelled(cancel_event)
@@ -508,7 +879,7 @@ class McpClient:
 
     def _has_static_auth(self) -> bool:
         """True when the user supplied their own Authorization header."""
-        return any(k.lower() == "authorization" for k in self._http_headers)
+        return any(k.lower() == "authorization" and value for k, value in self._http_headers.items())
 
     def _maybe_load_oauth(self) -> None:
         """Attach an OAuthHandler when stored credentials exist for this server."""
@@ -518,7 +889,7 @@ class McpClient:
             from agent.tools.mcp.mcp_oauth import OAuthHandler, load_server_record
         except Exception:
             return
-        rec = load_server_record(self.name)
+        rec = load_server_record(self.name, resource_url=self._http_url)
         # Only create a handler when we have something to reuse; otherwise it
         # is created lazily on the first 401.
         if rec.get("access_token") or rec.get("client_id"):
@@ -527,6 +898,10 @@ class McpClient:
                 resource_url=self._http_url,
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
+                on_authorized=self.on_authorized,
+                check_active=self._ensure_open,
+                check_authorization=self.authorization_guard,
+                publish=self.authorization_publish,
             )
 
     def _current_bearer(self) -> Optional[str]:
@@ -537,6 +912,7 @@ class McpClient:
 
     def _begin_oauth(self, www_authenticate: str = "") -> None:
         """Kick off the OAuth flow after a 401: discover, register, prompt user."""
+        self._ensure_open()
         if self._has_static_auth():
             return
         try:
@@ -551,6 +927,10 @@ class McpClient:
                 resource_url=self._http_url,
                 redirect_uri=_oauth_redirect_uri(),
                 scope=self.config.get("scope", ""),
+                on_authorized=self.on_authorized,
+                check_active=self._ensure_open,
+                check_authorization=self.authorization_guard,
+                publish=self.authorization_publish,
             )
 
         if not self._oauth.ensure_registered(www_authenticate):
@@ -560,24 +940,16 @@ class McpClient:
             )
             return
 
+        self._ensure_open()
+        self._oauth.on_authorized = self.on_authorized
         auth_url = self._oauth.build_authorization_url()
         if not auth_url:
             logger.warning(f"[MCP:{self.name}] Failed to build authorization URL")
             return
 
+        self._ensure_open()
         self.needs_auth = True
-        logger.warning(
-            f"[MCP:{self.name}] ⚠️  Authorization required. Open this URL in a "
-            f"browser to authorize, then this server will come online automatically:\n"
-            f"    {auth_url}"
-        )
-        # On a machine with a local browser (desktop/dev), open it directly.
-        if os.environ.get("STELLA_DESKTOP") == "1" or not os.environ.get("STELLA_HEADLESS"):
-            try:
-                import webbrowser
-                webbrowser.open(auth_url)
-            except Exception:
-                pass
+        logger.warning(f"[MCP:{self.name}] OAuth authorization is waiting in its configuration page.")
 
     def _streamable_http_send(self, message: dict, cancel_event=None) -> dict:
         """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
@@ -647,9 +1019,32 @@ class McpClient:
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30)
+            with self._remote_response(req, timeout=_CANCEL_SOCKET_TIMEOUT if cancel_event is not None else 30) as resp:
+                _check_cancelled(cancel_event)
+                status = resp.status if hasattr(resp, "status") else resp.getcode()
+
+                # Notifications: server may reply with 202 Accepted and no body
+                if not expect_response or status == 202:
+                    try:
+                        resp.read()
+                    except Exception:
+                        pass
+                    return {}
+
+                content_type = (resp.headers.get("Content-Type") or "").lower()
+                expected_id = message.get("id")
+
+                if "text/event-stream" in content_type:
+                    return self._read_sse_response(resp, expected_id, cancel_event=cancel_event)
+
+                raw = resp.read().decode("utf-8")
+                _check_cancelled(cancel_event)
+                if not raw:
+                    return {}
+                return json.loads(raw)
         except urllib.error.HTTPError as e:
             # 401 is the spec-compliant "needs authorization" signal.
+            self._ensure_open()
             if e.code == 401 and not self._has_static_auth():
                 return self._handle_401(e, message, expect_response, _retried, cancel_event=cancel_event)
             # Surface the server-provided error body for easier debugging
@@ -660,41 +1055,7 @@ class McpClient:
                 pass
             raise IOError(
                 f"[MCP:{self.name}] streamable-http HTTP {e.code}: {detail[:200]}"
-            )
-
-        with resp:
-            _check_cancelled(cancel_event)
-            # Capture session id assigned by the server (if any)
-            session_id = resp.headers.get("Mcp-Session-Id")
-            # Double-checked lock: only the first response sets the
-            # session id, preventing concurrent initializers from
-            # overwriting each other.
-            if session_id and not self._http_session_id:
-                with self._http_lock:
-                    if not self._http_session_id:
-                        self._http_session_id = session_id
-
-            status = resp.status if hasattr(resp, "status") else resp.getcode()
-
-            # Notifications: server may reply with 202 Accepted and no body
-            if not expect_response or status == 202:
-                try:
-                    resp.read()
-                except Exception:
-                    pass
-                return {}
-
-            content_type = (resp.headers.get("Content-Type") or "").lower()
-            expected_id = message.get("id")
-
-            if "text/event-stream" in content_type:
-                return self._read_sse_response(resp, expected_id, cancel_event=cancel_event)
-
-            raw = resp.read().decode("utf-8")
-            _check_cancelled(cancel_event)
-            if not raw:
-                return {}
-            return json.loads(raw)
+            ) from None
 
     def _read_sse_response(self, resp, expected_id, cancel_event=None) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""
@@ -749,35 +1110,46 @@ class McpClient:
     def _send_request(self, method: str, params: dict, cancel_event=None) -> dict:
         """Send a request and return the full response dict."""
         _check_cancelled(cancel_event)
+        self._ensure_open()
         if not self._initialized and method != "initialize":
             raise RuntimeError(f"[MCP:{self.name}] Client not initialized")
 
         message = self._build_request(method, params)
 
+        controlled_http = self.transport in {'sse', 'streamable-http'} and _HTTP_REQUEST.get() is None
+        if controlled_http:
+            send = self._sse_send if self.transport == 'sse' else self._streamable_http_send
+            return _http_wait(lambda: send(message, cancel_event=cancel_event), cancel_event, self._connection_lease)
+
         # stdio transport uses a single pipe and must be serialized.
         # SSE and streamable-http use independent HTTP requests and
         # can safely run concurrently across sessions.
         if self.transport == "stdio":
-            if cancel_event is None:
-                with self._call_lock:
-                    return self._stdio_send(message)
-            while not self._call_lock.acquire(timeout=0.1):
+            while not self._call_lock.acquire(timeout=_bounded_timeout(0.05)):
                 _check_cancelled(cancel_event)
             try:
-                return self._stdio_send(message, cancel_event=cancel_event)
+                _check_cancelled(cancel_event)
+                self._ensure_open()
+                result = (self._stdio_send(message) if cancel_event is None else
+                          self._stdio_send(message, cancel_event=cancel_event))
             finally:
                 self._call_lock.release()
         elif self.transport == "sse":
-            return (self._sse_send(message) if cancel_event is None else
-                    self._sse_send(message, cancel_event=cancel_event))
+            result = (self._sse_send(message) if cancel_event is None else
+                      self._sse_send(message, cancel_event=cancel_event))
         elif self.transport == "streamable-http":
-            return (self._streamable_http_send(message) if cancel_event is None else
-                    self._streamable_http_send(message, cancel_event=cancel_event))
+            result = (self._streamable_http_send(message) if cancel_event is None else
+                      self._streamable_http_send(message, cancel_event=cancel_event))
         else:
             raise ValueError(f"[MCP:{self.name}] Unsupported transport: {self.transport}")
+        _check_cancelled(cancel_event)
+        return result
 
     def _send_notification(self, method: str, params: dict):
         """Fire-and-forget notification (no response expected)."""
+        self._ensure_open()
+        if self.transport in {'sse', 'streamable-http'} and _HTTP_REQUEST.get() is None:
+            return _http_wait(lambda: self._send_notification(method, params), None, self._connection_lease)
         notification = self._build_notification(method, params)
         raw = json.dumps(notification) + "\n"
 
@@ -793,7 +1165,7 @@ class McpClient:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=10):
+                with self._remote_response(req, timeout=10):
                     pass
             except Exception:
                 pass  # notifications are fire-and-forget
@@ -810,10 +1182,14 @@ class McpClient:
             "capabilities": {},
             "clientInfo": {"name": "Stella", "version": "1.0"},
         }
-        # Temporarily mark as initialized so _send_request doesn't block
-        self._initialized = True
+        # Admission and publication are coordinated with shutdown.
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            self._initialized = True
         try:
-            resp = self._send_request("initialize", init_params)
+            resp = (self._send_request("initialize", init_params) if self._initialization_cancel is None else
+                    self._send_request("initialize", init_params, cancel_event=self._initialization_cancel))
         except Exception as e:
             self._initialized = False
             logger.warning(f"[MCP:{self.name}] Handshake initialize failed: {e}")
@@ -824,25 +1200,28 @@ class McpClient:
             logger.warning(f"[MCP:{self.name}] Handshake error")
             return False
 
+        with self._lifecycle_lock:
+            if self._closed:
+                self._initialized = False
+                return False
+        info = (resp.get('result') or {}).get('serverInfo', {})
+        version = info.get('version') if isinstance(info, dict) else None
+        self.server_version = version.strip()[:256] if isinstance(version, str) and version.strip() else None
         self._send_notification("notifications/initialized", {})
+        with self._lifecycle_lock:
+            if self._closed:
+                self._initialized = False
+                return False
         logger.debug(f"[MCP:{self.name}] Handshake complete")
         return True
 
 
 class McpClientRegistry:
-    """Global singleton managing the lifecycle of all MCP Server clients."""
+    """Clients owned by one ToolManager, never shared across workspaces/users."""
 
-    _instance = None
-    _instance_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._instance_lock:
-            if cls._instance is None:
-                obj = super().__new__(cls)
-                obj._clients: dict[str, McpClient] = {}
-                obj._registry_lock = threading.Lock()
-                cls._instance = obj
-        return cls._instance
+    def __init__(self):
+        self._clients: dict[str, McpClient] = {}
+        self._registry_lock = threading.Lock()
 
     def start_all(self, configs: list) -> None:
         """Initialize McpClient for each config entry; skip failures with a warning."""

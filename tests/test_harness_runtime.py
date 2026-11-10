@@ -190,8 +190,29 @@ def test_business_commands_check_current_permissions_before_admission(tmp_path, 
     port = object()
     monkeypatch.setattr(Application, 'port', lambda *_: port)
     with pytest.raises(PermissionError):
-        Application.command('todos', 'CreateTodo', {'title': 'Denied'}, RequestContext(idempotency_key='deny'))
+        Application.command('todos', 'CreateTodo', {'title': 'Denied'}, RequestContext(source='agent', idempotency_key='deny'))
     assert not (tmp_path / 'operations.db').exists()
+
+
+def test_native_business_command_skips_agent_mode_and_records_result(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from agent.permission.security_policy import legacy_policy
+    monkeypatch.setattr('application.operations.user_root', lambda: tmp_path)
+    monkeypatch.setattr('agent.runtime.tool_invocation.global_mode', lambda: 'read-only')
+    monkeypatch.setattr('agent.permission.security_policy.resolve',
+                        lambda *args, **kwargs: legacy_policy('read-only'))
+    calls = []
+    def create(payload):
+        calls.append(payload)
+        return {'id': 'native', **payload}
+    monkeypatch.setattr(Application, 'port', lambda *_: SimpleNamespace(create_todo=create))
+    result = Application.command('todos', 'CreateTodo', {'title': 'Native'}, RequestContext(idempotency_key='native'))
+    assert calls == [{'title': 'Native'}]
+    assert result['value'] == {'id': 'native', 'title': 'Native'}
+    assert result['side_effects'] == 'completed'
+    # Replayed user action keeps the original result without another write.
+    assert Application.command('todos', 'CreateTodo', {'title': 'Native'}, RequestContext(idempotency_key='native')) == result
+    assert len(calls) == 1
 
 
 def test_scheduled_tool_records_failure_and_unknown_without_replay(tmp_path, monkeypatch):
@@ -218,7 +239,7 @@ def test_scheduled_tool_records_failure_and_unknown_without_replay(tmp_path, mon
             if isinstance(failure, Exception):
                 raise failure
             return failure
-        monkeypatch.setattr(ToolManager, 'create_tool', lambda *_: SimpleNamespace(execute=execute))
+        monkeypatch.setattr(ToolManager, 'create_tool', lambda *_: SimpleNamespace(execute_tool=execute))
         service = SchedulerService(store, lambda run: integration._execute_tool_call(run, None, agent_id))
         service._check_and_execute_tasks()
         assert store.occurrence_status(expected, stamp) == expected

@@ -105,6 +105,14 @@ class CancelTokenRegistry:
                     if not bucket:
                         self._by_session.pop(entry.session_id, None)
 
+    def cancel_all(self) -> int:
+        """Stop in-flight managed runs when application security policy changes."""
+        with self._lock:
+            entries = list(self._by_request.values())
+        for entry in entries:
+            entry.event.set()
+        return len(entries)
+
     def has_active(self, session_id: str) -> bool:
         if not session_id:
             return False

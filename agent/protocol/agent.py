@@ -42,6 +42,8 @@ class Agent:
                            sub agent cannot see.
         """
         self.name = name or "Agent"
+        from core.security.protected_paths import current_revision
+        self._protection_revision = current_revision()
         self.system_prompt = system_prompt
         self.model: LLMModel = model  # Instance of LLMModel
         self.description = description
@@ -443,7 +445,7 @@ class Agent:
             start_time = time.time()
 
             # Execute tool (with empty parameters, tool will extract needed info from context)
-            result = tool.execute({})
+            result = tool.execute_tool({})
 
             # Calculate execution time
             execution_time = time.time() - start_time
@@ -546,6 +548,10 @@ class Agent:
         if clear_history:
             with self.messages_lock:
                 self.messages = []
+            from core.security.protected_paths import current_revision
+            self._protection_revision = current_revision()
+
+        self.check_context_protection()
 
         # Get model to use
         if not self.model:
@@ -581,7 +587,10 @@ class Agent:
 
         # Execute
         try:
-            response = executor.run_stream(user_message)
+            from core.security.service import model_authorization_scope
+            with model_authorization_scope(self.check_context_protection):
+                response = executor.run_stream(user_message)
+                self.check_context_protection()
         except Exception:
             # If executor cleared its messages (context overflow / message format error),
             # sync that back to the Agent's own message list so the next request
@@ -642,6 +651,12 @@ class Agent:
         """Clear conversation history and captured actions"""
         self.messages = []
         self.captured_actions = []
+        from core.security.protected_paths import current_revision
+        self._protection_revision = current_revision()
+
+    def check_context_protection(self):
+        from core.security.protected_paths import check_context_revision
+        check_context_revision(self._protection_revision)
 
     def compact_context(self, keep_recent_turns: int = 2) -> dict:
         """Manually compact the conversation history right now.
@@ -655,6 +670,7 @@ class Agent:
         :param keep_recent_turns: How many most-recent turns to keep verbatim.
         :return: dict with keys: ok, reason, compacted_turns, before, after.
         """
+        self.check_context_protection()
         from agent.protocol.message_utils import (
             identify_complete_turns,
             build_compaction_summary_text,

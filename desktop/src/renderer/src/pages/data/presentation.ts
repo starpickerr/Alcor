@@ -1,0 +1,70 @@
+import { getLang } from '../../i18n'
+import type { DataSourceInfo } from '../../api/dataTypes'
+import { detailPath } from '../capabilities/presentation'
+
+export const c = (zh: string, en: string) => getLang() === 'zh' ? zh : en
+export const button = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-default px-3 py-2 text-sm text-content-secondary hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed'
+export const input = 'min-w-0 rounded-btn border border-default bg-surface px-3 py-2 text-sm text-content'
+export const panel = 'rounded-card border border-default bg-surface'
+export const bytes = (value: number) => value < 1024 ? `${value} B` : value < 1048576 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1048576).toFixed(1)} MB`
+export const sourceDescription = (source: DataSourceInfo) => ({
+  email: c('邮箱中的邮件', 'Messages from your mailbox'),
+  elearning: c('课程、公告、作业和文件', 'Courses, announcements, assignments and files'),
+  tasks: c('事务与待办事项', 'Tasks and to-dos'),
+  calendar: c('日程与事件', 'Calendars and events'),
+  bills: c('账单与收支记录', 'Bills and transactions'),
+  briefing: c('已生成的简报', 'Generated briefings'),
+  knowledge: c('整理后的知识文档', 'Organized knowledge documents'),
+  memory: c('长期记忆与维护记录', 'Long-term memory and maintenance records'),
+}[source.provider] || source.kind)
+export const sourceOrigin = (source: DataSourceInfo) => source.connection?.startsWith('mcp:')
+  ? `MCP · ${source.connection.slice(4)}`
+  : source.connection?.startsWith('plugin:') ? c('插件', 'Plugin') : source.provider
+export function settingsPath(source: DataSourceInfo): string | undefined {
+  if (source.connection?.startsWith('plugin:') && source.connection.slice(7).trim()) return detailPath('plugins', source.connection.slice(7), 'configuration')
+  if (source.connection?.startsWith('mcp:') && source.connection.slice(4).trim()) {
+    const owner = source.connection.slice(4)
+    return detailPath('mcp', owner, 'configuration')
+  }
+  if (!source.connection && ['/email', '/elearning'].includes(source.settings_url || '')) return detailPath('mcp', source.settings_url!.slice(1), 'configuration')
+  return undefined
+}
+
+export const sourceName = (source: DataSourceInfo) => source.name.toLowerCase() === source.provider
+  ? ({ tasks: c('事务', 'Tasks'), calendar: c('日程', 'Calendar'), bills: c('账单', 'Bills'), briefing: c('简报', 'Briefing'), knowledge: c('知识', 'Knowledge'), memory: c('记忆', 'Memory') }[source.provider] || source.name)
+  : source.name
+
+export function groupSources(sources: DataSourceInfo[]) {
+  const groups = new Map<string, DataSourceInfo[]>()
+  const owners = new Map<string, Set<string>>()
+  for (const source of sources) {
+    const key = settingsPath(source) || `unmapped:${source.connection || source.id}`
+    const keys = owners.get(source.provider) || new Set<string>()
+    keys.add(key); owners.set(source.provider, keys)
+  }
+  for (const source of sources) {
+    if (source.provider === 'workspace') continue // Ignore retired entries from older snapshots.
+    const key = (owners.get(source.provider)?.size || 0) > 1 ? `${source.provider}:${source.connection || source.id}` : source.provider
+    const group = groups.get(key) || []
+    group.push(source)
+    groups.set(key, group)
+  }
+  return [...groups].map(([id, items]) => {
+    const source = items[0]
+    const available = items.filter(item => item.enabled && item.available).length
+    const status = items.every(item => !item.enabled) ? 'disabled'
+      : !available ? 'unavailable' : available === items.length ? 'available' : 'partial'
+    return { id, source, items, available, status,
+      name: source.provider === 'email' ? 'Email' : sourceName(source),
+      accounts: new Set(items.map(item => item.account_id || item.id)).size }
+  })
+}
+export type SourceGroup = ReturnType<typeof groupSources>[number]
+export const sourceStatus = (group: SourceGroup) => ({
+  available: c('可用', 'Available'), partial: c('部分可用', 'Partly available'),
+  unavailable: c('暂不可用', 'Unavailable'), disabled: c('已停用', 'Disabled'),
+}[group.status])
+
+export function groupSettingsPath(group: SourceGroup) {
+  return settingsPath(group.source)
+}

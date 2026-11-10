@@ -23,12 +23,13 @@ import json
 import time
 from typing import Optional
 
-import requests
+from models import transport_requests as requests
 
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, load_config
 from models.bot import Bot
 from models.openai_compatible_bot import OpenAICompatibleBot
@@ -60,7 +61,7 @@ class MimoBot(Bot, OpenAICompatibleBot):
 
     @property
     def api_key(self):
-        return conf().get("mimo_api_key")
+        return model_key("mimo_api_key")
 
     @property
     def api_base(self):
@@ -283,6 +284,8 @@ class MimoBot(Bot, OpenAICompatibleBot):
             else:
                 return self._handle_sync_response(request_body)
 
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MIMO] call_with_tools error: {e}")
             import traceback
@@ -400,6 +403,8 @@ class MimoBot(Bot, OpenAICompatibleBot):
         except requests.exceptions.Timeout:
             logger.error("[MIMO] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MIMO] stream response error: {e}")
             import traceback
@@ -466,6 +471,8 @@ class MimoBot(Bot, OpenAICompatibleBot):
         except requests.exceptions.Timeout:
             logger.error("[MIMO] Request timeout")
             yield {"error": True, "message": "Request timeout", "status_code": 500}
+        except PermissionError:
+            raise
         except Exception as e:
             logger.error(f"[MIMO] sync response error: {e}")
             import traceback

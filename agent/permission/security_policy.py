@@ -50,13 +50,8 @@ MODE_DEFINITIONS = [
     {"id": "full-access", "name": {"zh": "完全访问", "en": "Full Access"},
      "description": {"zh": "放宽一般文件与命令限制；其他会话私有目录、托管数据和系统授权仍不可越过。",
                      "en": "Relax ordinary file and shell limits; other chats' private files, managed data and OS grants stay blocked."}},
-    {"id": "custom", "name": {"zh": "自定义", "en": "Custom"},
-     "description": {"zh": "从当前规则复制并按需调整，保存后生效。",
-                     "en": "Copy the current rules, adjust them, and apply on save."}},
-]
-for _mode in MODE_DEFINITIONS:
-    _mode["rules"] = dict(PRESETS[_mode["id"]])
 
+]
 LEGACY_PRESETS = {
     "approval": dict(_APPROVAL),
     "strict": {**_APPROVAL, "workspace_write": "deny", "workspace_outside": "deny",
@@ -137,10 +132,21 @@ def validate_patch(value: Any, *, global_policy: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ValueError("security policy must be an object")
     value = _migrate_legacy(value)
-    unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"}
+    run_fields = {'filesystem_mode', 'permission_mode', 'capabilities', 'policy_revision', 'migration_status'}
+    unknown = set(value) - {"preset", "base_preset", "rules", "connections", "extra_roots"} - run_fields
     if unknown:
         raise ValueError(f"unknown security policy fields: {', '.join(sorted(unknown))}")
     result = {}
+    if any(key in value for key in run_fields - {'migration_status'}):
+        from core.security.run_policy import validate_policy
+        run_patch = {key: value[key] for key in run_fields - {'migration_status'} if key in value}
+        if value.get('permission_mode') == 'custom':
+            run_patch['rules'] = value.get('rules')
+        result.update(validate_policy(run_patch))
+    if 'migration_status' in value:
+        if value['migration_status'] not in {'complete', 'needs_confirmation'}:
+            raise ValueError('invalid policy migration status')
+        result['migration_status'] = value['migration_status']
     if "preset" in value:
         if value["preset"] not in PRESETS:
             raise ValueError("unknown security preset")
@@ -197,6 +203,9 @@ def merge(base: dict, patch: dict) -> dict:
         result.setdefault(key, {}).update(deepcopy(patch.get(key) or {}))
     if "extra_roots" in patch:
         result["extra_roots"] = list(patch["extra_roots"])
+    for key in ('filesystem_mode', 'permission_mode', 'capabilities', 'policy_revision', 'migration_status'):
+        if key in patch:
+            result[key] = deepcopy(patch[key])
     return result
 
 
@@ -204,9 +213,11 @@ def _load_global(mode: str, global_value: dict | None) -> dict:
     if global_value is None:
         from config import conf
         global_value = conf().get("security_policy")
-    if not isinstance(global_value, dict):
+    if global_value is None:
         return legacy_policy(mode)
     try:
+        if not isinstance(global_value, dict):
+            raise ValueError('invalid global policy')
         # Existing installs may still store a custom global snapshot; read it, but
         # validate_patch(..., global_policy=True) rejects new custom defaults.
         if global_value.get("preset") == "custom" or global_value.get("preset") in LEGACY_PRESETS:
@@ -217,7 +228,7 @@ def _load_global(mode: str, global_value: dict | None) -> dict:
                 "connections": {}, "error": "Global security policy is invalid."}
 
 
-def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
+def _legacy_resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
             agent_id: str | None = None, global_value: dict | None = None) -> dict:
     """Complete project or standalone-conversation policies win; global is only the default seed."""
     global_base = _load_global(mode, global_value)
@@ -275,6 +286,19 @@ def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None
                 return {"preset": "custom", "rules": {name: "deny" for name in RULES},
                         "connections": {}, "error": "Conversation security policy is invalid."}
     return global_base
+
+
+def resolve(mode: str, *, project_dir: str | None = None, session_id: str | None = None,
+            agent_id: str | None = None, global_value: dict | None = None) -> dict:
+    """Resolve the independent subject snapshot; projects only select files."""
+    from common.runtime_identity import current_identity
+    from core.security.run_policy import gateway_policy, resolve_run_policy
+    identity = current_identity()
+    seed = None
+    if global_value is not None:
+        seed = _legacy_resolve(mode, project_dir=project_dir, session_id=session_id,
+                               agent_id=agent_id, global_value=global_value)
+    return gateway_policy(resolve_run_policy(session_id, agent_id, task_id=identity.task_id, seed=seed))
 
 
 def migrate_project_conversation_policies(project_dir: str, *, global_value: dict | None = None,
@@ -352,8 +376,39 @@ def intersect(current: dict, ceiling: dict) -> dict:
             scopes = parent_scopes if not scopes or "*" in scopes else [scope for scope in scopes if scope in parent_scopes]
         connections[name] = {"allowed": parent.get("allowed", True) and child.get("allowed", True),
                              "scopes": scopes}
-    return {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
-            "connections": connections}
+    roots = []
+    for child in current.get('extra_roots') or []:
+        child = os.path.realpath(child)
+        for parent in ceiling.get('extra_roots') or []:
+            parent = os.path.realpath(parent)
+            try:
+                common = os.path.commonpath((child, parent))
+            except ValueError:
+                continue
+            if common == parent:
+                roots.append(child)
+            elif common == child:
+                roots.append(parent)
+    result = {"preset": "custom", "base_preset": _DEFAULT_BASE, "rules": rules,
+              "connections": connections, "extra_roots": sorted(set(roots))}
+    if current.get('permission_mode') == 'custom' or ceiling.get('permission_mode') == 'custom':
+        result['permission_mode'] = 'custom'
+    if 'capabilities' in current or 'capabilities' in ceiling:
+        from core.security.capabilities import CapabilityDescriptor, authorization
+        from core.security.run_policy import OPERATIONS, from_legacy
+        current = current if 'capabilities' in current else from_legacy(current)
+        ceiling = ceiling if 'capabilities' in ceiling else from_legacy(ceiling)
+        grants = {}
+        for name in set(current['capabilities']) | set(ceiling['capabilities']):
+            source = name.split(':', 1)[0]
+            grants[name] = {operation: min((authorization(current, CapabilityDescriptor(name, source, operation)),
+                                           authorization(ceiling, CapabilityDescriptor(name, source, operation))), key=order.get)
+                            for operation in OPERATIONS}
+        modes = ['read-only', 'workspace-write', 'full-access']
+        result.update(capabilities=grants, filesystem_mode=min((current.get('filesystem_mode', 'read-only'),
+                      ceiling.get('filesystem_mode', 'read-only')), key=modes.index),
+                      policy_revision=max(current.get('policy_revision', 1), ceiling.get('policy_revision', 1)))
+    return result
 
 
 def describe(policy: dict, language: str = "zh", workspace: str | None = None,
@@ -394,23 +449,23 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                          json.dumps(scopes, ensure_ascii=False) + ".")
     if elearning_sync is not None:
         lines.append(
-            "The built-in eLearning tool reads its saved login session internally, even when workspace_outside=deny. "
+            "The eLearning plugin tool reads its saved login session internally, even when workspace_outside=deny. "
             "A refusal to read the raw session file does not block this connector. Never request workspace_outside "
             "access to inspect cookies; it cannot grant credential access. If the connector reports login timeout "
             "or HTTP 401, report an authentication/network problem and direct the user to eLearning settings."
             if english else
-            "内置 elearning 工具会在内部读取已保存的登录状态，不受 workspace_outside=deny 对原始文件读取的限制。"
+            "eLearning 插件工具会在内部读取已保存的登录状态，不受 workspace_outside=deny 对原始文件读取的限制。"
             "会话文件读取被拒绝不代表连接器被拒绝；不要建议开放 workspace_outside 来查看 Cookie，"
             "该权限也不能开放凭据。若连接器报告登录超时或 HTTP 401，应说明是登录或网络问题，"
             "引导用户到 eLearning 设置重新登录。"
         )
         lines.append(
-            "For a live, complete Canvas file inventory use elearning list_files with pagination and "
+            "For a live, complete Canvas file inventory use eLearning MCP list_files with pagination and "
             "file_extensions; use elearning sync_files with the same filter and layout=courseware when the "
             "user wants original names under each course's 课件 folder. Do not read cookies, "
             "call Canvas through scripts, or export tool results into intermediate files."
             if english else
-            "获取 Canvas 实时完整文件清单时使用 elearning list_files 分页及 file_extensions 筛选；"
+            "获取 Canvas 实时完整文件清单时使用 eLearning MCP list_files 分页及 file_extensions 筛选；"
             "下载使用 elearning sync_files 并传相同筛选；需要按课程中文名/课件/原名保存时传 layout=courseware。"
             "不要读取 Cookie、用脚本直连 Canvas，"
             "也不要为对比而把工具结果另存中间文件。"
@@ -422,8 +477,8 @@ def describe(policy: dict, language: str = "zh", workspace: str | None = None,
                           "eLearning 文件同步仅可写入已选目录：") + root + ".")
         else:
             lines.append("eLearning file sync is not ready; the user must connect the account and select courses "
-                         "in briefing sources, then authorize a save folder in Agent settings."
-                         if english else "eLearning 文件同步未就绪；需要先在简报来源中连接账号并选择课程，再在 Agent 设置中授权保存目录。")
+                         "in eLearning settings and choose a destination folder."
+                         if english else "eLearning 文件同步未就绪；需要先在 eLearning 设置中连接账号、选择课程并配置课件保存目录。")
     lines.extend([
         ("Create or update custom skills with the skill tool. Full access permits this managed operation; "
          "project access may require confirmation for the system skill store."

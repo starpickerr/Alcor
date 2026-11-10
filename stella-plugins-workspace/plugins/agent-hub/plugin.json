@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 1,
+  "id": "stella.agent-hub",
+  "name": "Agent 协作",
+  "version": "1.1.0",
+  "hostApi": "^1.0.0",
+  "runtime": {
+    "kind": "python",
+    "entry": "backend/main.py",
+    "abi": "cp312"
+  },
+  "data": {
+    "namespace": "stella.agent-hub",
+    "schemaVersion": 3,
+    "migrationEntry": "backend/migrate.py"
+  },
+  "contributes": {
+    "services": [
+      "stella.agent-hub@1"
+    ],
+    "pages": [
+      "agent-hub.main"
+    ],
+    "settings": [
+      "agent-hub.preferences"
+    ]
+  },
+  "permissions": [
+    {
+      "capability": "agent_hub.read",
+      "required": true
+    },
+    {
+      "capability": "agent_hub.write",
+      "required": true
+    }
+  ],
+  "description": {
+    "zh": "连接已配置的外部智能体，提交任务、查看执行进度或请求取消。使用前需要配置接入方式，外部操作仍受连接和 Agent 权限约束。",
+    "en": "Connect configured external agents, submit tasks, inspect progress, or request cancellation. Configure access before use; external operations remain subject to connection and Agent permissions."
+  }
+}

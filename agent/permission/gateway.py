@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from core.runtime.paths import is_runtime_path
 from agent.permission.policy import MODES
 from agent.permission.shell_scope import _parse_segments, _command_name, _redirect_targets, _positional_paths, _DESTINATION_ONLY_COMMANDS, _PATH_MUTATING_COMMANDS
 from agent.permission.security_policy import legacy_policy, rule
@@ -33,6 +34,7 @@ class ResourceKind(str, Enum):
     EXTERNAL = "external"
     SYSTEM = "system"
     CREDENTIAL = "credential"
+    SERVICE = "service"
 
 
 class DecisionKind(str, Enum):
@@ -58,6 +60,7 @@ class PolicyDecision:
     resource: str
     trace: tuple[str, ...]
     request_id: str | None = None
+    approval_used: bool = False
 
     @property
     def allowed(self) -> bool:
@@ -67,9 +70,9 @@ class PolicyDecision:
         return self.allowed
 
 
-_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "web_search", "web_fetch", "vision", "elearning"})
-_WRITE_TOOLS = frozenset({"write", "edit", "bash"})
-_EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent"})
+_READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "knowledge_search", "knowledge_get", "web_search", "web_fetch", "vision"})
+_WRITE_TOOLS = frozenset({"write", "edit", "bash", "memory_write", "knowledge_write"})
+_EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent", "agent_hub"})
 _ADMIN_TOOLS = frozenset({"evolution_undo", "skill"})
 _LOCAL_ACTIONS = {
     "calendar": {"create", "update", "delete", "create_category", "update_category", "delete_category"},
@@ -79,7 +82,7 @@ _LOCAL_ACTIONS = {
     "scheduler": {"create", "delete", "enable", "disable"},
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,79}$")
-_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|mailbox\.json|elearning-sessions/[^\s'\"]+)|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
+_SECRET_COMMAND = re.compile(r"(?:\.stella/(?:\.env|config\.json|mcp\.json|weixin_credentials\.json)|/briefing/(?:elearning\.json|mailbox\.json|elearning-sessions/[^\s'\"]+)|/elearning/(?:elearning\.json|elearning-sessions/[^\s\x27\x22]+)|/email/(?:email\.db(?:-(?:wal|shm|journal))?|\.stella-(?:migrate|retired)-[^\s\x27\x22]+)|/data/data\.db(?:-(?:wal|shm|journal))?|/plugin-packages/management/|/proc/(?:self|\d+)/environ|\b(?:printenv|env|set)\b|\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD)\w*\}?|\b(?:curl|wget)\b[^\n]*\b(?:key|token|secret|password)=)", re.I)
 _ESCALATE = re.compile(r"\b(?:sudo|doas|pkexec|su)\b")
 _BULK_DELETE = re.compile(r"\b(?:rm\s+-(?:\w*r\w*f|\w*f\w*r)|find\b[^\n]*-delete|git\s+clean\s+-\w*f)\b", re.I)
 _PUBLISH = re.compile(r"\b(?:git\s+push|npm\s+publish|gh\s+release|docker\s+push)\b", re.I)
@@ -96,10 +99,11 @@ _claim_assigned: set[str] = set()
 _registered: dict[str, Capability] = {}
 _connections: dict[str, str] = {}
 _mcp_readonly: dict[str, bool] = {}
+_mcp_filesystem_write: dict[str, bool] = {}
 
 
 def register_tool(tool_name: str, capability: Capability, *, connection: str | None = None,
-                  read_only: bool = False) -> None:
+                  read_only: bool = False, filesystem_write: bool = False, descriptor=None) -> None:
     if not _SAFE_NAME.fullmatch(tool_name) or not isinstance(capability, Capability):
         raise ValueError("invalid tool declaration")
     with _lock:
@@ -108,6 +112,12 @@ def register_tool(tool_name: str, capability: Capability, *, connection: str | N
             _connections[tool_name] = connection
             if connection.startswith("mcp:"):
                 _mcp_readonly[tool_name] = read_only
+                _mcp_filesystem_write[tool_name] = filesystem_write
+    from core.security.capabilities import CapabilityDescriptor, register
+    if descriptor is not None:
+        register(tool_name, descriptor)
+    elif connection and connection.startswith('mcp:'):
+        register(tool_name, CapabilityDescriptor(connection + '/' + tool_name, 'mcp', 'unknown', filesystem_write))
 
 
 def declared_capability(tool_name: str) -> Optional[Capability]:
@@ -210,12 +220,13 @@ def _trusted_skill_init(command: str, cwd: str | None) -> bool:
 
 
 def _fingerprint(tool_name: str, arguments: Mapping[str, Any], session_id: Optional[str], project: str | None,
-                 agent_id: str | None, cwd: str | None, scope: Scope) -> str:
+                 agent_id: str | None, cwd: str | None, scope: Scope, policy=None, descriptor=None) -> str:
     from common.runtime_identity import current_identity
     from agent.workspace.shares import grant_version
     identity = current_identity()
     payload = json.dumps([identity.user_id, agent_id, session_id, identity.run_id, project,
-                          cwd, scope.write_roots, scope.extra_roots, grant_version(), tool_name, arguments],
+                          cwd, scope.write_roots, scope.extra_roots, grant_version(), tool_name, arguments,
+                          policy, str(descriptor)],
                          sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -243,6 +254,9 @@ class SecurityGateway:
         approval_request_id: str | None = None,
         reserve_for_waiter: bool = False,
         create_pending: bool = True,
+        capability_descriptor=None,
+        inherited_approval: bool = False,
+        require_confirmation: bool = False,
     ) -> PolicyDecision:
         declared = declared_capability(tool_name)
         scope = scope or Scope()
@@ -255,6 +269,9 @@ class SecurityGateway:
                 "shell", "git", "network", "install", "background", "external", "high_risk")},
                       "connections": {}}
         args = arguments if isinstance(arguments, Mapping) else {}
+        from core.security.capabilities import describe_tool
+        descriptor = capability_descriptor or describe_tool(tool_name, args)
+        canonical = 'capabilities' in policy
         action = str(args.get("action") or "").lower()
         operation = action or ("write" if tool_name in ("write", "edit") else "read" if declared == Capability.READ else "execute")
         resource_kind = ResourceKind.EXTERNAL if declared == Capability.EXTERNAL else ResourceKind.SYSTEM if tool_name == "bash" else ResourceKind.USER_WORKSPACE
@@ -264,7 +281,7 @@ class SecurityGateway:
         hard_reason = None
         private_context = None
         try:
-            from agent.workspace.context import resolve_context
+            from core.workspace.service import resolve_context
             from common.runtime_identity import current_identity
             identity = current_identity()
             private_context = resolve_context(identity.execution_session_id or session_id, agent_id,
@@ -303,6 +320,8 @@ class SecurityGateway:
             if is_credential_path(real):
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 hard_reason = credential_denial_message(real)
+            elif tool_name in ('write', 'edit') and is_runtime_path(real):
+                hard_reason = 'Shared runtimes and application code require their dedicated installation flow.'
             elif _managed(real):
                 resource_kind, policy_key = ResourceKind.AGENT_MANAGED, "managed"
                 resource = "Agent Skill Store" if _skill_store(real) else "Agent Config/Internal State"
@@ -342,7 +361,7 @@ class SecurityGateway:
                 resource_kind, resource, risk = ResourceKind.CREDENTIAL, "protected credential", "L4"
                 from agent.tools.utils.credentials import ELEARNING_DENIED_MESSAGE
                 hard_reason = (ELEARNING_DENIED_MESSAGE if re.search(
-                    r"/briefing/(?:elearning\.json|elearning-sessions/)", command, re.I)
+                    r"/(?:briefing|elearning)/(?:elearning\.json|elearning-sessions/)", command, re.I)
                     else "Shell access to credential data or environment variables is blocked.")
             elif _ESCALATE.search(command):
                 risk, hard_reason = "L4", "Privilege escalation is blocked."
@@ -403,13 +422,14 @@ class SecurityGateway:
                             break
                     if hard_reason:
                         break
+        elif tool_name == 'model_egress':
+            resource_kind, resource = ResourceKind.EXTERNAL, str(args.get('receiver') or 'external service')
+            event, risk, policy_key = 'external_access', 'L3', 'network'
+            prerequisites.append('external')
         elif tool_name == "env_config":
             resource_kind, resource = ResourceKind.CREDENTIAL, "Credential Store"
             event = "secret_use"
-            if action in ("set", "delete"):
-                risk, policy_key = "L3", "high_risk"
-            else:
-                risk, policy_key = "L0", "managed"
+            hard_reason = 'Credentials require their owning feature settings; Agent access is unavailable.'
         elif tool_name == "skill":
             resource_kind, resource, policy_key = ResourceKind.AGENT_MANAGED, "Agent Skill Store", "managed"
             event = "skill_install" if action == "create" else "skill_modify"
@@ -430,15 +450,18 @@ class SecurityGateway:
                 risk, policy_key = "L1", "workspace_write"
             else:
                 hard_reason = "Unknown Apple action; the tool did not run."
+        elif canonical and descriptor.source == 'plugin':
+            resource_kind, resource = ResourceKind.SERVICE, descriptor.capability_id
+            risk, policy_key = ('L0', 'managed') if descriptor.operation == 'read' else ('L1', 'managed')
         elif tool_name in _LOCAL_ACTIONS:
             resource_kind, resource = ResourceKind.USER_WORKSPACE, tool_name
             mutating = action in _LOCAL_ACTIONS[tool_name]
             risk, policy_key = ("L1", "workspace_write") if mutating else ("L0", "workspace_read")
-        elif tool_name == "elearning" and action == "sync_files":
-            # The tool itself restricts writes to the folder granted in eLearning settings.
-            resource_kind, resource, risk, policy_key = (
-                ResourceKind.USER_WORKSPACE, "eLearning selected course folder", "L1", "workspace_write")
-            event = "file_modify"
+        elif tool_name == 'data_manage':
+            resource_kind,resource,risk,policy_key = (ResourceKind.AGENT_MANAGED,
+                str(args.get('source_id') or 'Data Service'),'L3','high_risk')
+            prerequisites.append('managed')
+            event='data_modify'
         elif tool_name == "subagent":
             resource_kind, resource, risk, policy_key = ResourceKind.AGENT_MANAGED, "Agent subagent", "L1", "managed"
         elif tool_name == "browser":
@@ -484,10 +507,14 @@ class SecurityGateway:
                 risk, policy_key = "L3", "high_risk"
             if _connections.get(tool_name, "").startswith("mcp:") and not _mcp_readonly.get(tool_name, False):
                 risk, policy_key = "L3", "high_risk"
+                if _mcp_filesystem_write.get(tool_name, False):
+                    prerequisites.append('workspace_write')
         elif tool_name in ("web_fetch", "web_search"):
             resource_kind, resource, risk, policy_key = ResourceKind.EXTERNAL, "external_api", "L2", "network"
             event = "external_access"
 
+        if capability_descriptor is not None and descriptor.source == 'plugin':
+            declared = Capability.EXTERNAL
         if capability is not None and (not isinstance(capability, Capability) or capability != declared):
             hard_reason = "Unknown or mismatched capability; the tool did not run."
         elif declared is None or mode not in MODES:
@@ -497,19 +524,51 @@ class SecurityGateway:
         elif scope.accounts and resource_kind == ResourceKind.EXTERNAL and str(args.get("account_id") or args.get("account") or "") not in scope.accounts:
             hard_reason = "Account is outside the current scope; the tool did not run."
         connection = _connections.get(tool_name, resource if resource in ("github", "external_api") else tool_name if resource_kind == ResourceKind.EXTERNAL else "")
-        grant = policy.get("connections", {}).get(connection, {})
-        if not hard_reason and grant.get("allowed") is False:
-            hard_reason = f"Connection {connection} was revoked."
-        if not hard_reason and grant.get("scopes") and "*" not in grant["scopes"]:
-            requested = str(args.get("scope") or (operation if operation not in ("execute", "read") else "read"))
-            if requested not in grant["scopes"]:
-                hard_reason = f"Connection {connection} does not grant scope {requested}."
-        if resource_kind == ResourceKind.EXTERNAL and policy_key != "external":
+        connections = policy.get('connections', {})
+        from core.security.migration import resource_authority_migrated
+        migrated_resources = canonical and resource_authority_migrated()
+        if migrated_resources:
+            connections = {}
+        grants = [connections.get(connection, {})]
+        if canonical:
+            from core.security.service import SecurityService
+            grants.extend(SecurityService.legacy_connection_restrictions(connection, session_id=session_id, agent_id=agent_id))
+        # A protocol migration cannot erase the user's existing connection denial/scopes.
+        if connection in {'mcp:email', 'mcp:elearning'}:
+            grants.append(connections.get(connection.removeprefix('mcp:'), {}))
+        for grant in grants:
+            if not hard_reason and grant.get('allowed') is False:
+                hard_reason = f'Connection {connection} was revoked.'
+            if not hard_reason and grant.get('scopes') and '*' not in grant['scopes']:
+                requested = str(args.get('scope') or (operation if operation not in ('execute','read') else 'read'))
+                if requested not in grant['scopes']:
+                    hard_reason = f'Connection {connection} does not grant scope {requested}.'
+        if resource_kind == ResourceKind.EXTERNAL and policy_key != "external" and not canonical:
             prerequisites.append("external")
-        if risk == "L3" and policy_key != "high_risk":
+        if risk == "L3" and policy_key != "high_risk" and (not canonical or descriptor.filesystem):
             prerequisites.append("high_risk")
         selected = rule(policy, policy_key)
         required = {name: rule(policy, name) for name in prerequisites}
+        if canonical:
+            from core.security.capabilities import authorization, CapabilityDescriptor
+            if tool_name == 'bash' and (_PUBLISH.search(str(args.get('command') or '')) or _BULK_DELETE.search(str(args.get('command') or ''))):
+                descriptor = CapabilityDescriptor(descriptor.capability_id, descriptor.source,
+                    'external_send' if _PUBLISH.search(str(args.get('command') or '')) else 'delete', True)
+                required['system_execute'] = authorization(policy, CapabilityDescriptor('builtin:bash', 'builtin', 'system_execute', True))
+            operation = descriptor.operation
+            granted = authorization(policy, descriptor)
+            if descriptor.filesystem:
+                required['capability:' + descriptor.operation] = granted
+                if _mcp_filesystem_write.get(tool_name, False):
+                    required['workspace_write'] = rule(policy, 'workspace_write')
+            else:
+                required = {name: rule(policy, name) for name in (policy_key, *prerequisites)
+                            if name in (policy.get('rules') or {})}
+                selected = granted
+                policy_key = descriptor.capability_id + '/' + descriptor.operation
+                risk = 'L0' if operation == 'read' else 'L1' if operation == 'write' else 'L3'
+        if require_confirmation and selected == 'allow':
+            selected, risk = 'confirm', 'L3'
         trace = (f"Action: {operation}", f"Resource classification: {resource_kind.value} ({resource})",
                  f"Risk evaluation: {risk}", f"Policy: {policy_key}={selected}") + tuple(
                      f"Required policy: {name}={value}" for name, value in required.items())
@@ -520,16 +579,20 @@ class SecurityGateway:
         elif "deny" in required.values():
             refused = next(name for name, value in required.items() if value == "deny")
             kind, reason = DecisionKind.DENY, f"Policy denied {operation} on {resource_kind.value} ({resource}); required rule {refused}."
+        elif inherited_approval and not require_confirmation:
+            kind, reason = DecisionKind.ALLOW, 'Approved operation retained by its Core service adapter.'
         elif not create_pending and (selected == "confirm" or "confirm" in required.values()):
             kind, reason = DecisionKind.CONFIRM, "Authorization required. Adjust the policy and rerun this task manually; it will not resume automatically."
         elif selected == "confirm" or "confirm" in required.values():
-            key = _fingerprint(tool_name, args, session_id, project_dir, agent_id, cwd, scope)
+            key = _fingerprint(tool_name, args, session_id, project_dir, agent_id, cwd, scope, policy, descriptor)
             with _lock:
                 claim = _claims.get(approval_request_id) if approval_request_id else None
                 if claim and claim[0] == key and claim[1] >= time.time():
                     del _claims[approval_request_id]
+                    approval_used = True
                     kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
                 elif _approved.pop(key, 0) >= time.time():
+                    approval_used = True
                     kind, reason = DecisionKind.ALLOW, "Approved once for this exact action."
                 else:
                     reserved_id = next((rid for rid, claim in _claims.items()
@@ -564,7 +627,7 @@ class SecurityGateway:
         from common.log import _redact
         safe_trace = tuple(_redact(value) for value in trace + (f"Decision: {kind.value}",))
         result = PolicyDecision(kind, _redact(reason), resource_kind, operation, risk, resource,
-                                safe_trace, locals().get("request_id"))
+                                safe_trace, locals().get("request_id"), locals().get('approval_used', False))
         try:
             from agent.permission.audit import record
             record(agent=agent_id, conversation=session_id, project=project_dir, tool=tool_name,
@@ -582,6 +645,8 @@ class SecurityGateway:
 
     @staticmethod
     def pending() -> list[dict]:
+        from common.runtime_identity import current_identity
+        user = current_identity().user_id or 'local-default'
         now = time.time()
         with _lock:
             for request_id, request in list(_pending.items()):
@@ -598,7 +663,7 @@ class SecurityGateway:
                 if expires < now:
                     del _claims[request_id]
             return [{"id": request_id, **{k: request[k] for k in ("tool", "session", "summary", "resource", "risk", "reason", "expanded_scope", "effect")}}
-                    for request_id, request in _pending.items()]
+                    for request_id, request in _pending.items() if (request.get('user') or 'local-default') == user]
 
     @staticmethod
     def has_pending_session(session_id: str | None) -> bool:
@@ -611,11 +676,15 @@ class SecurityGateway:
 
     @staticmethod
     def approve(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
+        from common.runtime_identity import current_identity
+        owner = current_identity().user_id or 'local-default'
+        if user_id is not None and user_id != owner:
+            return False
         with _lock:
             request = _pending.get(request_id)
             if (not request or request["expires"] < time.time()
                     or (session_id is not None and request["session"] != session_id)
-                    or (user_id is not None and request["user"] != user_id)):
+                    or (request.get('user') or 'local-default') != owner):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],
@@ -637,11 +706,15 @@ class SecurityGateway:
 
     @staticmethod
     def reject(request_id: str, *, session_id: str | None = None, user_id: str | None = None) -> bool:
+        from common.runtime_identity import current_identity
+        owner = current_identity().user_id or 'local-default'
+        if user_id is not None and user_id != owner:
+            return False
         with _lock:
             request = _pending.get(request_id)
             if (not request or request["expires"] < time.time()
                     or (session_id is not None and request["session"] != session_id)
-                    or (user_id is not None and request["user"] != user_id)):
+                    or (request.get('user') or 'local-default') != owner):
                 return False
             from agent.permission.audit import record
             record(agent=request["agent"], conversation=request["session"], project=request["project"],

@@ -3,7 +3,7 @@
 
 import re
 import time
-import requests
+from models import transport_requests as requests
 import json
 import config
 from models.bot import Bot
@@ -13,6 +13,7 @@ from models.session_manager import SessionManager
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from core.security.config_credentials import model_key
 from config import conf, pconf
 import threading
 from common import memory, utils
@@ -70,8 +71,8 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
     def get_api_config(self):
         """Get API configuration for OpenAI-compatible base class"""
         return {
-            'api_key': conf().get("open_ai_api_key"),  # LinkAI uses OpenAI-compatible key
-            'api_base': conf().get("open_ai_api_base", "https://api.link-ai.tech/v1"),
+            'api_key': model_key("linkai_api_key"),
+            'api_base': (conf().get("linkai_api_base") or "https://api.link-ai.tech").rstrip('/').removesuffix('/v1') + '/v1',
             'model': conf().get("model", "gpt-3.5-turbo"),
             'default_temperature': conf().get("temperature", 0.9),
             'default_top_p': conf().get("top_p", 1.0),
@@ -117,7 +118,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             else:
                 plugin_app_code = self._find_group_mapping_code(context)
                 app_code = context.kwargs.get("app_code") or plugin_app_code or conf().get("linkai_app_code")
-            linkai_api_key = conf().get("linkai_api_key")
+            linkai_api_key = model_key("linkai_api_key")
 
             session_id = context["session_id"]
             session_message = self.sessions.session_msg_query(query, session_id)
@@ -314,7 +315,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             sid = getattr(session, "session_id", "")
             if sid and sid != "__title_gen__":
                 body["session_id"] = sid
-            headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "Stella"}
+            headers = {"Authorization": "Bearer " + model_key("linkai_api_key"), "X-Title": "Stella"}
             utils.apply_client_source(headers)
             utils.apply_cloud_user(headers)
 
@@ -360,7 +361,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             return self.reply_text(session, app_code, retry_count + 1)
 
     def _fetch_app_info(self, app_code: str):
-        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
+        headers = {"Authorization": "Bearer " + model_key("linkai_api_key")}
         # do http request
         base_url = _linkai_base_url()
         params = {"app_code": app_code}
@@ -375,7 +376,7 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
             logger.info("[LinkImage] image_query={}".format(query))
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {conf().get('linkai_api_key')}"
+                "Authorization": f"Bearer {model_key('linkai_api_key')}"
             }
             utils.apply_client_source(headers)
             utils.apply_cloud_user(headers)
@@ -624,7 +625,7 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
             body["thinking"] = thinking
 
         # Prepare headers
-        headers = {"Authorization": "Bearer " + conf().get("linkai_api_key"), "X-Title": "Stella"}
+        headers = {"Authorization": "Bearer " + model_key("linkai_api_key"), "X-Title": "Stella"}
         utils.apply_client_source(headers)
         utils.apply_cloud_user(headers)
         base_url = _linkai_base_url()
@@ -634,6 +635,8 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
         else:
             return self._handle_linkai_sync_response(base_url, headers, body)
             
+    except PermissionError:
+        raise
     except Exception as e:
         logger.error(f"[LinkAI] call_with_tools error: {e}")
         if stream:
@@ -745,6 +748,8 @@ def _handle_linkai_stream_response(self, base_url, headers, body):
                     # messages for the next request. Standard OpenAI fields are unchanged.
                     yield chunk
                         
+    except PermissionError:
+        raise
     except Exception as e:
         logger.error(f"[LinkAI] stream response error: {e}")
         yield {

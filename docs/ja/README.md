@@ -1,98 +1,52 @@
-<p align="center"><img src="../images/logo.jpg" alt="Stella" width="160" /></p>
+<p align="center"><img src="../../packages/alcor-secretary/src/assets/alcor-avatar.svg" alt="Alcor" width="112" /></p>
 
-# Stella
+# Alcor
 
 [English](../../README.md) · [中文](../zh/README.md) · [繁體中文](../zh/README-Hant.md) · [日本語](README.md)
 
-**Stella はデスクトップ向けのプライベート AI アシスタント**です。対話を中心に、タスク、予定、請求、スマートブリーフィング、自動化を一つのワークスペースにまとめます。
+Alcor は DeepSeek Harness（DSH）で動作するパーソナルアシスタントです。ネイティブプラグインを使ってタスク、予定、家計、ブリーフィング、定期実行を管理できます。Alcor と DSH は同じデスクトップウィンドウ、モデル、会話、ワークスペースを共有します。
 
-## 主な機能
+Alcor の各ページでクマにポインターを合わせるかクリックすると、現在のワークスペースで会話できます。ドラッグで移動でき、表示とホバーの設定は **設定 → Alcor** にあります。
 
-### 対話
+## デスクトップへのインストール
 
-自然言語で AI とやり取りし、質問への回答、文章作成、情報検索、複雑なタスク実行に対応します。プロジェクトと会話の管理も備えます。
+デスクトップ版は Apple Silicon 搭載の Mac に対応しています。[対応バージョン一覧](../../product/desktop-release.lock.json)に掲載されている公式 DSH クライアントを使用してください。
 
-### アプリ
+1. 初期化済みの DSH プロファイルでプラグインマネージャーを開き、`.tgz` ファイルから `@alcor/secretary` をインストールします。
+2. 必要に応じて、以下のオプションのプラグインを追加します。
+3. DSH を終了して開き直し、ウィンドウ上部のモードメニューで **Alcor** を選びます。
 
-| モジュール | 説明 |
-| ---------- | ---- |
-| **タスク** | 個人タスクと多階層のサブタスクを管理し、期限・優先度・リマインダーを設定して進捗を追跡。Apple リマインダーとの同期に対応。 |
-| **カレンダー** | 予定と時間管理を行い、カレンダー表示・分類・リマインダーを提供。Apple カレンダーとの同期に対応。 |
-| **ブリーフィング** | メール、eLearning、予定、タスクをまとめ、重要事項・やること・近い期限を抜き出して個人向けブリーフィングを生成。 |
-| **請求** | 収入と支出を記録し、分類・検索・簡単な集計に対応。 |
-| **健康** | 個人の健康情報の管理と分析。**計画中**。 |
-| **スケジューラ** | 指定した時刻に自動化を実行し、実行履歴を確認し、設定済みメッセージチャネルへ結果を配信。 |
+旧 Stella プロファイルは、名称変更後のプラグインを追加する前に移行が必要です。手順は[ネイティブ製品ガイド](../../product/README.md)を参照してください。
 
-### 情報
+| プラグイン | 機能 |
+| --- | --- |
+| `@alcor/secretary` | タスクとサブタスク、予定、家計、ブリーフィングと定期実行を管理します。 |
+| `@alcor/apple-sync` | 同期元を選択して許可すると、Apple カレンダーやリマインダーと同期します。 |
+| `@alcor/elearning` | 復旦大学の eLearning アカウントから授業、課題、お知らせを読み取ります。 |
+| `@alcor/mail` | IMAP メールを読み取り専用で検索し、ブリーフィングの情報源にできます。 |
+| `@alcor/agent-hub` | DSH ワークベンチで開発タスクやエージェントの実行履歴を確認できます。 |
 
-| モジュール | 説明 |
-| ---------- | ---- |
-| **記憶** | AI の長期記憶を管理し、好みや重要な文脈を保存して、より個人に合わせた対話を支援。 |
-| **ナレッジ** | 個人ナレッジベースを管理し、保存・検索・引用により AI の情報源を提供。 |
+## ローカル開発
 
-### チャネル
+Node.js 24.9 以上と Python 3.9 以上を使用します。macOS 用ヘルパーのビルドには Xcode Command Line Tools も必要です。リポジトリのルートで次のコマンドを実行してください。
 
-WeChat、Feishu、Telegram などの外部メッセージ基盤を接続・管理し、横断的なやり取りと通知に対応。
-
-### システム
-
-| モジュール | 説明 |
-| ---------- | ---- |
-| **機能** | AI ツールや Skills などの拡張を確認・管理し、情報取得とタスク実行を強化。 |
-| **セキュリティ** | 全体・プロジェクト・会話・バックグラウンドタスクの権限を管理し、ツール呼び出しと機微な操作を制御。セキュリティ活動も確認可能。 |
-| **設定** | AI モデルプロバイダー、カスタムモデル、機能ごとのモデル割当、Apple 連携、ブリーフィングなどのアプリ設定を構成。 |
-| **ログ** | 実行ログ、エラー、実行記録を確認し、障害調査と稼働状態の把握を支援。 |
-
-## はじめる
-
-### インストーラーを入手
-
-公開済みのインストーラーは [GitHub Releases](https://github.com/starpickerr/Stella/releases) を参照してください。インストール、初回設定、日常の操作は[利用ガイド](guide.md)を参照してください。
-
-### ソースから実行
-
-必要な環境：
-
-- **Python 3.10+**
-- **Node.js 22.13+**
-- **macOS**：あわせて Xcode Command Line Tools を `xcode-select --install` でインストール。
-
-以下は macOS 向けのコマンドです。Windows のコマンドは[利用ガイド](guide.md)を参照してください。
-
-```bash
-git clone https://github.com/starpickerr/Stella.git
-cd Stella
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt
-npm --prefix desktop ci
-npm --prefix desktop run dev
+```sh
+npm ci --ignore-scripts
+npm run product:build
+npm test
+npm run dev
 ```
 
-開発時の UI ホットリロード：
+開発プレビューには独立した DSH プロファイルを使用します。`npm run product:pack` で、インストール可能な秘書プラグインを `.local/artifacts/` に生成できます。大学・メール用プラグインのビルドには、隣接する MCP リポジトリと指定バージョンのビルド依存関係も必要です。[MCP 接続ガイド](../../product/mcp-connections.md)
 
-```bash
-npm --prefix desktop run dev:hot
-```
-
-ブラウザーの準備とローカルデータの説明は[利用ガイド](guide.md)を参照してください。
-
-モデル呼び出しにはプロバイダーの料金が発生する場合があります。ツールはローカルファイルや外部サービスにアクセスできるため、使用前に権限を設定してください。
-
-## ドキュメントと開発
-
-- [利用ガイド](guide.md)：インストール、設定、日常の操作。
-- [ドキュメント一覧](../README.md)：構成、業務モジュール、権限の境界。
-- [デスクトップ開発](../../desktop/README.md)：ビルドとパッケージ化。
-- [コントリビューション](../../CONTRIBUTING.md)：開発環境と検証。開発の基線は `develop`、`main` はリリース用。
-- [Issue](https://github.com/starpickerr/Stella/issues)：提出前にログから認証情報と個人情報を削除してください。
+ネイティブプラグインは `packages/`、ビルドスクリプトは `scripts/product/`、統合テストは `product/tests/` にあります。以前のスタンドアロン版 Python/Electron アプリは[旧版ガイド](guide.md)を参照してください。
 
 ## 出典とライセンス
 
-Stella は zhayujie とコントリビューターによる [CowAgent](https://github.com/zhayujie/CowAgent)（旧 `chatgpt-on-wechat`）を基に独自開発されています。上流の Agent、モデル、ツール、Skill、記憶、メッセージ連携を利用し、デスクトップ操作とタスク、カレンダー、請求、ブリーフィング、権限管理の共通サービスを追加しています。
+Alcor は zhayujie とコントリビューターによる [CowAgent](https://github.com/zhayujie/CowAgent)（旧 `chatgpt-on-wechat`）を基に独自開発されています。上流の Agent、モデル、ツール、Skill、記憶、メッセージ連携を利用し、デスクトップ操作とタスク、カレンダー、請求、ブリーフィング、権限管理の共通サービスを追加しています。
 
 出典と著作権は[第三者表示](../../THIRD_PARTY_NOTICES.md)、ライセンス条項は [MIT ライセンス](../../LICENSE) を参照してください。
 
 ## 作者より
 
-これは私が初めて一人で完成させたオープンソースプロジェクトです。開発中の Codex と Cursor の助けに感謝します。まだ改善の余地がありますので、[Issue](https://github.com/starpickerr/Stella/issues) から提案や不具合報告を歓迎します。
+これは私が初めて一人で完成させたオープンソースプロジェクトです。開発中の Codex と Cursor の助けに感謝します。まだ改善の余地がありますので、[Issue](https://github.com/starpickerr/Alcor/issues) から提案や不具合報告を歓迎します。

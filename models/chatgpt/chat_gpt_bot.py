@@ -10,7 +10,8 @@ from models.openai.openai_compat import (
     wrap_http_error,
 )
 from models.openai.openai_http_client import OpenAIHTTPClient, OpenAIHTTPError
-import requests
+from core.security.config_credentials import model_key
+from models import transport_requests as requests
 from common import const
 from common.i18n import t as _t
 from models.bot import Bot
@@ -38,7 +39,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             # with automatic fallback to the legacy custom_api_key/base fields.
             self._api_key, self._api_base, custom_model = resolve_custom_credentials()
         else:
-            self._api_key = conf().get("open_ai_api_key")
+            self._api_key = model_key("open_ai_api_key")
             self._api_base = conf().get("open_ai_api_base") or None
         self._proxy = conf().get("proxy") or None
         self._http_client = OpenAIHTTPClient(
@@ -80,8 +81,8 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             api_base = custom_base
             model = custom_model or conf().get("model", "gpt-3.5-turbo")
         else:
-            api_key = conf().get("open_ai_api_key")
-            api_base = conf().get("open_ai_api_base")
+            api_key = model_key("open_ai_api_key")
+            api_base = conf().get("open_ai_api_base") or "https://api.openai.com/v1"
             model = conf().get("model", "gpt-3.5-turbo")
         return {
             'api_key': api_key,
@@ -205,7 +206,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
                 api_base = custom_base
             else:
                 model = context.get("gpt_model") or conf().get("model", "gpt-4o")
-                api_key = context.get("openai_api_key") or conf().get("open_ai_api_key")
+                api_key = context.get("openai_api_key") or model_key("open_ai_api_key")
                 api_base = conf().get("open_ai_api_base")
             
             # Build vision request
@@ -264,7 +265,7 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
         try:
             if conf().get("rate_limit_chatgpt") and not self.tb4chatgpt.get_token():
                 raise RateLimitError("RateLimitError: rate limit exceeded")
-            # If api_key is None, the per-instance default key will be used.
+            api_config = self.get_api_config()
             if args is None:
                 args = self.args
             # Translate old SDK kwargs to HTTP client params:
@@ -272,7 +273,8 @@ class ChatGPTBot(Bot, OpenAIImage, OpenAICompatibleBot):
             call_args = dict(args)
             timeout = call_args.pop("request_timeout", None) or call_args.pop("timeout", None)
             response = self._http_client.chat_completions(
-                api_key=api_key or None,
+                api_key=api_key if api_key is not None else api_config['api_key'],
+                api_base=api_config['api_base'],
                 timeout=timeout,
                 messages=session.messages,
                 **call_args,

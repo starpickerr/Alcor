@@ -1,4 +1,4 @@
-# Contributing to Stella
+# Contributing to Alcor
 
 Contributions of all sizes are welcome, from documentation fixes to new features.
 
@@ -12,7 +12,7 @@ pull requests, code comments, and commit messages in English.**
 
 ## Reporting issues
 
-Found a bug or have an idea? [Open an issue](https://github.com/starpickerr/Stella/issues/new/choose).
+Found a bug or have an idea? [Open an issue](https://github.com/starpickerr/Alcor/issues/new/choose).
 
 Before opening one, please search existing issues (including closed ones) to
 avoid duplicates, and make sure you're on the latest version.
@@ -39,48 +39,30 @@ happy to help polish details during review.
 
 ### Commit & PR titles
 
-Use a short, imperative summary. The [Conventional Commits](https://www.conventionalcommits.org/)
-style is preferred but not required:
+Use `<type>(<scope>): <description>` for commits. Write the description in English as a short imperative phrase.
 
-```
-feat: add web search tool
-fix: reconnect Telegram websocket on timeout
-docs: clarify desktop setup
+```text
+feat(calendar): Add a weekly agenda view
+fix(apple-sync): Preserve recurring reminders on reconnect
+docs(native-product): Update desktop setup instructions
 ```
 
 ## Development setup
 
-See [Build from Source](docs/guide.md) for prerequisites and Windows commands. From a source checkout:
+Use Node.js 24.9 or later and Python 3.9 or later. On macOS, install Xcode Command Line Tools to build the native helpers. From the repository root run:
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip setuptools
-.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
-.venv/bin/python -m playwright install chromium
-npm --prefix desktop ci
-npm --prefix desktop run dev
+```sh
+npm ci --ignore-scripts
+npm run product:build
+npm run dev
 ```
 
-See [Desktop development](desktop/README.md) for hot reload and packaging.
+The preview runs in an isolated DSH profile. Plugin code lives in `packages/`. The [native product guide](product/README.md) covers desktop installation, packaging and compatibility.
 
 ## Quality checks
 
-Run checks appropriate to your changes:
-
-```bash
-.venv/bin/python scripts/quality_check.py incremental
-```
-
-The runner selects checks from changed files, isolates Stella state in a temporary directory, and prints PASS/FAIL/SKIP. Use `--files path/to/changed.py` to check specific paths. For the full Python and frontend suite, build, and browser checks:
-
-```bash
-.venv/bin/python scripts/quality_check.py full --report /tmp/stella-quality-report.md
-```
-
-On Windows, use `.venv\Scripts\python.exe` and choose a writable report path. The runner resolves native npm and Python executables and cleans up the private renderer process tree.
-
-Tests use temporary user data. Manual app launches share `~/.stella` with the installed app, so back up your data before testing changes that affect storage.
+Run `npm test` for the native product suite, or `make check` to build and test together. Desktop changes should also be checked in the official client with an isolated profile. For changes to the legacy Python/Electron application, use `make check-legacy` and the [legacy desktop guide](desktop/README.md).
 
 ## Code of conduct
 
-Be respectful and constructive. We want Stella to be a welcoming place for everyone.
+Be respectful and constructive. We want Alcor to be a welcoming place for everyone.
