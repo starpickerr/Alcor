@@ -14,6 +14,7 @@ import { BearOverlay, BearTimeline } from './bear.jsx'
 import { createBearState, installPresetFilter } from './bear-state.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { ChannelBrowser, ChannelHistory } from './channel-history.jsx'
+import { ChannelsPage } from './channels-page.jsx'
 import { PersonaPage } from './persona-page.jsx'
 import { SpacePreferences } from './space-preferences.jsx'
 import bearStyle from './bear.css'
@@ -179,6 +180,15 @@ export async function apply(ctx) {
       spaces={spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />} />
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-persona', inject: () => ({ api: ctx.remote.alcorSecretary }) }, PersonaPage))
+    ctx.slots.inject('main', () => ctx.slots.register({ name:'main', key:'alcor-channels', inject:() => ({
+      api:ctx.remote.alcorSecretary,
+      openPlugin:name => {
+        const manager = ctx.get('pluginNavigation')
+        if (name && manager) manager.openBundle(name)
+        else if (manager) manager.openList()
+        else ctx.layout.selectPanel('plugins')
+      },
+    }) }, ChannelsPage))
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,

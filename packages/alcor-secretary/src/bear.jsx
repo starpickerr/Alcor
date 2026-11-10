@@ -167,7 +167,7 @@ function FloatingBear({prefs, state, workspace, openSettings, openPersona, ...ch
     <Menu open={!!menu} contextual portal autoFocus anchor={null} onClose={() => setMenu(null)}
       className="alcor-bear-menu" listClassName="alcor-bear-menu-list"
       getAnchorRect={() => menu ? new DOMRect(menu.x,menu.y,0,0) : null} returnFocus={() => button.current}
-      items={[{id:'persona',label:'人格'},{id:'settings',label:'设置'},{id:'hide',label:'隐藏'}]}
+      items={[{id:'persona',label:'人设'},{id:'settings',label:'设置'},{id:'hide',label:'隐藏'}]}
       onSelect={id => {
         setMenu(null)
         if (id === 'hide') state.preferences.update({enabled:false})

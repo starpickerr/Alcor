@@ -283,3 +283,9 @@
 .alcor-persona-examples fieldset { margin:12px 0; min-width:0; padding:10px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); }
 .alcor-persona-examples legend { padding-inline:5px; font-size:13px; }
 .alcor-persona-examples textarea { margin:4px 0 0; }
+
+.alcor-channels-page { max-width:860px; }
+.alcor-channels-page .alcor-section h2 { margin:0 0 12px; }
+[data-sidebar-drawer] .alcor-channels-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-channel-actions { display:flex;align-items:center;gap:6px; }

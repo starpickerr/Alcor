@@ -25,6 +25,8 @@ export const accountSchemas = {
     queue:z.enum(['queue','steer']), interim:z.boolean(), limit:z.number(), admin:z.boolean().optional(),
     name:z.string().max(128).optional(), members:z.number().int().nonnegative().optional(),
   }).strict().nullable()],
+  channelConnections:[z.object({}).strict(),z.array(z.object({id:identifier,label:z.string(),accounts:z.array(z.string()),packageName:z.string().nullable(),
+    state:z.enum(['registered','workbench','enabled','disabled','uninstalled'])}).strict())],
   channelCatalog:[z.object({}).strict(),z.array(channelRouteSchema.extend({available:z.boolean(),channelName:z.string()}))],
   channelConversation:[z.object({sessionId:identifier}).strict(),z.object({
     online:z.boolean(),response:z.enum(['disabled','private','mention','ambient','addressed']),queue:z.enum(['queue','steer']),

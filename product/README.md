@@ -56,7 +56,7 @@ dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-
 
 在窗口顶部切换 Alcor 或 DSH 工作台。Alcor 侧栏提供事务、日程、简报、账单和自动化。工作台首页按项目和最近对话组织专业任务，使用宿主模型和工具权限。AgentHub 的入口位于工作台，见[插件说明](../packages/alcor-agent-hub/README.md)。
 
-在 Alcor 中，可以从侧栏新建对话，或点击小熊继续交谈。在「设置 → Alcor」中，分别管理人格与记忆、小熊外观和项目空间。右键小熊可以打开设置或隐藏它。
+在 Alcor 中，可以从侧栏新建对话，或点击小熊继续交谈。侧栏「系统 → 人设」管理角色设定、主动交流和长期记忆，「系统 → 通道」管理 QQ 等渠道接入和主动发送授权。小熊外观和项目空间在「设置 → Alcor」中管理，右键小熊也可打开人设或设置。
 
 Apple 日历与提醒事项的同步由「插件 → @alcor/apple-sync」管理，见[插件说明](../packages/alcor-apple-sync/README.md)。eLearning 和邮件接入见 [MCP 接入](mcp-connections.md)。
 

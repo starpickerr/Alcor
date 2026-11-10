@@ -4,7 +4,7 @@ const modes = ['alcor', 'dsh']
 const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills', 'stella-schedules': 'alcor-schedules' }
 export const legacyPanelIds = Object.keys(oldPanels)
 export const canonicalPanel = panel => Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
-const ownPanels = new Set([...Object.values(oldPanels), 'alcor-qq-history', 'alcor-persona'])
+const ownPanels = new Set([...Object.values(oldPanels), 'alcor-qq-history', 'alcor-persona', 'alcor-channels'])
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
     agentPreset: 'alcor',

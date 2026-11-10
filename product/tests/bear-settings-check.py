@@ -54,8 +54,8 @@ def main():
             expect(bear).to_be_focused()
             assert bear.bounding_box() == original
             bear.press('Shift+F10')
-            menu.get_by_role('menuitem', name='人格', exact=True).click()
-            expect(page.get_by_role('heading',name='人格',exact=True)).to_be_visible()
+            menu.get_by_role('menuitem', name='人设', exact=True).click()
+            expect(page.get_by_role('heading',name='人设',exact=True)).to_be_visible()
             bear.press('Shift+F10')
             menu.get_by_role('menuitem', name='设置', exact=True).click()
             dialog = page.get_by_role('dialog', name='Alcor', exact=True)

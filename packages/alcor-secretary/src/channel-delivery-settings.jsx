@@ -22,6 +22,8 @@ export function ChannelDeliverySettings({api}) {
   }
   return <>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
+    {!state && !error && <p role="status" className="alcor-muted">正在读取授权…</p>}
+    {state && !state.targets.length && <p className="alcor-muted">暂无可授权的联系人或群。</p>}
     {state?.targets.map(({route,until,available})=>{
       const active=until===null || until>Date.now(), Icon=route.kind==='group'?IconUsersOutlineRegular:IconNewChatOutlineRegular
       return <div className="alcor-initiative-card" data-channel-session={route.sessionId} key={route.sessionId}>

@@ -1,7 +1,7 @@
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useRef, useState, useSyncExternalStore } from 'react'
-import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconEditOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconEditOutlineRegular, IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
@@ -32,10 +32,12 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
 export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderQQ, hubForm, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
-  const dataViews = [...applicationViews, { id: 'alcor-persona', label: '人格', icon: IconEditOutlineRegular }]
+  const applications = [...applicationViews]
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
-  if(['alcor','both'].includes(hub.value?.productScope)) dataViews.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
-  const applications = canManagePlugins ? [...dataViews, { id: 'plugins', label: '插件', icon: IconPluginPinwheelOutlineRegular }] : dataViews
+  if(['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
+  const system = [{ id:'alcor-persona', label:'人设', icon:IconEditOutlineRegular }]
+  if (canManagePlugins) system.unshift({ id:'alcor-channels', label:'通道', icon:IconUsersOutlineRegular })
+  if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
   const sidebar = useRef()
   const wide = drawer || !collapsed
@@ -44,7 +46,7 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
     <div className="alcor-sidebar-brand"><span className="alcor-emblem" aria-hidden="true"><BearLogo size={32} /></span>{wide && <span>Alcor</span>}<button type="button" data-sidebar-toggle title={t(collapsed ? 'toggle.open' : 'toggle.collapse')} aria-label={t(collapsed ? 'toggle.open' : 'toggle.collapse')} onClick={toggleSidebar}><IconPanelLeftOutlineRegular size={17} /></button></div>
     <button type="button" className="alcor-sidebar-chat" title={t('session.new.label')} aria-label={t('session.new.label')} onClick={async () => { setError(''); try { await startSession() } catch (reason) { setError(reason.message) } }}><IconNewChatOutlineRegular size={17} />{wide && <span>新对话</span>}</button>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
-    <nav aria-label="秘书功能">{['应用'].map(group => <div className="alcor-nav-group" key={group}>{wide && <p>{group}</p>}{applications.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}</div>)}</nav>
+    <nav aria-label="秘书功能">{[['应用', applications], ['系统', system]].map(([group, items]) => <div className="alcor-nav-group" role="group" aria-label={group} key={group}>{wide && <p>{group}</p>}{items.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}</div>)}</nav>
     <section className="alcor-sidebar-workspaces" aria-label="工作区与会话">{renderFactorySlot('workspace.browser', { wide, renderQQ, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
     <footer>{renderFactorySlot('settings.shell', { wide })}</footer>
   </aside>

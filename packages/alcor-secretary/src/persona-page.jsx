@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { Button, Modal, MarkdownText, SegmentedControl, IconNewChatOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { markdownLabels } from './briefing-report.jsx'
-import { ChannelDeliverySettings } from './channel-delivery-settings.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import { BriefingToggle } from './briefing-toggle.jsx'
 import { Notice } from './notice.jsx'
 import { maxPersonaExamples, maxExampleText } from './memory/identity-schema.js'
 
 const sections = [
-  { value: 'identity', label: '人格设定' },
+  { value: 'identity', label: '角色设定' },
   { value: 'conversation', label: '主动交流' },
   { value: 'memory', label: '长期记忆' },
 ]
@@ -70,11 +69,11 @@ export function PersonaPage({ api }) {
   const changed = identity && (name !== identity.name || soul !== identity.soul ||
     JSON.stringify(examples) !== JSON.stringify(identity.examples ?? []))
   const canSave = changed && !busy && name.trim() && soul.trim() && complete
-  return <section className="alcor-desk alcor-persona-page" aria-label="人格">
-    <header className="alcor-page-heading"><h1>人格</h1></header>
-    <SegmentedControl id="alcor-persona-section" label="人格页面" value={section} onChange={setSection} options={sections}/>
+  return <section className="alcor-desk alcor-persona-page" aria-label="人设">
+    <header className="alcor-page-heading"><h1>人设</h1></header>
+    <SegmentedControl id="alcor-persona-section" label="人设页面" value={section} onChange={setSection} options={sections}/>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
-    {!state && !error && <p className="alcor-muted" role="status">正在读取人格与记忆…</p>}
+    {!state && !error && <p className="alcor-muted" role="status">正在读取人设与记忆…</p>}
     <div className="alcor-memory-settings">
     <div hidden={section!=='identity'} className="alcor-settings-group">
       <div className="alcor-profile-heading">
@@ -109,13 +108,13 @@ export function PersonaPage({ api }) {
       <div className="alcor-identity-actions">
         {saved && <span role="status">已保存</span>}
         <Button variant="primary" size="sm" disabled={!canSave}
-          onClick={() => save(() => api.updateSoul({ name, soul, examples, expectedRevision: identity.revision }), true)}>保存人格</Button>
+          onClick={() => save(() => api.updateSoul({ name, soul, examples, expectedRevision: identity.revision }), true)}>保存人设</Button>
       </div>
     </div>
     <div hidden={section!=='conversation'}><div className="alcor-settings-group"><h2>主动交流</h2><div className="alcor-initiative-card"><div className="alcor-bear-option-row"><span className="alcor-card-caption"><IconNewChatOutlineRegular size={18}/>主动跟进</span><BriefingToggle label="允许 Alcor 主动跟进" disabled={!state || busy} checked={state?.initiative === true} onChange={enabled=>save(()=>api.allowInitiative({enabled}))} /></div>
-      <small className="alcor-channel-consent">Alcor 可以跟进聊过的事，也可以在一段时间没聊天时，按人格向已允许的 QQ 联系人或群打招呼。</small>
+      <small className="alcor-channel-consent">Alcor 可以跟进聊过的事，也可以在一段时间没聊天时，按人设向已允许的 QQ 联系人或群打招呼。</small>
     </div></div><div className="alcor-settings-group"><h2>消息送达</h2><div className="alcor-initiative-card"><div className="alcor-bear-option-row"><div><span>桌面便笺</span><small>在 Alcor 页面显示到期的跟进</small></div>
-      <BriefingToggle label="桌面便笺" disabled={!state || busy} checked={state?.desktopDelivery===true} onChange={enabled=>save(()=>api.allowDesktopDelivery({enabled}))}/></div></div>{section==='conversation' && <ChannelDeliverySettings api={api}/>}</div></div>
+      <BriefingToggle label="桌面便笺" disabled={!state || busy} checked={state?.desktopDelivery===true} onChange={enabled=>save(()=>api.allowDesktopDelivery({enabled}))}/></div></div></div></div>
     <div hidden={section!=='memory'} className="alcor-settings-group"><h2>长期记忆</h2>
     <div className="alcor-bear-option-row"><div><span>跨聊天回忆</span><small>桌面、QQ 私聊和已接入的群共用回忆，Alcor 自行决定是否向当前听众提起，包括私聊细节。</small></div>
       <BriefingToggle label="跨聊天回忆" disabled={!state || busy} checked={state?.sharedRecall===true} onChange={enabled=>save(()=>api.allowSharedRecall({enabled}))}/></div>

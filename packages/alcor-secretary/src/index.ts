@@ -80,6 +80,28 @@ export default class Secretary extends TypertRemoteService {
   }
 
   @Remote
+  async channelConnections(request) {
+    accountSchemas.channelConnections[0].parse(request)
+    if (this.ctx.invocation?.peer?.principal?.kind !== 'owner') throw Error('仅客户端所有者可管理通道。')
+    const manager = this.ctx.get('pluginManager')
+    if (!manager) throw Error('插件管理暂不可用。')
+    const bundles = await manager.listBundles()
+    const qq = bundles.find(bundle => bundle.name === 'dsh-onebot-qq' && bundle.installed)
+    const rows = new Map()
+    rows.set('qq', {id:'qq', label:'QQ', accounts:[], packageName:qq?.name ?? null,
+      state:!qq ? 'uninstalled' : !qq.enabled ? 'disabled' : selectedScope(this.ctx,'dsh-onebot-qq') === 'dsh' ? 'workbench' : 'enabled'})
+    for (const adapter of this.channels.adapters.values()) {
+      const entry = adapter.sourceKind?.replace(/^plugin:/, '')
+      const provider = bundles.find(bundle => bundle.installed && bundle.rows.some(row => row.rowId === entry))
+      const row = rows.get(adapter.id) ?? {id:adapter.id, label:adapter.label, accounts:[], packageName:provider?.name ?? null}
+      row.accounts.push(adapter.account)
+      row.state = 'registered'
+      rows.set(adapter.id, row)
+    }
+    return [...rows.values()]
+  }
+
+  @Remote
   async channelCatalog(request) {
     accountSchemas.channelCatalog[0].parse(request)
     return this.channels.catalog()
