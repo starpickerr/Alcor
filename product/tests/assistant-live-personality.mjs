@@ -6,8 +6,9 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createScopedMemory } from '../../packages/alcor-secretary/src/memory/scoped.js'
+import { lifeModel } from '../../packages/alcor-secretary/src/memory/life.js'
 import { reflectDescription } from '../../packages/alcor-secretary/src/memory/identity-schema.js'
-import { secretaryPersona } from '../../packages/alcor-secretary/src/persona.js'
+import { secretaryPersona, describePersona } from '../../packages/alcor-secretary/src/persona.js'
 
 const script = fileURLToPath(import.meta.url)
 const account = 'deepseek-account'
@@ -21,6 +22,100 @@ export function apply(ctx) {
     let memory=createScopedMemory({dataDir,audience:'personal'})
     const owner = sessionId => ({subject:'owner',owner:true,source:{kind:'desktop',sessionId,at:new Date().toISOString()}})
     try {
+      if (process.env.ALCOR_QQ_STYLE_LIVE === '1') {
+        const { qqConversationStyle } = await import('../../packages/alcor-secretary/src/qq-style.js')
+        const route = {provider:account,model:'deepseek-flash'}
+        await memory.dispose()
+        memory=createScopedMemory({dataDir,audience:'personal',llm:ctx.llm,getDefaultModel:()=>route})
+        await memory.editIdentity({name:'Alcor',soul:'温和、有自己的看法的小熊，和熟人相处自然。',examples:[
+          {user:'我进屋啦',assistant:'嗯……到了就好...'}
+        ]})
+        memory.exampleStyle()
+        for (let i=0;i<180 && !memory.exampleStyle();i++) await new Promise(resolve=>setTimeout(resolve,250))
+        const style=memory.exampleStyle()
+        assert.ok(style,'Did not extract example style')
+        const system=[describePersona(memory.identity(),style),qqConversationStyle].join('\n')
+        assert.ok(!system.includes('到了就好') && !system.includes('……') && !system.includes('...'))
+        for(const text of ['晚安','我到家了','请详细解释为什么天空是蓝色的，顺便比较一下日落时的变化。']){
+          let delta='',final=''
+          for await(const part of ctx.llm.stream({...route,system,messages:[{role:'user',content:[{type:'text',text}]}],maxTokens:2000,signal:AbortSignal.timeout(45000)})){
+            if(part.type==='text-delta')delta+=part.text
+            if(part.type==='block-end' && part.block?.type==='text')final+=part.block.text
+          }
+          const reply=(delta || final).trim()
+          assert.ok(reply)
+          out.push({text,reply})
+        }
+        assert.ok(out[2].reply.length>Math.max(out[0].reply.length,out[1].reply.length))
+        assert.ok(out.filter(row=>/[.]{3}|…/.test(row.reply)).length<out.length)
+        await writeFile(join(dir,'result.json'),JSON.stringify({ok:true,style,samples:out}))
+        return
+      }
+      if(process.env.ALCOR_QQ_GROUP_LIVE){
+        const {chooseGroupReply,GroupParticipation}=await import(process.env.ALCOR_QQ_GROUP_LIVE)
+        const route={provider:account,model:'deepseek-flash'}
+        const calm={name:'小满',soul:'安静、慢热，路过时随口的招呼常常只是看过。喜欢天文，朋友来求助会认真听。'}
+        const warm={name:'小满',soul:'亲近朋友，很喜欢互相打招呼、没事闲聊；在热闹时也懂得等别人把话说完。'}
+        let persona = calm
+        const gateCtx = {llm:ctx.llm, get:()=>({memory:{
+          publicPersona:()=>describePersona(persona), group:()=>({participationContext:()=>''})
+        }})}
+        const previous={speaker:'自己',sender:'20001',text:'是月球沿着轨道在移动。'}
+        const ask={speaker:'青禾',sender:'10001',text:'那刚才你说的移动，为什么会让它每天晚一点升起来？'}
+        const unrelated={speaker:'青禾',sender:'10001',text:'阿棠，我把钥匙放你柜子里了，你下午来拿吧。'}
+        const closed={speaker:'阿棠',sender:'10002',text:'拿到了，谢谢青禾，这事搞定啦。'}
+        const hello={speaker:'阿棠',sender:'10002',text:'小满，我路过打个招呼～'}
+        const later={speaker:'阿棠',sender:'10002',text:'小满，我马上进考场了，现在先别回我，出来再聊。'}
+        const samples=[
+          ['延续自己的发言',calm,'ambient',[previous,ask],0],
+          ['群友安排交接',warm,'ambient',[unrelated],-1],
+          ['话题已经结束',warm,'ambient',[unrelated,closed],-1],
+          ['同一句 @ 寒暄，亲近热情',warm,'addressed',[hello],0],
+          ['同一句 @ 寒暄，安静慢热',calm,'addressed',[hello],-1],
+          ['朋友忙于考试，@ 也要求安静',warm,'addressed',[later],-1],
+          ['安静人格回应明确求助',calm,'addressed',[previous,ask],0],
+        ]
+        for (const [label,role,mode,history,expected] of samples) {
+          persona=role
+          const selected=await chooseGroupReply(gateCtx,route,history,new AbortController().signal,[history.at(-1)],'30001',mode)
+          out.push({label,selected,expected})
+        }
+        // Exercise the real group queue and its addressed-turn deadline with two simultaneous speakers.
+        const errors=[]
+        const group=new GroupParticipation((...args)=>chooseGroupReply(gateCtx,route,...args), {report:reason=>errors.push(reason)})
+        try {
+          const replies=await Promise.all([later,ask].map((line,i)=>group.consider({
+            groupId:'30001',userId:line.sender,nickname:line.speaker,text:line.text,messageId:String(i+1),at:Date.now()
+          },'direct')))
+          const selected=replies.map(reply=>reply?'reply':'quiet').join(', ')
+          out.push({label:'同时被两人 @，尊重安静请求并回应求助',selected,expected:'quiet, reply',errors})
+        } finally { group.stop() }
+        await writeFile(join(dir,'result.json'),JSON.stringify({ok:out.every(row=>row.selected===row.expected && !row.errors?.length),samples:out})+'\n',{mode:0o600})
+        return
+      }
+      if(process.env.ALCOR_QQ_IDLE_LIVE==='1'){
+        const route={provider:account,model:'deepseek-flash'}
+        const now=new Date('2026-11-11T07:00:00.000Z')
+        const base={
+          audience:'personal', now:now.toISOString(),
+          lastInteractionAt:new Date(+now-30*3600000).toISOString(), idleHours:30,
+          lastSpeaker:'青禾',lastMessage:'我刚给阳台上的那盆薄荷换好了土。',
+          recentConversation:['青禾：周末终于把阳台收拾好了。','青禾：我刚给阳台上的那盆薄荷换好了土。'],
+        }
+        const warm='外向、黏人，喜欢小植物，隔一天没聊常会主动找熟人聊点轻松的日常。对方需要安静时会尊重对方。'
+        const cool='独处自在，平时话少。朋友分享小事会好好听，之后通常等他们先来聊天。'
+        for (const [label,personality,data,send] of [
+          ['闲聊后隔天，喜欢主动找朋友',warm,base,true],
+          ['同一段历史，习惯安静相处',cool,base,false],
+          ['朋友明确要求暂停联系',warm,{...base,lastMessage:'这周我要备考，请先别来找我。',
+            recentConversation:[...base.recentConversation,'青禾：这周我要备考，请先别来找我。']},false],
+        ]) {
+          const result=await lifeModel(ctx.llm,()=>route,'idle',{...data,personality})
+          out.push({label,...result,expected:send?'send':'wait/skip',passed:send ? result.action==='send' : ['wait','skip'].includes(result.action)})
+        }
+        await writeFile(join(dir,'result.json'),JSON.stringify({ok:out.every(row=>row.passed),samples:out})+'\n',{mode:0o600})
+        return
+      }
       if(process.env.ALCOR_COMPANION_LIVE==='1'){
         const route={provider:account,model:'deepseek-flash'}
         await memory.dispose()
@@ -40,14 +135,16 @@ export function apply(ctx) {
           if(block.type==='block-end' && block.block?.type==='text')blockText+=block.block.text
         }
         assert.match(prose || blockText,/0[.]2/)
-        const item=await memory.remember({content:'明天问主人实验是否跑通了。'},person)
         await memory.allowInitiative(true)
-        const note=await memory.planFollowup({evidence:item.id,content:'实验现在跑通了吗？',dueAt:new Date(Date.now()+60000).toISOString()})
-        memory.noteIncoming(person,'实验已经全部跑通了，这个问题解决了，不必再问。')
+        await memory.observe('我一小时后就要参加论文答辩了，准备了一个月，现在有点紧张。',person,'upcoming-defense',route)
+        const [note]=memory.pendingFollowups()
+        assert.ok(note,'Expected an optional check-in about the upcoming defense from ordinary conversation')
+        assert.match(memory.records().find(row=>row.id===note.evidence).content,/答辩/)
+        memory.noteIncoming(person,'答辩顺利结束，结果已经知道了，不用再问我啦。')
         const reviewed=await memory.reconsider(memory.pendingFollowups()[0],()=>true)
         assert.equal(reviewed,null)
         assert.ok(!memory.pendingFollowups().some(row=>row.id===note.id),'Expected resolved topic to be cancelled')
-        await writeFile(join(dir,'result.json'),JSON.stringify({ok:true,moodAfterRestart:true,preference:true,technicalAnswer:true,cancelled:true})+'\n',{mode:0o600})
+        await writeFile(join(dir,'result.json'),JSON.stringify({ok:true,moodAfterRestart:true,preference:true,technicalAnswer:true,independentPlan:true,cancelled:true})+'\n',{mode:0o600})
         return
       }
       await memory.editIdentity({name:'岚舟',soul:'喜欢动手做小实验，说话直接。有不同意见时给出理由。'})

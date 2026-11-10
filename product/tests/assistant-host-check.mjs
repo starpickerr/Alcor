@@ -1,8 +1,9 @@
+import {authorityStore} from '../../packages/alcor-secretary/src/memory/aurabot/authority.js'
 // Explicit integration check: official DSH host + isolated Profile + synthetic QQ/model.
 import http from 'node:http'
 import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import WebSocket from 'ws'
 import { spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -13,23 +14,30 @@ import { Store } from '../../packages/alcor-secretary/src/memory/engine/store.js
 const root = resolve(process.env.ALCOR_ASSISTANT_CHECK_ROOT ?? '/private/tmp/alcor-assistant-implementation')
 assert.ok(root.startsWith('/private/tmp/alcor-assistant-'), 'Use a dedicated synthetic test directory')
 const app = process.env.ALCOR_OFFICIAL_APP ?? join(homedir(), 'Applications/DeepSeek Harness.app')
-const profile = join(root, 'official-dsh/profiles/spaces-check'), require = createRequire(join(profile, 'package.json')), WebSocket = require('ws')
+const profile = join(root, 'official-dsh/profiles/spaces-check')
 const restart = process.argv.includes('--restart'), keep = process.argv.includes('--keep')
+const idleOnly = process.argv.includes('--idle-restart-check')
 let plan = { reply: 'READY' }, serial = 0, socket, log = '', controlPort
-const requests = [], outgoing = [], checks = [], events = []
+const requests = [], outgoing = [], outgoingTimes = [], checks = [], events = [], platformMessages=[]
 const model = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
   const body = JSON.parse(raw); requests.push(body)
   assert.equal(req.headers.authorization, 'Bearer synthetic-test-key')
   const firstText=JSON.stringify(body.messages[0])
-  const internal=firstText.includes('ALCOR_OBSERVE') || firstText.includes('ALCOR_REVIEW')
+  const lastContent = body.messages.at(-1).content
+  const lastText = typeof lastContent === 'string' ? lastContent : lastContent[0]?.text
+  let gate
+  try { const data = JSON.parse(lastText); if (Array.isArray(data.candidates) && data.mode) gate = data } catch {}
+  const internal=firstText.includes('ALCOR_STYLE') || firstText.includes('ALCOR_OBSERVE') || firstText.includes('ALCOR_REVIEW') || firstText.includes('ALCOR_IDLE')
   const draft=body.messages[0].content
   const prompt=typeof draft==='string'?draft:draft[0].text
   const fixture=internal ? JSON.parse(prompt.split('以下是对话资料：\n').at(-1)) : {}
-  const choice=firstText.includes('ALCOR_OBSERVE') ?
+  const choice=firstText.includes('ALCOR_STYLE') ? {style:'先听对方讲完自己的发现'} : firstText.includes('ALCOR_IDLE') ? {action:'send',text:'SYNTHETIC_IDLE_HELLO'} : firstText.includes('ALCOR_OBSERVE') ?
     (fixture.speech?.includes('I prefer piano') ? {mood:'高兴',preference:{topic:'music',quote:'I prefer piano'},explore:null} : {mood:null,preference:null,explore:null}) :
     fixture.basis==='ASK_PROGRESS' && fixture.updates?.some(row=>row.text.includes('already resolved')) ? {action:'cancel'} : {action:'send',text:fixture.draft}
-  const choices = internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
+  const answers=gate?.candidates.filter(c=>c.text.includes('CONTINUE_WITHOUT_MENTION') ||
+    (gate.mode==='addressed' && !c.text.includes('CASUAL_PING_SILENCE'))).map(c=>c.number).join(',')
+  const choices = gate ? [{delta:{role:'assistant',content:answers || 'PASS'},finish_reason:'stop'}] : internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
     { delta: { role: 'assistant' }, finish_reason: null },
     { delta: { tool_calls: [{ index: 0, id: 'test-' + serial, type: 'function', function: { name: plan.tool, arguments: JSON.stringify(plan.args) } }] }, finish_reason: null },
     { delta: {}, finish_reason: 'tool_calls' },
@@ -42,6 +50,7 @@ await new Promise(resolve => model.listen(0, '127.0.0.1', resolve))
 const config = parse(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).filter(entry => !['agent-default-model', 'llm-pi-ai'].includes(entry.id))
 const controlEntry = config.flatMap(entry => entry.insert ?? []).find(entry => entry.id === 'synthetic-control')
 if (!controlEntry) throw Error('Initialize the synthetic Profile with the companion assistant-host-control fixture')
+config.find(entry => entry.id === 'dsh-onebot').config.requireMention = false
 controlEntry.name = fileURLToPath(new URL('assistant-host-control.mjs', import.meta.url))
 config.push({ id: 'agent-default-model', config: { provider: 'synthetic', model: 'test' } },
   { id: 'llm-pi-ai', config: { providers: { synthetic: { api: 'openai-completions', apiKeyEnv: 'ALCOR_SYNTHETIC_KEY', baseURL: 'http://127.0.0.1:' + model.address().port + '/v1',
@@ -57,15 +66,20 @@ for (const path of ['personal', 'groups/30001']) {
 }
 // Reset only this fixture's opt-ins and send ledger while the isolated host is stopped.
 for(const folder of ['personal','groups/30001']){
-  const file=join(profile,'alcor/memory',folder,'alcor-authority.json')
-  if(existsSync(file)){
-    const value=JSON.parse(readFileSync(file,'utf8'))
-    Object.assign(value,{initiative:false,lastDismissed:0,followups:[]})
-    writeFileSync(file,JSON.stringify(value),{mode:0o600})
+  const db=authorityStore(join(profile,'alcor/memory',folder))
+  const value=db.load()
+  if(value){
+    Object.assign(value,{initiative:idleOnly && folder==='personal',lastDismissed:0,followups:[]})
+    if (idleOnly && folder==='personal') {
+      assert.equal(value.idle?.sessionId,'onebot-private-10001', 'Expected the previous run to save a real synthetic QQ interaction')
+      const at = Date.now() - 30 * 3600000
+      value.idle = {...value.idle,at,nextAt:at+3600000}
+    }
+    db.save(value)
   }
 }
 const channelFile=join(root,'official-dsh/storages/alcor_channels.json')
-if(existsSync(channelFile)){
+if(!idleOnly && existsSync(channelFile)){
   const value=JSON.parse(readFileSync(channelFile,'utf8')),state=value.tables?.delivery?.state
   if(state){state.grants=[];state.receipts=[];writeFileSync(channelFile,JSON.stringify(value),{mode:0o600})}
 }
@@ -95,8 +109,10 @@ function message(user, kind, content, group = 30001) {
 }
 async function send(user, kind, next) {
   plan = { calls: 0, ...next }; const before = requests.length, count = outgoing.length
-  socket.send(JSON.stringify(message(user, kind, next.text ?? next.reply)))
-  await until(() => outgoing.slice(count).some(row => JSON.stringify(row).includes(next.reply)), next.reply)
+  const incoming=message(user,kind,next.text ?? next.reply)
+  if(kind==='group')platformMessages.push({...incoming,message_seq:serial})
+  socket.send(JSON.stringify(incoming))
+  await until(() => outgoing.slice(count).some(row => JSON.stringify(row).includes(next.parts?.at(-1) ?? next.reply)), next.parts?.at(-1) ?? next.reply)
   return requests.slice(before)
 }
 try {
@@ -104,18 +120,39 @@ try {
   controlPort = JSON.parse(readFileSync(join(root, 'control-ready.json'))).port
   socket = new WebSocket('ws://127.0.0.1:36433/ws', { headers: { authorization: 'Bearer synthetic-only' } })
   socket.on('message', raw => {
-    const data = JSON.parse(raw); if (data.params) { events.push(data.action); if (['send_msg', 'send_group_msg', 'send_private_msg'].includes(data.action)) outgoing.push(data.params) }
-    const value = data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
+    const data = JSON.parse(raw); if (data.params) { events.push(data.action); if (['send_msg', 'send_group_msg', 'send_private_msg'].includes(data.action)) {outgoing.push(data.params);outgoingTimes.push(Date.now())} }
+    if(data.action?.startsWith('send_') && data.params?.group_id)platformMessages.push({group_id:data.params.group_id,user_id:20001,time:Math.floor(Date.now()/1000),message_seq:++serial,message:Array.isArray(data.params.message)?data.params.message:[{type:'text',data:{text:String(data.params.message)}}]})
+    const value = data.action==='get_group_msg_history' ? {messages:platformMessages.filter(row=>row.group_id===data.params.group_id && (data.params.message_seq==null || row.message_seq<data.params.message_seq)).slice(-80)} : data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
     socket.send(JSON.stringify({ status: 'ok', retcode: 0, data: value, echo: data.echo }))
   })
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
   socket.send(JSON.stringify({ post_type: 'meta_event', meta_event_type: 'lifecycle', sub_type: 'connect', self_id: 20001, time: Math.floor(Date.now() / 1000) }))
-  await rpc('alcorSecretary', 'updateSoul', { request: { soul: 'SINGLE_PUBLIC_ALCOR_SOUL_CANARY' } })
+  if (idleOnly) {
+    await rpc('alcorSecretary','allowInitiative',{request:{enabled:true}})
+    await control('/delivery-run')
+    const hellos=()=>outgoing.filter(row=>row.user_id==10001 && JSON.stringify(row).includes('SYNTHETIC_IDLE_HELLO'))
+    await until(()=>hellos().length,'standalone hello after a quiet QQ day',75000)
+    await control('/delivery-run')
+    await pause(1500)
+    assert.equal(hellos().length,1, 'Another scheduler wake repeated the same idle greeting')
+    assert.ok(requests.some(row=>JSON.stringify(row.messages).includes('ALCOR_IDLE')))
+    await rpc('alcorSecretary','allowInitiative',{request:{enabled:false}})
+    console.log('PASS persisted QQ conversation, 30 simulated hours idle: DSH Schedule delivered one greeting without a new inbound message or a planned topic')
+  } else {
+  await rpc('alcorSecretary', 'updateSoul', { request: { soul: 'SINGLE_PUBLIC_ALCOR_SOUL_CANARY', examples: [{user:'虚构示范',assistant:'STYLE_EXAMPLE_CANARY'}] } })
   let body = await send(10001, 'private', { reply: 'PRIVATE_READY', tool: 'alcor_memory_remember', args: { content: 'PRIVATE_MEMORY_CANARY' } })
   assert.ok(body.some(row => JSON.stringify(row).includes('SINGLE_PUBLIC_ALCOR_SOUL_CANARY')))
   const memory = await rpc('alcorSecretary', 'memoryState', { request: {} })
   assert.ok(memory.entries.some(row => row.content === 'PRIVATE_MEMORY_CANARY'), 'Private memory tool failed')
   checks.push('PASS private QQ uses the built-in Alcor memory and public SOUL')
+  for(const kind of ['private','group']) {
+    const parts=['BUBBLE_FIRST_'+kind,'BUBBLE_SECOND_'+kind,'BUBBLE_LAST_'+kind],count=outgoing.length
+    const requests=await send(10001,kind,{text:'晚上好。',reply:parts.join('\n\n'),parts})
+    const sent=outgoing.slice(count)
+    assert.deepEqual(sent.map(row=>row.message.filter(s=>s.type==='text').map(s=>s.data.text).join('')),[parts.join('\n')])
+    assert.ok(requests.some(row=>JSON.stringify(row.messages).includes('日常聊天')))
+  }
+  checks.push('PASS official DSH private and group final replies keep paragraphs in one QQ message using the concise chat prompt')
   const identity = await rpc('alcorSecretary','exportIdentity',{ request:{} })
   await rpc('session','selectModel',{ request:{ sessionId:'onebot-private-10001', provider:'synthetic', model:'test-b' } })
   const afterSwitch = await send(10001,'private',{reply:'SECOND_MODEL_READY',text:'PRIVATE_MEMORY_CANARY'})
@@ -239,6 +276,17 @@ try {
   assert.equal(outgoing.length, count, 'Desktop triggered a QQ message')
   assert.equal(requests.length, modelCount, 'Desktop QQ history started a model turn')
   checks.push('PASS desktop QQ input is blocked before model and emits no QQ reply')
+  const ignored=message(10002,'group','PLATFORM_SILENT_HISTORY')
+  ignored.message=ignored.message.filter(segment=>segment.type!=='at')
+  ignored.raw_message='PLATFORM_SILENT_HISTORY'
+  platformMessages.push({...ignored,message_seq:serial})
+  const countBeforeHistory=outgoing.length
+  socket.send(JSON.stringify(ignored))
+  await pause(2500)
+  const fullHistory=await rpc('alcorSecretary','channelHistory',{request:{sessionId:'onebot-group-30001'}})
+  assert.ok(fullHistory.messages.some(row=>row.text.includes('PLATFORM_SILENT_HISTORY')))
+  assert.equal(outgoing.length,countBeforeHistory,'Reading ignored group messages must not send replies')
+  checks.push('PASS unaddressed group messages are recorded and visible even when the model chooses silence')
   const groupInfo=await rpc('alcorSecretary','qqConversation',{request:{sessionId:'onebot-group-30001'}})
   assert.equal(groupInfo.name,'纸样讨论组'); assert.equal(groupInfo.members,3);assert.equal(groupInfo.online,true)
   const person=await rpc('alcorSecretary','qqConversation',{request:{sessionId:'onebot-private-10001'}})
@@ -247,6 +295,31 @@ try {
   assert.equal(await rpc('alcorSecretary','qqConversation',{request:{sessionId:'onebot-group-99999'}}),null)
   assert.equal(events.length,actionCount);assert.equal(outgoing.length,count)
   checks.push('PASS the read-only channel provides actual private and group attributes only for known sessions')
+  const natural = message(10002, 'group', '那你刚才提的办法怎么试？CONTINUE_WITHOUT_MENTION')
+  natural.message = natural.message.filter(segment => segment.type !== 'at')
+  platformMessages.push({...natural,message_seq:serial})
+  const priorRequests=requests.length
+  plan = {calls:0,reply:'AMBIENT_CONTINUATION_READY'}
+  socket.send(JSON.stringify(natural))
+  await until(()=>outgoing.slice(count).some(row=>JSON.stringify(row).includes(plan.reply)),'unmentioned continuation through DSH')
+  const received=requests.slice(priorRequests)
+  const gate=received.find(row=>JSON.stringify(row.messages[0]).includes('只输出一个候选序号或 PASS'))
+  assert.ok(gate && JSON.stringify(gate.messages).includes('先听对方讲完自己的发现') && !JSON.stringify(gate.messages).includes('STYLE_EXAMPLE_CANARY') && JSON.stringify(gate.messages).includes('PLATFORM_SILENT_HISTORY'))
+  assert.ok(received.some(row=>row!==gate && row.messages.some(m=>m.role==='user' && JSON.stringify(m).includes('CONTINUE_WITHOUT_MENTION')) &&
+      JSON.stringify(row.messages).includes('先听对方讲完自己的发现') && !JSON.stringify(row.messages).includes('STYLE_EXAMPLE_CANARY') && JSON.stringify(row.messages).includes('PLATFORM_SILENT_HISTORY')))
+  checks.push('PASS the DSH Agent replies to an unmentioned continuation with the same persona examples and preceding silent group messages')
+  const beforePing = outgoing.length, oldRequests=requests.length
+  const ping = message(10002,'group','CASUAL_PING_SILENCE')
+  socket.send(JSON.stringify(ping))
+  await until(()=>requests.slice(oldRequests).some(row=>{
+    const tail=JSON.stringify(row.messages.at(-1))
+    return tail.includes('CASUAL_PING_SILENCE') && tail.includes('addressed')
+  }), 'casual @ reached the persona decision')
+  await pause(500)
+  assert.equal(outgoing.length,beforePing,'The synthetic reserved character elected silence on this @')
+  checks.push('PASS an explicit group @ can end silently according to the persona decision')
+
+
   const read = await rpc('session', 'events', { request: { address: { kind: 'session', sessionId: ids.find(id => id.startsWith('onebot-group-')) }, maxMessages: 30 } })
   assert.ok(read.records.some(row => row.type === 'event' && row.event.type === 'user/message'))
   checks.push('PASS QQ history is available through the passive official history API')
@@ -266,8 +339,8 @@ try {
   const memberResult=memberPlan.at(-1).messages.filter(message=>message.role==='tool').at(-1)
   assert.ok(JSON.stringify(memberResult).includes(groupNote.id),'An admitted group conversation cannot form a scoped followup')
   await send(10002,'group',{text:'I prefer piano',reply:'GOT_PREFERENCE'})
-  const groupFile=join(profile,'alcor/memory/groups/30001/alcor-authority.json')
-  await until(()=>JSON.parse(readFileSync(groupFile)).entries.some(e=>e.subject==='qq:10002' && e.content==='I prefer piano'),'attributed group preference')
+  const groupDb=authorityStore(join(profile,'alcor/memory/groups/30001'))
+  await until(()=>groupDb.load().entries.some(e=>e.subject==='qq:10002' && e.content==='I prefer piano'),'attributed group preference')
   const own=await send(10002,'group',{text:'Hello again',reply:'MEMBER_AGAIN'})
   assert.ok(JSON.stringify(own).includes('qq:10002 亲口说过：I prefer piano'))
   const another=await send(10001,'group',{text:'Hello again',reply:'OTHER_MEMBER'})
@@ -314,6 +387,7 @@ try {
   if (url) writeFileSync(join(root, 'browser-url.json'), JSON.stringify({ url }), { mode: 0o600 })
   console.log(checks.join('\n'))
   if (keep) { console.log('READY_FOR_UI'); await new Promise(resolve => process.once('SIGTERM', resolve)) }
+  }
 } catch (error) {
   console.error(error.message); console.error(log.replace(/token=\S+/g, 'token=[redacted]').slice(-5000)); process.exitCode = 1
 } finally {

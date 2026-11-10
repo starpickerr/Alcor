@@ -1,5 +1,5 @@
 import { z } from 'zod'
-export const memoryAudience = z.string().max(250).regex(/^(personal|group:[1-9]\d{0,19}|channel:[a-zA-Z0-9_.:-]+)$/)
+export const memoryAudience = z.string().max(250).regex(/^(personal|group:[1-9]\d{0,19}|qq:[1-9]\d{0,19}:private:[1-9]\d{0,19}|channel:[a-zA-Z0-9_.:-]+)$/)
 const id = z.string().min(1).max(200)
 const source = z.object({ kind: id, at: z.string().max(64), sessionId: id.optional(),
   channelId:id.optional(),accountId:id.optional(),channelUserId:id.optional(),qqUserId: id.optional(), qqGroupId: id.optional() }).strict()

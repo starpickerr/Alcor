@@ -1,7 +1,7 @@
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useRef, useState } from 'react'
-import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconEditOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
@@ -32,7 +32,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
 export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderQQ, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
-  const dataViews = applicationViews
+  const dataViews = [...applicationViews, { id: 'alcor-persona', label: '人格', icon: IconEditOutlineRegular }]
   const applications = canManagePlugins ? [...dataViews, { id: 'plugins', label: '插件', icon: IconPluginPinwheelOutlineRegular }] : dataViews
   const [error, setError] = useState('')
   const sidebar = useRef()
