@@ -24,6 +24,7 @@
     "product:desktop": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
     "product:ui:build": "node scripts/product/build-native-ui.mjs",
     "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @alcor/elearning --pack-destination .local/artifacts && npm pack --workspace @alcor/mail --pack-destination .local/artifacts",
+    "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
     "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts"
   },
   "dependencies": {

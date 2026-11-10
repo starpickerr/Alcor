@@ -1,10 +1,10 @@
 const states = { draft: 'starting', ready: 'starting', pending: 'starting', queued: 'starting', running: 'running', waiting_approval: 'running', cancel_requested: 'running', interrupted: 'running', succeeded: 'completed', outcome_unknown: 'interrupted', failed: 'failed', cancelled: 'cancelled' }
 
-export async function prepareHubJob(invoke, input) {
+export async function prepareHubJob(invoke, input, ownerMode = 'dsh') {
   const agents = input.agents ?? [{ name: '开发助手', task: input.title }]
   const parallel = agents.length > 1
   let task = await invoke('create_task', { payload: { title: input.title, goal: input.prompt,
-    participants: input.agents ? [...agents.map(agent => ({ nativeAgentId: 'dsh', displayName: agent.name })), ...(parallel ? [{ nativeAgentId: 'dsh', displayName: '汇总助手' }] : [])] : [{ nativeAgentId: 'dsh' }],
+    participants: input.agents ? [...agents.map(agent => ({ nativeAgentId: ownerMode, displayName: agent.name })), ...(parallel ? [{ nativeAgentId: ownerMode, displayName: '汇总助手' }] : [])] : [{ nativeAgentId: ownerMode }],
   }, request_id: input.id })
   task = await invoke('get_task', { task_id: task.taskId })
   if (!task.steps.length) {

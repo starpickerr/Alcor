@@ -1,6 +1,6 @@
 {
   "name": "@alcor/secretary",
-  "version": "0.1.88",
+  "version": "0.1.102",
   "type": "module",
   "license": "MIT",
   "alcor": {
@@ -15,8 +15,6 @@
     "!**/* 2.*",
     "cordis.patch.yml",
     "DSH-LICENSE.txt",
-    "LAN-MEMORY-LICENSE.txt",
-    "LAN-MEMORY-SOURCE.json",
     "README.md",
     "vendor",
     "native",

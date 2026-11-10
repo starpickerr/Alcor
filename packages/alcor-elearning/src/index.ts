@@ -1,3 +1,4 @@
+import {modeConfig,guardSource} from '../../alcor-plugin-info/src/host-policy.js'
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -19,12 +20,14 @@ class SchoolRemote extends TypertRemoteService {
 }
 
 export const inject = ['credentials', 'authorization', 'tools', 'typert']
-export async function apply(ctx) {
+export const Config=modeConfig('both')
+export async function apply(ctx, config) {
   const selected = ctx.get('profileContext')?.startedBundles
   if (!Array.isArray(selected)) throw new Error('无法确认当前 Profile 的插件，已停止 Alcor 启动。')
   if (selected.includes('@stella/elearning')) throw new Error('旧版 Stella 插件与 Alcor 不能同时启用，请先迁移 Profile。')
   await initializeProfile(ctx)
   registerBundledSkills(ctx, 'alcor-elearning', new URL('../skills/', import.meta.url))
+  guardSource(ctx,config,'mcp__elearning__')
   const directory = fileURLToPath(new URL('../server/', import.meta.url))
   const profile = ctx.get('profileContext')?.dir ?? dshHomePath('profiles', 'default')
   if (ctx.get('alcorElearning')) ctx.logger.warn('沿用已有的 eLearning 连接；如需使用随包服务，请停用旧配置后重启。')

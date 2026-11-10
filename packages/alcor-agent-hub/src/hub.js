@@ -134,7 +134,7 @@ export class HubCoordinator {
       const selection = person.modelSelection
       const route = selection.mode === 'explicit' ? { model: selection.modelId, provider: selection.providerId ?? parent?.model?.current()?.provider } : parent?.model?.current()
       const activation = await this.ctx.subagents.startActivation({ provider: 'agent-hub-spawn', label: person.displayName, delivery: 'caller', signal: state.controller.signal,
-        request: { parent, agentPreset: 'agent-hub-developer', maxDepth: 1,
+        request: { parent, agentPreset: ['alcor','stella'].includes(person.nativeAgentId) ? 'alcor' : 'agent-hub-developer', maxDepth: 1,
           ...(route ? { agentOptions: route } : {}),
           prompt: [{ type: 'text', text: `任务内人设：${person.persona}\n\n${claim.goal}` }],
         } })

@@ -34,13 +34,13 @@ export function createSpaceNavigation(ctx, controller) {
   }
   async function nativePreset() {
     const list = checked(await ctx.remote.agentPresets.list()).presets
-    const eligible = list.filter(item => !['alcor-delivery','alcor', 'stella', 'qq-group-chat', 'alcor-briefing', 'stella-briefing'].includes(item.id))
+    const eligible = list.filter(item => !['qq-dsh-chat','alcor-delivery','alcor', 'stella', 'qq-group-chat', 'alcor-briefing', 'stella-briefing'].includes(item.id))
     const preset = eligible.find(item => item.isDefault) ?? eligible.find(item => item.id === 'standard') ?? eligible.find(item => item.id === 'default')
     if (!preset) throw Error('DSH 默认 Agent 暂不可用。')
     return preset.id
   }
   const api = {
-    state, sessions, workspaces, picker, ensure, nativePreset, claim,
+    mode:controller, state, sessions, workspaces, picker, ensure, nativePreset, claim,
     async createWorkspace(input) {
       const mode = controller.getSnapshot()
       const created = await ctx.workspaces.create(input)
@@ -75,7 +75,7 @@ export function createSpaceNavigation(ctx, controller) {
       controller.switchMode('alcor')
       selection = target
       notify()
-      ctx.layout.selectPanel('alcor-qq-history')
+      ctx.layout.selectPanel('alcor-tasks')
       return true
     },
     selectSpace(target) {
@@ -106,10 +106,12 @@ export function createSpaceNavigation(ctx, controller) {
       if(refreshAgain && active){refreshAgain=false;catalogChanged()}
     })
   }
+  const stopScopes=ctx.remote?.$on?.('plugin-manager/changed',catalogChanged)
   const stops=[ctx.sessions.list.subscribe(catalogChanged),ctx.workspaces.list.subscribe(catalogChanged)]
   globalThis.addEventListener?.('alcor-channel-catalog-changed',catalogChanged)
-  const stopCatalog=()=>{active=false;for(const stop of stops)stop();globalThis.removeEventListener?.('alcor-channel-catalog-changed',catalogChanged)}
+  const stopCatalog=()=>{active=false;stopScopes?.();for(const stop of stops)stop();globalThis.removeEventListener?.('alcor-channel-catalog-changed',catalogChanged)}
   globalThis[spaceHook] = api
+  globalThis.dispatchEvent?.(new Event('alcor-mode-changed'))
   globalThis.dispatchEvent?.(new Event('alcor-navigation-ready'))
   void ensure().catch(() => {})
   return api

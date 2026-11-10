@@ -39,7 +39,7 @@ export function BriefingSourceControls({ api, owner, disabled = false }) {
   }
   return <section className="alcor-briefing-source-settings" data-briefing-source-controls={owner}><fieldset disabled={disabled} className="alcor-source-control-fields">
     <Notice>所选内容将在生成简报时发送给模型。</Notice>
-    <div className="alcor-actions"><Button variant="outline" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button></div>
+    <div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={() => run(load)}><IconRefreshOutlineRegular size={16} /></Button></div>
     {!catalog && !error && <Notice role="status">正在发现来源…</Notice>}
     {catalog?.errors.map(message => <Notice role="status" key={message}>{message}</Notice>)}
     {catalog && rows.map(source => {
@@ -86,7 +86,7 @@ export function BriefingSources({ api, openPlugins }) {
   }
   useEffect(() => { void load() }, [api])
   return <div className="alcor-source-overview">
-    <div className="alcor-source-overview-toolbar"><Button variant="ghost" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={load}><IconRefreshOutlineRegular size={16} /></Button><Button variant="ghost" size="sm" onClick={() => openPlugins()}>管理插件</Button></div>
+    <div className="alcor-source-overview-toolbar"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新来源" title="刷新来源" disabled={busy} onClick={load}><IconRefreshOutlineRegular size={16} /></Button><Button variant="ghost" size="sm" onClick={() => openPlugins()}>管理插件</Button></div>
     {!value && busy && <Notice role="status">正在读取来源…</Notice>}
     {value && <div className="alcor-source-cards">{briefingSourceCards(value.saved, value.catalog, value.retained).map(card => {
       const state = ['unconfigured', 'disconnected', 'unavailable'].includes(card.connection) ? 'unavailable' : card.unavailable ? 'unavailable' : card.selected ? 'selected' : 'idle'

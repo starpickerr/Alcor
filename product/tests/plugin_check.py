@@ -220,9 +220,10 @@ def main():
                     expect(page.locator('.alcor-sidebar-workspaces')).to_be_visible()
                     expect(page.locator('.alcor-sidebar-workspaces').get_by_role('button', name='View options', exact=True)).to_be_visible()
                     assert page.locator('.alcor-sidebar nav').bounding_box()['y'] < page.locator('.alcor-sidebar-workspaces').bounding_box()['y']
-                    expect(page.locator('.alcor-nav-group')).to_have_count(1)
+                    expect(page.locator('.alcor-nav-group > p')).to_have_text(['应用', '系统'])
+                    expect(page.get_by_role('group',name='系统',exact=True).get_by_role('button')).to_have_text(['通道','人设','插件'])
                     expect(page.locator('.alcor-sidebar nav button[aria-current="page"]')).to_have_accessible_name('事务')
-                    expect(page.locator('.alcor-sidebar nav button > svg')).to_have_count(7)
+                    expect(page.locator('.alcor-sidebar nav button > svg')).to_have_count(8)
                     expect(page.get_by_role('button', name='Account menu', exact=True)).to_be_in_viewport()
                     page.locator('[data-sidebar-toggle]:visible').click()
                     expect(page.locator('.alcor-sidebar')).to_have_attribute('data-collapsed', 'true')
@@ -287,8 +288,7 @@ def main():
                         page.screenshot(path=str(Path(directory) / 'native-secretary-desktop.png'))
                         page.set_viewport_size({'width': 390, 'height': 844})
                         expect(page.locator('[data-sidebar-opener]')).to_be_visible()
-                        page.get_by_role('button', name='Alcor 小熊').click()
-                        expect(page.get_by_label('给 Alcor 发消息')).to_be_visible()
+                        expect(page.locator('.alcor-bear')).to_have_count(0)
                         page.screenshot(path=str(Path(directory) / 'native-secretary-mobile.png'), animations='disabled')
                         expect(page.get_by_role('heading', name='事务', exact=True)).to_be_in_viewport(ratio=1)
                         assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
@@ -310,7 +310,7 @@ def main():
                         expect(page.locator('[data-sidebar-opener]')).to_be_focused()
                         page.locator('[data-sidebar-opener]').click()
                         settings(page)
-                        expect(page.get_by_label('助手名称', exact=True)).to_be_visible()
+                        expect(page.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
                         page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
                         if page.locator('[data-sidebar-opener]').is_visible():
                             page.locator('[data-sidebar-opener]').click()
@@ -335,15 +335,14 @@ def main():
                     assert any(record['id'] == apps['recordId'] for record in persisted['records'])
                     assert any(item['id'] == apps['scheduleId'] and item['status'] == 'active' for item in persisted['schedules']), persisted['schedules']
                     open_secretary(page)
-                    settings(page)
+                    page.locator('.alcor-sidebar nav').get_by_role('button',name='人设',exact=True).click()
                     page.get_by_label('助手名称', exact=True).fill('Packed secretary')
-                    page.get_by_role('button', name='保存', exact=True).click()
+                    page.get_by_role('button', name='保存人设', exact=True).click()
                     page.get_by_text('已保存', exact=True).wait_for()
                     assert rpc(page, url, 'alcorSecretary/overview')['displayName'] == 'Packed secretary', (
                         [entry for entry in rpc(page, url, 'settings/describe')['namespaces'] if entry['ns'] == 'alcor-secretary'],
                         (profile / 'cordis.patch.yml').read_text()[-800:],
                         re.sub(r'token=\S+', 'token=[redacted]', Path(log.name).read_text())[-2500:])
-                    page.get_by_role('button', name='Close', exact=True).click()
                     start_secretary_chat(page)
                     composer = page.locator('[data-composer-input][contenteditable="true"]')
                     composer.fill('Call alcor_overview')

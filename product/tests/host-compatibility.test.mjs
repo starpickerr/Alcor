@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-for (const name of ['alcor-secretary', 'alcor-apple-sync', 'alcor-privacy', 'alcor-organizer', 'alcor-elearning', 'alcor-mail']) {
+for (const name of ['alcor-secretary', 'alcor-apple-sync', 'alcor-privacy', 'alcor-organizer', 'alcor-elearning', 'alcor-mail', 'alcor-plugin-info']) {
   test(`${name} cannot install or shadow host-owned DSH components`, async () => {
     const manifest = JSON.parse(await readFile(new URL(`../../packages/${name}/package.json`, import.meta.url)))
     for (const dependency of Object.keys(manifest.dependencies || {})) assert(!dependency.startsWith('@deepseek-ai/'), `${dependency} must come from the running host`)

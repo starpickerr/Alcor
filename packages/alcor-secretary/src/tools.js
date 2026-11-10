@@ -1,5 +1,4 @@
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
-import { reflectDescription } from './memory/identity-schema.js'
 import { secretaryPersona } from './persona.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDateFile, writeBillCsv } from './page-files.js'
@@ -12,6 +11,8 @@ import { restoreLocalItem } from './local-item-restore.js'
 import { createAppleExportGate, isApplePlanOperation } from './security-apple-export-gate.js'
 
 export const inject = ['tools', 'alcorSecretary', 'systemPrompt']
+const desktopFileTools = new Set(['read','read_image','write','edit','apply_patch','glob','grep','bash','pwsh','job_output','job_list','job_kill'])
+
 export function apply(ctx) {
   registerBundledSkills(ctx, 'alcor-secretary', new URL('../skills/', import.meta.url))
   const turnSources = new WeakMap()
@@ -39,26 +40,11 @@ export function apply(ctx) {
     }
     return next()
   })
-  ctx.systemPrompt.variable('alcor_identity', () => secretaryPersona + '\n\n' + ctx.alcorSecretary.memory.publicPersona())
-  // Only this context survives the preset's suppression; DSH refreshes it after admitting the current turn.
-  ctx.systemPrompt.context({ name: 'alcor:memory', required: true, order: 100, interpolate: false,
-    text: ({ agent }) => ctx.alcorSecretary.memory.personalContext(agent) })
-  for (const operation of ['remember', 'recall', 'reflect', 'followup', 'correct', 'forget']) ctx.tools.register(defineTool({
-    name: 'alcor_memory_' + operation,
-    description: ({ followup: '如果一条私人经历值得过几天再聊，可自行安排一次主动跟进。具体投递由主人单独设置的消息送达渠道决定。需要有效记忆 ID 和带时区的时间，须由主人先开启此能力。', reflect: reflectDescription, remember: '保存当前 Alcor 私人对话中的长期记忆，保留来源。', recall: '检索 Alcor 的长期记忆，含人物、来源和时间。',
-      correct: '按检索返回的 ID 更正记忆，同时废弃受影响的旧摘要。', forget: '按检索返回的 ID 忘记记忆，使旧记录不再参与后续整理。' })[operation],
-    parameters: operation === 'followup' ? { evidence: { type: 'string', required: true }, content: { type: 'string', required: true }, dueAt: { type: 'string', required: true } }
-      : operation === 'reflect' ? { content: { type: 'string', required: true }, evidence: { type: 'array', items: { type: 'string' }, required: true } }
-      : operation === 'recall' ? { query: { type: 'string', required: true } }
-      : operation === 'remember' ? { content: { type: 'string', required: true } }
-      : { id: { type: 'string', required: true }, ...(operation === 'correct' ? { content: { type: 'string', required: true } } : {}) },
-    output: { schema: operation === 'recall' ? { type: 'array', items: { type: 'object', additionalProperties: true } } : { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
-    execute: (args, execution) => ctx.alcorSecretary.memory.use(operation, args, execution.agent),
-  }))
+  ctx.systemPrompt.variable('alcor_identity', () => secretaryPersona)
   ctx.tools.guard(execution => {
     if ((execution.name === 'schedule_edit' && execution.arguments?.action === 'delete') || isAutomationDeletion(execution)) return automationDeleteUnavailable
     if (requiresUnimplementedAppleApproval(execution)) return '此 Apple 操作需要具体目标审批，暂不能通过对话执行。'
-    if (execution.name === 'read' && ctx.alcorSecretary.memory?.currentActor(execution.agent)?.source.kind !== 'desktop') return '项目文件读取仅供主人发起的 Alcor 桌面对话使用。'
+    if (desktopFileTools.has(execution.name) && (!personalTurn(execution.agent) || !execution.agent.session.header || execution.agent.session.header.origin === 'subagent' || execution.agent.session.header.parentSession)) return '本机文件和命令工具仅供主人发起的 Alcor 桌面对话使用。'
     const capability = classifyCapability(execution.name, execution.arguments).kind
     if (capability === 'unclassified') return '此 Alcor 操作尚未完成安全分类，暂不能执行。'
     if (capability === 'internal') return '此内部操作仅由受信任的宿主调用。'

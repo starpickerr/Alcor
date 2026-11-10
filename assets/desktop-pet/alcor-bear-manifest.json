@@ -1,0 +1,11 @@
+{
+  "安静陪伴": "idle",
+  "轻声说话": "speak",
+  "轻轻招手": "click",
+  "认真思考": "thinking",
+  "忙碌记录": "working",
+  "整理完成": "result",
+  "耐心等待": "waiting",
+  "开心庆祝": "success",
+  "遇到困难": "error"
+}

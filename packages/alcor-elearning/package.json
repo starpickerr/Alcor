@@ -1,6 +1,6 @@
 {
   "name": "@alcor/elearning",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "复旦 eLearning连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",
@@ -34,7 +34,8 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
   },

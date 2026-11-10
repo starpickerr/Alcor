@@ -1,3 +1,5 @@
+import {sessionMode,permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
+import {modeConfig} from '../../alcor-plugin-info/src/host-policy.js'
 import { Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -20,6 +22,7 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class AgentHub extends TypertRemoteService {
+  static Config=modeConfig('dsh')
   static inject = ['credentials', 'typert','subagents','sessionController','agentPresets','storageDomain']
   private worker
   private hub
@@ -63,9 +66,9 @@ export default class AgentHub extends TypertRemoteService {
     const input = schemas.startJob[0].parse(request)
     return this.serialize(async () => {
       const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
-      if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session)) throw new Error('请先开始一个开发对话，再发起协作。')
+      if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session) || !permits(selectedScope(this.ctx,'@alcor/agent-hub'),sessionMode(this.ctx,found.agent))) throw new Error('请先开始一个开发对话，再发起协作。')
       const invoke = (method, args) => this.worker.call('invoke', { domain: 'agent_hub', method, arguments: args })
-      const task = await prepareHubJob(invoke, input)
+      const task = await prepareHubJob(invoke, input, sessionMode(this.ctx,found.agent))
       if (!task.steps.some(step => step.attempts.length)) await this.hub.start({ task_id: task.taskId, parentSessionId: input.parentSessionId })
       return this.hubJob(task)
     })
@@ -94,7 +97,7 @@ export default class AgentHub extends TypertRemoteService {
     return this.serialize(async () => {
       if (input.intent === 'task') {
         const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
-        if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session)) throw new Error('请先开始一个开发对话，再分配任务。')
+        if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session) || !permits(selectedScope(this.ctx,'@alcor/agent-hub'),sessionMode(this.ctx,found.agent))) throw new Error('请先开始一个开发对话，再分配任务。')
       }
       await this.worker.call('invoke', { domain: 'agent_hub', method: 'post_message', arguments: {
         task_id: input.id, body: input.body, recipient_ids: input.recipientIds, intent: input.intent, expected_revision: null, request_id: input.requestId,
@@ -109,7 +112,7 @@ export default class AgentHub extends TypertRemoteService {
     const input = schemas.retryJob[0].parse(request)
     return this.serialize(async () => {
       const found = await this.ctx.sessionController.resolveAgent(input.parentSessionId)
-      if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session)) throw new Error('请先开始一个开发对话，再重试协作。')
+      if ('error' in found || !this.ctx.agentPresets.presetForSession(found.agent.session) || !permits(selectedScope(this.ctx,'@alcor/agent-hub'),sessionMode(this.ctx,found.agent))) throw new Error('请先开始一个开发对话，再重试协作。')
       await this.hub.start({ task_id: input.id, parentSessionId: input.parentSessionId, step_id: input.stepId, retry: true })
       return this.hubJob(await this.worker.call('invoke', { domain: 'agent_hub', method: 'get_task', arguments: { task_id: input.id } }))
     })

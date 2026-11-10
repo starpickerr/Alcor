@@ -152,14 +152,14 @@
   outline:2px solid var(--dsw-alias-state-business-primary,var(--alcor-brand)); outline-offset:2px;
 }
 .alcor-settings-content > [hidden] { display:none; }
-.alcor-settings-content :is(.alcor-space-settings,.alcor-memory-settings) { margin:0; border:none; padding:20px 0 8px; }
+.alcor-settings-content .alcor-space-settings { margin:0; border:none; padding:20px 0 8px; }
 .alcor-settings-group ~ .alcor-settings-group { margin-top:22px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); }
-.alcor-settings-content .alcor-settings-group h2,.alcor-settings-content .alcor-space-settings h2 { margin:0 0 14px; font-size:15px; letter-spacing:-.2px; }
-.alcor-settings-content .alcor-memory-settings :is(input:not([type="file"]),select),.alcor-settings-content .alcor-memory-editor textarea {
+.alcor-persona-page .alcor-settings-group h2,.alcor-settings-content .alcor-space-settings h2 { margin:0 0 14px; font-size:15px; letter-spacing:-.2px; }
+.alcor-persona-page .alcor-memory-settings :is(input:not([type="file"]),select),.alcor-memory-editor textarea {
   display:block; width:100%; max-width:100%; min-width:0; border:1px solid var(--dsw-alias-border-l4); border-radius:8px;
   background:var(--dsw-alias-bg-layer-1); color:inherit; padding:8px 10px; box-sizing:border-box; font:inherit; font-size:13px;
 }
-.alcor-settings-content #alcor-identity-name { max-width:24em; margin:0 0 14px; }
+
 .alcor-field-caption,.alcor-identity-actions { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 .alcor-field-caption small,.alcor-space-row small,.alcor-settings-group small { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .alcor-space-row > span small { display:block; margin-top:3px; overflow-wrap:anywhere; }
@@ -193,7 +193,7 @@
 .alcor-profile-heading { display:flex; align-items:center; gap:14px; padding:0 0 16px; }
 .alcor-profile-heading > div:last-child { flex:1; min-width:0; }
 .alcor-profile-avatar { flex:none; width:62px; height:62px; display:grid; place-items:center; border-radius:15px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); color:var(--dsw-alias-label-primary); }
-.alcor-settings-content .alcor-profile-heading #alcor-identity-name { margin:0; max-width:min(100%,24em); }
+.alcor-profile-heading #alcor-identity-name { margin:0; max-width:min(100%,24em); }
 .alcor-project-filter { width:100%; padding:8px 12px; margin:0 0 10px; border:1px solid var(--dsw-alias-border-l4); border-radius:8px; background:var(--dsw-alias-bg-layer-1); color:inherit; }
 .alcor-space-row strong { font-weight:550; }
 .alcor-space-row > svg,.alcor-workbench-projects svg { flex:none; color:var(--dsw-alias-label-secondary); }
@@ -235,13 +235,13 @@
 
 [data-sidebar-drawer] .alcor-qq-heading { padding-top:max(12px,var(--dsh-frame-top-clearance,48px)); }
 
-.alcor-initiative-card,.alcor-settings-content .alcor-memory-card { padding:12px 14px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
+.alcor-initiative-card,.alcor-persona-page .alcor-memory-card { padding:12px 14px; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:12px; }
 .alcor-initiative-card + .alcor-initiative-card { margin-top:8px; }
 .alcor-initiative-card .alcor-bear-option-row { padding:0; min-height:30px; border:0; }
 .alcor-card-caption { display:flex; align-items:center; gap:9px; font-weight:500; }
 .alcor-card-caption svg { color:var(--alcor-brand); flex:none; }
 .alcor-memory-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); align-items:start; gap:10px; }
-.alcor-settings-content .alcor-memory-card { display:block; min-width:0; }
+.alcor-persona-page .alcor-memory-card { display:block; min-width:0; }
 .alcor-memory-card header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; font-weight:500; }
 .alcor-memory-card header time { color:var(--dsw-alias-label-secondary); font-size:11px; font-weight:400; }
 .alcor-memory-card header button { margin-left:auto; flex:none; }
@@ -266,3 +266,52 @@
 .alcor-delivery-history p { margin:4px 0; overflow-wrap:anywhere; }
 
 .alcor-channel-target small { overflow-wrap:anywhere; }
+
+.alcor-persona-page { max-width:860px; }
+.alcor-persona-page .alcor-memory-settings { margin:20px 0 0; padding:0; border:0; }
+.alcor-persona-page .alcor-memory-settings > .alcor-settings-group { margin:0; padding:0; border:0; }
+.alcor-persona-page .alcor-identity-actions { justify-content:flex-end; }
+.alcor-persona-page .alcor-identity-actions button { margin-right:0; }
+.alcor-persona-page .alcor-identity-actions span { color:var(--dsw-alias-label-secondary); font-size:12px; }
+.alcor-persona-page #alcor-soul { margin-bottom:0; }
+.alcor-persona-page #alcor-soul-help { margin:4px 0 16px; font-size:12px; }
+[data-sidebar-drawer] .alcor-persona-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-persona-examples { margin:20px 0; }
+.alcor-persona-page .alcor-example-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.alcor-persona-page .alcor-example-heading h2 { margin:0; }
+.alcor-persona-examples fieldset { margin:12px 0; min-width:0; padding:10px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); }
+.alcor-persona-examples legend { padding-inline:5px; font-size:13px; }
+.alcor-persona-examples textarea { margin:4px 0 0; }
+
+.alcor-channels-page { max-width:860px; }
+.alcor-channels-page .alcor-section h2 { margin:0 0 12px; }
+[data-sidebar-drawer] .alcor-channels-page { padding-top:max(20px,var(--dsh-frame-top-clearance,48px)); }
+
+.alcor-channel-actions { display:flex;align-items:center;gap:6px; }
+
+.alcor-capability-fields { display:flex;flex-direction:column;gap:20px;margin:24px 0;border:0;padding:0; }
+.alcor-capability-fields label { display:flex;flex-direction:column;gap:8px;font-size:13px; }
+.alcor-capability-fields select { width:100%;max-width:520px;min-width:0;font:inherit;color:inherit;background:var(--dsw-alias-bg-l1);border:1px solid var(--dsw-alias-border-l3);border-radius:7px;padding:8px 10px; }
+.alcor-capability-fields select:disabled { opacity:.6; }
+.alcor-capability-fields small { color:var(--dsw-alias-label-secondary); }
+.alcor-capability-card { display:flex;flex-direction:column;gap:18px;padding:22px;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-layer-1); }
+.alcor-capability-card select { max-width:none;min-height:40px;border-radius:8px;background:var(--dsw-alias-bg-l2); }
+.alcor-capability-card label { color:var(--dsw-alias-label-secondary);font-weight:500; }
+.alcor-capability-card select { color:var(--dsw-alias-label-primary);font-weight:400; }
+.alcor-capability-card select:focus-visible { outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--alcor-brand));outline-offset:2px; }
+.alcor-capability-save { display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-bottom:8px; }
+@media(max-width:600px) { .alcor-capability-card { padding:18px;gap:16px; } }
+
+.alcor-icon-action { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer; }
+.alcor-icon-action:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-icon-action:disabled { cursor:default;opacity:.45; }
+.alcor-icon-action svg { width:18px;height:18px;flex-shrink:0; }
+.alcor-capability-heading { display:flex;align-items:center;gap:12px;margin-bottom:2px; }
+.alcor-capability-icon { display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:none;border-radius:10px;background:var(--alcor-brand-soft);color:var(--alcor-brand); }
+.alcor-capability-heading h2 { margin:0;font-size:16px;line-height:22px;font-weight:600; }
+.alcor-capability-heading p { margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] { width:32px;min-width:32px;height:32px;min-height:32px;padding:0;gap:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary); }
+[data-plugin-toolbar] button[aria-label][aria-busy] [class*="toolbarLabel"] { display:none; }
+[data-plugin-toolbar] button[aria-label][aria-busy]:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
+.alcor-capability-heading > div { min-width:0; }
