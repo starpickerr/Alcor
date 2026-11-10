@@ -24,12 +24,18 @@ def synthetic_qq_profiles():
     connection=websocket.create_connection('ws://127.0.0.1:36433/ws',header=['Authorization: Bearer synthetic-only'],suppress_origin=True)
     connection.settimeout(None)
     sent=[]
+    historyReads=0
     def answer():
+        nonlocal historyReads
         try:
             while packet:=connection.recv():
                 row=json.loads(packet); action=row.get('action')
                 if action and action.startswith('send_'):sent.append(action)
                 data={'group_name':'纸样讨论组','member_count':3} if action=='get_group_info' else {'nickname':'林舟'} if action=='get_stranger_info' else {}
+                if action=='get_group_msg_history':
+                    historyReads+=1
+                    bodies=['QUIET_GROUP_HISTORY']+(['PLATFORM_LIVE_UPDATE'] if historyReads>1 else [])
+                    data={'messages':[{'message_seq':i+1,'user_id':10002,'time':1794247920+i,'sender':{'nickname':'阿棠'},'message':[{'type':'text','data':{'text':text}}]} for i,text in enumerate(bodies)]}
                 connection.send(json.dumps({'status':'ok','retcode':0,'data':data,'echo':row.get('echo')}))
         except (OSError,websocket.WebSocketConnectionClosedException):
             pass
@@ -188,6 +194,8 @@ def check(page, label, delayed=None):
     page.screenshot(path=str(ARTIFACTS / (label + '-qq-workspaces.png')))
     page.locator('.alcor-qq-browser button[title*="30001"]').click()
     expect(page.locator('.alcor-qq-history article')).not_to_have_count(0)
+    expect(page.get_by_text('QUIET_GROUP_HISTORY',exact=True)).to_be_visible()
+    expect(page.get_by_text('PLATFORM_LIVE_UPDATE',exact=True)).to_be_visible(timeout=15000)
     assert page.locator('[data-composer-input]').count() == 0
     assert page.locator('.alcor-bear-compose').count() == 0
     assert 'PRIVATE_MEMORY_CANARY' not in page.locator('.alcor-qq-history').inner_text()

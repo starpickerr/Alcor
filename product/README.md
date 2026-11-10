@@ -45,10 +45,10 @@ npm run product:pack
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.88.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.89.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
 
 ```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.88.tgz --ignore-scripts
+dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.89.tgz --ignore-scripts
 dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.18.tgz --ignore-scripts
 ```
 

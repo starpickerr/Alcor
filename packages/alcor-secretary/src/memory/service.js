@@ -55,7 +55,7 @@ export class AlcorMemory {
         if(!actor)return
         const speech=event.data.source.kind==='plugin:dsh-onebot' ? historyMessages([event])[0]?.text :
           event.data.content?.filter?.(block=>block.type==='text').map(block=>block.text).join(' ')
-        selected.noteIncoming(actor,speech)
+        if(!selected.hasInbound(event.data.source.qqMessageId))selected.noteIncoming(actor,speech)
       }
       selected.handleSessionEvent(session, event)
     })

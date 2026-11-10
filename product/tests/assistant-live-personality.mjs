@@ -21,6 +21,14 @@ export function apply(ctx) {
     let memory=createScopedMemory({dataDir,audience:'personal'})
     const owner = sessionId => ({subject:'owner',owner:true,source:{kind:'desktop',sessionId,at:new Date().toISOString()}})
     try {
+      if(process.env.ALCOR_QQ_GROUP_LIVE){
+        const {shouldJoinGroup}=await import(process.env.ALCOR_QQ_GROUP_LIVE)
+        const route={provider:account,model:'deepseek-flash'}
+        const joined=await shouldJoinGroup(ctx,route,[{speaker:'Member',text:'有人知道为什么月亮每天升起的时间不一样吗？'}],new AbortController().signal)
+        assert.equal(joined,true)
+        await writeFile(join(dir,'result.json'),JSON.stringify({ok:true,reasoningGroupGate:true})+'\n',{mode:0o600})
+        return
+      }
       if(process.env.ALCOR_COMPANION_LIVE==='1'){
         const route={provider:account,model:'deepseek-flash'}
         await memory.dispose()

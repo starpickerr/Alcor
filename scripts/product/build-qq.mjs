@@ -18,17 +18,18 @@ try {
   for (const file of adaptedFiles) await writeFile(join(directory, file), adaptQQ(file, await readFile(join(directory, file), 'utf8')))
   const info=await readFile(join(root,'scripts/product/qq-conversation-info.mjs'))
   await writeFile(join(directory,'lib/alcor-conversation-info.js'),info)
+  await writeFile(join(directory,'lib/alcor-platform-history.js'),await readFile(join(root,'scripts/product/qq-platform-history.mjs')))
   const history=await readFile(join(root,'packages/alcor-secretary/src/qq-history.js'))
   await writeFile(join(directory,'lib/alcor-history.js'),history)
   const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
-  manifest.version = '0.9.19-alcor.9'
+  manifest.version = '0.9.19-alcor.10'
   delete manifest.peerDependencies['dsh-lan-memory']
   if (manifest.peerDependenciesMeta) delete manifest.peerDependenciesMeta['dsh-lan-memory']
-  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.85'
+  manifest.peerDependencies['@alcor/secretary'] = '>=0.1.89'
   manifest.peerDependenciesMeta ??= {}
   manifest.peerDependenciesMeta['@alcor/secretary'] = { optional: true }
   await writeFile(join(directory, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
-  await writeFile(join(directory, 'ALCOR-SOURCE.json'), JSON.stringify({ ...pin, conversationInfo:sha(info), historyDecoder:sha(history), adapter: sha(await readFile(join(root, 'scripts/product/qq-alcor-adapter.mjs'))) }, null, 2) + '\n')
+  await writeFile(join(directory, 'ALCOR-SOURCE.json'), JSON.stringify({ ...pin, conversationInfo:sha(info), platformHistory:sha(await readFile(join(root,'scripts/product/qq-platform-history.mjs'))), historyDecoder:sha(history), adapter: sha(await readFile(join(root, 'scripts/product/qq-alcor-adapter.mjs'))) }, null, 2) + '\n')
   manifest.files.push('ALCOR-SOURCE.json', 'LICENSE')
   await writeFile(join(directory, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
   execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', join(root, '.local/artifacts')], { cwd: directory, stdio: 'inherit' })

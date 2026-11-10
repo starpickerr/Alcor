@@ -94,6 +94,8 @@ export default class Secretary extends TypertRemoteService {
     const {sessionId,beforeSeq}=accountSchemas.channelHistory[0].parse(request)
     await this.channels.catalog()
     if(!this.channels.table.get(sessionId))throw Error('通道会话不存在。')
+    const platform=await this.channels.platformHistory(sessionId,beforeSeq)
+    if(platform)return platform
     const surface=await this.ctx.sessionQuery.readSurface(sessionId)
     const events=surface.events.filter(e=>(beforeSeq==null || e.seq<beforeSeq) && ['user/message','assistant/message'].includes(e.type))
     const selected=events.slice(-80)

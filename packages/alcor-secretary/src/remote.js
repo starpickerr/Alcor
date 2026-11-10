@@ -1,4 +1,4 @@
-import { channelRouteSchema } from './channels/registry.js'
+import { channelRouteSchema, channelMessageSchema } from './channels/registry.js'
 import { deliveryStateSchema } from './channels/schema.js'
 import { experiences, memoryAudience } from './memory/experience-schema.js'
 import { publicIdentity } from './memory/identity-schema.js'
@@ -31,7 +31,7 @@ export const accountSchemas = {
     interim:z.boolean(),limit:z.number(),admin:z.boolean().optional(),name:z.string().max(128).optional(),members:z.number().int().nonnegative().optional(),
   }).strict().nullable()],
   channelHistory:[z.object({sessionId:identifier,beforeSeq:z.number().int().optional()}).strict(),
-    z.object({messages:z.array(z.object({seq:z.number(),role:z.string(),text:z.string(),time:z.number().optional(),nickname:z.string().optional(),ambient:z.boolean().optional()}).strict()),
+    z.object({messages:z.array(channelMessageSchema),
       hasMore:z.boolean(),beforeSeq:z.number().nullable()}).strict()],
   deliverySettings:[z.object({}).strict(),z.object({targets:z.array(z.object({route:channelRouteSchema.extend({available:z.boolean(),channelName:z.string()}),until:z.number(),available:z.boolean()})),
     receipts:deliveryStateSchema.shape.receipts})],

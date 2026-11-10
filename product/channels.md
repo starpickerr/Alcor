@@ -11,6 +11,7 @@
 | `resolve(sessionId)` | 返回所属会话的 `kind`、`peer`、`label`、`audience`、`owner`。无关会话返回空值。 |
 | `actor(route, source)` | 依据平台已认证元数据和当前权限返回记忆访问主体。正文中的身份声明不参与认证。 |
 | `messages(route, events)` | 将宿主记录转换为 `seq`、`role`、`text`，可带 `time`、`nickname`、`ambient`。助手角色为 `Alcor`，时间为毫秒时间戳。 |
+| `history(route, beforeSeq)` | 可选的只读平台历史，返回 `messages`、`hasMore`、`beforeSeq`。消息 `seq` 用于稳定排序和去重；平台游标与排序序号不同时使用消息的 `cursor`，翻页使用 `beforeSeq`。不支持的会话返回空值，回退宿主记录。 |
 | `info(route)` | 返回连接状态及会话资料，沿用 `channelConversation` 的严格公共数据结构。 |
 | `canSend(route)` | 同步检查当前账号、平台策略、连接及会话禁言状态。只读适配器可省略发送接口。 |
 | `send(route, text, authorize)` | 串行进入实际平台写操作前再次调用 `authorize()`。返回 `sent`、`deferred` 或 `unknown`，已确认送达时可带 `messageId`。 |
@@ -19,6 +20,10 @@
 `resolve` 提供的会话绑定以通道、账号、会话类型和平台对象共同确定。已有 Session 不会自动换绑到另一账号。只有明确绑定主人的私聊可使用 `personal` 范围；新通道的其他范围使用 `channel:<id>:<account>:…`。QQ 的既有 `group:<群号>` 与原会话 ID 保留兼容。
 
 Alcor 统一处理侧栏目录、只读历史、缓存、空间归属及外发授权。平台特有的消息信封、发送者字段和权限检查由适配器负责。工作台会话继续使用 DSH 的人格、工具及原权限。
+
+QQ 群历史读取 NapCat 的平台记录，包含未触发接话的普通消息和真实发送的回复，与 Agent 是否接话分开。打开的历史页每四秒刷新，隐藏时暂停，离线保留已缓存内容。NapCat 的消息 ID 是不透明翻页游标，真实序列号用于排序；向前翻页显式使用 `reverseOrder`。
+
+已允许的群消息在筛选接话前写入本群记忆日志，保留认证成员与消息时间。读取历史时可补齐最近一天的遗漏记录，并按平台消息 ID 去重；较旧记录只供浏览。补齐不会重放 Agent 回合或发送旧消息。被动采集沿用已有日志容量和整理机制，不为每条群消息调用模型。自主接话判断使用模型支持的低推理档位及独立输出额度，直接 @ 的空文本消息也进入正常处理。
 
 ## 主动跟进投递
 

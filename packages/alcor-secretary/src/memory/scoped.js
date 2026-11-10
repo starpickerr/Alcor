@@ -142,6 +142,17 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
     capture.handleSessionEvent(session, event)
     schedule()
   }
+  function captureAmbient(messageId,content,actor,at=Date.now()){
+    open(); reconcile();
+    if(actor.audience!==audience || !messageId || content.length>4000)return;
+    const id='qq-inbound:'+messageId;
+    if((authority.inboundSeen ?? []).includes(id) || !Number.isFinite(at) || at<Date.now()-86400000 || at>Date.now()+60000)return;
+    store.appendJournal({v:1,id,ts:at,session:actor.source.sessionId,turn:0,
+      user:'['+actor.subject+'] '+content,assistant:'',tools:[]});
+    persist({...authority,participants:[...new Set([...authority.participants,actor.source.qqUserId].filter(Boolean))],inboundSeen:[...(authority.inboundSeen ?? []),id].slice(-512)});
+    noteIncoming(actor,content,at);
+    schedule();
+  }
   function records() {
     open(); reconcile()
     return [
@@ -365,9 +376,10 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
       return note
     })
   }
-  function noteIncoming(actor, speech) {
+  function noteIncoming(actor, speech, at=Date.now()) {
     if(!speech || actor.audience!==audience || !authority.initiative || !authority.followups?.length)return
     const followups=authority.followups.map(note=>{
+      if(note.createdAt && at<note.createdAt)return note;
       const updates=note.updates ?? []
       // If the bounded history no longer fits, retire the question instead of guessing what was missed.
       if(updates.length>=12 || speech.length>1600)return null
@@ -464,7 +476,7 @@ export function createScopedMemory({ dataDir, audience, initialName = 'Alcor', l
   }
   schedule()
   return { dataDir, handleSessionEvent, flushSession(id) { open(); const result = capture.flushSession(id); schedule(); return result },
-    contextText, turnContext, observe, noteIncoming, reconsider, validReview, remember, recall, reflect, change, records, compilePending, dispose, exportExperiences, restoreExperiences,
+    contextText, turnContext, captureAmbient, hasInbound(id){return (authority.inboundSeen ?? []).includes('qq-inbound:'+id)}, observe, noteIncoming, reconsider, validReview, remember, recall, reflect, change, records, compilePending, dispose, exportExperiences, restoreExperiences,
     identity, editIdentity, importIdentity, allowInitiative, planFollowup, nextFollowup, desktopFollowup, dismissFollowup,
     allowDesktopDelivery,
     pendingFollowups() { open(); return structuredClone((authority.followups ?? []).filter(note=>note.due+86400000>Date.now() && authority.entries.some(entry=>entry.id===note.evidence))) },

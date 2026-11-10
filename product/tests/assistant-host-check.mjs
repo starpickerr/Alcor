@@ -16,12 +16,13 @@ const app = process.env.ALCOR_OFFICIAL_APP ?? join(homedir(), 'Applications/Deep
 const profile = join(root, 'official-dsh/profiles/spaces-check'), require = createRequire(join(profile, 'package.json')), WebSocket = require('ws')
 const restart = process.argv.includes('--restart'), keep = process.argv.includes('--keep')
 let plan = { reply: 'READY' }, serial = 0, socket, log = '', controlPort
-const requests = [], outgoing = [], checks = [], events = []
+const requests = [], outgoing = [], checks = [], events = [], platformMessages=[]
 const model = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
   const body = JSON.parse(raw); requests.push(body)
   assert.equal(req.headers.authorization, 'Bearer synthetic-test-key')
   const firstText=JSON.stringify(body.messages[0])
+  const groupGate=firstText.includes('只输出 JOIN 或 PASS')
   const internal=firstText.includes('ALCOR_OBSERVE') || firstText.includes('ALCOR_REVIEW')
   const draft=body.messages[0].content
   const prompt=typeof draft==='string'?draft:draft[0].text
@@ -29,7 +30,7 @@ const model = http.createServer(async (req, res) => {
   const choice=firstText.includes('ALCOR_OBSERVE') ?
     (fixture.speech?.includes('I prefer piano') ? {mood:'高兴',preference:{topic:'music',quote:'I prefer piano'},explore:null} : {mood:null,preference:null,explore:null}) :
     fixture.basis==='ASK_PROGRESS' && fixture.updates?.some(row=>row.text.includes('already resolved')) ? {action:'cancel'} : {action:'send',text:fixture.draft}
-  const choices = internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
+  const choices = groupGate ? [{delta:{role:'assistant',content:'PASS'},finish_reason:'stop'}] : internal ? [{delta:{role:'assistant',content:JSON.stringify(choice)},finish_reason:'stop'}] : plan.tool && plan.calls++ === 0 ? [
     { delta: { role: 'assistant' }, finish_reason: null },
     { delta: { tool_calls: [{ index: 0, id: 'test-' + serial, type: 'function', function: { name: plan.tool, arguments: JSON.stringify(plan.args) } }] }, finish_reason: null },
     { delta: {}, finish_reason: 'tool_calls' },
@@ -95,7 +96,9 @@ function message(user, kind, content, group = 30001) {
 }
 async function send(user, kind, next) {
   plan = { calls: 0, ...next }; const before = requests.length, count = outgoing.length
-  socket.send(JSON.stringify(message(user, kind, next.text ?? next.reply)))
+  const incoming=message(user,kind,next.text ?? next.reply)
+  if(kind==='group')platformMessages.push({...incoming,message_seq:serial})
+  socket.send(JSON.stringify(incoming))
   await until(() => outgoing.slice(count).some(row => JSON.stringify(row).includes(next.reply)), next.reply)
   return requests.slice(before)
 }
@@ -105,7 +108,8 @@ try {
   socket = new WebSocket('ws://127.0.0.1:36433/ws', { headers: { authorization: 'Bearer synthetic-only' } })
   socket.on('message', raw => {
     const data = JSON.parse(raw); if (data.params) { events.push(data.action); if (['send_msg', 'send_group_msg', 'send_private_msg'].includes(data.action)) outgoing.push(data.params) }
-    const value = data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
+    if(data.action?.startsWith('send_') && data.params?.group_id)platformMessages.push({group_id:data.params.group_id,user_id:20001,time:Math.floor(Date.now()/1000),message_seq:++serial,message:Array.isArray(data.params.message)?data.params.message:[{type:'text',data:{text:String(data.params.message)}}]})
+    const value = data.action==='get_group_msg_history' ? {messages:platformMessages.filter(row=>row.group_id===data.params.group_id && (data.params.message_seq==null || row.message_seq<data.params.message_seq)).slice(-80)} : data.action?.startsWith('send_') ? { message_id: ++serial } : data.action === 'get_group_info' ? { group_name: '纸样讨论组', member_count:3 } : data.action === 'get_stranger_info' ? { nickname: '林舟' } : {}
     socket.send(JSON.stringify({ status: 'ok', retcode: 0, data: value, echo: data.echo }))
   })
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
@@ -239,6 +243,17 @@ try {
   assert.equal(outgoing.length, count, 'Desktop triggered a QQ message')
   assert.equal(requests.length, modelCount, 'Desktop QQ history started a model turn')
   checks.push('PASS desktop QQ input is blocked before model and emits no QQ reply')
+  const ignored=message(10002,'group','PLATFORM_SILENT_HISTORY')
+  ignored.message=ignored.message.filter(segment=>segment.type!=='at')
+  ignored.raw_message='PLATFORM_SILENT_HISTORY'
+  platformMessages.push({...ignored,message_seq:serial})
+  const countBeforeHistory=outgoing.length
+  socket.send(JSON.stringify(ignored))
+  await pause(2500)
+  const fullHistory=await rpc('alcorSecretary','channelHistory',{request:{sessionId:'onebot-group-30001'}})
+  assert.ok(fullHistory.messages.some(row=>row.text.includes('PLATFORM_SILENT_HISTORY')))
+  assert.equal(outgoing.length,countBeforeHistory,'Reading ignored group messages must not send replies')
+  checks.push('PASS unaddressed group messages are recorded and visible even when the model chooses silence')
   const groupInfo=await rpc('alcorSecretary','qqConversation',{request:{sessionId:'onebot-group-30001'}})
   assert.equal(groupInfo.name,'纸样讨论组'); assert.equal(groupInfo.members,3);assert.equal(groupInfo.online,true)
   const person=await rpc('alcorSecretary','qqConversation',{request:{sessionId:'onebot-private-10001'}})
