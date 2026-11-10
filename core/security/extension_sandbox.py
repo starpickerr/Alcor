@@ -1,6 +1,7 @@
 """Restrict untrusted extensions to runtime code and their private storage."""
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -70,7 +71,10 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
     roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/Library', '/private/etc',
              sys.prefix, sys.base_prefix, str(core / 'core'),
              *([str(package)] if read_package else []), *map(str, read_roots)) if Path(path).exists()]
-    executable_reads = (*executable_reads, core / 'common' / '__init__.py', core / 'common' / 'log.py')
+    executable_reads = (*executable_reads, core / 'common' / 'log.py')
+    initializer = core / 'common' / '__init__.py'
+    if initializer.is_file():
+        executable_reads = (*executable_reads, initializer)
     if sys.platform == 'darwin':
         def literal(path):
             return json.dumps(str(path), ensure_ascii=False)
@@ -100,6 +104,9 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
             argv += ['--share-net']
         for path in dict.fromkeys(roots):
             argv += ['--ro-bind', str(path), str(path)]
+        for path in ('/bin', '/sbin', '/lib', '/lib64'):
+            if os.path.islink(path):
+                argv += ['--symlink', os.readlink(path), path]
         for path in executable_reads:
             argv += ['--ro-bind', str(Path(path).resolve()), str(Path(path).resolve())]
         for path in owned_roots:
@@ -109,6 +116,6 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
                 argv += ['--bind', str(path), str(path)]
         for folder in protected_folders:
             argv += ['--tmpfs', folder]
-        argv += ['--proc', '/proc', '--dev', '/dev',
+        argv += ['--proc', '/proc', '--dev', '/dev', '--remount-ro', '/',
                  '--chdir', str(storage), '--', *command]
     return ExtensionPlan(argv, str(storage), clean, {'mode': 'isolated', 'network': bool(network), 'reason': 'OS file isolation enabled; process networking allowed.' if network else 'OS file and network isolation enabled.'}, protection_revision)

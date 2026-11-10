@@ -1,5 +1,6 @@
 import os
 import shutil
+import socket
 import subprocess
 import sys
 
@@ -16,6 +17,14 @@ def _run(plan, cwd, env):
     finally:
         if plan.temp_dir:
             shutil.rmtree(plan.temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def host_listener():
+    with socket.socket() as server:
+        server.bind(('127.0.0.1', 0))
+        server.listen()
+        yield server.getsockname()
 
 
 @pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="sandbox backend unavailable")
@@ -221,11 +230,11 @@ def test_full_access_shell_cannot_read_plugin_email_credentials_or_copies(tmp_pa
             assert 'FAKE_CREDENTIAL_FOR_SANDBOX_TEST' not in result.stdout
 
 
-def test_full_access_shell_has_no_direct_network(tmp_path):
+def test_full_access_shell_has_no_direct_network(tmp_path, host_listener):
     import shlex
     if process_sandbox.capability()['status'] != 'enabled':
         pytest.skip('OS sandbox not available')
-    command = shlex.join([sys.executable, '-I', '-c', "import socket; s=socket.socket(); s.bind(('127.0.0.1',0))"])
+    command = shlex.join([sys.executable, '-I', '-c', f"import socket; socket.create_connection({host_listener!r}, timeout=1)"])
     env = os.environ.copy()
     plan = process_sandbox.prepare(command, str(tmp_path), [str(tmp_path)],
         {'preset': 'full-access', 'rules': PRESETS['full-access']}, env)
@@ -252,7 +261,7 @@ def test_shared_runtime_is_readable_but_not_mutable_even_inside_write_roots(tmp_
 
 
 @pytest.mark.parametrize('mode', ['read-only', 'workspace-write'])
-def test_delegated_agents_cannot_use_raw_network_even_when_network_operations_are_allowed(tmp_path, mode):
+def test_delegated_agents_cannot_use_raw_network_even_when_network_operations_are_allowed(tmp_path, mode, host_listener):
     import subprocess
     import sys
     from common.runtime_identity import identity_scope
@@ -263,7 +272,7 @@ def test_delegated_agents_cannot_use_raw_network_even_when_network_operations_ar
         save_run_policy('session', 'delegated-network', {'filesystem_mode': mode}, legacy_rules={'network': 'allow'})
         plan = prepare_delegated(tmp_path, [sys.executable])
         result = subprocess.run([*plan['prefix'], sys.executable, '-c',
-            "import socket\ntry:\n s=socket.socket();s.bind(('127.0.0.1',0));print('raw-network')\nexcept OSError:\n print('denied')"],
+            f"import socket\ntry:\n socket.create_connection({host_listener!r}, timeout=1);print('raw-network')\nexcept OSError:\n print('denied')"],
             env=plan['env'], cwd=tmp_path, capture_output=True, text=True, timeout=5)
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == 'denied'

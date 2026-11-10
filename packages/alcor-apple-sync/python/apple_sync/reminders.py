@@ -12,10 +12,10 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from apple_sync.metadata import snapshot_fields, record_baseline, changed as metadata_changed, write_fields, conflict_summaries
-from apple_sync.contracts import bind_item,category_binding,process_operations,locate_remote,resolve_pending_deletion,native_delete_preview
+from apple_sync.metadata import snapshot_fields, record_baseline, write_fields, conflict_summaries
+from apple_sync.contracts import bind_item,process_operations,native_delete_preview
 from apple_sync.categories import synchronize_categories, synchronize_moves, reconcile_category_names, resolve_category_conflict, prime_bindings, verify_category_source
-from apple_sync.category_links import bidirectional_links, reconcile_names, validate_links
+from apple_sync.category_links import bidirectional_links, validate_links
 from apple_sync.bridge import AppleCalendarBridge
 from apple_sync.runtime import report_sync_error
 
@@ -217,12 +217,15 @@ class AppleReminderSync:
         """Reattach a native save that succeeded before its mapping committed."""
         from apple_sync.marker_recovery import pending_native
         if pending_native(self,remote):
-            counts['conflicts']+=1;counts['status']='partial';return True
+            counts['conflicts']+=1
+            counts['status']='partial'
+            return True
         if not remote.get("alcor_id"):
             return False
         from apple_sync.category_rebuild import retained_ids
         if remote['alcor_id'] in retained_ids(self):
-            counts['conflicts']+=1;return True
+            counts['conflicts']+=1
+            return True
         if scan_token is None and work_claim is None:
             from apple_sync.group_scan_claims import WorkClaim
             with WorkClaim(self,{remote['list_id']:remote.get('source_id')},[remote['alcor_id']],
@@ -237,15 +240,19 @@ class AppleReminderSync:
             counts["conflicts"] += 1
             return True
         from apple_sync.marker_recovery import recover,MarkerRecoveryError
-        try: mapping=recover(self,self.todos,'reminders',local,remote,scan_token=scan_token,work_claim=work_claim,scan_safe=scan_safe)
+        try:
+            mapping=recover(self,self.todos,'reminders',local,remote,scan_token=scan_token,work_claim=work_claim,scan_safe=scan_safe)
         except Exception as error:
             if scan_token:
                 from apple_sync.group_scan_claims import uncertain
                 uncertain(self,scan_token)
             raise MarkerRecoveryError(str(error)) from error
         if mapping is None:
-            counts['conflicts']+=1;counts['status']='partial';return True
-        if mapping['state']=='conflict':counts['conflicts']+=1
+            counts['conflicts']+=1
+            counts['status']='partial'
+            return True
+        if mapping['state']=='conflict':
+            counts['conflicts']+=1
         maps.append(mapping)
         return True
 
@@ -401,80 +408,85 @@ class AppleReminderSync:
                                       self.clock(), link["apple_id"]))
 
     def replace_links(self, links, *, preserve_missing=False):
-        if not isinstance(links, list):
-            raise ValueError("links must be a list")
-        local_only = set(self.todos.apple_local_only_categories())
-        local_names = {row['name'] for row in self.todos.categories() if row['id'] in local_only}
-        if any(isinstance(row, dict) and (row.get('alcor_id') in local_only or row.get('create_name') in local_names) for row in links):
-            raise ValueError('恢复的本机分类不能自动关联 Apple 来源')
-        if self.bridge.call("reminder_status").get("authorization") != "full_access":
-            raise PermissionError("Reminders full access is required")
-        available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
-        previous = {row["apple_id"]: row for row in self._stored_links()}
-        from apple_sync.category_links import changed_link_groups
-        from apple_sync.group_scan_claims import WorkClaim
-        groups = changed_link_groups(self,links,previous,available)
-        if not groups:
-            from apple_sync.category_links import restore_link_selection
-            restore_link_selection(self,previous,'list_ids')
-            return self.status()
-        from apple_sync.category_connections import prepare,guard_discovery,connect
-        prepared,specs=prepare(self.todos,links,available,groups,previous,preserve_missing)
-        validate_links(prepared)
-        category_ids={row['alcor_id'] for row in prepared if row['apple_id'] in groups}
-        category_ids.update(previous[key]['alcor_id'] for key in groups if key in previous)
-        evidence = {'kind':'replace_links','previous':previous,'requested':prepared,'owners':specs,'native':available}
-        with WorkClaim(self,groups,[],evidence,category_ids=category_ids,category_kind='reminders') as claim:
-            with self._connect() as db:
-                db.execute('BEGIN IMMEDIATE');claim._check(db)
-                guard_discovery(db,'reminders',previous,available,groups)
-            fresh={row['id']:row for row in self.bridge.call('reminder_lists')['lists']}
-            if fresh!=available:raise ValueError('native category inventory changed before linking')
-            rows = []
-            for item in prepared:
-                apple = available.get(item["apple_id"])
-                if apple is None:
-                    old = previous.get(item["apple_id"])
-                    if not old or old["alcor_id"] != item["alcor_id"]:
-                        raise ValueError("selected reminder list is unavailable")
-                    apple = {"title": old["apple_name"]}
-                try:
-                    category = connect(self.todos,claim,specs[item['apple_id']],available[item['apple_id']]) if item['apple_id'] in specs else self.todos.get_category(item["alcor_id"])
-                except KeyError:
-                    old = previous.get(item['apple_id'])
-                    if not preserve_missing or not old or any(item[key] != (bool(old[key]) if key == 'enabled' else old[key]) for key in ('alcor_id','direction','enabled')):
-                        raise
-                    rows.append({**old, 'enabled': 1 if old['enabled'] else 0})
-                    continue
-                old = previous.get(item["apple_id"], {})
-                baseline = {key: old[key] for key in ("apple_name", "alcor_name", "name_conflict")} if old.get("alcor_id") == item["alcor_id"] else {}
-                rows.append({**item, "apple_name": apple["title"], "alcor_name": category["name"],
-                             "name_conflict": "", **baseline, "enabled": 1 if item["enabled"] else 0})
-            with self._lock:
-                now = self.clock()
-                claim.started('manager_committing')
+        with self._lock:
+            if not isinstance(links, list):
+                raise ValueError("links must be a list")
+            local_only = set(self.todos.apple_local_only_categories())
+            local_names = {row['name'] for row in self.todos.categories() if row['id'] in local_only}
+            if any(isinstance(row, dict) and (row.get('alcor_id') in local_only or row.get('create_name') in local_names) for row in links):
+                raise ValueError('恢复的本机分类不能自动关联 Apple 来源')
+            if self.bridge.call("reminder_status").get("authorization") != "full_access":
+                raise PermissionError("Reminders full access is required")
+            available = {row["id"]: row for row in self.bridge.call("reminder_lists")["lists"]}
+            previous = {row["apple_id"]: row for row in self._stored_links()}
+            from apple_sync.category_links import changed_link_groups
+            from apple_sync.group_scan_claims import WorkClaim
+            groups = changed_link_groups(self,links,previous,available)
+            if not groups:
+                from apple_sync.category_links import restore_link_selection
+                restore_link_selection(self,previous,'list_ids')
+                return self.status()
+            from apple_sync.category_connections import prepare,guard_discovery,connect
+            prepared,specs=prepare(self.todos,links,available,groups,previous,preserve_missing)
+            validate_links(prepared)
+            category_ids={row['alcor_id'] for row in prepared if row['apple_id'] in groups}
+            category_ids.update(previous[key]['alcor_id'] for key in groups if key in previous)
+            evidence = {'kind':'replace_links','previous':previous,'requested':prepared,'owners':specs,'native':available}
+            with WorkClaim(self,groups,[],evidence,category_ids=category_ids,category_kind='reminders') as claim:
                 with self._connect() as db:
-                    db.execute('BEGIN IMMEDIATE');claim._check(db)
+                    db.execute('BEGIN IMMEDIATE')
+                    claim._check(db)
                     guard_discovery(db,'reminders',previous,available,groups)
-                    current = {row['apple_id']:dict(row) for row in db.execute('SELECT * FROM category_links ORDER BY apple_id')}
-                    if current != previous:
-                        raise ValueError('category links changed before conditional replacement')
-                    db.executemany('DELETE FROM category_links WHERE apple_id=?', [(key,) for key in groups])
-                    db.executemany("""INSERT INTO category_links
-                        (apple_id, alcor_id, direction, enabled, apple_name, alcor_name, name_conflict, updated_at)
-                        VALUES (:apple_id, :alcor_id, :direction, :enabled, :apple_name, :alcor_name, :name_conflict, :updated_at)""",
-                        [{**row, "updated_at": now} for row in rows if row["apple_id"] in groups])
-                    enabled = [row for row in rows if row['enabled']]
-                    ever=db.execute("SELECT value FROM settings WHERE key='ever_connected'").fetchone()
-                    if enabled and not (ever and json.loads(ever[0])):
-                        db.executemany('INSERT OR IGNORE INTO baseline_local VALUES (?)',
-                                       [(row['id'],) for row in self.todos.list_todos() if row['source_type']!='apple_reminder'])
-                        db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',('ever_connected','true'))
-                    directions={row['direction'] for row in enabled}
-                    state={'list_ids':[row['apple_id'] for row in enabled],'connected':bool(enabled)}
-                    if len(directions)==1:state['direction']=directions.pop()
-                    db.executemany('INSERT OR REPLACE INTO settings VALUES (?,?)',[(key,json.dumps(value)) for key,value in state.items()])
-        return self.status()
+                fresh={row['id']:row for row in self.bridge.call('reminder_lists')['lists']}
+                if fresh!=available:
+                    raise ValueError('native category inventory changed before linking')
+                rows = []
+                for item in prepared:
+                    apple = available.get(item["apple_id"])
+                    if apple is None:
+                        old = previous.get(item["apple_id"])
+                        if not old or old["alcor_id"] != item["alcor_id"]:
+                            raise ValueError("selected reminder list is unavailable")
+                        apple = {"title": old["apple_name"]}
+                    try:
+                        category = connect(self.todos,claim,specs[item['apple_id']],available[item['apple_id']]) if item['apple_id'] in specs else self.todos.get_category(item["alcor_id"])
+                    except KeyError:
+                        old = previous.get(item['apple_id'])
+                        if not preserve_missing or not old or any(item[key] != (bool(old[key]) if key == 'enabled' else old[key]) for key in ('alcor_id','direction','enabled')):
+                            raise
+                        rows.append({**old, 'enabled': 1 if old['enabled'] else 0})
+                        continue
+                    old = previous.get(item["apple_id"], {})
+                    baseline = {key: old[key] for key in ("apple_name", "alcor_name", "name_conflict")} if old.get("alcor_id") == item["alcor_id"] else {}
+                    rows.append({**item, "apple_name": apple["title"], "alcor_name": category["name"],
+                                 "name_conflict": "", **baseline, "enabled": 1 if item["enabled"] else 0})
+                with self._lock:
+                    now = self.clock()
+                    claim.started('manager_committing')
+                    with self._connect() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        claim._check(db)
+                        guard_discovery(db,'reminders',previous,available,groups)
+                        current = {row['apple_id']:dict(row) for row in db.execute('SELECT * FROM category_links ORDER BY apple_id')}
+                        if current != previous:
+                            raise ValueError('category links changed before conditional replacement')
+                        db.executemany('DELETE FROM category_links WHERE apple_id=?', [(key,) for key in groups])
+                        db.executemany("""INSERT INTO category_links
+                            (apple_id, alcor_id, direction, enabled, apple_name, alcor_name, name_conflict, updated_at)
+                            VALUES (:apple_id, :alcor_id, :direction, :enabled, :apple_name, :alcor_name, :name_conflict, :updated_at)""",
+                            [{**row, "updated_at": now} for row in rows if row["apple_id"] in groups])
+                        enabled = [row for row in rows if row['enabled']]
+                        ever=db.execute("SELECT value FROM settings WHERE key='ever_connected'").fetchone()
+                        if enabled and not (ever and json.loads(ever[0])):
+                            db.executemany('INSERT OR IGNORE INTO baseline_local VALUES (?)',
+                                           [(row['id'],) for row in self.todos.list_todos() if row['source_type']!='apple_reminder'])
+                            db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',('ever_connected','true'))
+                        directions={row['direction'] for row in enabled}
+                        state={'list_ids':[row['apple_id'] for row in enabled],'connected':bool(enabled)}
+                        if len(directions)==1:
+                            state['direction']=directions.pop()
+                        db.executemany('INSERT OR REPLACE INTO settings VALUES (?,?)',[(key,json.dumps(value)) for key,value in state.items()])
+            return self.status()
 
     def _reconcile_category_names(self):
         return reconcile_category_names(self,self.todos,'reminders')
@@ -612,7 +624,8 @@ class AppleReminderSync:
             raise RuntimeError('reminder binding incarnation changed; reconciliation required')
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            if claim is not None:claim._check(db)
+            if claim is not None:
+                claim._check(db)
             row = db.execute('SELECT * FROM mappings WHERE todo_id=?',(before['todo_id'],)).fetchone()
             if not row or dict(row)!=before or self._reminder_baselines(before['todo_id'],db)!=baselines:
                 raise RuntimeError('reminder mapping changed after owner commit; reconciliation required')
@@ -633,24 +646,28 @@ class AppleReminderSync:
             for prefix,value in values.items():
                 db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',(prefix+before['todo_id'],json.dumps(value)))
             db.execute('DELETE FROM settings WHERE key=?',('reminder-missing:'+before['todo_id'],))
-        mapping.clear();mapping.update(updated)
+        mapping.clear()
+        mapping.update(updated)
 
     def _reminder_conflict(self, mapping, before, baselines, expected, remote, reason, *, claim=None):
         record = {'version':1,'reason':reason,'observed':expected,'current_local':self._local(before['todo_id']),'remote':remote}
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            if claim is not None:claim._check(db)
+            if claim is not None:
+                claim._check(db)
             row=db.execute('SELECT * FROM mappings WHERE todo_id=?',(before['todo_id'],)).fetchone()
             if not row or dict(row)!=before or self._reminder_baselines(before['todo_id'],db)!=baselines:
                 raise RuntimeError('reminder conflict state changed; reconciliation required')
             updated={**before,'state':'conflict','conflict':reason,'updated_at':self.clock()}
             self._save_map(updated,connection=db)
             db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',('reminder-inbound-conflict:'+before['todo_id'],json.dumps(record,ensure_ascii=False)))
-        mapping.clear();mapping.update(updated)
+        mapping.clear()
+        mapping.update(updated)
 
     def _native_successors(self,rows):
         from apple_sync.category_rebuild import retained_ids
-        protected=retained_ids(self);held_candidates=set()
+        protected=retained_ids(self)
+        held_candidates=set()
         retired = self._get('retired_reminder_ids',[])
         for mapping in self._maps():
             local = self._local(mapping['todo_id'])
@@ -675,12 +692,15 @@ class AppleReminderSync:
             if len(following)!=1:
                 continue
             expected=self.todos.apple_capture_reminder_sync(local['id'])
-            before=dict(mapping);baselines=self._reminder_baselines(local['id'])
+            before=dict(mapping)
+            baselines=self._reminder_baselines(local['id'])
             try:
                 local=self.todos.apple_apply_reminder_inbound(expected,_payload(following[0]),following[0],previous_completion=completed)
             except ValueError as exc:
-                if not str(exc).startswith('INBOUND_CHANGED:'):raise
-                self._reminder_conflict(mapping,before,baselines,expected,following[0],str(exc));continue
+                if not str(exc).startswith('INBOUND_CHANGED:'):
+                    raise
+                self._reminder_conflict(mapping,before,baselines,expected,following[0],str(exc))
+                continue
             self._commit_reminder_snapshot(mapping,before,baselines,local,following[0],expected['generation'])
             retired.append(completed['reminder_id'])
         self._set('retired_reminder_ids',list(dict.fromkeys(retired)))
@@ -689,22 +709,30 @@ class AppleReminderSync:
     def _process_remote(self, remote, mapping, direction, counts, category_id=None):
         from apple_sync.category_rebuild import retained_ids
         if mapping['todo_id'] in retained_ids(self):
-            counts['conflicts']+=1;return
+            counts['conflicts']+=1
+            return
         from apple_sync.metadata import metadata
         if mapping.get('state')=='conflict':
-            counts['conflicts']+=1;return
+            counts['conflicts']+=1
+            return
         local=self._local(mapping['todo_id'])
         if local is None:
             if _hash(remote,remote=True)!=mapping['remote_hash']:
-                self._conflict(mapping,'Apple changed a record deleted in Alcor');counts['conflicts']+=1;return
+                self._conflict(mapping,'Apple changed a record deleted in Alcor')
+                counts['conflicts']+=1
+                return
             mapping.update(state='pending_delete' if direction in ('export','bidirectional') else 'deleted',updated_at=self.clock())
-            self._save_map(mapping);return
+            self._save_map(mapping)
+            return
         expected=self.todos.apple_capture_reminder_sync(local['id'],category_id)
-        local=expected['local'];before=dict(mapping);baselines=self._reminder_baselines(local['id'])
+        local=expected['local']
+        before=dict(mapping)
+        baselines=self._reminder_baselines(local['id'])
         if category_id and local.get('category_id') != category_id:
             # Compare placement to the persisted map, native binding and original
             # category link, not merely two current category values.
-            binding=local.get('apple') or {};native=binding.get('native') or {}
+            binding=local.get('apple') or {}
+            native=binding.get('native') or {}
             origin=next((row['local'].get('apple') or {} for row in expected['categories'] if row['row']['id']==category_id),{})
             source=remote.get('source_id')
             guard={'generation':expected['generation'],'source_id':source,'group_id':mapping['list_id']}
@@ -723,17 +751,23 @@ class AppleReminderSync:
             return
         old=baselines['item-metadata:']
         if old:
-            local_extra=old[0]!=metadata(local);remote_extra=old[1]!=metadata(remote,True)
+            local_extra=old[0]!=metadata(local)
+            remote_extra=old[1]!=metadata(remote,True)
         else:
             local_extra=remote_extra=(metadata(local)['timezone']!=metadata(remote,True)['timezone'] or bool(local.get('floating'))!=bool(remote.get('floating')))
         local_changed=_hash(local)!=mapping['local_hash'] or local_extra
         remote_changed=_hash(remote,remote=True)!=mapping['remote_hash'] or remote_extra
         reason=None
-        if local_changed and remote_changed:reason='Both Alcor and Apple changed this reminder'
-        elif remote_changed and direction not in ('import','bidirectional'):reason='Apple changed an export-only reminder'
-        elif local_changed and (direction not in ('export','bidirectional') or not remote.get('writable',False) or not _supported(remote)):reason='Alcor changed a reminder that cannot be exported'
+        if local_changed and remote_changed:
+            reason='Both Alcor and Apple changed this reminder'
+        elif remote_changed and direction not in ('import','bidirectional'):
+            reason='Apple changed an export-only reminder'
+        elif local_changed and (direction not in ('export','bidirectional') or not remote.get('writable',False) or not _supported(remote)):
+            reason='Alcor changed a reminder that cannot be exported'
         if reason:
-            self._reminder_conflict(mapping,before,baselines,expected,remote,reason);counts['conflicts']+=1;return
+            self._reminder_conflict(mapping,before,baselines,expected,remote,reason)
+            counts['conflicts']+=1
+            return
         try:
             if local_changed:
                 payload={**self._write_payload(local,mapping),'expected_source_id':remote['source_id'],'expected_snapshot':remote}
@@ -744,13 +778,17 @@ class AppleReminderSync:
             else:
                 applied=self._apply_remote(mapping,local,remote,expected=expected,
                                            metadata_only=not remote_changed and (not category_id or local.get('category_id')==category_id))
-                if remote_changed:counts['updated']+=1
+                if remote_changed:
+                    counts['updated']+=1
             self._commit_reminder_snapshot(mapping,before,baselines,applied,remote,expected['generation'])
-            if not _supported(remote):counts['conflicts']+=1
+            if not _supported(remote):
+                counts['conflicts']+=1
         except (ValueError,AlarmBaselineAmbiguous) as exc:
-            if not (isinstance(exc,AlarmBaselineAmbiguous) or str(exc).startswith('INBOUND_CHANGED:')):raise
+            if not (isinstance(exc,AlarmBaselineAmbiguous) or str(exc).startswith('INBOUND_CHANGED:')):
+                raise
             self._reminder_conflict(mapping,before,baselines,expected,remote,str(exc))
-            counts['conflicts']+=1;counts['status']='partial'
+            counts['conflicts']+=1
+            counts['status']='partial'
 
     def preview(self, list_ids, direction):
         self._validate_selection(list_ids, direction)
@@ -950,32 +988,42 @@ class AppleReminderSync:
                 if len(groups) != len(inventory.get('lists',[])):
                     raise ValueError('reminder list inventory is ambiguous')
             except Exception as exc:
-                counts['status']='error';self._set('error',report_sync_error('reminder','读取同步来源',exc));return counts
+                counts['status']='error'
+                self._set('error',report_sync_error('reminder','读取同步来源',exc))
+                return counts
             # This is the first item inventory used by inbound-move/absence logic.
             # Capture before it, so later missing markers never absorb intervening edits.
             missing_captures={}
             for mapping in self._maps():
                 if mapping['list_id'] in selected and mapping['state'] not in ('deleted','remote_deleted','conflict','pending_delete'):
-                    try:missing_captures[mapping['todo_id']]=self.todos.apple_capture_reminder_missing(mapping['todo_id'])
-                    except (ValueError,KeyError) as exc:missing_captures[mapping['todo_id']]={'error':str(exc)}
+                    try:
+                        missing_captures[mapping['todo_id']]=self.todos.apple_capture_reminder_missing(mapping['todo_id'])
+                    except (ValueError,KeyError) as exc:
+                        missing_captures[mapping['todo_id']]={'error':str(exc)}
             deferred_inbound_moves=set()
             if using_links:
                 from apple_sync.reminder_moves import reconcile_inbound_moves
                 try:
                     verified_links=[]
                     for link in enabled_links:
-                        try:verify_category_source(self.todos.get_category(link['alcor_id']),link,groups.get(link['apple_id'],{}))
-                        except claims.ScanUnavailable:continue
+                        try:
+                            verify_category_source(self.todos.get_category(link['alcor_id']),link,groups.get(link['apple_id'],{}))
+                        except claims.ScanUnavailable:
+                            continue
                         verified_links.append(link)
                     imported_moves,deferred_inbound_moves,move_errors=reconcile_inbound_moves(self,self.todos,verified_links,inventory,missing_captures)
                     counts['updated']+=imported_moves
                     if move_errors:
-                        counts['status']='partial';failures.extend(move_errors)
+                        counts['status']='partial'
+                        failures.extend(move_errors)
                 except Exception as exc:
-                    counts['status']='error';failures.append(report_sync_error('reminder','读取跨分类位置',exc))
+                    counts['status']='error'
+                    failures.append(report_sync_error('reminder','读取跨分类位置',exc))
             held=[]
             for group_id in dict.fromkeys(selected):
-                token=None;source_id=None;item_phase_started=False
+                token=None
+                source_id=None
+                item_phase_started=False
                 try:
                     target=groups.get(group_id)
                     if not target:
@@ -984,45 +1032,59 @@ class AppleReminderSync:
                     if not source_id or source_id not in inventory.get('source_ids',[]):
                         raise claims.ScanUnavailable('reminder source identity is unavailable')
                     link=next((row for row in enabled_links if row['apple_id']==group_id),None)
-                    if link:verify_category_source(self.todos.get_category(link['alcor_id']),link,target)
+                    if link:
+                        verify_category_source(self.todos.get_category(link['alcor_id']),link,target)
                     token=claims.acquire(self,source_id,group_id,{'kind':'reminder_scan'})
                     current=self.bridge.call('reminder_lists')
                     found=[row for row in current.get('lists',[]) if row.get('id')==group_id]
                     if found != [target] or source_id not in current.get('source_ids',[]):
                         raise claims.ScanUnavailable('reminder list changed before scan')
-                    if link:verify_category_source(self.todos.get_category(link['alcor_id']),link,found[0])
+                    if link:
+                        verify_category_source(self.todos.get_category(link['alcor_id']),link,found[0])
                     item_phase_started=True
                     result,safe=self._sync_claimed_reminder_list(group_id,source_id,token,direction,using_links,enabled_links,
                                                                automatic_deletions,manual,confirm_local_deletions,missing_captures,deferred_inbound_moves)
                     for key,value in result.items():
-                        if key in ('status','failed_list_ids'):continue
+                        if key in ('status','failed_list_ids'):
+                            continue
                         counts[key]+=value
                     counts['failed_list_ids']+=result['failed_list_ids']
-                    if result['status']!='success':counts['status']='error' if result['status']=='error' else 'partial'
+                    if result['status']!='success':
+                        counts['status']='error' if result['status']=='error' else 'partial'
                     if safe:
                         # Finish only a fully returned per-list execution, with the same manager snapshots.
                         self._complete_reminder_scan(token,group_id)
                     else:
-                        claims.uncertain(self,token);held.append(group_id)
+                        claims.uncertain(self,token)
+                        held.append(group_id)
                 except Exception as exc:
-                    if isinstance(exc,claims.ScanUnavailable):counts['failed_list_ids'].append(group_id)
+                    if isinstance(exc,claims.ScanUnavailable):
+                        counts['failed_list_ids'].append(group_id)
                     retain,verification_error=self._failed_reminder_scan(token,source_id,group_id,item_phase_started,exc)
-                    if retain:held.append(group_id)
+                    if retain:
+                        held.append(group_id)
                     partial=isinstance(exc,(claims.ScanHeld,claims.ScanUnavailable)) and verification_error is None
-                    if counts['status']!='error':counts['status']='partial' if partial else 'error'
+                    if counts['status']!='error':
+                        counts['status']='partial' if partial else 'error'
                     failures.append(str(exc) if partial else report_sync_error('reminder','同步清单',exc))
-                    if verification_error:failures.append(verification_error)
+                    if verification_error:
+                        failures.append(verification_error)
             counts['scan_claims']=claims.status(self)
-            if held:counts['held_list_ids']=sorted(set(held))
-            if name_errors and counts['status']=='success':counts['status']='error'
+            if held:
+                counts['held_list_ids']=sorted(set(held))
+            if name_errors and counts['status']=='success':
+                counts['status']='error'
             if counts['status']=='success':
-                self._set('last_success',self.clock());self._set('error','')
-            else:self._set('error',failures[0] if failures else name_errors[0] if name_errors else '部分提醒事项待核对；其他清单继续同步')
+                self._set('last_success',self.clock())
+                self._set('error','')
+            else:
+                self._set('error',failures[0] if failures else name_errors[0] if name_errors else '部分提醒事项待核对；其他清单继续同步')
             return counts
 
     def _failed_reminder_scan(self, token, source_id, group_id, item_phase_started, reason):
         from apple_sync import group_scan_claims as claims
-        if not token:return False,None
+        if not token:
+            return False,None
         if not item_phase_started:
             try:
                 if claims.cancel_unstarted_scan(self,token,source_id,group_id,{'kind':'reminder_scan'},reason):
@@ -1030,14 +1092,17 @@ class AppleReminderSync:
             except Exception as exc:
                 # If verification/SQLite failed, do not attempt a second mutation.
                 return True,report_sync_error('reminder','未发送扫描释放核验失败，保留占用',exc)
-        try:claims.uncertain(self,token)
-        except Exception as exc:return True,report_sync_error('reminder','扫描结果状态未知，保留占用',exc)
+        try:
+            claims.uncertain(self,token)
+        except Exception as exc:
+            return True,report_sync_error('reminder','扫描结果状态未知，保留占用',exc)
         return True,None
 
     def _complete_reminder_scan(self, token, group_id):
         from apple_sync import group_scan_claims as claims
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE');claims.schema(db)
+            db.execute('BEGIN IMMEDIATE')
+            claims.schema(db)
             row=db.execute('SELECT a.state,a.window,a.evidence,a.source_id,g.source_id AS held_source FROM calendar_scan_attempts a JOIN calendar_scan_groups g USING(attempt_id) WHERE g.attempt_id=? AND g.group_id=?',(token,group_id)).fetchone()
             expected_items={item[0] for item in db.execute('SELECT todo_id FROM mappings WHERE list_id=?',(group_id,))}
             held_items={item[0] for item in db.execute('SELECT local_id FROM calendar_scan_items WHERE attempt_id=?',(token,))}
@@ -1062,7 +1127,8 @@ class AppleReminderSync:
                 inventory = self.bridge.call("reminders", list_ids=selected)
             except Exception as exc:
                 # No owner or native write has begun. The exact scan claim can finish.
-                counts['status']='error';counts['failed_list_ids']=selected
+                counts['status']='error'
+                counts['failed_list_ids']=selected
                 self._set('error',report_sync_error('reminder','读取提醒库存',exc))
                 return counts, True
             successful = set(inventory["successful_list_ids"]) & set(selected)
@@ -1097,7 +1163,8 @@ class AppleReminderSync:
                         item_direction = link["direction"]
                         category_id = link["alcor_id"]
                     if self._hold_identity_candidate(remote,token):
-                        counts['conflicts']+=1;counts['status']='partial'
+                        counts['conflicts']+=1
+                        counts['status']='partial'
                         continue
                     if (remote.get("external_id") and
                             external_counts[remote["external_id"]] > 1):
@@ -1140,7 +1207,8 @@ class AppleReminderSync:
                         mapping['state'] in ('deleted','remote_deleted','conflict','pending_delete')):
                     continue
                 if mapping['todo_id'] in deferred_inbound_moves:
-                    counts['status']='partial';continue
+                    counts['status']='partial'
+                    continue
                 self._reconcile_missing_reminder(mapping, missing_captures.get(mapping['todo_id']), counts,
                     allow_delete=(manual or automatic_deletions) and confirm_local_deletions)
             if successful and (using_links or direction in ("export", "bidirectional")):
@@ -1176,11 +1244,14 @@ class AppleReminderSync:
                             failures.append(str(exc) if isinstance(exc,ScanUnavailable) else report_sync_error("reminder", "写入 Apple 提醒事项", exc))
                             counts["status"] = "partial" if isinstance(exc,ScanUnavailable) and counts['status']!='error' else "error"
             for mapping in self._maps():
-                if mapping['list_id']!=group_id:continue
+                if mapping['list_id']!=group_id:
+                    continue
                 if mapping['state']=='pending_local_delete':
-                    counts['pending_local_deletions']+=1;counts['status']='partial'
+                    counts['pending_local_deletions']+=1
+                    counts['status']='partial'
                 elif mapping['state']=='pending_delete':
-                    counts['pending_deletions']+=1;counts['status']='partial'
+                    counts['pending_deletions']+=1
+                    counts['status']='partial'
             counts['conflicts'] = max(counts['conflicts'],sum(row['state']=='conflict' for row in self._maps()))
             issues = [dict(todo_id=row['todo_id'],reason='复杂 Apple 提醒已只读保留') for row in self._maps() if (self._local(row['todo_id']) or {}).get('apple',{}).get('issues')]
             self._set('readonly_issues',issues)
@@ -1231,17 +1302,20 @@ class AppleReminderSync:
                     or db.execute('SELECT 1 FROM mappings WHERE todo_id=?',(local['id'],)).fetchone()):
                 raise ValueError('reminder create claim or local mapping changed; review required')
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE');check(db,{})
+            db.execute('BEGIN IMMEDIATE')
+            check(db,{})
             db.execute('UPDATE calendar_scan_attempts SET evidence=? WHERE attempt_id=?',(json.dumps(evidence),token))
         if self.todos.apple_capture_approved_export(local['id'])!=expected:
             # No native call has begun; only this exact claim can drop the new item.
             with self._connect() as db:
-                db.execute('BEGIN IMMEDIATE');check(db,evidence)
+                db.execute('BEGIN IMMEDIATE')
+                check(db,evidence)
                 db.execute("UPDATE calendar_scan_attempts SET evidence='{}' WHERE attempt_id=?",(token,))
                 db.execute('DELETE FROM calendar_scan_items WHERE local_id=? AND attempt_id=?',(local['id'],token))
             raise ScanUnavailable('本地提醒在发送前变化；尚未创建，已保留新内容')
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE');check(db,evidence)
+            db.execute('BEGIN IMMEDIATE')
+            check(db,evidence)
         remote=self.bridge.call('reminder_upsert',**payload,expected_source_id=source_id,
                                expected_destination_snapshot=target,expected_absent=True,
                                receipt_file=str(path),receipt_binding=binding)['reminder']
@@ -1250,12 +1324,14 @@ class AppleReminderSync:
             raise ValueError('提醒创建的来源、对象或回执不一致；保留待核对，不会重发')
         saved={**evidence,'stage':'native_saved','native':remote}
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE');check(db,evidence)
+            db.execute('BEGIN IMMEDIATE')
+            check(db,evidence)
             db.execute('UPDATE calendar_scan_attempts SET evidence=? WHERE attempt_id=?',(json.dumps(saved),token))
         finalized=self.todos.apple_finalize_approved_export(expected,remote)
         mapping=self._mapping_from_native(finalized,remote,'alcor')
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE');check(db,saved)
+            db.execute('BEGIN IMMEDIATE')
+            check(db,saved)
             if db.execute('SELECT 1 FROM mappings WHERE source_key=? OR (list_id=? AND reminder_id=?)',(mapping['source_key'],list_id,remote['reminder_id'])).fetchone():
                 raise ValueError('reminder create result already has a mapping; review required')
             self._save_map(mapping,connection=db)
@@ -1276,7 +1352,8 @@ class AppleReminderSync:
         Identity changes or incomplete sources remain a conflict, never a match.
         """
         before=self.bridge.call('reminder_lists')
-        groups=before.get('lists',[]);ids=[row['id'] for row in groups]
+        groups=before.get('lists',[])
+        ids=[row['id'] for row in groups]
         if not ids or len(ids)!=len(set(ids)) or any(not row.get('source_id') or row['source_id'] not in before.get('source_ids',[]) for row in groups):
             raise ValueError('INBOUND_CHANGED: reminder source inventory is incomplete')
         inventory=self.bridge.call('reminders',list_ids=ids)
@@ -1301,8 +1378,10 @@ class AppleReminderSync:
     def _reconcile_missing_reminder(self, mapping, observed, counts, *, allow_delete):
         from apple_sync.category_rebuild import retained_ids
         if mapping['todo_id'] in retained_ids(self):
-            counts['status']='partial';return
-        before=dict(mapping);baselines=self._reminder_baselines(mapping['todo_id'])
+            counts['status']='partial'
+            return
+        before=dict(mapping)
+        baselines=self._reminder_baselines(mapping['todo_id'])
         previous=self._get('reminder-missing:'+mapping['todo_id'])
         prior=previous
         try:
@@ -1319,7 +1398,8 @@ class AppleReminderSync:
                 previous={'version':1,'observed':observed,'mapping':before,'evidence':evidence,'first_seen':self.clock()}
                 updated={**before,'missing_since':self.clock(),'updated_at':self.clock()}
             else:
-                comparable=lambda row:{key:value for key,value in row.items() if key not in ('state','missing_since','updated_at')}
+                def comparable(row):
+                    return {key:value for key,value in row.items() if key not in ('state','missing_since','updated_at')}
                 if (previous.get('version')!=1 or previous['observed']!=observed or
                         comparable(previous['mapping'])!=comparable(before) or previous['evidence']!=evidence):
                     raise ValueError('INBOUND_CHANGED: reminder changed since first complete absence')
@@ -1340,11 +1420,14 @@ class AppleReminderSync:
                     raise RuntimeError('reminder missing manager snapshot changed; reconciliation required')
                 self._save_map(updated,connection=db)
                 db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',('reminder-missing:'+mapping['todo_id'],json.dumps(previous)))
-            mapping.clear();mapping.update(updated)
+            mapping.clear()
+            mapping.update(updated)
         except ValueError as exc:
-            if not str(exc).startswith('INBOUND_CHANGED:'):raise
+            if not str(exc).startswith('INBOUND_CHANGED:'):
+                raise
             self._reminder_conflict(mapping,before,baselines,observed,{'absence':'unverified'},str(exc))
-            counts['conflicts']+=1;counts['status']='partial'
+            counts['conflicts']+=1
+            counts['status']='partial'
 
     def resolve_conflict(self, todo_id, choice):
         with self._lock:

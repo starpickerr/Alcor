@@ -1,5 +1,6 @@
 """Verify kernel restrictions using synthetic files, not just profile strings."""
 import os
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -15,7 +16,15 @@ def test_unavailable_extension_sandbox_fails_closed(tmp_path, monkeypatch):
         prepare_extension([sys.executable, '-c', 'pass'], tmp_path, tmp_path / 'private', os.environ.copy())
 
 
-def test_actual_extension_cannot_read_outside_write_outside_or_connect_network(tmp_path):
+@pytest.fixture
+def host_listener():
+    with socket.socket() as server:
+        server.bind(('127.0.0.1', 0))
+        server.listen()
+        yield server.getsockname()
+
+
+def test_actual_extension_cannot_read_outside_write_outside_or_connect_network(tmp_path, host_listener):
     from core.security.extension_sandbox import prepare_extension
     from agent.permission.process_sandbox import capability
     if capability()['status'] != 'enabled':
@@ -33,12 +42,12 @@ except OSError: result['private'] = 'denied'
 try: Path(sys.argv[2]).write_text('blocked'); result['outside_write'] = 'allowed'
 except OSError: result['outside_write'] = 'denied'
 try:
-    sock = socket.socket(); sock.bind(('127.0.0.1', 0)); result['network'] = 'allowed'; sock.close()
+    sock = socket.create_connection(('127.0.0.1', int(sys.argv[3])), timeout=1); result['network'] = 'allowed'; sock.close()
 except OSError: result['network'] = 'denied'
 Path('owned.txt').write_text('owned')
 print(json.dumps(result))
 ''')
-    plan = prepare_extension([sys.executable, str(script), str(secret), str(tmp_path / 'outside.txt')],
+    plan = prepare_extension([sys.executable, str(script), str(secret), str(tmp_path / 'outside.txt'), str(host_listener[1])],
                              package, private, os.environ.copy())
     result = subprocess.run(plan.argv, cwd=plan.cwd, env=plan.env, text=True, capture_output=True, timeout=10)
     assert result.returncode == 0, result.stderr
