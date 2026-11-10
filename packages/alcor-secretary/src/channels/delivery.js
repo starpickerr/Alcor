@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as wait } from 'node:timers/promises'
+// Null is an explicit, revocable grant. Existing dated grants still expire on their original date.
+const inTerm = (grant, now) => grant.until === null || grant.until > now
+
 export class ChannelDelivery {
   constructor(ctx,channels,memory,table) {
-    this.ctx=ctx;this.channels=channels;this.memory=memory;this.table=table;this.writes=Promise.resolve();this.running=Promise.resolve()
+    this.ctx=ctx;this.channels=channels;this.memory=memory;this.table=table;this.writes=Promise.resolve();this.running=null
   }
   state(){return this.table.get('state') ?? {grants:[],receipts:[],job:null}}
   mutate(fn) {
@@ -14,9 +17,17 @@ export class ChannelDelivery {
     return this.memory.storeForAudience(scope)
   }
   notes(scope){return this.store(scope).pendingFollowups().filter(note=>(note.generation ?? 0)===(this.memory.personal.initiativeGeneration ?? 0))}
-  valid(grant,now=Date.now()) {
-    return grant.until>now && !!this.channels.permitted(grant.route) &&
-      (grant.route.audience==='personal'?grant.route.owner:true)
+  hasActiveGrants() {
+    return this.state().grants.some(grant => inTerm(grant, Date.now()))
+  }
+  trustedDestination(route) {
+    const adapter = this.channels.adapter(route)
+    if (!adapter) return false
+    if (adapter.trustedForDelivery) return adapter.trustedForDelivery(route)
+    return route.kind === 'private' ? route.owner : this.memory.canManageAudience(route.audience)
+  }
+  valid(grant, now = Date.now()) {
+    return inTerm(grant, now) && !!this.channels.permitted(grant.route) && this.trustedDestination(grant.route)
   }
   async initialize() {
     await this.mutate(state=>{for(const receipt of state.receipts)if(receipt.status==='sending'){receipt.status='unknown';receipt.updatedAt=Date.now()}})
@@ -44,7 +55,7 @@ export class ChannelDelivery {
       }
       return {kind:'reject'}
     },{prepend:true})
-    if(this.memory.personal.initiative && this.state().grants.some(g=>g.until>Date.now()))await this.ensureJob()
+    if(this.memory.personal.initiative && this.hasActiveGrants())await this.ensureJob()
     else if(this.state().job)await this.pause()
   }
   async ensureJob() {
@@ -69,20 +80,19 @@ export class ChannelDelivery {
     await this.channels.catalog()
     const route=this.channels.table.get(sessionId) && this.channels.resolve(sessionId)
     if(!route)throw Error('通道会话不存在。')
-    if(enabled && (!this.channels.permitted(route) || (route.kind==='private' && !route.owner)))throw Error('请选择当前可用的主人私聊或已启用群聊。')
-    if(enabled && route.kind==='group' && !this.memory.canManageAudience(route.audience))throw Error('主人尚未参与此群，无法授权主动投递。')
+    if (enabled && (!this.channels.permitted(route) || !this.trustedDestination(route))) throw Error('请选择已连接并允许交流的联系人或群聊。')
     if(enabled && this.memory.personal.initiative)await this.ensureJob()
     await this.mutate(state=>{
       state.grants=state.grants.filter(g=>g.route.sessionId!==sessionId && !(enabled && route.audience==='personal' && g.route.audience==='personal'))
       if(enabled){
-        const grant={route,nonce:randomUUID(),until:Date.now()+7*86400000}
+        const grant={route,nonce:randomUUID(),until:null}
         state.grants.push(grant)
         for(const receipt of state.receipts)if(receipt.route.sessionId===sessionId && receipt.status==='pending')receipt.grant=grant.nonce
       }
     })
     if(enabled && route.audience!=='personal')await this.store(route.audience).allowInitiative(true)
     await this.trackAll()
-    if(!this.state().grants.some(grant=>grant.until>Date.now()))await this.pause()
+    if(!this.hasActiveGrants())await this.pause()
     return {ok:true}
   }
   async pause() {
@@ -92,7 +102,7 @@ export class ChannelDelivery {
   async track(scope,note) {
     await this.mutate(state=>{
       if(state.receipts.some(row=>row.id===note.id))return
-      const grant=state.grants.find(g=>g.route.audience===scope && this.valid(g))
+      const grant=state.grants.find(g=>g.route.audience===scope && (!note.idleGrant || note.idleGrant === g.nonce) && this.valid(g))
       if(grant && (note.generation ?? 0)===(this.memory.personal.initiativeGeneration ?? 0))state.receipts.push({id:note.id,scope,content:note.content,route:grant.route,grant:grant.nonce,status:'pending',updatedAt:Date.now()})
     })
   }
@@ -101,21 +111,51 @@ export class ChannelDelivery {
       try{for(const note of this.notes(scope))await this.track(scope,note)}catch{}
     }
   }
+  // Only the grant which commissioned an idle greeting can send it.
+  async considerIdle(grant) {
+    const {route,nonce} = grant
+    const allowed = () => this.active && this.memory.personal.initiative &&
+      this.state().grants.some(g => g.nonce === nonce && this.valid(g))
+    if (!allowed()) return
+    const store = this.store(route.audience)
+    if (store.pendingIdleId) {
+      const previous = this.state().receipts.find(row => row.id === store.pendingIdleId &&
+        ['sent','unknown'].includes(row.status))
+      if (previous) await store.recordIdleOutcome(previous.id, previous.status, previous.updatedAt)
+    }
+    await store.considerIdle({allowed, destination:'channel', grant:nonce, sessionId:route.sessionId})
+  }
+  matchesIdleGrant(note) {
+    return !note.idleGrant || this.state().grants.some(g => g.nonce === note.idleGrant && inTerm(g, Date.now()))
+  }
   assigned(id){return this.state().receipts.some(row=>row.id===id && row.status!=='desktop')}
   next(scope) {
-    return this.store(scope).nextFollowup(new Date(),note=>(note.generation ?? 0)===(this.memory.personal.initiativeGeneration ?? 0) && !this.state().receipts.some(row=>row.id===note.id && ['sent','unknown','cancelled','expired','desktop'].includes(row.status)))
+    return this.store(scope).nextFollowup(new Date(),note=>this.matchesIdleGrant(note) && (note.generation ?? 0)===(this.memory.personal.initiativeGeneration ?? 0) && !this.state().receipts.some(row=>row.id===note.id && ['sent','unknown','cancelled','expired','desktop'].includes(row.status)))
   }
   authorized(receipt) {
     if(!this.active || !this.memory.personal.initiative)return false
     const grant=this.state().grants.find(g=>g.nonce===receipt.grant && g.route.sessionId===receipt.route.sessionId)
-    try{return !!grant && this.valid(grant) && (receipt.scope==='personal' || this.memory.canManageAudience(receipt.scope)) && this.next(receipt.scope)?.id===receipt.id}catch{return false}
+    try {
+      if (!grant || !this.valid(grant)) return false
+      const note = this.next(receipt.scope)
+      return note?.id === receipt.id && (!note.idleGrant || note.idleGrant === grant.nonce)
+    } catch { return false }
   }
   drain() {
-    const run=this.running.then(()=>this.dispatch())
-    this.running=run.catch(()=>{});return run
+    if (this.running) return this.running
+    const run = Promise.resolve().then(() => this.dispatch())
+    this.running = run
+    const finished = () => { this.running = null }
+    run.then(finished, finished)
+    return run
   }
   async dispatch(){
-    if(!this.memory.personal.initiative || !this.state().grants.some(g=>g.until>Date.now())){await this.pause();return}
+    if(!this.memory.personal.initiative || !this.hasActiveGrants()){await this.pause();return}
+    const grants = this.state().grants.filter(grant => grant.route.channel === 'qq' && inTerm(grant, Date.now()))
+    for (let i = 0; i < grants.length; i += 3) {
+      const results = await Promise.allSettled(grants.slice(i,i+3).map(grant => this.considerIdle(grant)))
+      if (results.some(result => result.status === 'rejected')) this.ctx.logger?.warn('暂时无法判断 QQ 联系时机。')
+    }
     await this.trackAll()
     await this.mutate(state=>{state.receipts=state.receipts.filter(row=>row.status==='pending' || row.updatedAt>Date.now()-30*86400000)})
     for(const receipt of this.state().receipts.filter(r=>r.status==='pending')) {
@@ -130,7 +170,7 @@ export class ChannelDelivery {
       const adapter=this.channels.adapter(receipt.route)
       if(!adapter)continue
       const destinations=['channel']
-      if(receipt.scope==='personal' && store.desktopDelivery)destinations.push('desktop')
+      if(!note.idleGrant && receipt.scope==='personal' && store.desktopDelivery)destinations.push('desktop')
       const reviewed=await store.reconsider(note,()=>this.authorized(receipt),destinations)
       if(!reviewed){
         if(!this.notes(receipt.scope).some(row=>row.id===receipt.id))await this.status(receipt.id,'cancelled')
@@ -156,7 +196,8 @@ export class ChannelDelivery {
       catch{result={status:'unknown'}}
       const status=result.status==='deferred'?'pending':result.status==='sent'?'sent':'unknown'
       await this.status(receipt.id,status,result.messageId)
-      if(status==='sent')await store.dismissFollowup(note.id)
+      if (note.kind === 'idle') await store.recordIdleOutcome(receipt.id,result.status)
+      if(status==='sent' && note.kind !== 'idle')await store.dismissFollowup(note.id)
     }
   }
   status(id,status,messageId) {
@@ -164,9 +205,9 @@ export class ChannelDelivery {
   }
   async settings(){
     const routes=await this.channels.catalog(true),state=this.state()
-    return {targets:routes.filter(route=>route.kind==='group' || route.owner).map(route=>{
+    return {targets:routes.filter(route=>route.kind==='group' || route.owner || this.trustedDestination(route) || state.grants.some(g=>g.route.sessionId===route.sessionId)).map(route=>{
       const grant=state.grants.find(g=>g.route.sessionId===route.sessionId)
-      return {route,until:grant?.until ?? 0,available:!!this.channels.permitted(route) && (route.kind!=='group' || this.memory.canManageAudience(route.audience))}
+      return {route,until:grant ? grant.until : 0,available:!!this.channels.permitted(route) && this.trustedDestination(route)}
     }),receipts:state.receipts.slice(-50)}
   }
 }

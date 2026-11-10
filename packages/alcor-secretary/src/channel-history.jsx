@@ -65,7 +65,7 @@ function Conversation({id,navigation,api,secretary}) {
   useLayoutEffect(()=>{
     if (!pages.length || !scroller.current || !place.current) return
     const el=scroller.current, old=place.current
-    el.scrollTop=old==='latest' ? el.scrollHeight : old.top+el.scrollHeight-old.height
+    el.scrollTop=old==='latest' ? el.scrollHeight : old.absolute!=null ? old.absolute : old.top+el.scrollHeight-old.height
     place.current=null
   },[pages])
   useEffect(() => {
@@ -81,6 +81,31 @@ function Conversation({id,navigation,api,secretary}) {
     }).catch(reason => { if (!controller.signal.aborted) setError(reason.message) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => controller.abort()
   }, [id, api, version])
+  useEffect(()=>{
+    let active=true,reading=false
+    async function refresh(){
+      if(reading || document.visibilityState!=='visible')return
+      reading=true
+      try{
+        const result=await secretary.channelHistory({sessionId:id})
+        if(!active || !result.ok)return
+        const el=scroller.current
+        place.current=!el || el.scrollHeight-el.scrollTop-el.clientHeight<80 ? 'latest' : {absolute:el.scrollTop}
+        setPages(previous=>{
+          const merged=new Map(previous.map(row=>[row.seq,row]))
+          for(const row of result.value.messages)merged.set(row.seq,row)
+          return [...merged.values()].sort((a,b)=>(a.time ?? 0)-(b.time ?? 0) || a.seq-b.seq)
+        })
+        setError('')
+        const info=await secretary.channelConversation({sessionId:id})
+        if(active && info.ok)setInfo(info.value)
+      }catch{ /* Keep the last readable transcript during a transient disconnect. */ }
+      finally{reading=false}
+    }
+    const timer=setInterval(refresh,4000)
+    document.addEventListener('visibilitychange',refresh)
+    return()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',refresh)}
+  },[id,secretary])
   async function older() {
     if (busy || before === undefined) return
     const requestedId = id

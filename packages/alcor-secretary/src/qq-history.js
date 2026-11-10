@@ -15,7 +15,7 @@ export function historyMessages(records, privateNumber) {
         const header=/^<user_message qq="([1-9]\d{0,19})" nickname="([^"<>]{0,128})">/.exec(envelope[0])
         if (header && header[1]===senderId) nickname=header[2]
         text = envelope[1].trim()
-        if (message.source.qqAmbient && text.startsWith('近期本群发言（背景资料）：')) {
+        if ((message.source.qqGroupContext || message.source.qqAmbient) && text.startsWith('近期本群发言（背景资料）：')) {
           const boundary=text.indexOf('\n当前发言：')
           if (boundary>=0) text=text.slice(boundary+'\n当前发言：'.length)
         }

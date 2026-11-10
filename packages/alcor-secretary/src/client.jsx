@@ -13,7 +13,7 @@ import { BearOverlay, BearTimeline } from './bear.jsx'
 import { createBearState, installPresetFilter } from './bear-state.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { ChannelBrowser, ChannelHistory } from './channel-history.jsx'
-import { MemoryPreferences } from './memory-preferences.jsx'
+import { PersonaPage } from './persona-page.jsx'
 import { SpacePreferences } from './space-preferences.jsx'
 import bearStyle from './bear.css'
 import deskBaseStyle from './desk.css'
@@ -23,7 +23,7 @@ import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
 const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + bearStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
-import { Button, Input, Menu, MenuItemButton, SegmentedControl, FishLogo, IconFolderOpenRegular, IconNewChatOutlineRegular, IconEditOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Menu, MenuItemButton, SegmentedControl, FishLogo, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const inject = ['slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
 
@@ -76,13 +76,13 @@ function WorkbenchHistory({navigation,begin,openSession}) {
   </>
 }
 
-function AlcorSettings({initial,pet,memory,spaces}) {
-  const [selected,setSelected]=useState(initial)
-  const [visited,setVisited]=useState({[initial]:true})
-  const pages=[['assistant','人格与记忆',memory],['pet','小熊',pet],...(spaces ? [['spaces','项目空间',spaces]] : [])]
+function AlcorSettings({pet,spaces}) {
+  const [selected,setSelected]=useState('pet')
+  const [visited,setVisited]=useState({pet:true})
+  const pages=[['pet','小熊',pet],...(spaces ? [['spaces','项目空间',spaces]] : [])]
   return <div className="alcor-settings-content">
     <nav aria-label="Alcor 设置分类">{pages.map(([id,title])=>
-      <button type="button" key={id} aria-pressed={selected===id} onClick={()=>{setSelected(id);setVisited(prior=>({...prior,[id]:true}))}}>{id==='assistant'?<IconEditOutlineRegular size={15}/>:id==='pet'?<BearLogo size={17}/>:<IconFolderOpenRegular size={15}/>}<span>{title}</span></button>)}</nav>
+      <button type="button" key={id} aria-pressed={selected===id} onClick={()=>{setSelected(id);setVisited(prior=>({...prior,[id]:true}))}}>{id==='pet'?<BearLogo size={17}/>:<IconFolderOpenRegular size={15}/>}<span>{title}</span></button>)}</nav>
     {pages.map(([id,,content])=>visited[id] && <div key={id} hidden={selected!==id}>{content}</div>)}
   </div>
 }
@@ -173,10 +173,10 @@ export async function apply(ctx) {
         ctx.layout.selectPanel('alcor-briefing')
       }}),
     }, BriefingPluginReturn))
-    const preferences = initial => <AlcorSettings initial={initial==='pet'?'pet':'assistant'}
-      pet={<Preferences bear={state.preferences} />} memory={<MemoryPreferences api={ctx.remote.alcorSecretary} />}
+    const preferences = () => <AlcorSettings pet={<Preferences bear={state.preferences} />}
       spaces={spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />} />
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
+    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-persona', inject: () => ({ api: ctx.remote.alcorSecretary }) }, PersonaPage))
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,
@@ -215,7 +215,7 @@ export async function apply(ctx) {
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name:'shell.overlay', id:'alcor-bear',
         children:{'alcor.bear.timeline':{kind:'single',scope:'session'}},
-        inject:() => ({state, renderSettings:preferences, product:navigation.state, followupApi:ctx.remote.alcorSecretary, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
+        inject:() => ({state, renderSettings:preferences, openPersona:() => navigate('alcor-persona'), product:navigation.state, followupApi:ctx.remote.alcorSecretary, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
       }, BearOverlay))
       ctx.slots.inject('alcor.bear.timeline', () => ctx.slots.register({name:'alcor.bear.timeline'}, BearTimeline))
       let releaseSidebar
