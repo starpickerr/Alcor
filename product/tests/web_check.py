@@ -114,7 +114,7 @@ def wait_secretary(page):
     if mode.count() and mode.get_attribute('aria-label').endswith('Alcor'):
         page.locator('.alcor-sidebar').wait_for()
     settings(page)
-    page.get_by_label('小熊名称', exact=True).wait_for()
+    page.get_by_role('heading', name='当前空间的项目', exact=True).wait_for()
     page.get_by_role('button', name='Close', exact=True).click()
 
 

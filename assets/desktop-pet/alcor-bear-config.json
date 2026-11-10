@@ -1,0 +1,42 @@
+{
+  "name": "alcor-bear",
+  "source": "Alcor existing vector mascot; ivory body, blue scarf, gold star.",
+  "animations": {
+    "idle": [
+      "idle",
+      "waiting"
+    ],
+    "speak": [
+      "speak"
+    ],
+    "click": [
+      "click"
+    ]
+  },
+  "weights": {
+    "idle": 80,
+    "speak": 15,
+    "click": 5
+  },
+  "events": {
+    "proactive": "speak",
+    "whisper": [
+      "speak"
+    ],
+    "workStatus": {
+      "thinking": "thinking",
+      "working": "working",
+      "result": "result",
+      "waiting": "waiting",
+      "success": "success",
+      "error": "error"
+    }
+  },
+  "physics": {
+    "gravity": 1000,
+    "restitution": 0.65,
+    "groundFriction": 2.5,
+    "ceilingBounce": true,
+    "throwPower": 0.8
+  }
+}

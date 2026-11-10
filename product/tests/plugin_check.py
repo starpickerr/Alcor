@@ -288,8 +288,7 @@ def main():
                         page.screenshot(path=str(Path(directory) / 'native-secretary-desktop.png'))
                         page.set_viewport_size({'width': 390, 'height': 844})
                         expect(page.locator('[data-sidebar-opener]')).to_be_visible()
-                        page.get_by_role('button', name='Alcor 小熊').click()
-                        expect(page.get_by_label('给 Alcor 发消息')).to_be_visible()
+                        expect(page.locator('.alcor-bear')).to_have_count(0)
                         page.screenshot(path=str(Path(directory) / 'native-secretary-mobile.png'), animations='disabled')
                         expect(page.get_by_role('heading', name='事务', exact=True)).to_be_in_viewport(ratio=1)
                         assert page.locator('body').evaluate('element => element.scrollWidth <= element.clientWidth')
@@ -311,7 +310,7 @@ def main():
                         expect(page.locator('[data-sidebar-opener]')).to_be_focused()
                         page.locator('[data-sidebar-opener]').click()
                         settings(page)
-                        expect(page.get_by_label('小熊名称', exact=True)).to_be_visible()
+                        expect(page.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
                         page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
                         if page.locator('[data-sidebar-opener]').is_visible():
                             page.locator('[data-sidebar-opener]').click()

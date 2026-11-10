@@ -56,7 +56,7 @@ dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-
 
 在窗口顶部切换 Alcor 或 DSH 工作台。Alcor 侧栏提供事务、日程、简报、账单和自动化。工作台首页按项目和最近对话组织专业任务，使用宿主模型和工具权限。AgentHub 的入口位于工作台，见[插件说明](../packages/alcor-agent-hub/README.md)。
 
-在 Alcor 中，可以从侧栏新建秘书对话，或点击小熊继续处理业务。小熊外观和项目空间在「设置 → Alcor」管理，第三方插件入口显示在「系统」分组。
+在 Alcor 中，可以从侧栏新建秘书对话；项目空间在「设置 → Alcor」管理。桌宠由独立的 AuraBot pet 社区模块提供，沿用上游的聊天、动画及设置。第三方插件入口显示在「系统」分组。
 
 Apple 日历与提醒事项的同步由「插件 → @alcor/apple-sync」管理，见[插件说明](../packages/alcor-apple-sync/README.md)。eLearning 和邮件接入见 [MCP 接入](mcp-connections.md)。
 
@@ -191,7 +191,6 @@ launcher 不继承模型 API Key 等宿主变量。模型配置通过原生 prof
 npm run product:test
 # 需要安装 Python Playwright 及 Chromium
 python product/tests/web_check.py
-python product/tests/quick_chat_check.py
 python product/tests/desktop_check.py
 ```
 
@@ -313,4 +312,4 @@ Apple `0.1.11`：双方分类／清单取并集并建立一一映射，补齐 St
 
 简报 `0.1.58`：每次运行由一个持久 `stella-briefing` 会话执行筛选和写作，不再为批次启动子 Agent。小型全新窗口可一次提交筛选及报告；较大或增量窗口由同一会话分批处理，较长原文可通过受限工具按顺序分页读取，业务层校验完整覆盖后才保存检查点。规则、模型和来源范围按运行冻结，每步与读取、提交时复核授权；取消在保存前生效时不推进游标；若保存已先完成，按已保存结果对账。未通过校验不推进游标。旧版未完成任务须新建，不会把旧批次当作新协议恢复。空窗口和内容未变化的刷新不调用模型。上下文超限或输出不完整时会失败并保留来源游标；模型摘要和会话历史可能增加调用或成本，不能保证任何窗口均节省 token 或与旧报告完全相同。
 
-0.1.101 起，秘书使用 DSH 当前对话历史与已授权业务工具，不再加载社交人格、长期社交记忆或主动交流队列。小熊保留为秘书对话入口，旧社交数据与会话保留归档。详见[QQ 社交与秘书业务](channels.md)。
+0.1.101 起，秘书使用 DSH 当前对话历史与已授权业务工具，不再加载社交人格、长期社交记忆或主动交流队列。旧社交数据与会话保留归档。0.1.102 起移除内置悬浮小熊，桌宠改用独立的 AuraBot pet 模块与[小熊形象包](../assets/desktop-pet/README.md)。详见[QQ 社交与秘书业务](channels.md)。
