@@ -226,6 +226,10 @@ def prepare(command: str, cwd: str, roots: list[str], policy: dict, env: dict,
                           str(Path(__file__).resolve().parents[2] / 'core')]
             for path in dict.fromkeys(os.path.realpath(path) for path in read_roots if os.path.exists(path)):
                 argv.extend(['--ro-bind', path, path])
+            # Merged-/usr systems still launch shells and loaders through these aliases.
+            for path in ('/bin', '/sbin', '/lib', '/lib64'):
+                if os.path.islink(path):
+                    argv.extend(['--symlink', os.readlink(path), path])
             for path in write_roots:
                 argv.extend(["--bind", path, path])
             if approved_target and writable:

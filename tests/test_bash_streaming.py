@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -12,6 +13,25 @@ from agent.tools.bash.bash import Bash
 
 posix_only = pytest.mark.skipif(Bash._IS_WIN, reason="POSIX shell command")
 windows_only = pytest.mark.skipif(not Bash._IS_WIN, reason="Windows integration test")
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux mount namespace')
+def test_linux_sandbox_preserves_system_directory_aliases(tmp_path):
+    from agent.permission import process_sandbox
+    from agent.permission.security_policy import default_policy
+
+    env = os.environ.copy()
+    plan = process_sandbox.prepare('printf aliases', str(tmp_path), [str(tmp_path)], default_policy(), env)
+    try:
+        for path in ('/bin', '/sbin', '/lib', '/lib64'):
+            if os.path.islink(path):
+                assert ['--symlink', os.readlink(path), path] in [plan.argv[i:i + 3] for i in range(len(plan.argv))]
+        result = subprocess.run(plan.argv, shell=plan.shell, cwd=tmp_path, env=env,
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == 'aliases'
+    finally:
+        shutil.rmtree(plan.temp_dir)
 
 
 def _windows_pid_command(pid_file):
