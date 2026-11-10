@@ -1,0 +1,21 @@
+{
+  "name": "@alcor/plugin-info",
+  "version": "0.1.0",
+  "description": "查看插件的生效范围和切换模式后的后台行为",
+  "type": "module",
+  "license": "MIT",
+  "files": ["lib/client.js", "index.js", "cordis.patch.yml", "locale"],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {"patch": "./cordis.patch.yml"},
+    "client": {"platform":"web","inject":["@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-ui-layout","@deepseek-ai/dsh-client-ui-slots"]}
+  },
+  "peerDependencies": {"react": "*"},
+  "peerDependenciesMeta": {"react": {"optional": true}},
+  "engines": {"node": ">=24.9.0", "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1"}
+}

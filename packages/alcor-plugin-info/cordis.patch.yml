@@ -1,0 +1,3 @@
+- insert:
+    - id: alcor-plugin-info
+      name: '@alcor/plugin-info'

@@ -25,6 +25,8 @@ Alcor 内置长期记忆与人格管理，无需另装记忆插件。桌面、�
 | dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
 | dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
 
+「插件作用范围」（`@alcor/plugin-info`）为 DSH 原生插件列表与详情添加适用模式和切换后的后台行为。两种模式共用原生安装、启停及升级入口。后台说明描述已启用并完成配置时的行为；未知插件显示未声明。运行 `npm run product:plugin-info:pack` 可生成独立的界面插件包。
+
 ## 当前源码与默认入口
 
 `packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试，`npm run dev` 启动独立 DSH Profile 的开发预览。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 运行时的测试入口为 `make test-legacy`。
