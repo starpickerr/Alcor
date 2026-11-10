@@ -10,7 +10,6 @@ from pathlib import Path
 import re
 import signal
 import subprocess
-import tempfile
 from fresh_profile_fixture import fresh_test_home
 import time
 from uuid import uuid4
@@ -279,7 +278,8 @@ def check_modes(page):
     page.get_by_role('heading', name='事务', exact=True).wait_for()
     assert len([item for item in page.context.pages if item.url.startswith('dsh-app://app/')]) == 1, 'Mode switches must reuse the same official Desktop renderer'
     assert page.locator('.alcor-app-header > div > p').count() == 0, 'Page titles must not carry introductory subtitles'
-    business = lambda method, args: rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
+    def business(method, args):
+        return rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'briefing', 'method': method, 'arguments': args}})
     entry = business('start_briefing', {'briefing_date': '2026-10-01', 'title': 'Synthetic Markdown'})
     business('complete_briefing', {'briefing_id': entry['id'], 'payload': {'body': '## Preview heading\n\n- **Preview text**', 'items': []}})
     sidebar.get_by_role('button', name='简报', exact=True).click()

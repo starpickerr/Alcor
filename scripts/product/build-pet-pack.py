@@ -76,8 +76,10 @@ def main():
                     first = data
                     alpha = Image.open(io.BytesIO(png)).getchannel('A')
                     assert alpha.getextrema() == (0,255), 'Pet frame must contain transparency and an opaque body'
-                    if state == 'idle': (DEST / 'preview.png').write_bytes(png)
-                if frame == FRAMES//7: assert data != first, 'An animation must have visible movement'
+                    if state == 'idle':
+                        (DEST / 'preview.png').write_bytes(png)
+                if frame == FRAMES//7:
+                    assert data != first, 'An animation must have visible movement'
                 process.stdin.write(png)
             process.stdin.close()
             assert process.wait() == 0, 'FFmpeg failed'

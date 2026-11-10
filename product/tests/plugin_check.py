@@ -232,7 +232,8 @@ def main():
                     rail = page.locator('.alcor-sidebar').bounding_box()
                     assert rail['width'] == 56
                     for button in page.locator('.alcor-sidebar > .alcor-sidebar-brand button, .alcor-sidebar-chat, .alcor-sidebar nav button, .alcor-sidebar-workspaces button, .alcor-sidebar footer button').all():
-                        if not button.is_visible(): continue
+                        if not button.is_visible():
+                            continue
                         rect = button.bounding_box()
                         assert abs(rect['x'] + rect['width'] / 2 - (rail['x'] + rail['width'] / 2)) < 2, rect
                         assert rect['x'] >= rail['x'] and rect['x'] + rect['width'] <= rail['x'] + rail['width'], rect
