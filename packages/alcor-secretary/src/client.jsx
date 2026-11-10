@@ -13,9 +13,6 @@ import { AutomationPage } from './automation.jsx'
 import { BearOverlay, BearTimeline } from './bear.jsx'
 import { createBearState, installPresetFilter } from './bear-state.js'
 import { createSpaceNavigation } from './space-navigation.js'
-import { ChannelBrowser, ChannelHistory } from './channel-history.jsx'
-import { ChannelsPage } from './channels-page.jsx'
-import { PersonaPage } from './persona-page.jsx'
 import { SpacePreferences } from './space-preferences.jsx'
 import bearStyle from './bear.css'
 import deskBaseStyle from './desk.css'
@@ -179,16 +176,6 @@ export async function apply(ctx) {
     const preferences = () => <AlcorSettings pet={<Preferences bear={state.preferences} />}
       spaces={spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />} />
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
-    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-persona', inject: () => ({ api: ctx.remote.alcorSecretary }) }, PersonaPage))
-    ctx.slots.inject('main', () => ctx.slots.register({ name:'main', key:'alcor-channels', inject:() => ({
-      api:ctx.remote.alcorSecretary,
-      openPlugin:name => {
-        const manager = ctx.get('pluginNavigation')
-        if (name && manager) manager.openBundle(name)
-        else if (manager) manager.openList()
-        else ctx.layout.selectPanel('plugins')
-      },
-    }) }, ChannelsPage))
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,
@@ -223,11 +210,10 @@ export async function apply(ctx) {
       modeController = controller
       const navigation = createSpaceNavigation(ctx, controller)
       spaceNavigation = navigation
-      ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-qq-history', inject: () => ({ navigation, api: ctx.remote.session, secretary: ctx.remote.alcorSecretary }) }, ChannelHistory))
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name:'shell.overlay', id:'alcor-bear',
         children:{'alcor.bear.timeline':{kind:'single',scope:'session'}},
-        inject:() => ({state, renderSettings:preferences, openPersona:() => navigate('alcor-persona'), product:navigation.state, followupApi:ctx.remote.alcorSecretary, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
+        inject:() => ({state, renderSettings:preferences, product:navigation.state, ctx:{sessions:ctx.sessions,workspaces:ctx.workspaces,uiWorkspace:ctx.uiWorkspace}, hooks:{mode:controller, mainSelection:ctx.uiWorkspace.selection}}),
       }, BearOverlay))
       ctx.slots.inject('alcor.bear.timeline', () => ctx.slots.register({name:'alcor.bear.timeline'}, BearTimeline))
       let releaseSidebar
@@ -236,8 +222,8 @@ export async function apply(ctx) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
             startSession,
+            pluginPanels: { list: () => ctx.slots.entriesOfSlot('sidebar.panellist'), subscribe: listener => ctx.slots.subscribe('sidebar.panellist',listener) },
             hubForm:ctx.configForms.get('agent-hub'),
-            renderQQ: (styles, expandSidebar) => <ChannelBrowser navigation={navigation} catalog={ctx.sessions.list} styles={styles} expandSidebar={expandSidebar} />,
             toggleSidebar: () => ctx.layout.toggleSidebar(),
           }) }, SecretarySidebar)
         } else if (controller.getSnapshot() !== 'alcor' && releaseSidebar) {

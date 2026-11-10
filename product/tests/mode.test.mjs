@@ -198,12 +198,12 @@ test('new and legacy presets register equivalent isolated compositions', async (
   const { parse } = await import('yaml')
   const rows = parse(await readFile(new URL('../../packages/alcor-secretary/cordis.patch.yml', import.meta.url), 'utf8'))
     .flatMap(row => row.insert ?? []).filter(row => row.name === '@deepseek-ai/dsh-agent-preset')
-  assert.deepEqual(rows.map(row => row.config.id), ['alcor-delivery','alcor', 'alcor-briefing', 'stella', 'stella-briefing'])
+  assert.deepEqual(rows.map(row => row.config.id), ['alcor', 'alcor-briefing', 'stella', 'stella-briefing'])
   const normalize = plugins => plugins.map(plugin => ({ ...plugin, id: plugin.id.replace(/^stella-/, "alcor-") }))
-  assert.deepEqual(rows[1].config.plugins, normalize(rows[3].config.plugins))
-  assert.deepEqual(rows[2].config.plugins, rows[4].config.plugins)
-  assert.match(rows[3].config.name, /历史会话.*兼容/)
-  assert.match(rows[4].config.name, /兼容/)
+  assert.deepEqual(rows[0].config.plugins, normalize(rows[2].config.plugins))
+  assert.deepEqual(rows[1].config.plugins, rows[3].config.plugins)
+  assert.match(rows[2].config.name, /历史会话.*兼容/)
+  assert.match(rows[3].config.name, /兼容/)
 })
 
 test('a destination appearing during migration takes precedence', () => {
@@ -338,4 +338,16 @@ test('host main slots register new panels and legacy aliases with equivalent des
     assert.equal(rows.length, 2); assert.equal(rows[0].inject().scope, 'alcor'); assert.equal(rows[1].priority, -10)
   }
   assert.equal(calls.find(row => row.key === 'schedules').inject().scope, 'all')
+})
+
+
+test('retired social settings restore to secretary tasks without redirecting third-party plugins', () => {
+  for (const panel of ['alcor-persona', 'alcor-channels', 'alcor-qq-history']) {
+    assert.equal(canonicalPanel(panel), 'alcor-tasks')
+    const f = fixture(JSON.stringify({mode:'alcor',locations:{alcor:{panel}}}))
+    const controller = createModeController(f.ctx, f.storage)
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'alcor-tasks')
+    controller.dispose()
+  }
+  assert.equal(canonicalPanel('independent-plugin'), 'independent-plugin')
 })

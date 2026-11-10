@@ -75,7 +75,7 @@ export function createSpaceNavigation(ctx, controller) {
       controller.switchMode('alcor')
       selection = target
       notify()
-      ctx.layout.selectPanel('alcor-qq-history')
+      ctx.layout.selectPanel('alcor-tasks')
       return true
     },
     selectSpace(target) {

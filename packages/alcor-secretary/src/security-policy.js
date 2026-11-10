@@ -51,7 +51,6 @@ export function classifyActor(header, sources) {
 export function classifyCapability(name, args = {}) {
   if (typeof name !== 'string' || !name.startsWith('alcor_')) return { kind: 'not-alcor' }
   if (name === 'alcor_overview') return { kind: 'overview' }
-  if (['alcor_memory_reflect', 'alcor_memory_remember', 'alcor_memory_recall', 'alcor_memory_correct', 'alcor_memory_forget'].includes(name)) return { kind: 'memory' }
   if (['alcor_import_bills', 'alcor_import_dates', 'alcor_export_bills'].includes(name)) return { kind: 'file' }
   if (name === 'alcor_generate_briefing') return { kind: 'briefing' }
   if (name === 'alcor_review_tasks') return { kind: 'read' }

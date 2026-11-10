@@ -1,7 +1,7 @@
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
-import React, { useRef, useState, useSyncExternalStore } from 'react'
-import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconEditOutlineRegular, IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
@@ -29,14 +29,13 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
   </section>
 }
 
-export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderQQ, hubForm, t }) {
+export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, pluginPanels, hubForm, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
   const applications = [...applicationViews]
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
   if(['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
-  const system = [{ id:'alcor-persona', label:'人设', icon:IconEditOutlineRegular }]
-  if (canManagePlugins) system.unshift({ id:'alcor-channels', label:'通道', icon:IconUsersOutlineRegular })
+  const system = []
   if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
   const sidebar = useRef()
@@ -46,8 +45,22 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
     <div className="alcor-sidebar-brand"><span className="alcor-emblem" aria-hidden="true"><BearLogo size={32} /></span>{wide && <span>Alcor</span>}<button type="button" data-sidebar-toggle title={t(collapsed ? 'toggle.open' : 'toggle.collapse')} aria-label={t(collapsed ? 'toggle.open' : 'toggle.collapse')} onClick={toggleSidebar}><IconPanelLeftOutlineRegular size={17} /></button></div>
     <button type="button" className="alcor-sidebar-chat" title={t('session.new.label')} aria-label={t('session.new.label')} onClick={async () => { setError(''); try { await startSession() } catch (reason) { setError(reason.message) } }}><IconNewChatOutlineRegular size={17} />{wide && <span>新对话</span>}</button>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
-    <nav aria-label="秘书功能">{[['应用', applications], ['系统', system]].map(([group, items]) => <div className="alcor-nav-group" role="group" aria-label={group} key={group}>{wide && <p>{group}</p>}{items.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}</div>)}</nav>
-    <section className="alcor-sidebar-workspaces" aria-label="工作区与会话">{renderFactorySlot('workspace.browser', { wide, renderQQ, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
+    <nav aria-label="秘书功能">{[['应用', applications], ['系统', system]].map(([group, items]) => <div className="alcor-nav-group" role="group" aria-label={group} key={group}>{wide && <p>{group}</p>}{items.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}{group==='系统' && <PluginPanels source={pluginPanels} wide={wide} panel={panel} navigate={navigate} />}</div>)}</nav>
+    <section className="alcor-sidebar-workspaces" aria-label="工作区与会话">{renderFactorySlot('workspace.browser', { wide, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
     <footer>{renderFactorySlot('settings.shell', { wide })}</footer>
   </aside>
+}
+
+
+export function PluginPanels({source, wide, panel, navigate}) {
+  const [entries,setEntries] = useState(() => source.list())
+  useEffect(() => { const refresh=()=>setEntries(source.list()); const stop=source.subscribe(refresh); refresh(); return stop },[source])
+  const panels=entries.map(({options})=>options).filter(row=>!['plugins','schedules','agent-hub'].includes(row.id)).sort((a,b)=>(a.order??0)-(b.order??0))
+  if (!panels.length) return null
+  return <>{panels.map(row=>{
+    const label=typeof row.label==='function' ? row.label() : row.label ?? row.id
+    return <button type="button" key={row.id} title={label} aria-label={label} aria-current={panel===row.id?'page':undefined} onClick={()=>navigate(row.id)}>
+      <IconPluginPinwheelOutlineRegular size={18} />{wide && <span>{label}</span>}
+    </button>
+  })}</>
 }

@@ -62,7 +62,7 @@ test('global new chats use distinct defaults, project creation stays explicit, a
   await assert.rejects(nav.startSession('qq'),/不可创建/)
   const count=requests.length
   assert.equal(nav.openQQ('onebot-group-123'),true)
-  assert.equal(mode,'alcor');assert.equal(panels.at(-1),'alcor-qq-history');assert.equal(requests.length,count)
+  assert.equal(mode,'alcor');assert.equal(panels.at(-1),'alcor-tasks');assert.equal(requests.length,count)
   assert.equal(nav.state.getSnapshot().selection,'onebot-group-123')
   nav.dispose();assert.equal(globalThis[spaceHook],undefined)
 })

@@ -1,4 +1,3 @@
-import {selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { mkdir, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectViews, qqRoute, sessionSpace } from './spaces.js'
@@ -9,8 +8,7 @@ export class ProductSpaces {
   async info() {
     if (!this.ready) this.ready = this.initialize().catch(error => { this.ready = undefined; throw error })
     const defaults = await this.ready
-    const channelRoutes=this.channels ? (await this.channels.catalog()).filter(route=>route.channel!=='qq' || selectedScope(this.ctx,'dsh-onebot-qq')==='alcor') : undefined
-    return { defaults, ...(channelRoutes?{channelRoutes}:{}), ...structuredClone(this.table.get('ownership') ?? { projects: {}, sessions: {} }) }
+    return { defaults, ...structuredClone(this.table.get('ownership') ?? { projects: {}, sessions: {} }) }
   }
   async initialize() {
     const root = join(this.ctx.get('profileContext').dir, 'alcor', 'workspaces')
@@ -95,18 +93,6 @@ export class ProductSpaces {
       if (primary) info.projects[workspaceId]=primary
       else delete info.projects[workspaceId]
     })
-  }
-  recordQQLabel(sessionId, label) {
-    if (!/^onebot-(group|private)-[1-9]\d{0,19}(?:-|$)/.test(sessionId) || typeof label !== 'string') return Promise.resolve()
-    label = label.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0,128)
-    if (!label) return Promise.resolve()
-    const result = this.queue.then(async () => {
-      const previous = this.table.get('ownership') ?? { projects: {}, sessions: {} }
-      if (previous.qq?.[sessionId] === label) return
-      await this.table.put('ownership', { ...previous, qq: { ...previous.qq, [sessionId]: label } })
-    })
-    this.queue = result.catch(() => {})
-    return result
   }
   async search(query, ids, space) {
     const ownership = this.table.get('ownership') ?? {sessions:{}}

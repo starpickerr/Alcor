@@ -3,8 +3,9 @@ const KEY = 'alcor.product-mode.v1'
 const modes = ['alcor', 'dsh']
 const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills', 'stella-schedules': 'alcor-schedules' }
 export const legacyPanelIds = Object.keys(oldPanels)
-export const canonicalPanel = panel => Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
-const ownPanels = new Set([...Object.values(oldPanels), 'alcor-qq-history', 'alcor-persona', 'alcor-channels'])
+const retiredPanels = new Set(['alcor-qq-history', 'alcor-persona', 'alcor-channels'])
+export const canonicalPanel = panel => retiredPanels.has(panel) ? 'alcor-tasks' : Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
+const ownPanels = new Set(Object.values(oldPanels))
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
     agentPreset: 'alcor',
@@ -96,7 +97,7 @@ export function createModeController(ctx, storage) {
     try {
       const saved = state.locations[state.mode]
       const product=globalThis[spaceHook]?.state.getSnapshot()
-      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-qq-history' : saved ? saved.panel : state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
+      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? saved.panel : state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
       if (saved?.sessionId) {
         const catalog = ctx.sessions.list.getSnapshot()
         if (catalog.phase === 'pending') { waitingForCatalog = true; return }
@@ -106,7 +107,7 @@ export function createModeController(ctx, storage) {
       }
       if (ownPanels.has(panel) && !panelRegistered(panel)) { waitingForPanel = true; return }
       if (saved?.sessionId) ctx.uiWorkspace.openSession(saved.sessionId)
-      ctx.layout.selectPanel(channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-qq-history' : panel)
+      ctx.layout.selectPanel(channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : panel)
       protectedLocations.delete(state.mode)
       persist()
     } catch {
