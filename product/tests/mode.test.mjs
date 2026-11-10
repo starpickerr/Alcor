@@ -326,7 +326,7 @@ test('host main slots register new panels and legacy aliases with equivalent des
   const generic = new Proxy(noop, { get: () => noop }), require = createRequire(import.meta.url)
   new Function('module', 'exports', 'require', output.outputFiles[0].text)(module, module.exports, name => name === 'react' ? React : name === 'zod' ? require(name) : generic)
   const slots = { registerFactory: noop, inject: (name, callback) => { if (['main', 'schedule.manager.header'].includes(name)) callback() }, register: row => calls.push(row) }
-  const ctx = { slots, effect: noop, remote: { $mount: async () => {}, settings: {}, schedule: {}, alcorSecretary: {}, alcorOrganizer: {} },
+  const ctx = { slots, configForms:{get:()=>({})}, effect: noop, remote: { $mount: async () => {}, settings: {}, schedule: {}, alcorSecretary: {}, alcorOrganizer: {} },
     inject: (_names, callback) => callback(ctx), uiWorkspace: {}, uiSession: {}, sessions: {}, workspaces: {}, layout: {} }
   await module.exports.apply(ctx)
   for (const [legacy, current] of Object.entries({ stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills' })) {

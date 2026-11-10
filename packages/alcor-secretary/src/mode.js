@@ -145,6 +145,7 @@ export function createModeController(ctx, storage) {
       if (mode === state.mode) return
       saveLocation()
       state.mode = mode
+      globalThis.dispatchEvent?.(new Event('alcor-mode-changed'))
       notice = loaded.writable ? '' : '已保存的模式状态无法读取，原数据已保留。'
       restore()
       saveLocation()

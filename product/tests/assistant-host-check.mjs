@@ -87,7 +87,7 @@ if (existsSync(join(root, 'control-ready.json'))) unlinkSync(join(root, 'control
 // Choose business hours in this isolated host independently of when the test is run.
 const offset = new Date().getUTCHours() - 12
 const testZone = offset ? 'Etc/GMT' + (offset > 0 ? '+' : '') + offset : 'UTC'
-const env = { TZ:testZone, PATH: process.env.PATH, LANG: 'en_US.UTF-8', HOME: join(root, 'home'), DSH_HOME: join(root, 'official-dsh'), SHELL: '/bin/zsh', DSH_TELEMETRY_DISABLED: '1' }
+const env = { ...(process.argv.includes('--scope-check')?{ALCOR_MODES_TEST:'1'}:{}), TZ:testZone, PATH: process.env.PATH, LANG: 'en_US.UTF-8', HOME: join(root, 'home'), DSH_HOME: join(root, 'official-dsh'), SHELL: '/bin/zsh', DSH_TELEMETRY_DISABLED: '1' }
 const host = spawn(join(app, 'Contents/Resources/runtime/cli/bin/dsh'), ['--profile', 'spaces-check', '--no-open', '--port', '0'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
 const record = chunk => { log += chunk; writeFileSync(join(root, 'official-check.log'), log.replace(/token=\S+/g, 'token=[redacted]'))
   const url = /dsh web: (http:\S+)/.exec(log)?.[1]; if (url) writeFileSync(join(root, 'browser-url.json'), JSON.stringify({ url }), { mode: 0o600 }) }
@@ -118,6 +118,7 @@ async function send(user, kind, next) {
 try {
   await until(() => existsSync(join(root, 'control-ready.json')) && log.includes('bridge ready ('), 'host and mapping')
   controlPort = JSON.parse(readFileSync(join(root, 'control-ready.json'))).port
+  async function connectGateway(){
   socket = new WebSocket('ws://127.0.0.1:36433/ws', { headers: { authorization: 'Bearer synthetic-only' } })
   socket.on('message', raw => {
     const data = JSON.parse(raw); if (data.params) { events.push(data.action); if (['send_msg', 'send_group_msg', 'send_private_msg'].includes(data.action)) {outgoing.push(data.params);outgoingTimes.push(Date.now())} }
@@ -128,7 +129,54 @@ try {
   })
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
   socket.send(JSON.stringify({ post_type: 'meta_event', meta_event_type: 'lifecycle', sub_type: 'connect', self_id: 20001, time: Math.floor(Date.now() / 1000) }))
-  if (idleOnly) {
+  }
+  await connectGateway()
+  if (process.argv.includes('--scope-check')) {
+    const name='dsh-onebot-qq'
+    const set=(value,previous)=>rpc('alcorPluginModes','setScope',{request:{name,value,previous}})
+    const scopes=await rpc('alcorPluginModes','readScopes',{request:{}})
+    assert.equal(scopes[name],'alcor',JSON.stringify(scopes))
+    await rpc('alcorSecretary','updateSoul',{request:{soul:'ALCOR_OWNER_ONLY_CANARY',examples:[]}})
+    await send(10001,'private',{text:'before assignment',reply:'ALCOR_OWNER_REPLY'})
+    const mail=(value,previous)=>rpc('alcorPluginModes','setScope',{request:{name:'@alcor/mail',value,previous}})
+    await mail('dsh','both')
+    await send(10001,'private',{text:'scoped catalogue please',reply:'SCOPED_CHECK'})
+    const forbidden=await control('/mode-probe',{session:'onebot-private-10001'})
+    assert.ok(forbidden.reason?.includes('分配') && !forbidden.visible,JSON.stringify(forbidden))
+    const spaces=await rpc('alcorSecretary','spaces',{request:{}})
+    const {sessionId}=await rpc('session','create',{request:{workspaceId:spaces.defaults.dsh,agentPreset:'standard'}})
+    plan={reply:'DSH_MODE_PROBE',calls:0}
+    await rpc('session','prompt',{request:{sessionId,requestId:randomUUID(),content:[{type:'text',text:'DSH_MODE_PROBE'}],mode:'queue'}})
+    await until(()=>requests.some(row=>JSON.stringify(row.messages).includes('DSH_MODE_PROBE')),'workbench catalogue')
+    const permitted=await control('/mode-probe',{session:sessionId})
+    assert.ok(!permitted.reason?.includes('分配') && permitted.visible,JSON.stringify(permitted))
+    await mail('both','dsh')
+    await assert.rejects(set('both','alcor'))
+    async function handoff(value,previous) {
+      const closed=new Promise(resolve=>socket.once('close',resolve))
+      const snapshot=await set(value,previous)
+      assert.equal(snapshot[name],value)
+      await Promise.race([closed,pause(8000).then(()=>{throw Error('Old QQ transport did not close')})])
+      await connectGateway()
+    }
+    await handoff('dsh','alcor')
+    for (const kind of ['private','group']) {
+      const before=outgoing.length, reply='WORKBENCH_ONLY_'+kind
+      const bodies=await send(10001,kind,{text:'please help '+kind,reply})
+      await pause(350)
+      assert.equal(outgoing.slice(before).filter(row=>JSON.stringify(row).includes(reply)).length,1)
+      assert.ok(bodies.some(row=>JSON.stringify(row.messages).includes('DSH 工作台通过 QQ')))
+      assert.ok(!JSON.stringify(bodies).includes('ALCOR_OWNER_ONLY_CANARY'))
+    }
+    await assert.rejects(set('alcor','alcor'))
+    await handoff('alcor','dsh')
+    const bodies=await send(10001,'private',{text:'after assignment',reply:'ALCOR_OWNER_BACK'})
+    assert.ok(bodies.some(row=>JSON.stringify(row.messages).includes('ALCOR_OWNER_ONLY_CANARY')))
+    assert.ok(!JSON.stringify(bodies).includes('WORKBENCH_ONLY_private'))
+    const result={checks:['mail catalogue and execution follow the session, independently of the window','QQ persisted owner setting and rejects shared mode','one group/private reply on the DSH owner without Alcor memory','returns to the original Alcor session'],scopes}
+    writeFileSync(join(root,'result.json'),JSON.stringify(result))
+    console.log(result.checks.join('\n'))
+  } else if (idleOnly) {
     await rpc('alcorSecretary','allowInitiative',{request:{enabled:true}})
     await control('/delivery-run')
     const hellos=()=>outgoing.filter(row=>row.user_id==10001 && JSON.stringify(row).includes('SYNTHETIC_IDLE_HELLO'))

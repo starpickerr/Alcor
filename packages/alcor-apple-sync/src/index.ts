@@ -1,3 +1,4 @@
+import {modeConfig} from '../../alcor-plugin-info/src/host-policy.js'
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
 import { Service } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -19,6 +20,7 @@ function assertCompatibleProfile(ctx) {
 }
 
 export default class AppleSync extends TypertRemoteService {
+  static Config=modeConfig('alcor')
   static inject = ['credentials', 'typert', 'alcorOrganizer']
   private worker
   private active = true

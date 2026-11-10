@@ -1,6 +1,6 @@
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useSyncExternalStore } from 'react'
 import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconEditOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
@@ -29,10 +29,12 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
   </section>
 }
 
-export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderQQ, t }) {
+export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderQQ, hubForm, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
   const dataViews = [...applicationViews, { id: 'alcor-persona', label: '人格', icon: IconEditOutlineRegular }]
+  const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
+  if(['alcor','both'].includes(hub.value?.productScope)) dataViews.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
   const applications = canManagePlugins ? [...dataViews, { id: 'plugins', label: '插件', icon: IconPluginPinwheelOutlineRegular }] : dataViews
   const [error, setError] = useState('')
   const sidebar = useRef()

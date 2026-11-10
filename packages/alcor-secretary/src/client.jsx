@@ -1,3 +1,4 @@
+import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import noticeStyle from './notice.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
@@ -25,7 +26,7 @@ const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + 
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
 import { Button, Input, Menu, MenuItemButton, SegmentedControl, FishLogo, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
-export const inject = ['slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
+export const inject = ['configForms','slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
 
 function ModeSwitch({ useMode, switchMode, getNotice }) {
   const mode = useMode(value => value)
@@ -162,7 +163,8 @@ export async function apply(ctx) {
       const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(current)) || ctx.workspaces.list.getSnapshot().items[0]
       return workspace ? { workspaceId: workspace.workspaceId } : {}
     }
-    ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({ name: 'plugins.detail.section', id: 'alcor-briefing-sources', inject: () => ({ api: ctx.remote.alcorOrganizer }) }, PluginBriefingSources))
+    const SchoolSources=withModeView(ctx,'@alcor/elearning',PluginBriefingSources)
+    ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({ name: 'plugins.detail.section', id: 'alcor-briefing-sources', inject: () => ({ api: ctx.remote.alcorOrganizer }) }, props=>props.subject?.kind==='bundle' && props.subject.pkg?.name==='@alcor/elearning' ? <SchoolSources {...props}/> : null))
     ctx.slots.inject('plugins.detail.actions', () => ctx.slots.register({
       name:'plugins.detail.actions', id:'alcor-briefing-return', order:-10,
       inject:() => ({navigation:briefingNavigation, onReturn:() => {
@@ -224,6 +226,7 @@ export async function apply(ctx) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
             startSession,
+            hubForm:ctx.configForms.get('agent-hub'),
             renderQQ: (styles, expandSidebar) => <ChannelBrowser navigation={navigation} catalog={ctx.sessions.list} styles={styles} expandSidebar={expandSidebar} />,
             toggleSidebar: () => ctx.layout.toggleSidebar(),
           }) }, SecretarySidebar)

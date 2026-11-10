@@ -1,3 +1,4 @@
+import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -222,12 +223,12 @@ export default class Secretary extends TypertRemoteService {
   @Remote
   async elearningAccount(request) {
     accountSchemas.elearningAccount[0].parse(request)
-    return this.ctx.get('alcorElearning')?.state({ includeUsername: true }) ?? { installed: false, configured: false, connected: false, writable: false }
+    return (permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor') ? this.ctx.get('alcorElearning') : undefined)?.state({ includeUsername: true }) ?? { installed: false, configured: false, connected: false, writable: false }
   }
 
   @Remote
   async saveElearningAccount(request) {
-    const service = this.ctx.get('alcorElearning')
+    const service = permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor') && this.ctx.get('alcorElearning')
     if (!service) throw new Error('请先在 DSH 中配置 eLearning 连接。')
     return service.save(request)
   }
@@ -235,7 +236,7 @@ export default class Secretary extends TypertRemoteService {
   @Remote
   async removeElearningAccount(request) {
     accountSchemas.removeElearningAccount[0].parse(request)
-    const service = this.ctx.get('alcorElearning')
+    const service = permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor') && this.ctx.get('alcorElearning')
     if (!service) throw new Error('eLearning 连接未配置。')
     return service.remove()
   }
@@ -243,6 +244,7 @@ export default class Secretary extends TypertRemoteService {
   @Remote
   async checkElearning(request) {
     accountSchemas.checkElearning[0].parse(request)
+    if(!permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor'))return {status:'disconnected'}
     return checkConnection(this.ctx)
   }
 

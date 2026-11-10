@@ -25,7 +25,7 @@ Alcor 内置长期记忆与人格管理，无需另装记忆插件。桌面、�
 | dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
 | dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
 
-「插件作用范围」（`@alcor/plugin-info`）为 DSH 原生插件列表与详情添加适用模式和切换后的后台行为。两种模式共用原生安装、启停及升级入口。后台说明描述已启用并完成配置时的行为；未知插件显示未声明。运行 `npm run product:plugin-info:pack` 可生成独立的界面插件包。
+「插件作用范围」（`@alcor/plugin-info`）为 DSH 原生插件列表与详情添加适用模式和切换后的后台行为。两种模式共用原生安装、启停及升级入口。邮件、教务、Apple 同步和 AgentHub 在列表或详情中选择使用模式；QQ 只选一个接管方，切换窗口不重连，更换接管方会重新挂载通道并使用各自的会话。后台说明描述已启用并完成配置时的行为。宿主公共组件保持统一管理。第三方插件可通过包清单的 `alcor.modeAssignment` 声明 `{version:1,entry,initial}`，由自己的主条目提供并执行 `productScope` 配置（alcor、dsh、both）；界面只为声明与运行条目匹配的插件提供选择。运行 `npm run product:plugin-info:pack` 可生成独立的界面插件包。
 
 ## 当前源码与默认入口
 

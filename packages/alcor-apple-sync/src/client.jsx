@@ -1,3 +1,4 @@
+import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import noticeStyle from '../../alcor-secretary/src/notice.css'
 import { Notice } from '../../alcor-secretary/src/notice.jsx'
 import React, { useEffect, useRef, useState } from 'react'
@@ -7,7 +8,7 @@ import { connectionStatus, formatSyncTime, reviewItems, resolutionRequest, delet
 import style from './style.css'
 import { createCategoryRebuildPage } from './category-rebuild-page.js'
 
-export const inject = ['slots', 'remote']
+export const inject = ['configForms', 'slots', 'remote']
 const authorizations = { not_determined: '同步前需要允许访问 Apple 日历或提醒事项。', denied: '请在 macOS 系统设置 → 隐私与安全性中允许完整访问。', restricted: '系统限制了访问权限。', write_only: '当前仅有写入权限，请在系统设置中允许完整访问。', unsupported: 'Apple 同步仅支持 macOS。', helper_missing: '系统连接组件未安装，请重新安装 Apple 同步插件。' }
 
 function Choice({ value, selected, change, title, children, danger, disabled }) {
@@ -178,6 +179,6 @@ export async function apply(ctx) {
   ctx.effect(() => { const element = document.createElement('style'); element.textContent = style + noticeStyle; document.head.append(element); return () => element.remove() })
   await ctx.remote.$mount(remote)
   ctx.inject(['remote.alcorAppleSync'], inner => {
-    inner.slots.inject('plugins.bundle.config', () => inner.slots.register({ name: 'plugins.bundle.config', key: '@alcor/apple-sync', inject: () => ({ api: inner.remote.alcorAppleSync }) }, Settings))
+    inner.slots.inject('plugins.bundle.config', () => inner.slots.register({ name: 'plugins.bundle.config', key: '@alcor/apple-sync', inject: () => ({ api: inner.remote.alcorAppleSync }) }, withModeView(inner,'@alcor/apple-sync',Settings)))
   })
 }

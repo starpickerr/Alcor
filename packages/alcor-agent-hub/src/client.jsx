@@ -1,3 +1,4 @@
+import {withModeView,uiMode} from '../../alcor-plugin-info/src/mode-view.jsx'
 import React, {useEffect,useState} from 'react'
 import {IconUsersOutlineRegular} from '@deepseek-ai/dsh-client-ui-primitives'
 import {remote} from './remote.js'
@@ -5,7 +6,7 @@ import {AgentHub} from './agent-hub.jsx'
 import style from './agent-hub.css'
 import noticeStyle from './notice.css'
 import baseStyle from './style.css'
-export const inject=['slots','remote','layout','uiWorkspace','uiSession']
+export const inject=['configForms','slots','remote','layout','uiWorkspace','uiSession']
 
 function DeveloperHub({api,currentSession,startSession,openSession}) {
   const [jobs,setJobs]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('')
@@ -29,7 +30,18 @@ export async function apply(ctx) {
   ctx.effect(()=>{const element=document.createElement('style');element.textContent=style+noticeStyle+baseStyle;document.head.append(element);return()=>element.remove()})
   await ctx.remote.$mount(remote)
   ctx.inject(['remote.agentHub'],ctx=>{
-    ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'agent-hub',inject:()=>({api:ctx.remote.agentHub,currentSession:()=>ctx.uiSession.adapter.current.getSnapshot().props.sessionId,startSession:()=>ctx.uiWorkspace.startSession(undefined,{agentPreset:'agent-hub-developer'}),openSession:id=>ctx.uiWorkspace.openSession(id)})},DeveloperHub))
-    ctx.slots.inject('sidebar.panellist',()=>ctx.slots.register({name:'sidebar.panellist',id:'agent-hub',label:'AgentHub',order:35},()=> <IconUsersOutlineRegular size={18}/>))
+    ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'agent-hub',inject:()=>({api:ctx.remote.agentHub,currentSession:()=>ctx.uiSession.adapter.current.getSnapshot().props.sessionId,startSession:()=>uiMode()==='alcor' ? globalThis[Symbol.for('@alcor/secretary.workspace-navigation')].startSession() : ctx.uiWorkspace.startSession(undefined,{agentPreset:'agent-hub-developer'}),openSession:id=>ctx.uiWorkspace.openSession(id)})},withModeView(ctx,'@alcor/agent-hub',DeveloperHub)))
+    const form=ctx.configForms.get('agent-hub')
+    ctx.slots.inject('sidebar.panellist',()=>{
+      let release
+      const update=()=>{
+        if(form.getSnapshot().status==='ready' && form.getSnapshot().value?.productScope!=='alcor'){
+          release ??= ctx.slots.register({name:'sidebar.panellist',id:'agent-hub',label:'AgentHub',order:35},()=> <IconUsersOutlineRegular size={18}/>)
+        }else if(release){release();release=undefined}
+      }
+      update()
+      const off=form.subscribe(update)
+      return ()=>{off();release?.()}
+    })
   })
 }

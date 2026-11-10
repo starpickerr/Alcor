@@ -3,9 +3,12 @@ import { writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 const root=dirname(process.env.DSH_HOME || '')
 if (!root.startsWith('/private/tmp/alcor-assistant-')) throw Error('Synthetic test control requires an isolated DSH home')
-export const inject=['alcorSecretary','agents','sessions','sessionController','typertGateway','connection','workspaceRegistry','agentPresets']
+export const inject=['tools','alcorSecretary','agents','sessions','sessionController','typertGateway','connection','workspaceRegistry','agentPresets']
 export function apply(ctx) {
  const peer=ctx.connection.createPeer({principal:{kind:'owner'},interactions:'none'})
+ let probes=0
+ if(process.env.ALCOR_MODES_TEST==='1')ctx.tools.register({name:'mcp__email__scope_probe',description:'Synthetic scope probe',parameters:{},
+   output:{schema:{type:'object'},render:()=>[{type:'text',text:'synthetic'}]},execute:()=>({calls:++probes})})
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json')
   if(req.headers.authorization!=='Bearer synthetic-control-only'){res.writeHead(403);res.end('{}');return}
@@ -14,6 +17,12 @@ export function apply(ctx) {
    const request=JSON.parse(body||'{}')
    let result
    if(req.url==='/rpc') result=await ctx.typertGateway.invoke({namespace:request.namespace,method:request.method,args:request.args??{},peer,signal:AbortSignal.timeout(15000)})
+   else if(req.url==='/mode-probe' && process.env.ALCOR_MODES_TEST==='1'){
+     const found=await ctx.sessionController.resolveAgent(request.session)
+     if('error' in found)throw Error('Cannot resolve synthetic probe session')
+     const call={agent:found.agent,name:'mcp__email__scope_probe',arguments:{}}
+     result={reason:ctx.tools.checkGuards(call),preset:ctx.agentPresets.presetForSession(found.agent.session),visible:ctx.tools.definitions(found.agent).some(row=>row.name===call.name),probes}
+   }
    else if(req.url==='/shared-project' && dirname(request.path)===root) result=(await ctx.workspaceRegistry.create(request.path,'Shared native folder')).id
    else if(req.url==='/delivery-plan') {
      const service=ctx.alcorSecretary,store=service.memory.storeForAudience(request.scope || 'personal')

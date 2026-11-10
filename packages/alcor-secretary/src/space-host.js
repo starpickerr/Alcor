@@ -1,3 +1,4 @@
+import {selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { mkdir, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { projectViews, qqRoute, sessionSpace } from './spaces.js'
@@ -8,7 +9,7 @@ export class ProductSpaces {
   async info() {
     if (!this.ready) this.ready = this.initialize().catch(error => { this.ready = undefined; throw error })
     const defaults = await this.ready
-    const channelRoutes=this.channels ? await this.channels.catalog() : undefined
+    const channelRoutes=this.channels ? (await this.channels.catalog()).filter(route=>route.channel!=='qq' || selectedScope(this.ctx,'dsh-onebot-qq')==='alcor') : undefined
     return { defaults, ...(channelRoutes?{channelRoutes}:{}), ...structuredClone(this.table.get('ownership') ?? { projects: {}, sessions: {} }) }
   }
   async initialize() {

@@ -1,3 +1,4 @@
+import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import noticeStyle from '../../alcor-secretary/src/notice.css'
 import { Notice } from '../../alcor-secretary/src/notice.jsx'
 import { checkMessage } from './check-status.js'
@@ -78,11 +79,11 @@ function Settings({ api, view }) {
   </section>
 
 }
-export const inject = ['slots', 'remote']
+export const inject = ['configForms', 'slots', 'remote']
 export async function apply(ctx) {
   try {
     ctx.effect(() => { const element = document.createElement('style'); element.textContent = style + connectionStyle + mailStyle + noticeStyle; document.head.append(element); return () => element.remove() })
     await ctx.remote.$mount(remote)
-    ctx.inject(['remote.alcorMail'], inner => inner.slots.inject('plugins.bundle.config', () => inner.slots.register({ name: 'plugins.bundle.config', key: '@alcor/mail', inject: () => ({ api: inner.remote.alcorMail }) }, Settings)))
+    ctx.inject(['remote.alcorMail'], inner => inner.slots.inject('plugins.bundle.config', () => inner.slots.register({ name: 'plugins.bundle.config', key: '@alcor/mail', inject: () => ({ api: inner.remote.alcorMail }) }, withModeView(inner,'@alcor/mail',Settings))))
   } catch (failure) { console.error('邮件插件界面加载失败：', failure); throw failure }
 }

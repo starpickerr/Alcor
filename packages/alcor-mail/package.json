@@ -1,6 +1,6 @@
 {
   "name": "@alcor/mail",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "邮件连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",
@@ -34,7 +34,8 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
   },

@@ -237,10 +237,10 @@ export async function shouldJoinGroup(ctx,route,lines,signal) {
   return lines.length > 0 && (await chooseGroupReply(ctx,route,lines,signal,[lines.at(-1)])) === 0
 }
 
-export async function chooseGroupReply(ctx, route, lines, signal, candidates, groupId, mode='ambient') {
+export async function chooseGroupReply(ctx, route, lines, signal, candidates, groupId, mode='ambient', workbench=false) {
   if (!route?.provider || !route.model || !candidates.length) throw Error('接话模型不可用')
-  const memory=ctx.get?.('alcorSecretary')?.memory
-  const persona=memory?.publicPersona() || 'Alcor'
+  const memory=workbench ? undefined : ctx.get?.('alcorSecretary')?.memory
+  const persona=memory?.publicPersona() || (workbench?'DSH 工作台助手':'Alcor')
   const speakers=new Set(candidates.map(row=>row.sender))
   const relevant=groupId && memory ? memory.group(groupId).participationContext(
     candidates.map(row=>row.text).join(' ').slice(-1500), speakers.size===1?candidates[0].sender:undefined) : ''

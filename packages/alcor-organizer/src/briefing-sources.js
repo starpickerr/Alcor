@@ -1,3 +1,4 @@
+import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { briefingSourceGroup, briefingGroupEnabled } from './source-groups.js'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -11,8 +12,15 @@ const pluginPage = z.object({
   next_offset: z.number().int().nonnegative().nullable(), truncated:z.boolean().optional(), errors: z.array(z.string()).default([]),
 })
 
+function allowedSource(ctx,tool) {
+  const name=(tool?.startsWith('mcp__email__') || tool?.startsWith('mcp__mail__'))?'@alcor/mail':tool?.startsWith('mcp__elearning__')?'@alcor/elearning':null
+  return !name || permits(selectedScope(ctx,name),'alcor')
+}
+
 async function execute(ctx, name, args, signal) {
+  if(!allowedSource(ctx,name))throw Error('来源已从 Alcor 移出。')
   const batch = await ctx.tools.execute({ signal, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })
+  if(!allowedSource(ctx,name))throw Error('来源分配已变化。')
   const result = batch.results[0]?.result
   if (!result || result.isError) throw new Error(result?.error?.message || '来源插件读取失败，请检查连接后重试。')
   return result.value?.structuredContent?.value ?? result.value
@@ -25,9 +33,9 @@ export function localBriefingSources() {
 export async function discoverBriefingSources(ctx) {
   const sources = localBriefingSources()
   const errors = []
-  const names = new Set(ctx.tools.definitions().map(tool => tool.name))
+  const names = new Set(ctx.tools.definitions().map(tool => tool.name).filter(name=>allowedSource(ctx,name)))
   try {
-    const school = await ctx.get('alcorElearning')?.briefingSource()
+    const school = permits(selectedScope(ctx,'@alcor/elearning'),'alcor') && await ctx.get('alcorElearning')?.briefingSource()
     if (school && names.has(school.tool)) sources.push(school)
   } catch { errors.push('学校来源暂时不可用，请检查连接。') }
   for (const name of names) {
@@ -56,6 +64,7 @@ export async function discoverBriefingSources(ctx) {
     ['alcorElearning', 'elearning', '@alcor/elearning', 'eLearning'],
     ['alcorMailConnection', 'email', '@alcor/mail', '邮件'],
   ]) {
+    if(!permits(selectedScope(ctx,name),'alcor'))continue
     const connection = ctx.get(service)
     if (!connection) continue
     let status = 'unavailable'
@@ -72,12 +81,15 @@ export async function discoverBriefingSources(ctx) {
 
 export async function briefingSourceOptions(ctx, source) {
   if (source.source !== 'elearning') throw new Error('此来源的范围由连接插件管理。')
+  if(!permits(selectedScope(ctx,'@alcor/elearning'),'alcor'))throw Error('学校来源没有分配给 Alcor。')
   const current = await ctx.get('alcorElearning')?.briefingSource()
   if (!current || current.accountId !== source.accountId || current.tool !== source.tool) throw new Error('来源账号已变化，请刷新简报来源。')
   return z.array(z.object({ id: z.string(), name: z.string() })).parse(await execute(ctx, 'mcp__elearning__list_courses', {}, AbortSignal.timeout(185000)))
 }
 
 export async function readBriefingSourcePage(ctx, config, { since, until, offset, cursors, signal }) {
+  const owner={email:'@alcor/mail',elearning:'@alcor/elearning'}[config.source]
+  if(owner && !permits(selectedScope(ctx,owner),'alcor'))throw Error('来源没有分配给 Alcor。')
   if (config.method === 'briefing_fetch') {
     const prefix = config.tool.slice(0, -'_briefing_fetch'.length)
     if (!/^[A-Za-z0-9_-]{1,64}_briefing_fetch$/.test(config.tool) || config.source !== `plugin:${prefix}:${config.arguments.source_id}`) throw new Error('插件来源标识无效，请重新选择。')

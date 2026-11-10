@@ -43,13 +43,21 @@ def main():
             open_plugins = page.get_by_role('button', name=re.compile(r'^(Plugins|插件)$')).first
             mode = page.get_by_role('button', name=re.compile('切换使用模式'))
             open_plugins.click()
-            for name, scope in [('@alcor/secretary', 'Alcor'), ('@alcor/agent-hub', 'DSH 工作台'),
-                                ('dsh-onebot-qq', 'QQ 继续收发'), ('@alcor/plugin-info', '两边共用')]:
-                expect(page.locator(f'[data-plugin-package="{name}"] .alcor-plugin-scope')).to_contain_text(scope)
+            for name, scope in [('@alcor/secretary', 'Alcor'), ('dsh-onebot-qq', 'Alcor'),
+                                ('@alcor/plugin-info', '共用')]:
+                expect(page.locator(f'[data-plugin-package="{name}"] .alcor-plugin-scope')).to_have_text(scope)
             hub = page.locator('[data-plugin-package="@alcor/agent-hub"]')
+            buttons = hub.get_by_role('group', name='@alcor/agent-hub 使用范围')
+            expect(buttons.get_by_role('button')).to_have_text(['共用', 'Alcor', 'DSH工作台'])
+            expect(buttons.get_by_role('button', name='DSH工作台')).to_have_attribute('aria-pressed', 'true')
+            buttons.get_by_role('button', name='共用').focus()
+            page.keyboard.press('Space')
+            expect(buttons.get_by_role('button', name='共用')).to_have_attribute('aria-pressed', 'true')
+            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/agent-hub']=='both'
             hub.get_by_role('button').first.click()
             facts = page.locator('.alcor-plugin-facts')
-            expect(facts).to_contain_text('已启动的协作任务继续执行')
+            expect(facts.get_by_role('button', name='共用')).to_have_attribute('aria-pressed', 'true')
+            expect(facts).to_have_text('共用AlcorDSH工作台')
             page.set_viewport_size({'width': 560, 'height': 840})
             facts.scroll_into_view_if_needed()
             assert facts.evaluate('e=>e.scrollWidth<=e.clientWidth+1')
@@ -65,6 +73,9 @@ def main():
             page.keyboard.press('Escape')
             expect(page.get_by_role('dialog')).to_have_count(0)
             assert not errors, errors
+        with desktop.desktop(playwright,home,'plugin-scope-restart') as (page, errors):
+            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/agent-hub']=='both'
+            assert not errors,errors
 
 
 if __name__ == '__main__':

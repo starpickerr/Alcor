@@ -1,6 +1,6 @@
 {
   "name": "@alcor/apple-sync",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Apple 同步：连接系统日历与提醒事项，共用 Alcor 事务和日程。",
   "type": "module",
   "license": "MIT",
@@ -47,7 +47,8 @@
     "@deepseek-ai/dsh-typert-protocol": "*",
     "@deepseek-ai/dsh-home-paths": "*",
     "@deepseek-ai/dsh-tool-workspace-dependencies": "*",
-    "@deepseek-ai/dsh-skill-filesystem": "*"
+    "@deepseek-ai/dsh-skill-filesystem": "*",
+    "@deepseek-ai/schemastery": "*"
   },
   "engines": {
     "node": ">=24.9.0",
@@ -70,6 +71,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
       "optional": true
     }
   }
