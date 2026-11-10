@@ -13,6 +13,7 @@
     "dev": "node scripts/product/web.mjs",
     "test": "npm run product:test",
     "product:web": "node scripts/product/web.mjs",
+    "preproduct:test": "node scripts/product/build-agent-hub.mjs",
     "product:test": "node --test product/tests/*.test.mjs",
     "product:build": "node scripts/product/build-client.mjs",
     "product:pack": "npm run product:build && npm pack --workspace @alcor/secretary --pack-destination .local/artifacts",
