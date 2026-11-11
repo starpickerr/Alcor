@@ -27,7 +27,7 @@ def check_caption(page, pid, home, mode):
     dsh = mode == 'DeepSeek Harness'
     filename = 'caption.json' if dsh else 'alcor-caption.json'
     if dsh:
-        expect(page.get_by_role('navigation', name='Alcor 秘书导航')).to_have_count(0)
+        expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_have_count(0)
     def hit(x, y):
         return win32gui.SendMessage(hwnd, win32con.WM_NCHITTEST, 0, win32api.MAKELONG(x & 65535, y & 65535))
     try:
