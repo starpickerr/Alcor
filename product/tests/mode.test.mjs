@@ -364,3 +364,12 @@ test('retired social settings restore to secretary tasks without redirecting thi
   }
   assert.equal(canonicalPanel('independent-plugin'), 'independent-plugin')
 })
+
+test('official shared profile keeps official UI owners enabled', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { parse } = await import('yaml')
+  const rows = parse(await readFile(new URL('../../packages/alcor-secretary/cordis.patch.yml', import.meta.url), 'utf8'))
+  const official = new Set(['ui-layout', 'ui-workspace', 'ui-settings-general', 'ui-schedule', 'ui-settings-models'])
+  assert.equal(rows.some(row => official.has(row.id) && row.disabled), false)
+  assert.equal(rows.flatMap(row => row.insert ?? []).some(row => row.name?.startsWith('./vendor/')), false)
+})

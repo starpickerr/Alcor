@@ -1,3 +1,13 @@
+# Current entry: official DSH shared mode
+
+Install @alcor/secretary in the unchanged official DSH Desktop Profile. Alcor and DSH share one Host, environment, configuration and plugin lifecycle. Switching presentation is not process or permission isolation. Use official main/sidebar.panellist/shell.bottom slots; keep official UI modules, application signature and update path intact. Compatibility must still be verified against supported host releases.
+
+The isolated Host/Profile client remains an optional design, preserved at origin/archive/isolated-runtimes-20261112-02217cd4 (02217cd4). Existing environments and personal databases are retained; no automatic migration is performed. Never run two responders for the same robot account.
+
+See [implementation status](official-shared-plan.md). The following sections describe the retained isolated design and existing business capabilities; the current entry is defined above.
+
+---
+
 # Alcor 客户端与 DSH 运行环境
 
 Alcor（原 Stella）在同一个客户端顶部切换 Alcor 与 DSH 工作台。两个模式各有独立的标准 DSH Host、HOME、DSH_HOME、配置、会话、浏览器状态和插件数据。第三方插件在所属模式的原生插件管理器中原样安装，无需声明 Alcor 专属字段。

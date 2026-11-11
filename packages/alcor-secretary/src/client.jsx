@@ -153,13 +153,23 @@ export async function apply(ctx) {
     })
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
     if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
-    ctx.slots.inject('shell.top', () => {
+    ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.bottom', () => {
       const controller = createModeController(ctx, storage)
       modeController = controller
       const navigation = createSpaceNavigation(ctx, controller)
       spaceNavigation = navigation
       let releaseSidebar
       const syncSidebar = () => {
+        if (!globalThis.__ALCOR_CLIENT_SHELL__) {
+          if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
+            const releases = deskViews.map(view => ctx.slots.register({ name: 'sidebar.panellist', id: view.id,
+              label: () => view.label, order: 20 }, () => <BearLogo size={18}/>))
+            releaseSidebar = () => releases.forEach(release => release())
+          } else if (controller.getSnapshot() !== 'alcor' && releaseSidebar) {
+            releaseSidebar(); releaseSidebar = undefined
+          }
+          return
+        }
         if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
@@ -174,7 +184,7 @@ export async function apply(ctx) {
       }
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
-      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.top', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
+      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.bottom', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
