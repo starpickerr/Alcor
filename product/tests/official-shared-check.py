@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 import official_desktop_check as d
 from fresh_profile_fixture import fresh_test_home
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import (
+    sync_playwright,
+    expect,
+    TimeoutError as PlaywrightTimeout,
+)
 
 d.ARTIFACTS.mkdir(parents=True, exist_ok=True)
 d.verify_release()
@@ -53,6 +57,14 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
     with d.desktop(pw, home, "shared") as (page, errors):
         switch = page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")
         expect(switch).to_be_visible(timeout=30000)
+        box = switch.bounding_box()
+        assert 0 <= box["y"] < 60, box
+        assert switch.evaluate("e=>getComputedStyle(e).webkitAppRegion") == "no-drag"
+        switch.focus()
+        switch.press("ArrowDown")
+        expect(page.get_by_role("menuitem", name="Alcor", exact=True)).to_be_visible()
+        page.keyboard.press("Escape")
+        page.screenshot(path=str(d.ARTIFACTS / "dsh-top.png"), scale="css")
         switch.click()
         page.get_by_role("menuitem", name="Alcor", exact=True).click()
         expect(page.get_by_role("heading", name="事务", exact=True)).to_be_visible()
@@ -69,6 +81,28 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         ).to_have_count(0)
         page.screenshot(path=str(d.ARTIFACTS / "shared.png"))
         (d.ARTIFACTS / "shared-ax.txt").write_text(page.locator("body").aria_snapshot())
+        page.get_by_role("button", name="清单管理", exact=True).click()
+        expect(page.get_by_role("dialog", name="清单管理", exact=True)).to_be_visible()
+        try:
+            page.get_by_role("button", name="切换使用模式，当前 Alcor").click(
+                trial=True, timeout=1000
+            )
+        except PlaywrightTimeout:
+            pass  # Native modal must block interaction with the background switch.
+        else:
+            raise AssertionError("Mode switch intercepted the native modal")
+        page.keyboard.press("Escape")
+        page.set_viewport_size({"width": 720, "height": 600})
+        narrow_switch = page.get_by_role("button", name="切换使用模式，当前 Alcor")
+        expect(narrow_switch).to_be_visible()
+        bounds = narrow_switch.bounding_box()
+        assert (
+            bounds["x"] >= 0
+            and bounds["x"] + bounds["width"] <= 720
+            and bounds["y"] < 60
+        ), bounds
+        page.screenshot(path=str(d.ARTIFACTS / "alcor-top-narrow.png"), scale="css")
+        page.set_viewport_size({"width": 1280, "height": 900})
         system.get_by_role("button", name="Ecosystem fixture", exact=True).click()
         expect(
             page.get_by_role("heading", name="Shared ecosystem page", exact=True)
