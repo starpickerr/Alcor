@@ -154,7 +154,7 @@ export async function apply(ctx) {
     })
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
     if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
-    ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.bottom', () => {
+    ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.overlay', () => {
       const shared = !globalThis.__ALCOR_CLIENT_SHELL__
       const controller = createModeController(ctx, storage, { shared })
       modeController = controller
@@ -190,7 +190,7 @@ export async function apply(ctx) {
       })
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
-      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.bottom', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
+      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.overlay', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
@@ -198,8 +198,7 @@ export async function apply(ctx) {
           .alcor-shared-navigation .alcor-nav-group p { margin:8px 8px 4px; font-size:11px; color:var(--dsw-alias-label-tertiary); }
           .alcor-shared-navigation button { display:flex; align-items:center; gap:10px; width:100%; min-height:32px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-primary); padding:6px 8px; font:inherit; text-align:left; cursor:pointer; }
           .alcor-shared-navigation button:hover,.alcor-shared-navigation button[aria-current=page] { background:var(--dsw-alias-interactive-bg-hover); }
-          .alcor-mode-bar { display:flex; align-items:center; gap:12px; height:44px; padding:6px 16px; box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:drag; }
-          html[data-platform='darwin']:not([data-fullscreen]) .alcor-mode-bar { padding-left:88px; }
+          .alcor-mode-bar { position:absolute; top:calc(var(--dsh-frame-chrome-top, 0px) + 8px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; height:36px; padding:3px 5px; border:1px solid var(--dsw-alias-border-base, #ddd); border-radius:8px; background:var(--dsw-alias-bg-base, white); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:no-drag; pointer-events:auto; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
           .alcor-mode-bar button { gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
           .alcor-mode-bar button > svg:last-child { margin-left:3px; color:var(--dsw-alias-label-tertiary); }
