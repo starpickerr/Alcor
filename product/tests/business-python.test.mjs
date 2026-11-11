@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { cp, mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BusinessWorker, resolveBusinessPython } from '../../packages/alcor-organizer/src/business.js'
 
@@ -22,7 +22,10 @@ test('Windows worker starts from a deep native plugin installation', {skip: proc
   const root = await mkdtemp(join(tmpdir(),'alcor-long-profile-'))
   t.after(() => rm(root,{recursive: true, force: true}))
   const target = join(root,...Array(5).fill('long-plugin-installation-directory-for-windows-tests'),'business')
-  await cp(new URL('../../packages/alcor-secretary/business/',import.meta.url),target,{recursive: true})
+  await cp(new URL('../../packages/alcor-secretary/business/', import.meta.url), target, {
+    recursive: true,
+    filter: source => basename(source) !== '__pycache__',
+  })
   const worker = new BusinessWorker(join(root,'data'),{worker:pathToFileURL(join(target,'worker.py'))})
   try { assert.equal(await worker.call('migrate',{records:[]}),true) }
   finally { await worker.close() }
