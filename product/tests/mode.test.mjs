@@ -29,6 +29,19 @@ function fixture(initial = null) {
   return { ctx, storage, changes, listeners, setPhase(value) { phase = value; notify() }, get preset() { return preset?.() } }
 }
 
+test('an independent Alcor environment opens its app and cannot switch into a shared workbench', async () => {
+  for (const saved of [null, JSON.stringify({mode:'dsh',locations:{dsh:{panel:null}}})]) {
+    const f=fixture(saved)
+    const controller=createModeController(f.ctx,f.storage,{application:'alcor'})
+    assert.equal(controller.getSnapshot(),'alcor')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId,'alcor-tasks')
+    assert.equal(await f.preset,'alcor')
+    assert.throws(()=>controller.switchMode('dsh'),/独立/)
+    assert.equal(controller.getSnapshot(),'alcor')
+    controller.dispose()
+  }
+})
+
 test('switching restores positions without creating sessions or changing stored session policy', async () => {
   const f = fixture(JSON.stringify({ mode: 'stella', locations: { stella: { panel: 'stella' } } }))
   const c = createModeController(f.ctx, f.storage)
