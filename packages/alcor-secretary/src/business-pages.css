@@ -211,6 +211,8 @@
 @media(hover:hover) { .alcor-agenda-list > li > .alcor-actions { opacity:0; } .alcor-agenda-list > li:hover > .alcor-actions,.alcor-agenda-list > li:focus-within > .alcor-actions { opacity:1; } }
 @media(max-width:600px) { .alcor-task-detail-summary { padding:14px; } .alcor-task-detail .alcor-calendar-period { align-items:flex-start; } .alcor-task-detail .alcor-calendar-period > span { display:none; } }
 .alcor-briefing-layout { display:grid; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
+.alcor-desk:has(> .alcor-business > .alcor-briefing-layout) { container-type:size; }
+.alcor-briefing-history,.alcor-briefing-revisions { contain:size; min-height:0; max-height:100cqh; overflow-y:auto; overscroll-behavior-y:contain; position:sticky; top:0; }
 .alcor-briefing-history { padding:24px 16px; border-right:1px solid var(--dsw-alias-border-l3); background:var(--alcor-surface-soft); }
 .alcor-briefing-history h2, .alcor-briefing-revisions h2 { font-size:13px; color:var(--dsw-alias-label-secondary); margin-bottom:16px; }
 .alcor-briefing-history > button { position:relative; display:flex; flex-direction:column; width:100%; text-align:left; gap:8px; padding:16px 24px 16px 14px; margin:10px 0; color:inherit; background:var(--dsw-alias-bg-layer-1); font:inherit; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); cursor:pointer; }
@@ -228,7 +230,7 @@
 .alcor-briefing-source h3 { font-size:14px; font-weight:500; margin:6px 0; }
 .alcor-briefing-source p { margin:6px 0; white-space:pre-wrap; }
 .alcor-briefing-source span, .alcor-briefing-source small { font-size:12px; color:var(--dsw-alias-label-secondary); }
-.alcor-briefing-revisions { margin:24px 0; padding:0 16px; border-left:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-revisions { padding:24px 16px; border-left:1px solid var(--dsw-alias-border-l3); }
 .alcor-empty-icon { display:grid; place-items:center; width:56px; height:56px; margin:0 auto 18px; border-radius:18px; color:var(--alcor-brand); background:var(--alcor-brand-soft); }
 .alcor-empty-mascot { display:block; width:124px; height:auto; max-width:100%; margin:0 auto 18px; }
 .alcor-empty p { margin:6px 0 0; font-size:13px; }
@@ -264,7 +266,8 @@
 
   .alcor-year-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .alcor-briefing-layout { grid-template-columns:190px minmax(0,1fr); }
-  .alcor-briefing-revisions { grid-column:2; margin:0 24px 24px; padding:16px 0 0; border-left:0; border-top:1px solid var(--dsw-alias-border-l3); }
+  .alcor-briefing-history { grid-row:1 / span 2; }
+  .alcor-briefing-revisions { contain:none; max-height:260px; position:static; grid-column:2; margin:0 24px 24px; padding:16px 0 0; border-left:0; border-top:1px solid var(--dsw-alias-border-l3); }
   .alcor-tasks-page { grid-template-columns:204px minmax(0,1fr); gap:20px; padding:0 20px 0 0; }
   .alcor-task-main { padding:22px 20px 16px; }
 }
@@ -305,7 +308,7 @@
   .alcor-year-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
   .alcor-month-compact > button { min-height:24px; }
   .alcor-briefing-layout { display:flex; flex-direction:column; }
-  .alcor-briefing-history { border-right:0; border-bottom:1px solid var(--dsw-alias-border-l3); padding:16px 20px; max-height:260px; overflow:auto; }
+  .alcor-briefing-history { contain:none; position:static; flex-shrink:0; border-right:0; border-bottom:1px solid var(--dsw-alias-border-l3); padding:16px 20px; max-height:260px; overflow:auto; }
   .alcor-briefing-detail { padding:20px; }
   .alcor-briefing-revisions { margin:0 20px 24px; }
   .alcor-editor-dialog .alcor-editor { padding:20px; }
