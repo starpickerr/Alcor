@@ -60,6 +60,29 @@ def check_caption(page, pid, home, mode):
             button.press('ArrowDown')
             expect(page.get_by_role('menuitem', name='Alcor' if dsh else 'DeepSeek Harness', exact=True)).to_be_visible()
             page.keyboard.press('Escape')
+            if width == 720 and not dsh:
+                nav = page.get_by_label('Alcor 秘书导航', exact=True)
+                toggle = nav.locator('[data-sidebar-toggle]')
+                expect(nav).to_have_attribute('data-collapsed', 'true')
+                expect(toggle).to_be_visible()
+                toggle_box = toggle.bounding_box()
+                assert toggle_box and 0 <= toggle_box['y'] < 48, toggle_box
+                assert toggle.evaluate('e => getComputedStyle(e).position') == 'fixed'
+                assert toggle.evaluate('''e => {
+                    const b = e.getBoundingClientRect();
+                    return e.contains(document.elementFromPoint(b.x+b.width/2, b.y+b.height/2));
+                }'''), 'Sidebar opener is hidden behind the native caption'
+                toggle.click()
+                expect(nav).not_to_have_attribute('data-collapsed', 'true')
+                expect(nav.get_by_role('group', name='应用')).to_be_visible()
+                toggle.click()
+                expect(nav).to_have_attribute('data-collapsed', 'true')
+                page.keyboard.press('Control+b')
+                expect(nav).not_to_have_attribute('data-collapsed', 'true')
+                page.keyboard.press('Control+b')
+                expect(nav).to_have_attribute('data-collapsed', 'true')
+                result['sidebarRecovery'] = {'captionButton': toggle_box, 'mouse': True, 'keyboard': True}
+                (home / filename).write_text(json.dumps(results, indent=2))
             page.screenshot(path=home / f'{"dsh" if dsh else "alcor"}-top-{width}.png')
             if width == 720 and dsh:
                 result['physicalDrag'] = 'not run: test window does not own foreground'
