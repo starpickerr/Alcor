@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+from contextlib import closing
 import sqlite3
 import sys
 import threading
@@ -53,7 +54,7 @@ class AppleWorker:
                 source = Path(legacy_directory) / filename
                 if source.is_file():
                     try:
-                        with sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True) as original, sqlite3.connect(target) as destination:
+                        with closing(sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True)) as original, closing(sqlite3.connect(target)) as destination, destination:
                             original.backup(destination)
                     except Exception:
                         target.unlink(missing_ok=True)
