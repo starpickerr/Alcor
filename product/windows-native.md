@@ -15,6 +15,7 @@ Windows x64 使用官方 DSH 0.2.2-rc.1 和标准 `@alcor/secretary` 插件。�
 - 在 1180 和 720 像素宽的原生窗口验证顶部切换、键盘菜单、标题栏和三个窗口控制按钮的命中位置。720 像素宽时，实际拖动标题栏使窗口横纵各移动 32 像素。业务弹窗阻止点击背景切换按钮。
 - 正常退出和重启保留选择。冷停用恢复官方 DSH，重新启用、卸载及重装后保留工作区与原事务 ID。此验证通过官方 CLI 与 Profile 管理 API 更改插件状态。
 - 用官方签名的 `0.2.2-rc.2` 打开既有测试 Profile，DSH 与原生插件页可用。插件管理器为 Alcor 返回 `incompatible-version`。重新用 `rc.1` 打开后，原事务和配置保留。当前 Alcor 的 Windows 支持版本为 `rc.1`。
+- 另一次实验仅给相同的插件包增加确切的 `rc.2` 版本声明。该包在 `rc.2` 上通过顶部切换、AuraBot、工作区、启停和重新安装检查。在 `rc.1` 创建事务后，用 `rc.2` 打开同一 Profile，原工作区与原事务可直接使用。此结果对应实验包，供正式发布前核验。
 - Alcor 分组仍在官方工作区下方，顶部切换使用官方公开的叠加层。个人资料迁移、真实 QQ 消息收发和真实 Apple 授权属于单独的验收场景。
 
 ## 本地复现
@@ -29,7 +30,7 @@ $env:PYTHONUTF8 = '1'
 python product/tests/official_shared_windows.py --app "C:\DSH-rc1\DeepSeek Harness.exe" --package ".local/artifacts/alcor-secretary-0.1.102.tgz" --aurabot "C:\fixtures\dsh-aurabot-qq-1.2.1.tgz" --upgrade-app "C:\DSH-rc2\DeepSeek Harness.exe"
 ```
 
-命令创建独立的本机测试资料，正常退出每次启动的官方进程，并在 `.local/official-shared-windows` 下写入截图、窗口命中位置及日志。`--upgrade-app` 可省略。实际鼠标拖动只在测试窗口持有前台时执行，未执行时会在 `caption.json` 中明确记录。
+命令创建独立的本机测试资料，正常退出每次启动的官方进程，并在 `.local/official-shared-windows` 下写入截图、窗口命中位置及日志。`--upgrade-app` 可省略。若待测包已声明支持目标版本，追加 `--expect-compatible-upgrade` 以断言新 Host 能打开原事务。实际鼠标拖动只在测试窗口持有前台时执行，未执行时会在 `caption.json` 中明确记录。
 
 从仓库根目录运行以下定向测试，使用 Node 24.9 以上、Python 3 以及已经安装的开发依赖。
 

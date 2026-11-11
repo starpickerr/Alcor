@@ -26,7 +26,7 @@
     "binarySha256": "BAD50D18A3CF42621AC03AEAF1DC527EE20384CA4C0B7EEE64512954DDB9A76E",
     "appAsarSha256": "5FA8A6B21BCEB8F3E99E30EFA2270EFD0CC773A11E42AA0488F804A64B34E637",
     "signer": "84032578657219876E273E0D1BD303CFE1B82E6F",
-    "incompatibleUpgradeProbe": {
+    "upgradeProbe": {
       "version": "0.2.2-rc.2",
       "url": "https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.2-rc.2-win-x64.exe",
       "installerSha256": "7E25286518CE520B5C0943E178C52CDBA1CC9EC3680BC7DA181B79879E080C32",
