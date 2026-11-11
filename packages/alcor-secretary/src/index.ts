@@ -1,4 +1,4 @@
-import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
+import {permits,selectedScope,publishApplication} from '../../alcor-plugin-info/src/assignments.js'
 import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -32,6 +32,8 @@ export default class Secretary extends TypertRemoteService {
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
+    publishApplication(this.ctx)
+    if(process.env.ALCOR_CLIENT_SHELL==='1')this.ctx.on('webserver/index-inject',rows=>rows.push({kind:'global',name:'__ALCOR_CLIENT_SHELL__',value:true}))
     await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(domainSpec)
     this.ctx.effect(() => () => this.domain.close())

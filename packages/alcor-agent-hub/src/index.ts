@@ -1,4 +1,4 @@
-import {sessionMode,permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
+import {sessionMode,permits,selectedScope,publishApplication} from '../../alcor-plugin-info/src/assignments.js'
 import {modeConfig} from '../../alcor-plugin-info/src/host-policy.js'
 import { Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
@@ -30,6 +30,7 @@ export default class AgentHub extends TypertRemoteService {
   private queue = Promise.resolve()
   constructor(ctx) { assertCompatibleProfile(ctx); super(ctx, 'agentHub', {namespace:'agentHub'}) }
   async [Service.init]() {
+    publishApplication(this.ctx)
     assertCompatibleProfile(this.ctx)
     await initializeProfile(this.ctx)
     await assertLegacySecretaryDetached(this.ctx.get('profileContext'))

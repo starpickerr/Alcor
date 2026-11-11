@@ -43,9 +43,10 @@ client_config.json
 /references/
 **/.dev.vars
 local/
-node_modules/
+node_modules
 /.local/
 /packages/*/lib/
+/packages/alcor-launcher/runtime/
 /packages/stella-elearning/server/
 /packages/stella-mail/server/
 /packages/stella-privacy/native/keychain-bridge

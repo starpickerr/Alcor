@@ -1,4 +1,5 @@
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
+import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import noticeStyle from './notice.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
@@ -26,6 +27,9 @@ function ModeSwitch({ useMode, switchMode, getNotice }) {
   const mode = useMode(value => value)
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
+  if(globalThis.__ALCOR_CLIENT_SHELL__)return null
+  if(applicationEnvironment()==='alcor')return <div className="alcor-mode-bar"><BearLogo size={20}/><span>Alcor</span>
+    {getNotice() && <Notice role="status" tone="warning" className="alcor-mode-notice">{getNotice()}</Notice>}</div>
   return <div className="alcor-mode-bar">
     {/* Portal after native chrome: Electron drag regions follow DOM order, not z-index. */}
     <Menu open={open} onClose={close} portal autoFocus className="alcor-mode-picker" listClassName="alcor-mode-menu"
@@ -137,6 +141,7 @@ export async function apply(ctx) {
       },
       currentSession: () => ctx.uiSession.adapter.current.getSnapshot().props.sessionId,
       hasModeSwitch: !!modeController,
+      modeNotice: () => modeController?.notice,
     }) }, SecretaryDesk))
     const automationProps = (scope, available = false) => ({ scope, api: ctx.remote.alcorOrganizer, schedule: ctx.remote.schedule,
       available, openNative: () => ctx.layout.selectPanel('schedules'),
@@ -147,7 +152,7 @@ export async function apply(ctx) {
       ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
     })
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
-    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
+    if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
     ctx.slots.inject('shell.top', () => {
       const controller = createModeController(ctx, storage)
       modeController = controller
@@ -169,7 +174,7 @@ export async function apply(ctx) {
       }
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
-      ctx.slots.register({ name: 'shell.top', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
+      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.top', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `

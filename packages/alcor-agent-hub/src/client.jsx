@@ -1,4 +1,5 @@
 import {withModeView,uiMode} from '../../alcor-plugin-info/src/mode-view.jsx'
+import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import React, {useEffect,useState} from 'react'
 import {IconUsersOutlineRegular} from '@deepseek-ai/dsh-client-ui-primitives'
 import {remote} from './remote.js'
@@ -35,7 +36,7 @@ export async function apply(ctx) {
     ctx.slots.inject('sidebar.panellist',()=>{
       let release
       const update=()=>{
-        if(form.getSnapshot().status==='ready' && form.getSnapshot().value?.productScope!=='alcor'){
+        if(form.getSnapshot().status==='ready' && (applicationEnvironment() || form.getSnapshot().value?.productScope!=='alcor')){
           release ??= ctx.slots.register({name:'sidebar.panellist',id:'agent-hub',label:'AgentHub',order:35},()=> <IconUsersOutlineRegular size={18}/>)
         }else if(release){release();release=undefined}
       }

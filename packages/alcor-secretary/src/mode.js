@@ -50,8 +50,9 @@ function loadModeState(storage) {
 
 export function readModeState(storage) { return loadModeState(storage).state }
 
-export function createModeController(ctx, storage) {
+export function createModeController(ctx, storage, {application=globalThis.__ALCOR_APPLICATION__} = {}) {
   const loaded = loadModeState(storage), state = loaded.state
+  if(application==='alcor')state.mode='alcor'
   const listeners = new Set()
   let expected = loaded.expected
   let navigating = false
@@ -135,7 +136,7 @@ export function createModeController(ctx, storage) {
   const stopRegistry = ctx.slots?.subscribe?.('main', () => {
     if (waitingForPanel) { restore(); notify() }
   }) ?? (() => {})
-  if (state.locations[state.mode]) restore()
+  if (application==='alcor' || state.locations[state.mode]) restore()
   else saveLocation()
   return {
     getSnapshot: () => state.mode,
@@ -143,6 +144,7 @@ export function createModeController(ctx, storage) {
     get notice() { return notice },
     switchMode(mode) {
       if (!modes.includes(mode)) throw new Error('Unknown product mode')
+      if(application==='alcor' && mode!=='alcor')throw new Error('请在独立的 DSH 工作台窗口中使用工作台。')
       if (mode === state.mode) return
       saveLocation()
       state.mode = mode

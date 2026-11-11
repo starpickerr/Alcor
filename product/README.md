@@ -1,16 +1,20 @@
-# Alcor 原生 DSH 功能包
+# Alcor 客户端与 DSH 运行环境
 
-Alcor（原 Stella）是一组 DeepSeek Harness 原生插件。秘书插件提供事务、日程、账单、简报和自动化；DSH 提供桌面窗口、模型、会话、工作区和插件管理。窗口顶部的模式菜单可以切换 Alcor 和 DSH。
+Alcor（原 Stella）在同一个客户端顶部切换 Alcor 与 DSH 工作台。两个模式各有独立的标准 DSH Host、HOME、DSH_HOME、配置、会话、浏览器状态和插件数据。第三方插件在所属模式的原生插件管理器中原样安装，无需声明 Alcor 专属字段。
 
-先下载安装官方 DSH 桌面客户端，再通过 DSH 安装 Alcor 原生插件，即可在同一个客户端进入 Alcor 模式并使用其界面与功能。无需安装独立的 Alcor 应用，也不修改官方客户端安装文件。
+2026-11-11 用户明确纠正交付要求：保留顶部切换，必须在同一个窗口直接切换，不把 Alcor 做成 DSH 的侧栏插件。当前外壳入口见[单窗口客户端](client-shell/README.md)。官方 DSH 应用作为经校验的运行时来源保持原样；Alcor 客户端是独立标识的本地构建。此前 `@alcor/launcher` 与两个官方窗口的方案不再作为默认交付。
 
-Alcor 与 DSH 工作台分别组织项目、会话和默认工作区。全局新对话使用当前空间的默认工作区；项目内新对话使用该项目。同一目录可以在两边分别命名和使用，改名或从一边移除项目只影响该空间。切换模式时，运行中的任务继续在原对话完成。已有项目可在「设置 → Alcor → 项目空间」中整理。
+新环境默认位于 `~/.local/share/Alcor/environments/`；已有个人 DSH 可保留原数据根，Alcor 使用专属环境。账号、模型和插件在各自模式管理。个人安装的迁移必须单独备份、盘点、授权和核对，不能将新建空环境当作保留原数据的更新。停用、升级或卸载一个环境的插件不改变另一边的实例。
 
-Alcor 专注秘书业务。QQ 社交由独立上游 AuraBot 插件管理。插件注册的侧栏入口显示在「系统」分组。切换与数据保留见[QQ 社交与秘书业务](channels.md)。
+Alcor 本身是可选功能插件，DSH 插件页中的 `@alcor/extension` 条目控制其启用、关闭与卸载。客户端跟随原生 Profile 的选择管理独立 Alcor 环境；关闭停止其后台、QQ 和所属桌宠进程，切回 DSH 并保留数据。顶部切换只改变当前界面，继续保留后台。工作台中的管理条目不开放 Alcor 业务 API。
+
+Alcor 专注秘书业务。生态插件保留自身入口和身份，不自动获得秘书业务能力。QQ 通道由其所在环境的插件处理，不随顶部模式选择而转交。本次个人安装按用户要求将 AuraBot 与桌宠留在 Alcor，保留原配置、人格、记忆和历史。见[QQ 社交与秘书业务](channels.md)。
 
 ## 桌面用户安装
 
-桌面版面向 macOS Apple Silicon，已核对的 DSH 版本为 `0.2.2-alpha.3` 和 `0.2.2-rc.1`。在已初始化的 DSH Profile 中，通过原生插件管理器安装秘书插件的 `.tgz` 包，退出并重新打开客户端，再从顶部模式菜单进入 Alcor。Apple 同步、eLearning、邮件和 AgentHub 均可按需安装。首次安装由插件自动建立空白 Alcor 数据目录；已有 Alcor/Stella 数据或凭据但缺少完成记录时，停止启动并要求离线检查，不覆盖或推断迁移完成。旧 Stella Profile 须先完成迁移，避免同时启用新旧插件。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
+本地单窗口客户端面向 macOS Apple Silicon，当前验收运行时为 DSH `0.2.2-rc.1`。旧的单 Host 辅助入口另保留 `0.2.2-alpha.3` 兼容检查，不代表该版本已完成单窗口验收。客户端校验官方归档及签名，不覆盖官方应用。Apple 同步、eLearning、邮件、AgentHub 和第三方插件按所属环境安装。新环境业务库为空；已有个人数据需单独迁移和校验。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
+
+直接把秘书包安装到既有 Profile 的旧共用模式仍保留兼容，顶部模式菜单只切换界面，不构成新设计的进程或数据隔离。已有 Alcor/Stella 数据或凭据缺少迁移完成记录时，仍停止启动并要求离线检查，不能把它当作新环境覆盖初始化。
 
 界面扩展保存在 Alcor 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
 
@@ -20,16 +24,32 @@ Alcor 专注秘书业务。QQ 社交由独立上游 AuraBot 插件管理。插�
 
 | 客户端名称 | 安装标识 | 当前插件源码 | 独立服务／历史仓库 |
 | --- | --- | --- | --- |
-| Alcor | `@alcor/secretary` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-secretary) | — |
+| Alcor | `@alcor/extension`（管理）／`@alcor/secretary`（内部业务） | [客户端说明](client-shell/README.md) | — |
 | dsh-agent-hub | `@alcor/agent-hub` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-agent-hub) | [dsh-agent-hub](https://github.com/starpickerr/dsh-agent-hub) 保存旧第一方插件，新版尚未迁入 |
 | dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
 | dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
 
-「插件作用范围」（`@alcor/plugin-info`）为 DSH 原生插件列表与详情添加适用模式和切换后的后台行为。两种模式共用原生安装、启停及升级入口。邮件、教务、Apple 同步和 AgentHub 在列表或详情中选择使用模式；QQ 社交插件独立管理账号和会话，不再由秘书分配接管方。后台说明描述已启用并完成配置时的行为。宿主公共组件保持统一管理。第三方插件可通过包清单的 `alcor.modeAssignment` 声明 `{version:1,entry,initial}`，由自己的主条目提供并执行 `productScope` 配置（alcor、dsh、both）；界面只为声明与运行条目匹配的插件提供选择。运行 `npm run product:plugin-info:pack` 可生成独立的界面插件包。
+“插件作用范围”是客户端内置的环境标注，不需要另外安装插件，实际可用性由独立环境与原生启停决定。新版客户端迁移时移除独立 `@alcor/plugin-info` 安装；其源码与打包命令仅保留旧共用 Profile 兼容。第一方旧 `productScope` 字段不再限制独立环境；第三方无需实现 `alcor.modeAssignment` 或其他专属配置。
+
+## 客户端构建与独立环境辅助入口
+
+```sh
+npm run product:client:pack -- --config /absolute/client-config.json --out /absolute/new/Alcor.app
+
+# 以下双窗口命令仅用于单 Host 调试，不作为产品切换入口。
+npm run product:desktop -- alcor
+npm run product:desktop -- dsh
+# 从命令行安装到已退出的指定环境，插件仍走官方 CLI。
+npm run product:environment -- install alcor github:owner/plugin
+```
+
+辅助命令的 `--root /absolute/path` 选择独立数据根，`--app /absolute/path/DeepSeek\ Harness.app` 选择已验证官方应用。拒绝接管无所有权记录的目录、软链接和身份冲突。单窗口客户端默认入口由外壳持有，用户通过顶部切换；不再安装工作台启动器。
+
+独立进程和独立数据根约束正常插件的注册与默认持久化行为，不构成恶意本机插件的文件或凭据沙箱。用户手动向两边授予同一文件目录或外部账号时，外部资源仍可能共享。不要在两个环境中同时配置同一机器人账号的回复程序。
 
 ## 当前源码与默认入口
 
-`packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试，`npm run dev` 启动独立 DSH Profile 的开发预览。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 运行时的测试入口为 `make test-legacy`。
+`packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试。`npm run dev` 与 `product:desktop:preview` 保留旧共用模式预览，不能证明新运行环境隔离。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 测试入口为 `make test-legacy`。
 
 事务列表通过左侧清单导航、顶部视图和搜索筛选；任务行可进入详情，勾选完成和右侧菜单分别操作，并支持在当前清单快速添加。删除确认说明子事务或重复系列的影响，详情状态／日期／清单／优先级集中展示。检查项按当前设计从详情和编辑页面移除，既有数据保留，编辑其他任务字段不清空旧检查项。专项官方桌面验收入口：`product/tests/task-cards-check.py`。
 
@@ -43,11 +63,11 @@ Alcor 专注秘书业务。QQ 社交由独立上游 AuraBot 插件管理。插�
 
 ```sh
 npm ci --ignore-scripts
-npm run product:pack
+npm run product:client:pack -- --config /absolute/client-config.json --out /absolute/new/Alcor.app
 npm run product:apple:pack
 ```
 
-当前源码构建的产物为 `.local/artifacts/alcor-secretary-0.1.88.tgz` 与可选的 `alcor-apple-sync-0.1.18.tgz`。以下命令仅用于已通过测试夹具初始化且不含个人数据的隔离 Profile，不能作为已有 Profile 的升级步骤。
+当前入口产物为指定路径的 `Alcor.app`，包含秘书原生包；业务包版本以对应 package.json 为准。下方直接安装秘书包的命令仅用于旧兼容测试，不是个人 Profile 分离或升级步骤。
 
 ```sh
 dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.88.tgz --ignore-scripts
@@ -63,6 +83,12 @@ Apple 日历与提醒事项的同步由「插件 → @alcor/apple-sync」管理�
 界面复用宿主 `Button`、`Input`、`Checkbox`、系统字体和明暗偏好。Alcor 模式使用白色／浅灰与炭灰表面、蓝色主要操作及选中态，小熊图标使用暖棕／沙金色；事务分组、日程网格、简报时间轴及账单图表保留各自的信息结构。主题通过现有语义变量限定在 Alcor 模式内，切回 DSH 或停用插件恢复宿主样式，不改业务数据或核心交互。
 
 ## 官方 Desktop 验证
+
+当前单窗口验收使用 `product/tests/client-shell-desktop-check.py`，见[客户端说明](client-shell/README.md)。检查同窗切换、草稿、接口与浏览器状态隔离、原样生态插件和重启恢复。
+
+旧双窗口隔离验收保留在 `product/tests/isolated-environments-check.py`；其 launcher 构建和两窗口结果仅用于历史回归，不作为当前入口或最终交付证据。所有合成验收使用测试专用 HOME/DSH_HOME，不使用个人账号。
+
+以下 `make test-desktop` 和历史升级脚本继续验证旧共用 Profile 的兼容路径。
 
 从官方 DMG 只读挂载或安装的 App 验证，发布版本、架构、签名 Team 与 `app.asar` 摘要由 `product/desktop-release.lock.json` 锁定。设置 `STELLA_CHECK_DESKTOP_APP` 可指定已安装的官方 App，默认使用 `.local/desktop-official/mount/DeepSeek Harness.app`。`make test-desktop` 使用独立 HOME、DSH_HOME 与 Electron 用户目录，经官方 Desktop 自带 CLI 验证冷安装、顶部双向切换、六应用、模式／业务重启恢复、停用与卸载；不读取个人账号或运行真实 Apple 同步。
 

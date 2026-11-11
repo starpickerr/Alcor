@@ -1,5 +1,5 @@
 import z from '@deepseek-ai/schemastery'
-import {permits,sessionMode} from './assignments.js'
+import {permits,sessionMode,applicationEnvironment,publishApplication} from './assignments.js'
 
 export function modeConfig(initial) {
   return z.object({productScope:z.union(['alcor','dsh','both'].map(v=>z.const(v))).default(initial).volatile()})
@@ -7,7 +7,8 @@ export function modeConfig(initial) {
 
 // Limit both the next model catalogue and dispatch from a previously prepared catalogue.
 export function guardSource(ctx,config,prefix) {
-  const allowed=agent=>permits(config.productScope.get(),sessionMode(ctx,agent))
+  publishApplication(ctx)
+  const allowed=agent=>!!applicationEnvironment() || permits(config.productScope.get(),sessionMode(ctx,agent))
   ctx.tools.guard(call=>call.agent && call.name.startsWith(prefix) && !allowed(call.agent)
     ? '这个来源没有分配给当前会话。' : undefined)
   const masks=new Map()

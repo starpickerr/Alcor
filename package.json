@@ -22,11 +22,16 @@
     "product:apple:pack": "node scripts/product/build-apple-sync.mjs && npm pack --workspace @alcor/apple-sync --pack-destination .local/artifacts",
     "product:preview:build": "npm run product:build && node scripts/product/sync-client.mjs",
     "product:prepare": "node scripts/product/prepare-upstream.mjs",
-    "product:desktop": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
+    "product:desktop": "node scripts/product/environments.mjs launch",
+    "product:environment": "node scripts/product/environments.mjs",
+    "product:launcher:pack": "npm run product:pack && node scripts/product/build-launcher.mjs && npm pack --workspace @alcor/launcher --pack-destination .local/artifacts",
+    "product:desktop:preview": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
     "product:ui:build": "node scripts/product/build-native-ui.mjs",
     "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @alcor/elearning --pack-destination .local/artifacts && npm pack --workspace @alcor/mail --pack-destination .local/artifacts",
     "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
-    "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts"
+    "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts",
+    "product:extension:pack": "node scripts/product/build-extension.mjs && npm pack --workspace @alcor/extension --pack-destination .local/artifacts",
+    "product:client:pack": "npm run product:pack && npm run product:extension:pack && node scripts/product/build-client-shell.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-alpha.3",

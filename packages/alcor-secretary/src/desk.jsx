@@ -5,10 +5,11 @@ import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineR
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
+import { applicationEnvironment } from '../../alcor-plugin-info/src/assignments.js'
 
 export const deskViews = applicationViews
 
-export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view = 'alcor-tasks', business, currentSession, briefingContext, openPlugins, briefingView }) {
+export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNotice, view = 'alcor-tasks', business, currentSession, briefingContext, openPlugins, briefingView }) {
   const [startError, setStartError] = useState('')
   async function begin(prompt) {
     setStartError('')
@@ -23,6 +24,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, view =
       </div>
       <Button variant="outline" className="alcor-heading-chat" onClick={() => begin()}><IconNewChatOutlineRegular size={16} />开始 Alcor 对话</Button></div></>}
     {startError && <Notice tone="error" role="alert" className="alcor-error">{startError}</Notice>}
+    {globalThis.__ALCOR_CLIENT_SHELL__ && modeNotice?.() && <Notice role="status" tone="warning">{modeNotice()}</Notice>}
     {view === 'alcor-briefing' && <BriefingWorkspace api={business} briefingContext={briefingContext} openSession={openSession} openPlugins={openPlugins} initialView={briefingView?.()} />}
     {application && view !== 'alcor-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} />}
     {!hasModeSwitch && <Notice role="status" className="alcor-muted">当前版本暂不支持模式切换。</Notice>}
@@ -34,7 +36,7 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
   const applications = [...applicationViews]
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
-  if(['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
+  if(applicationEnvironment() && hub.status==='ready' || ['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
   const system = []
   if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
