@@ -1,5 +1,7 @@
 # Official shared-profile implementation
 
+Current checkpoint: original Alcor sidebar restored, official DSH sidebar restored on switch-back, native workspace/settings shared. rc.1 and rc.2 renderer acceptance includes visible workspace trees and Alcor-mode restart. The rc.2 empty-tree defect was a missing public sectionScroller inject/hookContext contract and is fixed. Earlier footer-prototype gaps below are historical, superseded by the restored sidebar implementation. Personal continuation remains separate and is not yet complete.
+
 Baseline: 02217cd4. Preserved remote: archive/isolated-runtimes-20261112-02217cd4.
 Branch: feat/official-dsh-shared-20261112.
 

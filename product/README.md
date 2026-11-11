@@ -1,10 +1,12 @@
-# Current entry: official DSH shared mode
+# 官方 DSH 内的 Alcor 共享模式
 
-Install @alcor/secretary in the unchanged official DSH Desktop Profile. Alcor and DSH share one Host, environment, configuration and plugin lifecycle. Switching presentation is not process or permission isolation. Use official main/sidebar.panellist/shell.bottom slots; keep official UI modules, application signature and update path intact. Compatibility must still be verified against supported host releases.
+在未修改的官方 DSH 桌面客户端安装 `@alcor/secretary`。窗口上方只有一个 Alcor／DSH 双向切换按钮，使用官方 `shell.overlay` 插槽。Alcor 沿用原版品牌、侧栏、应用／系统分组和业务页面；DSH 模式恢复官方原生侧栏。工作区、会话、插件目录和插件页面共用同一个 Host、Profile 与配置。第三方入口在 Alcor 侧归入“系统”，仍打开原插件页面。
 
-The isolated Host/Profile client remains an optional design, preserved at origin/archive/isolated-runtimes-20261112-02217cd4 (02217cd4). Existing environments and personal databases are retained; no automatic migration is performed. Never run two responders for the same robot account.
+侧栏所有权通过公开 Loader 生命周期可逆交接，官方工作区与设置组件继续挂载在公开插槽中；rc.2 的工作区滚动 Hook 按公开契约传递。不会替换官方安装包、签名、UI 模块或更新器。秘书／Organizer 已精确声明 alpha.3、rc.1、rc.2；其他包保持各自已验证的版本范围，不承诺未来 API 永远兼容。
 
-See [implementation status](official-shared-plan.md). The following sections describe the retained isolated design and existing business capabilities; the current entry is defined above.
+独立 Host/Profile 外壳继续作为可选设计保留于 `archive/isolated-runtimes-20261112-02217cd4`（02217cd4），原始个人环境不删除。个人业务数据的有限接续另行留存备份、停写与核对记录，不覆盖原生会话或无关凭据，不同时运行两套同步／机器人写入源。
+
+当前证据见 [实施记录](official-shared-plan.md) 和 [顶部入口验证](top-overlay-status.md)。下方保留历史独立方案及业务能力说明，与当前入口有冲突时以上述说明为准。
 
 ---
 
