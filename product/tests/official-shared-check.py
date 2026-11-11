@@ -2,12 +2,15 @@
 
 import json
 from pathlib import Path
+
 import official_desktop_check as d
 from fresh_profile_fixture import fresh_test_home
 from playwright.sync_api import (
-    sync_playwright,
-    expect,
     TimeoutError as PlaywrightTimeout,
+)
+from playwright.sync_api import (
+    expect,
+    sync_playwright,
 )
 
 d.ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -119,6 +122,16 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
             and bounds["x"] + bounds["width"] <= 720
             and bounds["y"] < 60
         ), bounds
+        opener = page.locator('[data-shell-leading]').get_by_role(
+            'button', name='展开侧边栏', exact=True
+        )
+        expect(opener).to_be_visible()
+        opener.click()
+        expect(navigation).to_have_attribute('role', 'dialog')
+        expect(navigation).to_have_attribute('aria-modal', 'true')
+        expect(navigation.get_by_role('group', name='应用')).to_be_visible()
+        navigation.get_by_role('button', name='收起侧边栏', exact=True).click()
+        expect(opener).to_be_visible()
         page.screenshot(path=str(d.ARTIFACTS / "alcor-top-narrow.png"), scale="css")
         page.set_viewport_size({"width": 1280, "height": 900})
         system.get_by_role("button", name="Ecosystem fixture", exact=True).click()
