@@ -10,6 +10,20 @@ import win32process
 from playwright.sync_api import expect
 
 
+def press_sidebar_accelerator(hwnd):
+    # Electron handles the native accelerator before the renderer receives KeyB.
+    assert win32gui.GetForegroundWindow() == hwnd, 'The disposable desktop must own keyboard focus'
+    control = win32con.VK_CONTROL
+    key = ord('B')
+    assert not (win32api.GetAsyncKeyState(control) & 0x8000), 'Control is already pressed'
+    win32api.keybd_event(control, win32api.MapVirtualKey(control, 0), 0, 0)
+    try:
+        win32api.keybd_event(key, win32api.MapVirtualKey(key, 0), 0, 0)
+        win32api.keybd_event(key, win32api.MapVirtualKey(key, 0), win32con.KEYEVENTF_KEYUP, 0)
+    finally:
+        win32api.keybd_event(control, win32api.MapVirtualKey(control, 0), win32con.KEYEVENTF_KEYUP, 0)
+
+
 def check_caption(page, pid, home, mode):
     ctypes.windll.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
     handles = []
@@ -77,9 +91,9 @@ def check_caption(page, pid, home, mode):
                 expect(nav.get_by_role('group', name='应用')).to_be_visible()
                 toggle.click()
                 expect(nav).to_have_attribute('data-collapsed', 'true')
-                page.keyboard.press('Control+b')
+                press_sidebar_accelerator(hwnd)
                 expect(nav).not_to_have_attribute('data-collapsed', 'true')
-                page.keyboard.press('Control+b')
+                press_sidebar_accelerator(hwnd)
                 expect(nav).to_have_attribute('data-collapsed', 'true')
                 result['sidebarRecovery'] = {'captionButton': toggle_box, 'mouse': True, 'keyboard': True}
                 (home / filename).write_text(json.dumps(results, indent=2))
