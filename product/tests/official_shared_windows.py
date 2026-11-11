@@ -14,8 +14,10 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from windows_caption_check import check_caption
 
 
-def verify(app, release):
-    assert digest(app).upper() == release['binarySha256']
+def verify(app, *releases):
+    binary_hash = digest(app).upper()
+    release = next((item for item in releases if binary_hash == item['binarySha256']), None)
+    assert release is not None, 'Unknown official executable'
     assert digest(app.parent / 'resources/app.asar').upper() == release['appAsarSha256']
     system = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0'
     command = ("$ErrorActionPreference='Stop';$s=Get-AuthenticodeSignature -LiteralPath $env:TEST_DSH_EXE;"
@@ -51,7 +53,12 @@ def desktop(pw, app, home, env, phase):
             assert process.poll() is None and time.monotonic() < deadline, 'Desktop startup failed'
             time.sleep(.1)
         browser = pw.chromium.connect_over_cdp('http://127.0.0.1:' + port.read_text().splitlines()[0])
-        page = enter_workspace(browser.contexts[0], process)
+        context = browser.contexts[0]
+        errors = []
+        context.on('weberror', lambda error: errors.append(str(error.error)))
+        context.on('console', lambda msg: errors.append(msg.text) if 'slot entry crashed' in msg.text else None)
+        page = enter_workspace(context, process)
+        page.on('crash', lambda _: errors.append('Renderer crashed'))
         for name in ('继续', 'Continue'):
             page.add_locator_handler(page.get_by_role('button', name=name, exact=True), lambda button: button.click())
         onboarding = page.get_by_role('heading', name='开始使用', exact=True)
@@ -61,6 +68,7 @@ def desktop(pw, app, home, env, phase):
         elif phase == 'restart':
             check_caption(page, process.pid, home, 'Alcor')
         yield page
+        assert not errors, redact(str(errors))
         try:
             browser.new_browser_cdp_session().send('Browser.close')
         except Error:
@@ -91,7 +99,7 @@ def main():
         parser.error('--expect-compatible-upgrade needs --upgrade-app')
     app = args.app.resolve(strict=True)
     release = json.loads((ROOT / 'product/desktop-release.lock.json').read_text())['windows']
-    verify(app, release)
+    verify(app, release, release['upgradeProbe'])
     if args.upgrade_app:
         args.upgrade_app = args.upgrade_app.resolve(strict=True)
         verify(args.upgrade_app, release['upgradeProbe'])
@@ -148,9 +156,17 @@ def main():
                                   {'request': {'domain': 'tasks', 'method': 'categories'}}), list)
             task = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo',
                        'arguments': {'payload': {'title': 'Synthetic Windows lifecycle'}}}})
-            nav = page.get_by_role('navigation', name='Alcor 秘书导航')
+            nav = page.get_by_label('Alcor 秘书导航', exact=True)
+            expect(nav.locator('.alcor-sidebar-brand')).to_contain_text('Alcor')
+            expect(nav.locator('.alcor-sidebar-chat')).to_contain_text('新对话')
+            apps = nav.get_by_role('group', name='应用')
             system = nav.get_by_role('group', name='系统')
-            expect(nav.get_by_role('group', name='应用').get_by_role('button', name='Aurabot')).to_have_count(0)
+            workspace = nav.get_by_role('region', name='工作区与会话')
+            expect(workspace.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
+            expect(page.get_by_role('navigation', name='全局面板')).to_have_count(0)
+            assert apps.bounding_box()['y'] < system.bounding_box()['y'] < workspace.bounding_box()['y']
+            expect(apps.get_by_role('button', name='Aurabot')).to_have_count(0)
+            page.screenshot(path=home / 'original-alcor-tasks.png')
             system.get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
             page.screenshot(path=home / 'aurabot-alcor.png')
@@ -162,7 +178,8 @@ def main():
             assert not existing['created'] and existing['workspace']['workspaceId'] == created['workspace']['workspaceId']
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
             switch(page, 'Alcor', 'DeepSeek Harness')
-            page.get_by_role('button', name='Aurabot', exact=True).click()
+            expect(nav).to_have_count(0)
+            page.get_by_role('navigation', name='全局面板').get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
             page.screenshot(path=home / 'aurabot-dsh.png')
             assert rpc(page, 'pluginManager/listBundles') == bundles
