@@ -68,7 +68,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         switch.click()
         page.get_by_role("menuitem", name="Alcor", exact=True).click()
         expect(page.get_by_role("heading", name="事务", exact=True)).to_be_visible()
-        navigation = page.get_by_role("navigation", name="Alcor 秘书导航")
+        navigation = page.get_by_label("Alcor 秘书导航", exact=True)
         expect(navigation.get_by_role("group", name="应用")).to_be_visible()
         system = navigation.get_by_role("group", name="系统")
         expect(
@@ -121,10 +121,14 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         ).to_be_visible()
         assert d.rpc(page, "pluginManager/listBundles") == alcor_bundles
         assert not errors, errors
+    with d.desktop(pw, home, "shared-save-alcor") as (page, errors):
+        page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness').click()
+        page.get_by_role('menuitem', name='Alcor', exact=True).click()
+        expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_be_visible()
+        assert not errors, errors
     with d.desktop(pw, home, "shared-restart") as (page, errors):
-        expect(
-            page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")
-        ).to_be_visible(timeout=30000)
+        expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible(timeout=30000)
+        expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_be_visible()
         page.get_by_role("button", name="插件", exact=True).click()
         expect(page.get_by_role("heading", name="插件", exact=True)).to_be_visible()
         assert not errors, errors
