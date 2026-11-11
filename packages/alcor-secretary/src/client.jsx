@@ -1,3 +1,4 @@
+import {SharedNavigation} from './shared-navigation.jsx'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import noticeStyle from './notice.css'
@@ -161,16 +162,7 @@ export async function apply(ctx) {
       spaceNavigation = navigation
       let releaseSidebar
       const syncSidebar = () => {
-        if (!globalThis.__ALCOR_CLIENT_SHELL__) {
-          if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
-            const releases = deskViews.map(view => ctx.slots.register({ name: 'sidebar.panellist', id: view.id,
-              label: () => view.label, order: 20 }, () => <BearLogo size={18}/>))
-            releaseSidebar = () => releases.forEach(release => release())
-          } else if (controller.getSnapshot() !== 'alcor' && releaseSidebar) {
-            releaseSidebar(); releaseSidebar = undefined
-          }
-          return
-        }
+        if (shared) return
         if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
@@ -183,12 +175,29 @@ export async function apply(ctx) {
           releaseSidebar(); releaseSidebar = undefined
         }
       }
+      if (shared) ctx.slots.inject('sidebar.footer.action', () => {
+        let entries = ctx.slots.entriesOfSlot('sidebar.panellist')
+        const listeners = new Set()
+        const stop = ctx.slots.subscribe('sidebar.panellist', () => {
+          entries = ctx.slots.entriesOfSlot('sidebar.panellist')
+          for (const listener of listeners) listener()
+        })
+        const panels = { getSnapshot: () => entries, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) } }
+        const release = ctx.slots.register({ name:'sidebar.footer.action', id:'alcor-navigation', inject: () => ({
+          mode:controller, panels, selectPanel: id => ctx.layout.selectPanel(id),
+        }) }, SharedNavigation)
+        ctx.effect(() => () => { release(); stop(); listeners.clear() })
+      })
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
       if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.bottom', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
+          .alcor-shared-navigation { width:100%; min-width:0; font-family:var(--dsw-font-family); }
+          .alcor-shared-navigation .alcor-nav-group p { margin:8px 8px 4px; font-size:11px; color:var(--dsw-alias-label-tertiary); }
+          .alcor-shared-navigation button { display:flex; align-items:center; gap:10px; width:100%; min-height:32px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-primary); padding:6px 8px; font:inherit; text-align:left; cursor:pointer; }
+          .alcor-shared-navigation button:hover,.alcor-shared-navigation button[aria-current=page] { background:var(--dsw-alias-interactive-bg-hover); }
           .alcor-mode-bar { display:flex; align-items:center; gap:12px; height:44px; padding:6px 16px; box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:drag; }
           html[data-platform='darwin']:not([data-fullscreen]) .alcor-mode-bar { padding-left:88px; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
