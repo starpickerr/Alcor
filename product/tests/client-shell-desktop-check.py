@@ -2,7 +2,6 @@
 import argparse
 import hashlib
 import json
-import os
 import plistlib
 from pathlib import Path
 import signal
@@ -14,17 +13,26 @@ from playwright.sync_api import sync_playwright, expect
 import official_desktop_check as desktop
 import importlib.util
 spec=importlib.util.spec_from_file_location('isolated',Path(__file__).with_name('isolated-environments-check.py'))
-isolated=importlib.util.module_from_spec(spec);spec.loader.exec_module(isolated)
+isolated=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(isolated)
 
-parser=argparse.ArgumentParser();parser.add_argument('--app',required=True);parser.add_argument('--config',required=True);args=parser.parse_args()
-app=Path(args.app).resolve();config_file=Path(args.config).resolve();config=json.loads(config_file.read_text());base=config_file.parent
+parser=argparse.ArgumentParser()
+parser.add_argument('--app',required=True)
+parser.add_argument('--config',required=True)
+args=parser.parse_args()
+app=Path(args.app).resolve()
+config_file=Path(args.config).resolve()
+config=json.loads(config_file.read_text())
+base=config_file.parent
 assert (base/'.client-shell-test').read_text().strip()=='disposable-single-window-check-v1'
 for key in ['environmentRoot','workbenchDsh','workbenchHome','workbenchWorkspace','clientData']:
     assert Path(config[key]).resolve().is_relative_to(base), 'Test profiles must stay inside the explicitly owned directory'
-isolated.APP=Path(config['officialApp']);isolated.ARTIFACTS=base
+isolated.APP=Path(config['officialApp'])
+isolated.ARTIFACTS=base
 paths=isolated.prepare(Path(config['environmentRoot']))
 fixture=base/'ecosystem-plugin'
-if not fixture.exists():isolated.fixture_plugin(fixture)
+if not fixture.exists():
+    isolated.fixture_plugin(fixture)
 title='Single-window isolated task '+uuid4().hex[:8]
 original={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in fixture.iterdir()}
 for kind in paths:
@@ -34,13 +42,15 @@ for kind in paths:
 probe_data=Path(paths['alcor']['dsh'])/'plugins-data/environment-probe'
 probe_data.mkdir(parents=True,exist_ok=True)
 (probe_data/'options.json').write_text(json.dumps({'detachedChild':True}))
-if isolated.PLUGIN_INFO.exists():isolated.native_cli(paths['alcor'],'legacy-info-install','add',isolated.PLUGIN_INFO)
+if isolated.PLUGIN_INFO.exists():
+    isolated.native_cli(paths['alcor'],'legacy-info-install','add',isolated.PLUGIN_INFO)
 if (Path(config['clientData'])/'alcor-extension-installed.json').exists():
     isolated.native_cli(paths['dsh'],'reset-test-extension','add',isolated.ROOT/'.local/artifacts/alcor-extension-0.1.0.tgz')
     manifest_file=Path(paths['dsh']['profile'])/'package.json'
     manifest=json.loads(manifest_file.read_text())
     selected=manifest['dsh']['profile']['bundles']
-    if '@alcor/extension' not in selected:selected.append('@alcor/extension')
+    if '@alcor/extension' not in selected:
+        selected.append('@alcor/extension')
     manifest_file.write_text(json.dumps(manifest,indent=2)+'\n')
 
 
@@ -82,12 +92,17 @@ def start(playwright,phase,disabled=False):
         dsh=next(page for page in content if page!=alcor)
         return process,browser,owner,alcor,dsh,log
     except:
-        process.send_signal(signal.SIGTERM);process.wait(timeout=25);log.close()
+        process.send_signal(signal.SIGTERM)
+        process.wait(timeout=25)
+        log.close()
         raise
 
 
 def stop(process,browser,log):
-    browser.close();process.send_signal(signal.SIGTERM);process.wait(timeout=25);log.close()
+    browser.close()
+    process.send_signal(signal.SIGTERM)
+    process.wait(timeout=25)
+    log.close()
     assert process.returncode==0,'Client did not stop gracefully'
 
 
@@ -114,8 +129,11 @@ def reattach(playwright,browser):
         content=[page for page in pages if page.url.startswith('dsh-app:')]
         alcor=next((page for page in content if page.evaluate('globalThis.__ALCOR_APPLICATION__')=='alcor'),None)
         dsh=next((page for page in content if page!=alcor),None)
-        if alcor and dsh:return browser,owner,alcor,dsh
-        browser.close();assert time.monotonic()<deadline,'Re-enabled native view was not discoverable';time.sleep(.1)
+        if alcor and dsh:
+            return browser,owner,alcor,dsh
+        browser.close()
+        assert time.monotonic()<deadline,'Re-enabled native view was not discoverable'
+        time.sleep(.1)
 
 
 def extension_card(dsh):
@@ -130,7 +148,8 @@ def wait_phase(owner,phase,mode=None,timeout=60):
     deadline=time.monotonic()+timeout
     while True:
         state=owner.evaluate('alcorShell.state()')
-        if state['phases']['alcor']==phase and (mode is None or state['mode']==mode):return state
+        if state['phases']['alcor']==phase and (mode is None or state['mode']==mode):
+            return state
         assert time.monotonic()<deadline,'Alcor transition did not settle: '+str(state)
         time.sleep(.1)
 
@@ -138,23 +157,28 @@ def wait_phase(owner,phase,mode=None,timeout=60):
 with sync_playwright() as playwright:
     process,browser,owner,alcor,dsh,log=start(playwright,'initial')
     try:
-        for page in [alcor,dsh]:assert page.evaluate('typeof globalThis.alcorShell')=='undefined','Content cannot control the client shell'
+        for page in [alcor,dsh]:
+            assert page.evaluate('typeof globalThis.alcorShell')=='undefined','Content cannot control the client shell'
         owner.evaluate("Promise.all([alcorShell.switchMode('dsh'),alcorShell.switchMode('alcor'),alcorShell.switchMode('dsh')])")
         assert owner.evaluate('alcorShell.state()')['mode']=='dsh'
         assert alcor.evaluate("getComputedStyle(document.querySelector('[data-slot=\"shell.top\"]').parentElement.parentElement).paddingTop")=='0px'
-        for page in [owner,alcor,dsh]:page.set_viewport_size({'width':720,'height':600})
+        for page in [owner,alcor,dsh]:
+            page.set_viewport_size({'width':720,'height':600})
         assert owner.locator('#mode').is_visible()
         assert alcor.evaluate('document.documentElement.scrollWidth<=innerWidth')
-        for page in [owner,alcor,dsh]:page.set_viewport_size({'width':1280,'height':856})
+        for page in [owner,alcor,dsh]:
+            page.set_viewport_size({'width':1280,'height':856})
         owner.evaluate("alcorShell.switchMode('dsh')")
         dismiss_notices(dsh)
         expect(dsh.get_by_role('button',name='插件',exact=True)).to_be_visible(timeout=30000)
         assert unavailable(dsh,'alcorSecretary/overview')['status']==404
         assert unavailable(dsh,'alcorOrganizer/business')['status']==404
         assert desktop.rpc(alcor,'alcorSecretary/overview')
-        bundles=desktop.rpc(dsh,'pluginManager/listBundles');assert not any(row['name'] in ['@alcor/launcher','@alcor/secretary'] for row in bundles if row.get('installed'))
+        bundles=desktop.rpc(dsh,'pluginManager/listBundles')
+        assert not any(row['name'] in ['@alcor/launcher','@alcor/secretary'] for row in bundles if row.get('installed'))
         assert any(row['name']=='@alcor/extension' and row['enabled'] for row in bundles)
-        for page in [alcor,dsh]:assert not any(row['name']=='@alcor/plugin-info' and row.get('installed') for row in desktop.rpc(page,'pluginManager/listBundles'))
+        for page in [alcor,dsh]:
+            assert not any(row['name']=='@alcor/plugin-info' and row.get('installed') for row in desktop.rpc(page,'pluginManager/listBundles'))
         card=extension_card(dsh)
         expect(card.get_by_role('switch')).to_be_checked()
         expect(dsh.locator('[data-plugin-package="dsh-environment-probe"] .alcor-client-plugin-scope')).to_have_text('DSH 环境')
@@ -185,7 +209,8 @@ with sync_playwright() as playwright:
         expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
         alcor.screenshot(path=str(base/'alcor-task.png'))
         owner.evaluate("alcorShell.switchMode('dsh')")
-    finally:stop(process,browser,log)
+    finally:
+        stop(process,browser,log)
     process,browser,owner,alcor,dsh,log=start(playwright,'restart')
     try:
         assert owner.evaluate('alcorShell.state()')['mode']=='dsh'
@@ -194,7 +219,8 @@ with sync_playwright() as playwright:
             assert isolated.probe(page)['boots']==probes[kind]['boots']+1
         owner.evaluate("alcorShell.switchMode('alcor')")
         dismiss_notices(alcor)
-        alcor.get_by_role('button',name='事务',exact=True).click();expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
+        alcor.get_by_role('button',name='事务',exact=True).click()
+        expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
         assert unavailable(dsh,'alcorSecretary/overview')['status']==404
         child=json.loads((probe_data/'child.json').read_text())['pid']
         origin=alcor.evaluate('globalThis.__DSH_TRANSPORT__.streamBaseUrl')
@@ -209,22 +235,28 @@ with sync_playwright() as playwright:
         while len([row for row in control.send('Target.getTargets')['targetInfos'] if row['type']=='page' and row['url'].startswith('dsh-app:')])!=1:
             assert time.monotonic()<deadline,'Disabling must destroy the private view'
             time.sleep(.1)
-        try:child_state=subprocess.check_output(['/bin/ps','-p',str(child),'-o','stat='],text=True).strip()
-        except subprocess.CalledProcessError:child_state='exited'
+        try:
+            child_state=subprocess.check_output(['/bin/ps','-p',str(child),'-o','stat='],text=True).strip()
+        except subprocess.CalledProcessError:
+            child_state='exited'
         (base/'disabled-child-state.txt').write_text(child_state+'\n')
         assert child_state=='exited' or child_state.startswith('Z'),'Detached plugin child still running: '+child_state
-        with socket.socket() as connection:assert connection.connect_ex(('127.0.0.1',port))!=0,'Disabled Alcor API still listening'
+        with socket.socket() as connection:
+            assert connection.connect_ex(('127.0.0.1',port))!=0,'Disabled Alcor API still listening'
         assert unavailable(dsh,'alcorSecretary/overview')['status']==404
-    finally:stop(process,browser,log)
+    finally:
+        stop(process,browser,log)
     process,browser,owner,alcor,dsh,log=start(playwright,'disabled-restart',disabled=True)
     try:
         assert owner.evaluate('alcorShell.state()')['mode']=='dsh'
-        card=extension_card(dsh);expect(card.get_by_role('switch')).not_to_be_checked()
+        card=extension_card(dsh)
+        expect(card.get_by_role('switch')).not_to_be_checked()
         assert isolated.probe(dsh)['boots']==probes['dsh']['boots']+2
         removed=desktop.rpc(dsh,'pluginManager/removeBundle',{'name':'@alcor/extension'})
         assert removed['application']!='failed',removed
         assert not any(row['name']=='@alcor/extension' and row.get('installed') for row in desktop.rpc(dsh,'pluginManager/listBundles'))
-    finally:stop(process,browser,log)
+    finally:
+        stop(process,browser,log)
     process,browser,owner,alcor,dsh,log=start(playwright,'uninstalled-restart',disabled=True)
     try:
         assert not any(row['name']=='@alcor/extension' and row.get('installed') for row in desktop.rpc(dsh,'pluginManager/listBundles')),'Uninstalled Alcor was automatically reinstalled'
@@ -232,12 +264,17 @@ with sync_playwright() as playwright:
         assert installed['application']!='failed',installed
         wait_phase(owner,'ready')
         browser,owner,alcor,dsh=reattach(playwright,browser)
-        owner.evaluate("alcorShell.switchMode('alcor')");dismiss_notices(alcor)
-        alcor.get_by_role('button',name='事务',exact=True).click();expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
+        owner.evaluate("alcorShell.switchMode('alcor')")
+        dismiss_notices(alcor)
+        alcor.get_by_role('button',name='事务',exact=True).click()
+        expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
         owner.evaluate("alcorShell.switchMode('dsh')")
-        card=extension_card(dsh);card.get_by_role('switch').click()
+        card=extension_card(dsh)
+        card.get_by_role('switch').click()
         wait_phase(owner,'disabled')
-        card=extension_card(dsh);expect(card.get_by_role('switch')).not_to_be_checked();card.get_by_role('switch').click()
+        card=extension_card(dsh)
+        expect(card.get_by_role('switch')).not_to_be_checked()
+        card.get_by_role('switch').click()
         wait_phase(owner,'ready')
         browser,owner,alcor,dsh=reattach(playwright,browser)
         assert unavailable(dsh,'alcorSecretary/overview')['status']==404
@@ -245,8 +282,10 @@ with sync_playwright() as playwright:
         owner.evaluate("alcorShell.switchMode('alcor')")
         print('Final re-enable state:',owner.evaluate('alcorShell.state()'),flush=True)
         alcor.screenshot(path=str(base/'before-reenabled-task.png'))
-        alcor.get_by_role('button',name='事务',exact=True).click();expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
+        alcor.get_by_role('button',name='事务',exact=True).click()
+        expect(alcor.get_by_role('button',name=title,exact=True)).to_be_visible()
         alcor.screenshot(path=str(base/'reenabled-task.png'))
-    finally:stop(process,browser,log)
+    finally:
+        stop(process,browser,log)
 assert original=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in fixture.iterdir()},'Third-party package must remain unmodified'
 print('PASS: one native window; native Alcor plugin enable/disable/uninstall/reinstall; disabled and uninstalled survive restart; detached child and API stop; data restored on re-enable; built-in scope badges without manager plugin; workbench unaffected; unchanged ecosystem plugin')
