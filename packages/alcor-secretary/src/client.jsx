@@ -1,4 +1,5 @@
-import {SharedNavigation} from './shared-navigation.jsx'
+import {sharedWorkspaceSlot} from './shared-workspace.js'
+import {sidebarOwner} from './sidebar-owner.js'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import noticeStyle from './notice.css'
@@ -20,14 +21,16 @@ import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
 const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
-import { Button, Menu, MenuItemButton, FishLogo, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, MenuItemButton, FishLogo, IconPanelLeftOutlineRegular, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
-export const inject = ['configForms','slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
+export const inject = ['locale','loader','configForms','slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
 
-function ModeSwitch({ useMode, switchMode, getNotice }) {
+function ModeSwitch({ useMode, switchMode, getNotice, onReady }) {
   const mode = useMode(value => value)
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
+  // Preserve the required native sidebar through the official initial boot audit.
+  useEffect(() => { onReady?.() }, [onReady])
   if(globalThis.__ALCOR_CLIENT_SHELL__)return null
   if(applicationEnvironment()==='alcor')return <div className="alcor-mode-bar"><BearLogo size={20}/><span>Alcor</span>
     {getNotice() && <Notice role="status" tone="warning" className="alcor-mode-notice">{getNotice()}</Notice>}</div>
@@ -160,9 +163,9 @@ export async function apply(ctx) {
       modeController = controller
       const navigation = shared ? null : createSpaceNavigation(ctx, controller)
       spaceNavigation = navigation
-      let releaseSidebar
+      let releaseSidebar, sharedOwner, ownerReady=false
       const syncSidebar = () => {
-        if (shared) return
+        if (shared) { if(ownerReady) sharedOwner?.select(controller.getSnapshot()==='alcor').catch(error=>console.error('Alcor sidebar transition failed',error)); return }
         if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
@@ -175,32 +178,32 @@ export async function apply(ctx) {
           releaseSidebar(); releaseSidebar = undefined
         }
       }
-      if (shared) ctx.slots.inject('sidebar.footer.action', () => {
-        let entries = ctx.slots.entriesOfSlot('sidebar.panellist')
-        const listeners = new Set()
-        const stop = ctx.slots.subscribe('sidebar.panellist', () => {
-          entries = ctx.slots.entriesOfSlot('sidebar.panellist')
-          for (const listener of listeners) listener()
+      if (shared) {
+        ctx.effect(() => ctx.locale.register('alcor-sidebar', {zh:{'toggle.open':'展开侧边栏','toggle.collapse':'收起侧边栏','session.new.label':'新建会话'},en:{'toggle.open':'Expand sidebar','toggle.collapse':'Collapse sidebar','session.new.label':'New session'}}))
+        sharedOwner=sidebarOwner(ctx.loader,()=>{
+          const children=Object.fromEntries(['sidebar.brand.mark','sidebar.brand.name','sidebar.toggle.badge','sidebar.workspaces','sidebar.settings'].map(name=>[name,{kind:'single',scope:'root'}]))
+          children['sidebar.workspaces']=sharedWorkspaceSlot
+          for(const name of ['sidebar.panellist','sidebar.panellist.actions','sidebar.footer.action'])children[name]={kind:'list',scope:'root'}
+          const release=ctx.slots.register({name:'sidebar',priority:-10,children,locale:'alcor-sidebar',inject:()=>({
+            nativeShared:true,navigate,startSession,toggleSidebar:()=>ctx.layout.toggleSidebar(),
+            pluginPanels:{list:()=>ctx.slots.entriesOfSlot('sidebar.panellist'),subscribe:listener=>ctx.slots.subscribe('sidebar.panellist',listener)},
+            hubForm:ctx.configForms.get('agent-hub'),
+          })},SecretarySidebar)
+          const leading=ctx.slots.register({name:'shell.leading',priority:-10},()=> <Button variant="ghost" aria-label="展开侧边栏" onClick={()=>ctx.layout.toggleSidebar()}><IconPanelLeftOutlineRegular size={17}/></Button>)
+          return ()=>{leading();release()}
         })
-        const panels = { getSnapshot: () => entries, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) } }
-        const release = ctx.slots.register({ name:'sidebar.footer.action', id:'alcor-navigation', inject: () => ({
-          mode:controller, panels, selectPanel: id => ctx.layout.selectPanel(id),
-        }) }, SharedNavigation)
-        ctx.effect(() => () => { release(); stop(); listeners.clear() })
-      })
+        ctx.effect(()=>()=>sharedOwner.dispose())
+      }
+      const activateSidebar=()=>{ownerReady=true;syncSidebar()}
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
-      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.overlay', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
+      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.overlay', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice, onReady:activateSidebar }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
-          .alcor-shared-navigation { width:100%; min-width:0; font-family:var(--dsw-font-family); }
-          .alcor-shared-navigation .alcor-nav-group p { margin:8px 8px 4px; font-size:11px; color:var(--dsw-alias-label-tertiary); }
-          .alcor-shared-navigation button { display:flex; align-items:center; gap:10px; width:100%; min-height:32px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-primary); padding:6px 8px; font:inherit; text-align:left; cursor:pointer; }
-          .alcor-shared-navigation button:hover,.alcor-shared-navigation button[aria-current=page] { background:var(--dsw-alias-interactive-bg-hover); }
           .alcor-mode-bar { position:absolute; top:calc(var(--dsh-frame-chrome-top, 0px) + 8px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; height:36px; padding:3px 5px; border:1px solid var(--dsw-alias-border-base, #ddd); border-radius:8px; background:var(--dsw-alias-bg-base, white); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:no-drag; pointer-events:auto; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
-          .alcor-mode-bar button { gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
+          .alcor-mode-bar button { -webkit-app-region:no-drag; gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
           .alcor-mode-bar button > svg:last-child { margin-left:3px; color:var(--dsw-alias-label-tertiary); }
           .alcor-mode-bar button[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
           .alcor-mode-bar button:focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-alias-state-business-primary); outline-offset:2px; }

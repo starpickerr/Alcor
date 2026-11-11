@@ -315,3 +315,6 @@
 [data-plugin-toolbar] button[aria-label][aria-busy] [class*="toolbarLabel"] { display:none; }
 [data-plugin-toolbar] button[aria-label][aria-busy]:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary); }
 .alcor-capability-heading > div { min-width:0; }
+
+/* The official macOS window keeps its traffic lights above shared sidebar content. */
+html[data-platform='darwin']:not([data-fullscreen]) .alcor-sidebar[data-native-shared] { padding-top:62px; }
