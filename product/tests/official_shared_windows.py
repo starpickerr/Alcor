@@ -79,7 +79,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'package', 'aurabot'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--upgrade-app', type=Path, help='Optional pinned incompatible newer official executable')
+    parser.add_argument('--upgrade-app', type=Path, help='Optional pinned compatible newer official executable')
     parser.add_argument('--artifacts', type=Path, default=ROOT / '.local/official-shared-windows')
     args = parser.parse_args()
     app = args.app.resolve(strict=True)
@@ -87,7 +87,7 @@ def main():
     verify(app, release)
     if args.upgrade_app:
         args.upgrade_app = args.upgrade_app.resolve(strict=True)
-        verify(args.upgrade_app, release['incompatibleUpgradeProbe'])
+        verify(args.upgrade_app, release['compatibleUpgrade'])
     args.artifacts.mkdir(parents=True, exist_ok=True)
     home = Path(tempfile.mkdtemp(prefix='run-', dir=args.artifacts.resolve()))
     print('Synthetic Profile and acceptance evidence:', home, flush=True)
@@ -166,7 +166,7 @@ def main():
         with desktop(pw, app, home, env, 'disabled') as page:
             page.get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
-            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
+            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
         select_bundle(True)
         with desktop(pw, app, home, env, 'restored') as page:
             expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible()
@@ -176,7 +176,7 @@ def main():
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
         plugin_cli('remove', '@alcor/secretary')
         with desktop(pw, app, home, env, 'removed') as page:
-            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
+            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
         plugin_cli('add', args.package.resolve(strict=True), '--ignore-scripts')
         with desktop(pw, app, home, env, 'reinstalled') as page:
@@ -185,20 +185,22 @@ def main():
         if args.upgrade_app:
             config = profile / 'cordis.patch.yml'
             original = config.read_bytes()
-            with desktop(pw, args.upgrade_app, home, env, 'incompatible-upgrade') as page:
+            with desktop(pw, args.upgrade_app, home, env, 'compatible-upgrade') as page:
                 page.get_by_role('button', name='插件', exact=True).click()
                 expect(page.get_by_role('heading', name='插件', exact=True)).to_be_visible()
                 catalog = rpc(page, 'pluginManager/listBundles')
                 entry = next(b for b in catalog if b['name'] == '@alcor/secretary')
-                assert entry['error']['code'] == 'incompatible-version'
-                expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
+                assert entry.get('error') is None, entry
+                records = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
+                assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in records)
+                expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
                 assert rpc(page, 'agentPresets/list')['presets']
-                page.screenshot(path=home / 'incompatible-upgrade.png')
+                page.screenshot(path=home / 'compatible-upgrade.png')
             with desktop(pw, app, home, env, 'compatible-recovery') as page:
                 rows = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
                 assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in rows)
                 assert config.read_bytes() == original
-            print('PASS incompatible official upgrade: DSH available, task and profile configuration retained')
+            print('PASS compatible official upgrade: DSH available, task and profile configuration retained')
     print('PASS shared official Windows desktop: top switch, AuraBot, workspace, catalog, restart, disable, reinstall and retention')
 
 

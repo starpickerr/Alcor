@@ -13,3 +13,11 @@ for (const name of ['alcor-extension', 'alcor-launcher', 'alcor-secretary', 'alc
     for (const version of manifest.engines.dsh.split(' || ')) assert(versions.includes(version), 'Support must name a verified official release; open-ended ranges are unsafe for UI overrides')
   })
 }
+
+test('shared secretary and organizer name the verified rc.2 release explicitly', async () => {
+  for (const name of ['alcor-secretary','alcor-organizer']) {
+    const manifest=JSON.parse(await readFile(new URL(`../../packages/${name}/package.json`,import.meta.url)))
+    assert(manifest.engines.dsh.split(' || ').includes('0.2.2-rc.2'))
+    assert(!/[~^*><]/.test(manifest.engines.dsh))
+  }
+})
