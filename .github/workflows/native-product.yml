@@ -10,6 +10,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  windows-native-plugin:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Windows development dependencies
+        run: |
+          python -m pip install tzdata
+          # The monorepo also contains required macOS-only development workspaces.
+          npm ci --force --ignore-scripts
+      - name: Package the shared secretary plugin
+        run: npm run product:pack
+      - name: Test native Windows plugin services
+        shell: pwsh
+        run: |
+          $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
+          npm run preproduct:test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs
   native-product:
     runs-on: macos-15
     timeout-minutes: 15
