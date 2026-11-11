@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applePlanDetail } from '../../packages/alcor-secretary/src/security-apple-export-gate.js'
@@ -30,7 +31,7 @@ test('local-only conflict, reminders and new items do not claim an EventKit upda
 
 test('real owner/manager preview retains default future and explicit this, with readable scope', async () => {
   const { execFileSync } = await import('node:child_process')
-  const output = execFileSync('/usr/bin/python3', ['-B', '-c', `
+  const output = execFileSync(testPython, ['-B', '-c', `
 import json,runpy
 M=runpy.run_path('product/tests/apple-approved-export.py')
 c=M['ApprovedExport']();c.setUp()

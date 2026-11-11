@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -23,7 +24,7 @@ test('real bill owner enforces snapshot CAS and idempotent receipt; public invok
 
 test('owner rolls deletion, reports and receipt back together on either failure', async () => {
   const { execFileSync } = await import('node:child_process')
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')

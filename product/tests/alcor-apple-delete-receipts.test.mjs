@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('old pending, sending and uncertain delete receipts cannot dispatch or finalize deletion', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile,json,sqlite3
 sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
 from business.worker import Business
@@ -29,5 +30,6 @@ with tempfile.TemporaryDirectory(prefix='alcor-old-delete-') as root:
  sync=Sync();removed,errors=process_operations(sync,b.calendar,'calendar')
  assert sync.reads==1
  assert removed==0 and len(errors)==3 and b.calendar.get_event(row['id'])
+ b.meta.close()
 `])
 })

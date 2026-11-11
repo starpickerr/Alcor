@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -12,7 +13,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
 test('business recovery preserves Apple imports, action receipts and unknown operations', async () => {
-  await promisify(execFile)(process.env.ALCOR_BUSINESS_PYTHON || process.env.STELLA_BUSINESS_PYTHON || 'python3', [fileURLToPath(new URL('./business-recovery.py', import.meta.url))])
+  await promisify(execFile)(testPython, [fileURLToPath(new URL('./business-recovery.py', import.meta.url))])
 })
 
 test('briefing catalog retains host operations after AgentHub is detached', async context => {

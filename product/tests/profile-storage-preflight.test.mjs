@@ -47,7 +47,7 @@ test('incomplete, contradictory, linked, or conflicting migration states fail cl
   await writeFile(join(home, 'storages', 'stella_organizer.json'), '{}')
   assert.throws(() => assertProfileMigrated(ctx), /迁移/)
   await rm(join(home, 'storages', 'stella_organizer.json'))
-  await symlink(join(home, 'storages'), join(dir, 'alcor', 'business'))
+  await symlink(join(home, 'storages'), join(dir, 'alcor', 'business'), process.platform==='win32'?'junction':'dir')
   assert.throws(() => assertProfileMigrated(ctx), /迁移/)
 })
 

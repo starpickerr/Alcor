@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('verification-only Apple isolation blocks every invoke and touches neither bridge nor storage', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import os,sys,tempfile,hashlib
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-apple-sync/python')

@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
@@ -34,7 +35,7 @@ test('bill files preview without writes and commit once across duplicate files a
 
 test('WeChat XLSX and GB18030 Alipay exports preserve exact IDs, money and CSV quoting', async t => {
   const { execFileSync } = await import('node:child_process')
-  const files = JSON.parse(execFileSync('python3', ['product/tests/bill-import-fixtures.py'], { encoding: 'utf8' }))
+  const files = JSON.parse(execFileSync(testPython, ['product/tests/bill-import-fixtures.py'], { encoding: 'utf8' }))
   const dir = await mkdtemp(join(tmpdir(), 'stella-bill-xlsx-'))
   const worker = new BusinessWorker(dir, { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   t.after(async () => { await worker.close(); await rm(dir, { recursive: true, force: true }) })
@@ -59,7 +60,7 @@ test('WeChat XLSX and GB18030 Alipay exports preserve exact IDs, money and CSV q
 })
 
 test('a mid-import failure rolls back ledger, dedupe keys and period reports together', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile,runpy
 from pathlib import Path
 sys.path.insert(0, 'packages/alcor-secretary')
@@ -92,7 +93,7 @@ with tempfile.TemporaryDirectory() as tmp:
 })
 
 test('spreadsheet formulas and external entities are refused before ledger writes', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,io,zipfile,base64
 sys.path.insert(0,'packages/alcor-secretary')
 from business.bills.domain.import_files import parse_files
