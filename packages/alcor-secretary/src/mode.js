@@ -50,8 +50,9 @@ function loadModeState(storage) {
 
 export function readModeState(storage) { return loadModeState(storage).state }
 
-export function createModeController(ctx, storage, {application=globalThis.__ALCOR_APPLICATION__} = {}) {
+export function createModeController(ctx, storage, {application=globalThis.__ALCOR_APPLICATION__, shared=false} = {}) {
   const loaded = loadModeState(storage), state = loaded.state
+  const dshHome = shared ? null : 'dsh'
   if(application==='alcor')state.mode='alcor'
   const listeners = new Set()
   let expected = loaded.expected
@@ -82,7 +83,7 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
     const panel = canonicalPanel(active)
     const product = globalThis[spaceHook]?.state.getSnapshot()
     if (panel === 'alcor-qq-history') sessionId = product?.selection
-    if (product?.metadata && sessionId && spaceOf(sessionId, ctx.sessions.list.getSnapshot(), product.metadata) !== state.mode) sessionId = undefined
+    if (!shared && product?.metadata && sessionId && spaceOf(sessionId, ctx.sessions.list.getSnapshot(), product.metadata) !== state.mode) sessionId = undefined
     if (active !== panel && panelRegistered(panel)) {
       navigating = true
       try { ctx.layout.selectPanel(panel) } catch { /* Retain the canonical target for the next restore. */ }
@@ -98,13 +99,13 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
     try {
       const saved = state.locations[state.mode]
       const product=globalThis[spaceHook]?.state.getSnapshot()
-      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? saved.panel : state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
+      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? (shared && saved.panel === 'dsh' ? null : saved.panel) : state.mode === 'alcor' ? 'alcor-tasks' : dshHome
       if (saved?.sessionId) {
         const catalog = ctx.sessions.list.getSnapshot()
         if (catalog.phase === 'pending') { waitingForCatalog = true; return }
         if (!catalog.byId[saved.sessionId]) throw new Error('Session no longer available')
         const metadata = globalThis[spaceHook]?.state.getSnapshot().metadata
-        if (metadata && spaceOf(saved.sessionId, catalog, metadata) !== state.mode) throw new Error('Session belongs to another space')
+        if (!shared && metadata && spaceOf(saved.sessionId, catalog, metadata) !== state.mode) throw new Error('Session belongs to another space')
       }
       if (ownPanels.has(panel) && !panelRegistered(panel)) { waitingForPanel = true; return }
       if (saved?.sessionId) ctx.uiWorkspace.openSession(saved.sessionId)
@@ -114,7 +115,7 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
     } catch {
       protectedLocations.add(state.mode)
       notice = '上次页面已不可用，已返回模式首页。'
-      const fallback = state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
+      const fallback = state.mode === 'alcor' ? 'alcor-tasks' : dshHome
       if (ownPanels.has(fallback) && !panelRegistered(fallback)) { waitingForPanel = true; return }
       ctx.layout.selectPanel(fallback)
     } finally { navigating = false }

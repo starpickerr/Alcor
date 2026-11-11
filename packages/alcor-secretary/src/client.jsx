@@ -154,9 +154,10 @@ export async function apply(ctx) {
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
     if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
     ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.bottom', () => {
-      const controller = createModeController(ctx, storage)
+      const shared = !globalThis.__ALCOR_CLIENT_SHELL__
+      const controller = createModeController(ctx, storage, { shared })
       modeController = controller
-      const navigation = createSpaceNavigation(ctx, controller)
+      const navigation = shared ? null : createSpaceNavigation(ctx, controller)
       spaceNavigation = navigation
       let releaseSidebar
       const syncSidebar = () => {
@@ -202,7 +203,7 @@ export async function apply(ctx) {
           .alcor-mode-bar [role=status] { font-size:12px; color:var(--dsw-alias-label-secondary); }
         `
         document.head.append(style)
-        return () => { stopSidebar(); releaseSidebar?.(); navigation.dispose(); modeController = undefined; style.remove(); controller.dispose() }
+        return () => { stopSidebar(); releaseSidebar?.(); navigation?.dispose(); modeController = undefined; style.remove(); controller.dispose() }
       })
     })
   })

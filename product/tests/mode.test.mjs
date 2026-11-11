@@ -373,3 +373,16 @@ test('official shared profile keeps official UI owners enabled', async () => {
   assert.equal(rows.some(row => official.has(row.id) && row.disabled), false)
   assert.equal(rows.flatMap(row => row.insert ?? []).some(row => row.name?.startsWith('./vendor/')), false)
 })
+
+test('official shared mode returns to the native conversation and preserves shared sessions', () => {
+  const f = fixture(JSON.stringify({ mode: 'dsh', locations: { dsh: { panel: 'dsh', sessionId: 'work-session' } } }))
+  const controller = createModeController(f.ctx, f.storage, { shared: true })
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, null)
+  assert.equal(f.ctx.uiWorkspace.selection.getSnapshot().sessionId, 'work-session')
+  controller.switchMode('alcor')
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'alcor-tasks')
+  controller.switchMode('dsh')
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, null)
+  assert.equal(f.ctx.uiWorkspace.selection.getSnapshot().sessionId, 'work-session')
+  controller.dispose()
+})

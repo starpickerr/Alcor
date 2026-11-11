@@ -26,4 +26,14 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
             page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")
         ).to_be_visible()
         assert not errors, errors
-print("PASS: unmodified official Desktop shared-profile switch")
+    with d.desktop(pw, home, "shared-restart") as (page, errors):
+        expect(page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")).to_be_visible(timeout=30000)
+        page.get_by_role("button", name="插件", exact=True).click()
+        expect(page.get_by_role("heading", name="插件", exact=True)).to_be_visible()
+        assert not errors, errors
+    d.select_bundle(home, False)
+    with d.desktop(pw, home, "disabled") as (page, errors):
+        expect(page.get_by_role("button", name="插件", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")).to_have_count(0)
+        assert not errors, errors
+print("PASS: official shared-profile switch, restart and disabled recovery")
