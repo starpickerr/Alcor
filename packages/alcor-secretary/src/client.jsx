@@ -201,7 +201,7 @@ export async function apply(ctx) {
         style.textContent = `
           .alcor-mode-bar { position:absolute; top:calc(var(--dsh-frame-chrome-top, 0px) + 8px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; height:36px; padding:3px 5px; border:1px solid var(--dsw-alias-border-base, #ddd); border-radius:8px; background:var(--dsw-alias-bg-base, white); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:no-drag; pointer-events:auto; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
-          .alcor-mode-bar button { gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
+          .alcor-mode-bar button { -webkit-app-region:no-drag; gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
           .alcor-mode-bar button > svg:last-child { margin-left:3px; color:var(--dsw-alias-label-tertiary); }
           .alcor-mode-bar button[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
           .alcor-mode-bar button:focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-alias-state-business-primary); outline-offset:2px; }
