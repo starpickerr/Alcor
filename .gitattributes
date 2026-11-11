@@ -1,0 +1,3 @@
+product/patches/*.patch text eol=lf
+packages/alcor-secretary/vendor/** text eol=lf
+scripts/product/native-ui-*.mjs text eol=lf

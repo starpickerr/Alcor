@@ -18,7 +18,7 @@ function accountDenied(execution, record) {
 
 export default class MailConnection extends Service {
   static inject = ['credentials', 'authorization', 'tools']
-  static Config = z.object({ command: z.string().required(), cwd: z.string().required(), dataDir: z.string().required() })
+  static Config = z.object({ command: z.string().required(), args: z.array(z.string()).default([]), cwd: z.string().required(), dataDir: z.string().required() })
   constructor(ctx, config) {
     super(ctx, 'alcorMailConnection')
     this.config = config; this.generation = 0; this.active = null; this.pending = Promise.resolve(); this.updates = Promise.resolve(); this.closed = false
@@ -54,7 +54,7 @@ export default class MailConnection extends Service {
       if (!parsed?.success) throw new Error('邮箱凭据格式无效。')
       this.connection = this.ctx.plugin(async inner => {
         await McpClient.apply(inner, McpClient.Config({ transport: 'stdio', serverName: 'email', command: this.config.command,
-          args: ['--data-dir', this.config.dataDir, '--dsh-credentials'], cwd: this.config.cwd,
+          args: [...this.config.args, '--data-dir', this.config.dataDir, '--dsh-credentials'], cwd: this.config.cwd,
           env: { ALCOR_EMAIL_CREDENTIAL: JSON.stringify(parsed.data) }, toolCallTimeoutMs: 120000, failOnStartupError: true }))
       })
       await this.connection.await()
