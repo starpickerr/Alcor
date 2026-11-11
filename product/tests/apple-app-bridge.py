@@ -246,7 +246,9 @@ class AppBridge(unittest.TestCase):
             (app/'Contents/MacOS/AlcorCalendarBridge').touch()
             stop=threading.Event()
             bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
-            def capability(_):stop.set();return {'watch_control_version':1}
+            def capability(_):
+                stop.set()
+                return {'watch_control_version':1}
             with patch.object(bridge,'call',side_effect=capability), patch('apple_sync.bridge.subprocess.Popen') as launch:
                 bridge.watch(lambda:None,stop)
                 launch.assert_not_called()
@@ -260,7 +262,9 @@ class AppBridge(unittest.TestCase):
             checked=threading.Event()
             guard=threading.Lock()
             bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
-            def capability(_):checked.set();return {'watch_control_version':1}
+            def capability(_):
+                checked.set()
+                return {'watch_control_version':1}
             with patch.object(bridge,'call',side_effect=capability),patch('apple_sync.bridge.subprocess.Popen') as launch:
                 guard.acquire()
                 try:
