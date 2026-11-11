@@ -2,11 +2,13 @@
 
 项目与仓库现名为 **Alcor**。原生包源码位于 `packages/alcor-*`。本机旧 Profile 已在官方 DSH 0.2.2-rc.1 完成迁移，新旧包不得同时启用。现有 Preset、工具 ID、数据目录及凭据键是兼容契约，不能批量替换；已安装旧版本仍可能显示 Stella。当前目录是外层 Alcor 多仓工作区内的 Alcor 产品仓。
 
-最新交付要求：Alcor 是客户端顶部可切换的产品模式，与 DSH 工作台在同一窗口直接切换，不作为工作台的侧栏插件。运行和生态插件仍复用经验证的官方 DSH Host；自有客户端外壳、本地签名与官方发行版必须明确区分，不能将它描述为“原版 DSH 只装插件”。
+最新交付要求：Alcor 是可安装、可启停的功能插件，在 DSH 原生插件页管理生命周期，启用后通过客户端顶部进入完整 Alcor 模式，与 DSH 工作台在同一窗口直接切换。DSH 中的管理条目不加载 Alcor 的业务与通道；这些能力仍由独立 Host 运行。自有客户端外壳、本地签名与官方发行版必须明确区分，不能将它描述为“原版 DSH 只装插件”。
 
 默认开发目标是重构后的 **DSH 原生 Alcor**，本目录已从原临时工作树迁入新版源码。先遵循工作区 [AGENTS.md](../AGENTS.md) 及其权威规则。
 
 2026-11-11 用户明确纠正双窗口方案。当前入口为 `product/client-shell/`、`scripts/product/build-client-shell.mjs` 和 `product/tests/client-shell-desktop-check.py`：一个原生窗口、顶部切换、独立 Host 与浏览器状态。旧共用 Profile 只保留兼容；双窗口启动器不再作为交付。个人迁移需明确授权与冷备份，不自动复制凭据或外部通道。本次明确将 AuraBot 与桌宠归入 Alcor。
+
+Alcor 的 DSH 管理包为 `packages/alcor-extension`（`@alcor/extension`）。原生 Profile 保存启停状态，客户端管理独立 Host 与所属子进程；关闭后数据保留，切换界面不关闭后台。“插件作用范围”已并入客户端，不再作为独立管理插件安装。`@alcor/plugin-info` 只保留旧版兼容和内部纯函数引用。
 
 - 产品：根 `package.json`、`packages/`、`product/`、`scripts/product/`。
 - Apple：`packages/alcor-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。

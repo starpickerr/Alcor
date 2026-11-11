@@ -1,13 +1,14 @@
 # Windows 开发交接
 
-本分支 `feat/isolated-dsh-runtimes-20261111` 从 `develop` 的 `8a15a84c` 建立，保存已完成本地安装验收的 macOS 单窗口客户端。尚未实现 Windows 启动、打包或实机验收，不应把现有 Mac 安装包复制到 Windows 运行。
+本分支 `feat/isolated-dsh-runtimes-20261111` 从 `develop` 的 `8a15a84c` 建立，包含原先完成本地安装验收的 macOS 单窗口客户端，以及后续 Alcor 原生插件启停与内置范围标注改造。后续改造尚未替换个人客户端；最终普通启动画面复核状态见下文。尚未实现 Windows 启动、打包或实机验收，不应把现有 Mac 安装包复制到 Windows 运行。
 
 ## 已确认的产品约束
 
 - 顶部切换 Alcor／DSH，在同一个原生窗口直接切换，保留另一边的页面和草稿。
-- Alcor 是产品模式，不注册为 DSH 的侧栏插件。两个独立原生 Host、Profile、插件安装与数据目录，浏览器 Session 和请求转发也固定分开。
+- Alcor 是可选功能插件，DSH 原生插件页中的 `@alcor/extension` 管理启用、关闭和卸载；顶部切换进入完整产品模式。两个独立原生 Host、Profile、插件安装与数据目录，浏览器 Session 和请求转发也固定分开。
 - 第三方插件沿用标准 DSH 接口，无需增加 Alcor／DSH 专属字段。由客户端决定安装和运行在哪个环境。
 - AuraBot 和桌宠归 Alcor；切换到 DSH 不改变 QQ 的归属，也不把 Alcor 的事务、简报、账单或工具交给工作台。
+- 关闭 Alcor 会停止其 Host 及所属子进程，保留数据；关闭状态由 DSH Profile 持久化。范围标注内置到客户端，不再安装单独的管理插件。
 - 原官方 DSH 安装保持原样，校验其版本、归档与签名后使用其 Host。自有客户端独立命名、签名，不冒充官方发行版。
 - 环境隔离约束正常插件的作用域，不是阻止恶意本机插件访问所有文件的 OS 沙箱。
 
@@ -17,6 +18,9 @@
 | --- | --- |
 | `product/client-shell/main.mjs` | 单窗口、顶部切换、独立浏览器 Session、生命周期和目录选择；检查 Windows 标题栏及窗口按钮布局 |
 | `product/client-shell/host.mjs` | 官方 Host 的 IPC 启停；目前使用 Mac 的 Resources 布局，需核对 Windows 官方包和进程退出行为 |
+| `product/client-shell/extension-lifecycle.mjs`、`packages/alcor-extension/` | 跟随 DSH 原生 Profile 的启用选择；标准插件页管理，不向模型提供管理 Remote |
+| `product/client-shell/child-processes.mjs` | 关闭时按所属进程树及身份清理 detached 子进程，当前使用 POSIX `ps`／信号；必须补 Windows 实现 |
+| `product/client-shell/plugin-badges.cjs` | 客户端内置环境标注，不承担权限或隔离判断 |
 | `product/client-shell/transport.mjs` | 每个视图固定路由到所属 Host，认证 cookie 留在主进程；保持跨环境拒绝行为 |
 | `scripts/product/environments.mjs` | 独立数据目录、环境变量、插件 CLI、运行实例锁；当前官方包校验仅接受 macOS，进程识别也使用 `ps` |
 | `scripts/product/build-client-shell.mjs` | 当前仅实现 Mac `.app` 打包及本地签名；新增 Windows 打包，不放宽 Mac 校验来绕过平台差异 |
@@ -38,6 +42,10 @@
 ## 已有证据与边界
 
 2026-11-11：Mac 产品测试 513 项通过；后续原生布局和模式聚焦检查 31 项通过；最终 Host URL／传输边界 2 项通过。`product/tests/client-shell-desktop-check.py` 的最终打包验收通过，覆盖原样生态测试插件、单窗口切换、独立接口与存储、草稿及任务／模式重启恢复。个人 Mac 的原生菜单切换、重启及 AuraBot／桌宠在线状态已另行确认；未发送真实 QQ 测试消息。
+
+后续插件生命周期改造：产品测试扩展为 523 项并通过。原生桌面自动化在全新与已有合成 Profile 检查了 Alcor 管理条目、启停、关闭后重启、卸载后重启不重装、重新安装／启用恢复数据、后台 detached 子进程及 API 停止、工作台不重启，以及独立管理插件移除后内置标注继续工作。此前实际桌面操作已确认 DSH 中的 Alcor 开关和顶部“Alcor（已关闭）”状态。
+
+**待补画面验收**：普通方式启动曾观察到 Alcor 内容区空白，自动化启动未复现。最终版改为保留原生视图的窗口归属、切换可见性，并重新通过桌面自动化；该修正的最终 OS 画面复核被 ScreenCaptureKit `-3811` 捕捉失败阻断，不能宣称普通启动绘制问题已完全闭环。交付前需在 Mac 普通应用启动下补查 Alcor 内容、切换、关闭和重新启用的实际画面。Windows 也必须独立验证此链路。未进行真实 QQ 启停／消息发送测试。
 
 桌面合成验收只接受带 `.client-shell-test` 所有权标记的测试目录，配置中的所有测试数据路径必须位于该目录内；不能指向个人数据根。其测试插件准备工具复用 `product/tests/isolated-environments-check.py`，无需启用旧 launcher。
 

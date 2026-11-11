@@ -2,6 +2,7 @@ import {spawn} from 'node:child_process'
 import {join} from 'node:path'
 import {withFileLock} from '@deepseek-ai/dsh-atomic-write'
 import {environmentFor,desktopIsRunning} from '../../scripts/product/environments.mjs'
+import {ownedChildren,stopChildren} from './child-processes.mjs'
 
 export function hostUrl(value) {
   const url=new URL(value)
@@ -10,7 +11,7 @@ export function hostUrl(value) {
 }
 
 export function nativeHost(paths,desktop,{onExit=()=>{}}={}) {
-  let child,ready,stopping=false,finished,sequence=0
+  let child,ready,stopping=false,finished,sequence=0,stopWork,children
   const requests=new Map()
   const start=()=>ready ??=new Promise((resolve,reject)=>{
     const timeout=setTimeout(()=>{reject(Error('DSH Host 启动超时，请重试。'));void stop()},60000)
@@ -25,7 +26,7 @@ export function nativeHost(paths,desktop,{onExit=()=>{}}={}) {
       child.stderr.resume()
       await new Promise((done,fail)=>{
         child.once('error',error=>{clearTimeout(timeout);fail(error)})
-        child.once('exit',(code)=>{clearTimeout(timeout);if(!stopping){reject(Error('DSH Host 已退出，请重试。'));onExit(code)};done()})
+        child.once('exit',(code)=>{clearTimeout(timeout);reject(Error(stopping?'运行环境已停止。':'DSH Host 已退出，请重试。'));if(!stopping)onExit(code);done()})
         child.on('message',message=>{
           if(!message || typeof message!=='object')return
           if(message.type==='ready'){
@@ -50,10 +51,11 @@ export function nativeHost(paths,desktop,{onExit=()=>{}}={}) {
       child.send({type:'quit-inspection',requestId},error=>{if(error){clearTimeout(timeout);requests.delete(requestId);resolve({activeTasks:true,scheduledTasks:true})}})
     })
   }
-  const stop=async()=>{
+  const stop=()=>stopWork ??= (async()=>{
     stopping=true
     if(!child){await finished?.catch(()=>{});return}
-    const done=new Promise(resolve=>{if(child.exitCode!==null || child.signalCode!==null)resolve();else child.once('exit',resolve)})
+    children ??= child.pid && child.exitCode===null && child.signalCode===null?await ownedChildren(child.pid):[]
+    const done=new Promise(resolve=>{if(!child.pid || child.exitCode!==null || child.signalCode!==null)resolve();else child.once('exit',resolve)})
     if(child.connected)child.send({type:'shutdown'},()=>{})
     else child.kill('SIGTERM')
     const timeout=setTimeout(()=>child.kill('SIGTERM'),12000)
@@ -61,6 +63,7 @@ export function nativeHost(paths,desktop,{onExit=()=>{}}={}) {
     await done;clearTimeout(timeout);clearTimeout(last)
     for(const resolve of requests.values())resolve({activeTasks:false,scheduledTasks:false})
     requests.clear();await finished?.catch(()=>{})
-  }
+    await stopChildren(children)
+  })().catch(error=>{stopWork=undefined;throw error})
   return {start,inspect,stop}
 }

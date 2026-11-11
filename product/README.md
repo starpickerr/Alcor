@@ -6,6 +6,8 @@ Alcor（原 Stella）在同一个客户端顶部切换 Alcor 与 DSH 工作台�
 
 新环境默认位于 `~/.local/share/Alcor/environments/`；已有个人 DSH 可保留原数据根，Alcor 使用专属环境。账号、模型和插件在各自模式管理。个人安装的迁移必须单独备份、盘点、授权和核对，不能将新建空环境当作保留原数据的更新。停用、升级或卸载一个环境的插件不改变另一边的实例。
 
+Alcor 本身是可选功能插件，DSH 插件页中的 `@alcor/extension` 条目控制其启用、关闭与卸载。客户端跟随原生 Profile 的选择管理独立 Alcor 环境；关闭停止其后台、QQ 和所属桌宠进程，切回 DSH 并保留数据。顶部切换只改变当前界面，继续保留后台。工作台中的管理条目不开放 Alcor 业务 API。
+
 Alcor 专注秘书业务。生态插件保留自身入口和身份，不自动获得秘书业务能力。QQ 通道由其所在环境的插件处理，不随顶部模式选择而转交。本次个人安装按用户要求将 AuraBot 与桌宠留在 Alcor，保留原配置、人格、记忆和历史。见[QQ 社交与秘书业务](channels.md)。
 
 ## 桌面用户安装
@@ -22,12 +24,12 @@ Alcor 专注秘书业务。生态插件保留自身入口和身份，不自动�
 
 | 客户端名称 | 安装标识 | 当前插件源码 | 独立服务／历史仓库 |
 | --- | --- | --- | --- |
-| Alcor | `@alcor/secretary` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-secretary) | — |
+| Alcor | `@alcor/extension`（管理）／`@alcor/secretary`（内部业务） | [客户端说明](client-shell/README.md) | — |
 | dsh-agent-hub | `@alcor/agent-hub` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-agent-hub) | [dsh-agent-hub](https://github.com/starpickerr/dsh-agent-hub) 保存旧第一方插件，新版尚未迁入 |
 | dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
 | dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
 
-`@alcor/plugin-info` 在独立环境仅标注当前环境，插件可用性由原生安装与启停决定。旧共用 Profile 的第一方 `productScope` 保留兼容；第三方 `alcor.modeAssignment` 发现契约已撤去，不要求生态插件实现 Alcor 的配置。独立环境内第一方旧范围字段不再决定跨窗口的能力。运行 `npm run product:plugin-info:pack` 可生成界面插件包。
+“插件作用范围”是客户端内置的环境标注，不需要另外安装插件，实际可用性由独立环境与原生启停决定。新版客户端迁移时移除独立 `@alcor/plugin-info` 安装；其源码与打包命令仅保留旧共用 Profile 兼容。第一方旧 `productScope` 字段不再限制独立环境；第三方无需实现 `alcor.modeAssignment` 或其他专属配置。
 
 ## 客户端构建与独立环境辅助入口
 

@@ -143,10 +143,11 @@ export function installPlugin(paths, desktop, spec, runner = run) {
   }, { waitMs: 0 })
 }
 
-async function secretaryArchive(paths, file) {
+export async function cachePluginArchive(paths, file) {
   const bytes = await readFile(file)
   const digest = createHash('sha256').update(bytes).digest('hex')
-  const target = join(paths.packages, 'alcor-secretary-' + digest + '.tgz')
+  await directory(paths.packages)
+  const target = join(paths.packages, 'plugin-' + digest + '.tgz')
   try { await writeFile(target, bytes, { flag: 'wx', mode: 0o600 }) }
   catch (error) {
     if (error.code !== 'EEXIST') throw error
@@ -163,7 +164,7 @@ export async function launchEnvironment(paths, desktop, { archive, runner = run,
     const manifest = await json(join(paths.profile, 'package.json'))
     if (paths.kind === 'alcor' && !manifest.dependencies?.['@alcor/secretary']) {
       if (!archive) throw new Error('请先运行 npm run product:pack，构建 Alcor 原生安装包。')
-      await install(paths, desktop, await secretaryArchive(paths, archive), runner)
+      await install(paths, desktop, await cachePluginArchive(paths, archive), runner)
     }
     let pid
     try{

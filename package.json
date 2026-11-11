@@ -30,7 +30,8 @@
     "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @alcor/elearning --pack-destination .local/artifacts && npm pack --workspace @alcor/mail --pack-destination .local/artifacts",
     "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
     "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts",
-    "product:client:pack": "npm run product:pack && node scripts/product/build-client-shell.mjs"
+    "product:extension:pack": "node scripts/product/build-extension.mjs && npm pack --workspace @alcor/extension --pack-destination .local/artifacts",
+    "product:client:pack": "npm run product:pack && npm run product:extension:pack && node scripts/product/build-client-shell.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-alpha.3",

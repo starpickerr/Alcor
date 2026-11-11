@@ -32,7 +32,8 @@ def fixture_plugin(directory):
         'dsh': {'bundle': {'patch': './cordis.patch.yml'}, 'client': {'platform': 'web', 'inject': ['slots'], 'external': ['react']}},
     }))
     (directory / 'cordis.patch.yml').write_text('- insert:\n    - id: environment-probe\n      name: dsh-environment-probe\n')
-    (directory / 'index.js').write_text('''import {mkdirSync,readFileSync,writeFileSync} from 'node:fs'
+    (directory / 'index.js').write_text('''import {mkdirSync,readFileSync,writeFileSync,existsSync} from 'node:fs'
+import {spawn} from 'node:child_process'
 import {join} from 'node:path'
 export const inject=['webServer','profileContext','tools']
 export function apply(ctx){
@@ -42,6 +43,11 @@ export function apply(ctx){
   let boots=0
   try{boots=JSON.parse(readFileSync(file,'utf8')).boots}catch(error){if(error.code!=='ENOENT')throw error}
   writeFileSync(file,JSON.stringify({boots:++boots}))
+  const options=join(directory,'options.json')
+  if(existsSync(options) && JSON.parse(readFileSync(options,'utf8')).detachedChild){
+    const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'})
+    child.unref();writeFileSync(join(directory,'child.json'),JSON.stringify({pid:child.pid}))
+  }
   ctx.tools.register({name:'environment_probe',description:'Synthetic test probe',parameters:{},
     output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>'probe'})
   ctx.effect(()=>ctx.webServer.register({kind:'exact',path:'/environment-probe',handler:(_req,res)=>{
