@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('owner snapshots reject same-ID recreations at identical timestamps', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')
@@ -34,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-generation-aba-') as root:
 })
 
 test('generation migration preserves old business rows and recovery, and rolls back atomically', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')

@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, readFile, chmod } from 'node:fs/promises'
@@ -11,7 +12,19 @@ test('independent Apple worker shares business records over reverse RPC and stop
   const helper = fileURLToPath(new URL('./fake-eventkit.py', import.meta.url))
   await chmod(helper, 0o755)
   const fixture = join(directory, 'worker.py')
-  await writeFile(fixture, `import os,sys\nsys.path.insert(0,${JSON.stringify(fileURLToPath(new URL('../../packages/alcor-apple-sync/python', import.meta.url)))})\nos.environ['ALCOR_EVENTKIT_HELPER']=${JSON.stringify(helper)}\nos.environ['ALCOR_EVENTKIT_STATE']=${JSON.stringify(join(directory, 'eventkit-state.json'))}\nfrom worker import main\nmain()\n`)
+  await writeFile(fixture, `import os, sys
+sys.path.insert(0, ${JSON.stringify(fileURLToPath(new URL('../../packages/alcor-apple-sync/python', import.meta.url)))})
+os.environ['ALCOR_EVENTKIT_HELPER'] = ${JSON.stringify(helper)}
+os.environ['ALCOR_EVENTKIT_STATE'] = ${JSON.stringify(join(directory, 'eventkit-state.json'))}
+import worker
+class SyntheticBridge(worker.AppleCalendarBridge):
+    def __init__(self):
+        super().__init__(platform='darwin')
+    def _start(self, command=None, **options):
+        return super()._start(command or [sys.executable, '-X', 'utf8', str(self.helper_path)], **options)
+worker.AppleCalendarBridge = SyntheticBridge
+worker.main()
+`)
   const business = new BusinessWorker(join(directory, 'business'), { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
   let apple = new BusinessWorker(join(directory, 'legacy'), { worker: pathToFileURL(fixture), onRequest: input => business.call('apple_peer', input) })
   context.after(async () => { await apple.close(); await business.close(); await rm(directory, { recursive: true, force: true }) })
@@ -90,14 +103,13 @@ test('independent Apple worker shares business records over reverse RPC and stop
 test('Apple app helper uses Launch Services without borrowing the host authorization identity', async () => {
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
-  await promisify(execFile)(process.env.ALCOR_BUSINESS_PYTHON || process.env.STELLA_BUSINESS_PYTHON || 'python3', [fileURLToPath(new URL('./apple-app-bridge.py', import.meta.url))])
+  await promisify(execFile)(testPython, [fileURLToPath(new URL('./apple-app-bridge.py', import.meta.url))])
 })
 
 test('Apple watcher stops safely, reconnects and respects auto-sync controls', async () => {
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
-  const python = process.env.ALCOR_BUSINESS_PYTHON || process.env.STELLA_BUSINESS_PYTHON || 'python3'
   for (const file of ['apple-watch-reconnect.py', 'apple-watch-auto-gate.py', ...(process.platform === 'darwin' ? ['apple-watch-lease.py'] : [])]) {
-    await promisify(execFile)(python, [fileURLToPath(new URL(`./${file}`, import.meta.url))])
+    await promisify(execFile)(testPython, [fileURLToPath(new URL(`./${file}`, import.meta.url))])
   }
 })

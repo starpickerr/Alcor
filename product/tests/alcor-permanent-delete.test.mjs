@@ -1,10 +1,11 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 
 test('permanent deletion owner boundaries and reversible positive controls', () => {
-  execFileSync('python3', ['-B', 'product/tests/permanent-delete-failclosed.py'], { stdio: 'pipe' })
+  execFileSync(testPython, ['-B', 'product/tests/permanent-delete-failclosed.py'], { stdio: 'pipe' })
 })
 
 test('native top-level dispatch rejects unconditioned delete opcodes before any EventKit store construction', () => {

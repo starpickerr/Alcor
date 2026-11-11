@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('inbound item and category deletion atomically save full affected local rows', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import json,sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')
@@ -68,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-inbound-snapshot-') as root:
 })
 
 test('failure to save an inbound recovery snapshot rolls back deletion', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')
@@ -90,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-inbound-rollback-') as root:
 })
 
 test('restored inbound items remain local through the next real synthetic Apple sync', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import copy,runpy
 from datetime import datetime,timedelta,timezone
 m=runpy.run_path('product/tests/apple-contracts.py')
@@ -119,7 +120,7 @@ for kind in ('calendar','reminders'):
 })
 
 test('restored inbound categories never create a new Apple source automatically', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import runpy
 m=runpy.run_path('product/tests/apple-contracts.py')
 for kind in ('calendar','reminders'):

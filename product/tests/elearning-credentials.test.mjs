@@ -1,6 +1,7 @@
+import { assertPrivatePermissions } from './private-permissions.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -53,17 +54,7 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
     assert.equal((await call(name)).isError, true)
     deny()
   }
-  if (process.platform === 'win32') {
-    const {execFileSync} = await import('node:child_process')
-    const system = join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0')
-    const env = {...process.env,PSModulePath:join(system,'Modules'),ALCOR_TEST_CREDENTIAL_FILE:filename}
-    const publicRead = execFileSync(join(system,'powershell.exe'),['-NoProfile','-NonInteractive','-Command', `$ErrorActionPreference='Stop';$acl=Get-Acl -LiteralPath $env:ALCOR_TEST_CREDENTIAL_FILE
-      $public=@($acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]) | Where-Object {
-        $_.IdentityReference.Value -in @('S-1-1-0','S-1-5-11','S-1-5-32-545') -and
-        $_.AccessControlType -eq 'Allow' -and ($_.FileSystemRights -band 1)
-      }); ConvertTo-Json -InputObject $public.Count`], {env,encoding:'utf8',windowsHide:true})
-    assert.equal(publicRead.trim(),'0')
-  } else assert.equal((await stat(filename)).mode & 0o777, 0o600)
+  await assertPrivatePermissions(filename, 0o600)
   assert.equal((await ctx.credentials.readRecord(accountKey)).payload.password, 'first-synthetic-secret')
   assert(!JSON.stringify(await ctx.alcorElearning.state()).includes('synthetic-secret'))
   assert(!JSON.stringify(config).includes('synthetic-secret'))

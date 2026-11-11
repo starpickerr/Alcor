@@ -4,7 +4,6 @@ import sys
 import time
 import os
 from pathlib import Path
-import fcntl
 import uuid
 from datetime import datetime,timedelta
 
@@ -16,7 +15,13 @@ state = {'calendar': list(defaults), 'reminders': list(defaults)}
 lock = None
 if state_file:
     lock = open(state_file + '.lock', 'a')
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    if os.name == 'nt':
+        import msvcrt
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(lock, fcntl.LOCK_EX)
     if Path(state_file).exists():
         state = json.loads(Path(state_file).read_text())
 kind = 'reminders' if op.startswith('reminder') or op == 'reminders' else 'calendar'

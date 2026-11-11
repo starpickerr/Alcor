@@ -36,7 +36,7 @@ test('contract agrees with package manifests, stored names and active callers', 
   assert.equal(accountKey, MIGRATION_CREDENTIALS.elearning.current)
   assert.equal(mailKey, MIGRATION_CREDENTIALS.email.current)
   assert.equal(alcorTarget(undefined, undefined).create.agentPreset, MIGRATION_PRESETS.current)
-  const patch = await read('packages/alcor-secretary/cordis.patch.yml')
+  const patch = (await read('packages/alcor-secretary/cordis.patch.yml')).replaceAll('\r\n','\n')
   for (const id of Object.values(MIGRATION_PRESETS)) assert(patch.includes(`id: ${id}\n`), `preset ${id}`)
   assert((await read('packages/alcor-secretary/src/tools.js')).includes(MIGRATION_BRIEFING_TOOLS.current))
   assert((await read('packages/alcor-organizer/src/index.ts')).includes(`name: '${MIGRATION_DOMAINS.organizer.current}'`))

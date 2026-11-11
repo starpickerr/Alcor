@@ -14,7 +14,7 @@ class AppBridge(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(_default_helper().name, 'Alcor Apple Sync.app')
         with patch.dict(os.environ, {'STELLA_EVENTKIT_HELPER': '/legacy/helper'}, clear=True):
-            self.assertEqual(str(_default_helper()), '/legacy/helper')
+            self.assertEqual(_default_helper(), Path('/legacy/helper'))
         with patch.dict(os.environ, {'ALCOR_EVENTKIT_HELPER': '/new/helper', 'STELLA_EVENTKIT_HELPER': '/other/helper'}, clear=True):
             with self.assertRaisesRegex(BridgeError, 'Conflicting'):
                 _default_helper()

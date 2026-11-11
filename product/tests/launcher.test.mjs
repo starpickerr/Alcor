@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {build} from 'esbuild'
 import {createRequire} from 'node:module'
 
 const source=new URL('../../packages/alcor-launcher/src/index.ts',import.meta.url)
-const output=await build({entryPoints:[source.pathname],bundle:true,packages:'external',platform:'node',target:'node24',format:'cjs',write:false,
+const output=await build({entryPoints:[fileURLToPath(source)],bundle:true,packages:'external',platform:'node',target:'node24',format:'cjs',write:false,
   define:{'import.meta.url':JSON.stringify(source.href)}})
 const module={exports:{}}
 new Function('module','exports','require',output.outputFiles[0].text)(module,module.exports,createRequire(import.meta.url))

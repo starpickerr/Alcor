@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { build } from 'esbuild'
 
 const root = new URL('../../', import.meta.url)
 const react = { createElement: (type, props, ...children) => ({ type, props, children }) }
-const built = await build({ entryPoints: [new URL('packages/alcor-secretary/src/delete-preview.jsx', root).pathname], bundle: true, packages: 'external', format: 'cjs', platform: 'node', write: false })
+const built = await build({ entryPoints: [fileURLToPath(new URL('packages/alcor-secretary/src/delete-preview.jsx', root))], bundle: true, packages: 'external', format: 'cjs', platform: 'node', write: false })
 const module = { exports: {} }
 new Function('module', 'exports', 'require', built.outputFiles[0].text)(module, module.exports, () => react)
 const preview = plan => JSON.stringify(module.exports.DeletePreview({ state: { plan } }))

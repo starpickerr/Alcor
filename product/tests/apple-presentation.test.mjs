@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { connectionStatus, formatSyncTime } from '../../packages/alcor-apple-sync/src/presentation.js'
@@ -60,7 +61,7 @@ test('conflict titles are local read-only summaries and tolerate missing records
   const { promisify } = await import('node:util')
   const { fileURLToPath } = await import('node:url')
   const source=fileURLToPath(new URL('../../packages/alcor-apple-sync/python',import.meta.url))
-  await promisify(execFile)('python3',['-c',`import sys\nsys.path.insert(0,${JSON.stringify(source)})\nfrom apple_sync.metadata import conflict_summaries\nassert conflict_summaries([],lambda identity:1/0,'alcor_id')==[]\nrows=conflict_summaries([{'todo_id':'a','conflict':'changed'},{'todo_id':'missing','conflict':'deleted'}],lambda identity:{'a':{'id':'a','title':'练习','category_id':'plan'}}[identity],'todo_id')\nassert rows[0]=={'todo_id':'a','reason':'changed','title':'练习','category_id':'plan','local_missing':False,'local_restore_pending':False}\nassert rows[1]['title'] is None and rows[1]['local_missing'] is True and rows[1]['local_restore_pending'] is False\n`])
+  await promisify(execFile)(testPython,['-c',`import sys\nsys.path.insert(0,${JSON.stringify(source)})\nfrom apple_sync.metadata import conflict_summaries\nassert conflict_summaries([],lambda identity:1/0,'alcor_id')==[]\nrows=conflict_summaries([{'todo_id':'a','conflict':'changed'},{'todo_id':'missing','conflict':'deleted'}],lambda identity:{'a':{'id':'a','title':'练习','category_id':'plan'}}[identity],'todo_id')\nassert rows[0]=={'todo_id':'a','reason':'changed','title':'练习','category_id':'plan','local_missing':False,'local_restore_pending':False}\nassert rows[1]['title'] is None and rows[1]['local_missing'] is True and rows[1]['local_restore_pending'] is False\n`])
 })
 
 test('identity candidates and unknown owner commits are visible and cannot dispatch recovery writes', async () => {
