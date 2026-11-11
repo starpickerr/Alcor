@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,13 +9,23 @@ import { BusinessWorker, resolveBusinessPython } from '../../packages/alcor-orga
 test('business imports never create bytecode in the interpreter or plugin payload', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-python-readonly-'))
   context.after(() => rm(directory, { recursive: true, force: true }))
-  await writeFile(join(directory, 'signed_library.py'), 'value = 42\n')
-  const workerFile = join(directory, 'worker.py')
+  await writeFile(join(directory,'signed_library.py'), 'value = 42\n')
+  const workerFile = join(directory,'worker.py')
   await writeFile(workerFile, 'import sys, json, signed_library\nfor line in sys.stdin:\n request = json.loads(line)\n print(json.dumps({"id": request["id"], "ok": True, "value": [signed_library.value, sys.dont_write_bytecode]}), flush=True)\n')
   const worker = new BusinessWorker(directory, { worker: pathToFileURL(workerFile) })
   try { assert.deepEqual(await worker.call('probe'), [42, true]) }
   finally { await worker.close() }
   await assert.rejects(access(join(directory, '__pycache__')), { code: 'ENOENT' })
+})
+
+test('Windows worker starts from a deep native plugin installation', {skip: process.platform !== 'win32'}, async t => {
+  const root = await mkdtemp(join(tmpdir(),'alcor-long-profile-'))
+  t.after(() => rm(root,{recursive: true, force: true}))
+  const target = join(root,...Array(5).fill('long-plugin-installation-directory-for-windows-tests'),'business')
+  await cp(new URL('../../packages/alcor-secretary/business/',import.meta.url),target,{recursive: true})
+  const worker = new BusinessWorker(join(root,'data'),{worker:pathToFileURL(join(target,'worker.py'))})
+  try { assert.equal(await worker.call('migrate',{records:[]}),true) }
+  finally { await worker.close() }
 })
 
 test('official Desktop uses its validated payload without requiring Python on PATH', async context => {
@@ -42,5 +52,5 @@ test('explicit development override and non-Desktop behavior remain compatible',
   assert.equal(await resolveBusinessPython(argv, { STELLA_BUSINESS_PYTHON: '/legacy/python' }), '/legacy/python')
   assert.equal(await resolveBusinessPython(argv, { ALCOR_BUSINESS_PYTHON: '/same', STELLA_BUSINESS_PYTHON: '/same' }), '/same')
   await assert.rejects(resolveBusinessPython(argv, { ALCOR_BUSINESS_PYTHON: '/new', STELLA_BUSINESS_PYTHON: '/old' }), /配置冲突/)
-  assert.equal(await resolveBusinessPython(['node', '/cli/dsh.js'], {}), 'python3')
+  assert.equal(await resolveBusinessPython(['node', '/cli/dsh.js'], {}), process.platform === 'win32' ? 'python' : 'python3')
 })

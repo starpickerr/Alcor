@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
-test('confirmation subprocess accepts only this request reply; malformed, denied, disconnected and unavailable fail closed', { skip: process.platform !== 'darwin' }, async t => {
+test('confirmation subprocess accepts only this request reply; malformed, denied, disconnected and unavailable fail closed', { skip: !['darwin','win32'].includes(process.platform) }, async t => {
   const output = await mkdtemp(join(process.cwd(), '.alcor-confirm-test-'))
   t.after(async () => { delete globalThis.__alcorConfirmSynthetic; await rm(output, { recursive: true, force: true }) })
   const file = join(output, 'confirmation.mjs')
@@ -37,8 +37,15 @@ test('confirmation subprocess accepts only this request reply; malformed, denied
     const state = globalThis.__alcorConfirmSynthetic = { mode }, controller = new AbortController()
     if (mode === 'error') await assert.rejects(() => confirmMacDeletion(request, controller.signal), /不可用/)
     else assert.equal(await confirmMacDeletion(request, controller.signal), mode === 'confirmed')
-    assert.deepEqual(state.request, request); assert.deepEqual(state.args, [])
-    assert.match(state.path, /native\/Alcor Confirm.app\/Contents\/MacOS\/AlcorConfirm$/)
+    assert.deepEqual(state.request, request)
+    if (process.platform === 'win32') {
+      assert.match(state.path, /WindowsPowerShell.*powershell\.exe$/i)
+      assert(state.args.includes('-EncodedCommand'))
+      assert(!state.args.join(' ').includes(request.detail))
+    } else {
+      assert.deepEqual(state.args, [])
+      assert.match(state.path, /native\/Alcor Confirm.app\/Contents\/MacOS\/AlcorConfirm$/)
+    }
     assert.equal(state.options.timeout, 245000); assert.equal(state.options.signal, controller.signal)
   }
   globalThis.__alcorConfirmSynthetic = { mode: 'waiting' }

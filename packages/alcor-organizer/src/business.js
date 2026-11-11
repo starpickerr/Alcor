@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, toNamespacedPath } from 'node:path'
 import { resolvePrimaryRuntime } from '@deepseek-ai/dsh-tool-workspace-dependencies'
+
+const developmentPython = process.platform === 'win32' ? 'python' : 'python3'
 
 function pythonOverride(environment) {
   const current = environment.ALCOR_BUSINESS_PYTHON
@@ -15,18 +17,18 @@ function pythonOverride(environment) {
 export async function resolveBusinessPython(argv = process.argv, environment = process.env) {
   const override = pythonOverride(environment)
   if (override) return override
-  if (!(argv[1] ?? '').replaceAll('\\', '/').endsWith('/@deepseek-ai/dsh-desktop-host/lib/index.js')) return 'python3'
+  if (!(argv[1] ?? '').replaceAll('\\', '/').endsWith('/@deepseek-ai/dsh-desktop-host/lib/index.js')) return developmentPython
   // The supported official Desktop passes its bundled payload explicitly to this Host.
   if (!argv[4] || !isAbsolute(argv[4])) throw new Error('DSH 桌面运行环境路径无效，请重新安装受支持的官方客户端。')
   return (await resolvePrimaryRuntime(argv[4])).python
 }
 
 export class BusinessWorker {
-  constructor(directory, { python = pythonOverride(process.env) || 'python3', worker = new URL('../business/worker.py', import.meta.url), diagnostic = () => {}, onRequest } = {}) {
+  constructor(directory, { python = pythonOverride(process.env) || developmentPython, worker = new URL('../business/worker.py', import.meta.url), diagnostic = () => {}, onRequest } = {}) {
     this.pending = new Map()
     this.closed = false
     // Bundled Python libraries are signed App resources; imports must not rewrite their bytecode.
-    this.process = spawn(python, ['-B', '-u', fileURLToPath(worker), directory], { stdio: ['pipe', 'pipe', 'pipe'] })
+    this.process = spawn(python, ['-X', 'utf8', '-B', '-u', toNamespacedPath(fileURLToPath(worker)), toNamespacedPath(directory)], { windowsHide:true, stdio: ['pipe', 'pipe', 'pipe'] })
     const failed = error => {
       this.closed = true
       for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(error) }
