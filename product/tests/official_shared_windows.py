@@ -1,15 +1,16 @@
 """Exercise two modes, one native Windows desktop Profile and the upstream AuraBot page."""
 import argparse
-from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
-from playwright.sync_api import Error, TimeoutError as PlaywrightTimeout, expect, sync_playwright
 from official_desktop_check import ROOT, digest, enter_workspace, redact, rpc
+from playwright.sync_api import Error, expect, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from windows_caption_check import check_caption
 
 
@@ -56,7 +57,9 @@ def desktop(pw, app, home, env, phase):
         onboarding = page.get_by_role('heading', name='开始使用', exact=True)
         page.add_locator_handler(onboarding, lambda: page.get_by_role('button', name='关闭', exact=True).click())
         if phase == 'shared':
-            check_caption(page, process.pid, home)
+            check_caption(page, process.pid, home, 'DeepSeek Harness')
+        elif phase == 'restart':
+            check_caption(page, process.pid, home, 'Alcor')
         yield page
         try:
             browser.new_browser_cdp_session().send('Browser.close')
@@ -79,15 +82,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'package', 'aurabot'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--upgrade-app', type=Path, help='Optional pinned compatible newer official executable')
+    parser.add_argument('--upgrade-app', type=Path, help='Optional pinned newer official executable')
+    parser.add_argument('--expect-compatible-upgrade', action='store_true',
+                        help='Require the same business row on the newer host with a compatible plugin build')
     parser.add_argument('--artifacts', type=Path, default=ROOT / '.local/official-shared-windows')
     args = parser.parse_args()
+    if args.expect_compatible_upgrade and not args.upgrade_app:
+        parser.error('--expect-compatible-upgrade needs --upgrade-app')
     app = args.app.resolve(strict=True)
     release = json.loads((ROOT / 'product/desktop-release.lock.json').read_text())['windows']
     verify(app, release)
     if args.upgrade_app:
         args.upgrade_app = args.upgrade_app.resolve(strict=True)
-        verify(args.upgrade_app, release['compatibleUpgrade'])
+        verify(args.upgrade_app, release['upgradeProbe'])
     args.artifacts.mkdir(parents=True, exist_ok=True)
     home = Path(tempfile.mkdtemp(prefix='run-', dir=args.artifacts.resolve()))
     print('Synthetic Profile and acceptance evidence:', home, flush=True)
@@ -166,7 +173,7 @@ def main():
         with desktop(pw, app, home, env, 'disabled') as page:
             page.get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
-            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
+            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
         select_bundle(True)
         with desktop(pw, app, home, env, 'restored') as page:
             expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible()
@@ -176,7 +183,7 @@ def main():
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
         plugin_cli('remove', '@alcor/secretary')
         with desktop(pw, app, home, env, 'removed') as page:
-            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
+            expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
         plugin_cli('add', args.package.resolve(strict=True), '--ignore-scripts')
         with desktop(pw, app, home, env, 'reinstalled') as page:
@@ -185,22 +192,27 @@ def main():
         if args.upgrade_app:
             config = profile / 'cordis.patch.yml'
             original = config.read_bytes()
-            with desktop(pw, args.upgrade_app, home, env, 'compatible-upgrade') as page:
-                page.get_by_role('button', name='插件', exact=True).click()
-                expect(page.get_by_role('heading', name='插件', exact=True)).to_be_visible()
+            with desktop(pw, args.upgrade_app, home, env, 'official-upgrade') as page:
                 catalog = rpc(page, 'pluginManager/listBundles')
                 entry = next(b for b in catalog if b['name'] == '@alcor/secretary')
-                assert entry.get('error') is None, entry
-                records = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
-                assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in records)
-                expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
+                if args.expect_compatible_upgrade:
+                    assert not entry.get('error'), entry
+                    expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_be_visible()
+                    rows = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
+                    assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in rows)
+                    expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
+                else:
+                    assert entry['error']['code'] == 'incompatible-version'
+                    expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
+                    page.get_by_role('button', name='插件', exact=True).click()
+                    expect(page.get_by_role('heading', name='插件', exact=True)).to_be_visible()
                 assert rpc(page, 'agentPresets/list')['presets']
-                page.screenshot(path=home / 'compatible-upgrade.png')
+                page.screenshot(path=home / 'official-upgrade.png')
             with desktop(pw, app, home, env, 'compatible-recovery') as page:
                 rows = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
                 assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in rows)
                 assert config.read_bytes() == original
-            print('PASS compatible official upgrade: DSH available, task and profile configuration retained')
+            print('PASS official host upgrade and recovery: DSH available, task and profile configuration retained')
     print('PASS shared official Windows desktop: top switch, AuraBot, workspace, catalog, restart, disable, reinstall and retention')
 
 
