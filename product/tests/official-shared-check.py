@@ -55,6 +55,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
       }};}});""")
     d.native_cli(home, "fixture-install", "add", str(fixture), "--ignore-scripts")
     with d.desktop(pw, home, "shared") as (page, errors):
+        expect(page.get_by_role('treeitem', name='默认工作区', exact=True)).to_be_visible(timeout=30000)
         switch = page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness")
         expect(switch).to_be_visible(timeout=30000)
         box = switch.bounding_box()
@@ -70,6 +71,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         expect(page.get_by_role("heading", name="事务", exact=True)).to_be_visible()
         navigation = page.get_by_label("Alcor 秘书导航", exact=True)
         expect(navigation.get_by_role("group", name="应用")).to_be_visible()
+        expect(navigation.get_by_role('treeitem', name='默认工作区', exact=True)).to_be_visible()
         system = navigation.get_by_role("group", name="系统")
         expect(
             system.get_by_role("button", name="Ecosystem fixture", exact=True)
@@ -125,10 +127,12 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness').click()
         page.get_by_role('menuitem', name='Alcor', exact=True).click()
         expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_be_visible()
+        expect(page.get_by_role('treeitem', name='默认工作区', exact=True)).to_be_visible()
         assert not errors, errors
     with d.desktop(pw, home, "shared-restart") as (page, errors):
         expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible(timeout=30000)
         expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_be_visible()
+        expect(page.get_by_role('treeitem', name='默认工作区', exact=True)).to_be_visible()
         page.get_by_role("button", name="插件", exact=True).click()
         expect(page.get_by_role("heading", name="插件", exact=True)).to_be_visible()
         assert not errors, errors

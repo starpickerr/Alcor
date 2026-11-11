@@ -22,3 +22,13 @@ test('failure to register Alcor sidebar restores native ownership and rejects', 
   await assert.rejects(owner.select(true),/registration failed/)
   assert.equal(disabled,false)
 })
+
+test('native rc.2 workspace receives its public section scroller hook', async () => {
+  const {sharedWorkspaceSlot,sharedWorkspaceContext}=await import('../../packages/alcor-secretary/src/shared-workspace.js')
+  const hook=sharedWorkspaceSlot.inject.hooks.sectionScroller({},sharedWorkspaceContext)
+  assert.equal(typeof hook,'function')
+  assert.equal(typeof hook().bindScrollerRef,'function')
+  assert.strictEqual(hook(),hook())
+  const legacyHook=sharedWorkspaceSlot.inject.hooks.sectionScroller({})
+  assert.equal(typeof legacyHook().bindScrollerRef,'function')
+})

@@ -1,3 +1,4 @@
+import {sharedWorkspaceSlot} from './shared-workspace.js'
 import {sidebarOwner} from './sidebar-owner.js'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
@@ -181,6 +182,7 @@ export async function apply(ctx) {
         ctx.effect(() => ctx.locale.register('alcor-sidebar', {zh:{'toggle.open':'展开侧边栏','toggle.collapse':'收起侧边栏','session.new.label':'新建会话'},en:{'toggle.open':'Expand sidebar','toggle.collapse':'Collapse sidebar','session.new.label':'New session'}}))
         sharedOwner=sidebarOwner(ctx.loader,()=>{
           const children=Object.fromEntries(['sidebar.brand.mark','sidebar.brand.name','sidebar.toggle.badge','sidebar.workspaces','sidebar.settings'].map(name=>[name,{kind:'single',scope:'root'}]))
+          children['sidebar.workspaces']=sharedWorkspaceSlot
           for(const name of ['sidebar.panellist','sidebar.panellist.actions','sidebar.footer.action'])children[name]={kind:'list',scope:'root'}
           const release=ctx.slots.register({name:'sidebar',priority:-10,children,locale:'alcor-sidebar',inject:()=>({
             nativeShared:true,navigate,startSession,toggleSidebar:()=>ctx.layout.toggleSidebar(),
