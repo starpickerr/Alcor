@@ -8,6 +8,7 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 import official_desktop_check as desktop
 from web_check import open_secretary
+from briefing_layout_ui import check_briefing_scroll
 
 
 def main():
@@ -101,6 +102,7 @@ def main():
             page.get_by_role('form', name='新增日程').get_by_role('button', name='取消编辑').click()
             page.get_by_role('button', name='简报', exact=True).click()
             expect(page.locator('.alcor-briefing-layout')).to_be_visible()
+            check_briefing_scroll(page, artifacts)
             page.screenshot(path=str(artifacts / 'briefing.png'), animations='disabled')
             assert not errors, errors
     print('PASS: task/calendar detail/create/edit panel geometry, outer/inner scroll, feedback, resize, reopen, keyboard, dark/narrow and briefing')
