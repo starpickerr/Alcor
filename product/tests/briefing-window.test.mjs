@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -15,5 +16,5 @@ test('first collection starts at previous local midnight even across a DST trans
 
 test('SQLite daily reports, checkpoint recovery, late arrival, boundaries and incremental thread merge', async () => {
   const {execFileSync} = await import('node:child_process')
-  execFileSync('python3',['-B',new URL('./briefing-incremental.py',import.meta.url).pathname],{encoding:'utf8'})
+  execFileSync('python3',['-B',fileURLToPath(new URL('./briefing-incremental.py',import.meta.url))],{encoding:'utf8'})
 })

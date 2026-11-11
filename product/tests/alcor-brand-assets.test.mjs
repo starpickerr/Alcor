@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -5,7 +6,7 @@ import { build } from 'esbuild'
 const root=new URL('../../',import.meta.url)
 const react={createElement:(type,props,...children)=>({type,props:props??{},children})}
 async function load(file) {
-  const result=await build({entryPoints:[new URL(file,root).pathname],bundle:true,packages:'external',format:'cjs',platform:'node',loader:{'.svg':'dataurl'},write:false})
+  const result=await build({entryPoints:[fileURLToPath(new URL(file,root))],bundle:true,packages:'external',format:'cjs',platform:'node',loader:{'.svg':'dataurl'},write:false})
   const module={exports:{}};new Function('module','exports','require',result.outputFiles[0].text)(module,module.exports,name=>name==='react'?react:{})
   return module.exports
 }

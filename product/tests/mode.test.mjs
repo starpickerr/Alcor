@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createModeController, readModeState, startSecretarySession, canonicalPanel, legacyPanelIds } from '../../packages/alcor-secretary/src/mode.js'
@@ -332,7 +333,7 @@ test('a selected legacy layout alias redirects to its registered new panel and s
 
 test('host main slots register new panels and legacy aliases with equivalent destinations', async () => {
   const { build } = await import('esbuild'), { createRequire } = await import('node:module')
-  const output = await build({ entryPoints: [new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url).pathname],
+  const output = await build({ entryPoints: [fileURLToPath(new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url))],
     bundle: true, packages: 'external', platform: 'node', format: 'cjs', loader: { '.css': 'text', '.svg': 'dataurl' }, write: false })
   const module = { exports: {} }, noop = () => {}, calls = []
   const React = { createElement: noop, useEffect: noop, useState: noop, useRef: noop }

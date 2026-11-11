@@ -75,8 +75,14 @@ def prepare(root):
 
 def native_cli(paths, phase, *args):
     cli = APP / 'Contents/Resources/runtime/cli/bin/dsh'
-    result = subprocess.run([str(cli), 'plugin', '--profile', 'desktop', *map(str, args), *(['--ignore-scripts'] if args[0]=='add' else [])],
-                            cwd=paths['workspace'], env=paths['env'], capture_output=True, text=True, timeout=180)
+    prefix = [str(cli)]
+    env = paths['env'].copy()
+    if os.name == 'nt':
+        prefix = [str(APP / 'DeepSeek Harness.exe'), '--expose-internals',
+                  str(APP / 'resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js')]
+        env['ELECTRON_RUN_AS_NODE'] = '1'
+    result = subprocess.run([*prefix, 'plugin', '--profile', 'desktop', *map(str, args), *(['--ignore-scripts'] if args[0]=='add' else [])],
+                            cwd=paths['workspace'], env=env, capture_output=True, encoding='utf-8', errors='replace', timeout=180)
     (ARTIFACTS / f'{phase}.log').write_text(desktop.redact(result.stdout + result.stderr))
     assert result.returncode == 0, f'{phase}: ' + desktop.redact(result.stderr)[-3000:]
 

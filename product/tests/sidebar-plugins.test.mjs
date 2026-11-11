@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {build} from 'esbuild'
 import {createRequire} from 'node:module'
 
-const output=await build({entryPoints:[new URL('../../packages/alcor-secretary/src/desk.jsx',import.meta.url).pathname],bundle:true,packages:'external',platform:'node',format:'cjs',loader:{'.svg':'dataurl'},write:false})
+const output=await build({entryPoints:[fileURLToPath(new URL('../../packages/alcor-secretary/src/desk.jsx',import.meta.url))],bundle:true,packages:'external',platform:'node',format:'cjs',loader:{'.svg':'dataurl'},write:false})
 const module={exports:{}}, require=createRequire(import.meta.url)
 const primitive=new Proxy(()=>null,{get:()=>()=>null})
 const React={createElement:(type,props,...children)=>({type,props,children}),useState:init=>[typeof init==='function'?init():init,()=>{}],useEffect(){},useRef:()=>({}),useSyncExternalStore:(_subscribe,snapshot)=>snapshot()}

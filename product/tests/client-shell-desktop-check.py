@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import plistlib
+import os
 from pathlib import Path
 import signal
 import socket
@@ -25,7 +26,7 @@ config_file=Path(args.config).resolve()
 config=json.loads(config_file.read_text())
 base=config_file.parent
 assert (base/'.client-shell-test').read_text().strip()=='disposable-single-window-check-v1'
-for key in ['environmentRoot','workbenchDsh','workbenchHome','workbenchWorkspace','clientData']:
+for key in ['environmentRoot','workbenchDsh','workbenchHome','workbenchWorkspace','workbenchBrowser','clientData']:
     assert Path(config[key]).resolve().is_relative_to(base), 'Test profiles must stay inside the explicitly owned directory'
 isolated.APP=Path(config['officialApp'])
 isolated.ARTIFACTS=base
@@ -58,8 +59,12 @@ def start(playwright,phase,disabled=False):
     active=Path(config['clientData'])/'DevToolsActivePort'
     active.unlink(missing_ok=True)
     log=(base/(phase+'.log')).open('w')
-    executable=plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
-    process=subprocess.Popen([str(app/'Contents/MacOS'/executable),'--remote-debugging-port=0'],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+    if os.name == 'nt':
+        binary = app / 'Alcor.exe'
+    else:
+        executable=plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
+        binary = app/'Contents/MacOS'/executable
+    process=subprocess.Popen([str(binary),'--remote-debugging-port=0'],stdout=log,stderr=subprocess.STDOUT,start_new_session=os.name != 'nt')
     try:
         deadline=time.monotonic()+45
         while not active.exists():
@@ -99,8 +104,21 @@ def start(playwright,phase,disabled=False):
 
 
 def stop(process,browser,log):
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        user32=ctypes.windll.user32
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def close_window(hwnd, _):
+            pid=wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd,ctypes.byref(pid))
+            if pid.value==process.pid and user32.IsWindowVisible(hwnd):
+                user32.PostMessageW(hwnd,0x0010,0,0)
+            return True
+        user32.EnumWindows(close_window,0)
+    else:
+        process.send_signal(signal.SIGTERM)
     browser.close()
-    process.send_signal(signal.SIGTERM)
     process.wait(timeout=25)
     log.close()
     assert process.returncode==0,'Client did not stop gracefully'
@@ -236,7 +254,12 @@ with sync_playwright() as playwright:
             assert time.monotonic()<deadline,'Disabling must destroy the private view'
             time.sleep(.1)
         try:
-            child_state=subprocess.check_output(['/bin/ps','-p',str(child),'-o','stat='],text=True).strip()
+            if os.name == 'nt':
+                import csv
+                tasks=subprocess.check_output(['tasklist','/FI',f'PID eq {child}','/FO','CSV','/NH'])
+                child_state='running' if any(len(row)>1 and row[1]==str(child) for row in csv.reader(tasks.decode(errors='replace').splitlines())) else 'exited'
+            else:
+                child_state=subprocess.check_output(['/bin/ps','-p',str(child),'-o','stat='],text=True).strip()
         except subprocess.CalledProcessError:
             child_state='exited'
         (base/'disabled-child-state.txt').write_text(child_state+'\n')

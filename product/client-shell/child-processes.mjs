@@ -1,8 +1,10 @@
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
+import {windowsProcesses} from '../../scripts/product/windows-runtime.mjs'
 const execute=promisify(execFile)
 
 async function processes(){
+  if(process.platform==='win32')return windowsProcesses()
   const {stdout}=await execute('/bin/ps',['-axo','pid=,ppid=,lstart=,stat=,command='])
   return stdout.split('\n').flatMap(line=>{
     const match=line.match(/^\s*(\d+)\s+(\d+)\s+((?:\S+\s+){4}\S+)\s+(\S+)\s+(.*)$/)
@@ -12,10 +14,13 @@ async function processes(){
 
 export async function ownedChildren(parent){
   // shortcut: reparented daemons need explicit supervision when a plugin starts using them.
-  const rows=await processes(),parents=new Set([parent]),children=[]
+  const rows=await processes()
+  const identities=new Map(rows.map(row=>[row.pid,row.identity]))
+  const parents=new Set([parent]),children=[]
   for(let changed=true;changed;){
     changed=false
-    for(const row of rows)if(parents.has(row.parent) && !parents.has(row.pid)){parents.add(row.pid);children.push(row);changed=true}
+    for(const row of rows)if(parents.has(row.parent) && !parents.has(row.pid) &&
+      (process.platform!=='win32' || BigInt(row.identity)>=BigInt(identities.get(row.parent) ?? '0'))){parents.add(row.pid);children.push(row);changed=true}
   }
   return children
 }

@@ -4,7 +4,7 @@ import {watchFile,unwatchFile} from 'node:fs'
 import {writeFileAtomic} from '@deepseek-ai/dsh-atomic-write'
 import {join,isAbsolute} from 'node:path'
 import {fileURLToPath,pathToFileURL} from 'node:url'
-import {prepareEnvironment,officialDesktop,installPlugin,cachePluginArchive,run,environmentFor} from '../../scripts/product/environments.mjs'
+import {prepareEnvironment,officialDesktop,installPlugin,cachePluginArchive,runPluginCli} from '../../scripts/product/environments.mjs'
 import {prepareProductHome} from '../../scripts/product/home.mjs'
 import {nativeHost} from './host.mjs'
 import {authenticate,forward} from './transport.mjs'
@@ -12,7 +12,9 @@ import {extensionLifecycle,extensionSelected} from './extension-lifecycle.mjs'
 
 const directory=fileURLToPath(new URL('.',import.meta.url))
 const config=JSON.parse(await readFile(join(directory,'config.json'),'utf8'))
-for(const key of ['officialApp','environmentRoot','workbenchDsh','workbenchHome','workbenchWorkspace','workbenchBrowser','clientData'])if(typeof config[key]!=='string' || !isAbsolute(config[key]))throw Error('客户端路径配置无效。')
+const requiredPaths=['officialApp','environmentRoot','clientData']
+if(!config.managedWorkbench)requiredPaths.push('workbenchDsh','workbenchHome','workbenchWorkspace','workbenchBrowser')
+for(const key of requiredPaths)if(typeof config[key]!=='string' || !isAbsolute(config[key]))throw Error('客户端路径配置无效。')
 app.setName('Alcor')
 await prepareProductHome(config.clientData,fileURLToPath(new URL('../../',import.meta.url)),'client')
 app.setPath('userData',config.clientData)
@@ -22,13 +24,13 @@ if(!singleton){app.quit()}else{
  void app.whenReady().then(async()=>{
  app.setAccessibilitySupportEnabled(true)
  const desktop=await officialDesktop(config.officialApp)
- const paths={alcor:await prepareEnvironment(config.environmentRoot,'alcor'),dsh:{base:config.workbenchDsh,kind:'dsh',root:config.environmentRoot,
+ const paths={alcor:await prepareEnvironment(config.environmentRoot,'alcor'),dsh:config.managedWorkbench ? await prepareEnvironment(config.environmentRoot,'dsh') : {base:config.workbenchDsh,kind:'dsh',root:config.environmentRoot,
    dsh:config.workbenchDsh,home:config.workbenchHome,profile:join(config.workbenchDsh,'profiles/desktop'),workspace:config.workbenchWorkspace,userData:config.workbenchBrowser,packages:join(config.clientData,'packages')}}
  const dshManifest=JSON.parse(await readFile(join(paths.dsh.profile,'package.json'),'utf8'))
  if(dshManifest.dependencies?.['@alcor/secretary'] || dshManifest.dependencies?.['@alcor/launcher'])throw Error('请先完成工作台插件归属更新；未启动共用的业务环境。')
  for(const kind of ['dsh','alcor']){
    const manifest=JSON.parse(await readFile(join(paths[kind].profile,'package.json'),'utf8'))
-   if(manifest.dependencies?.['@alcor/plugin-info'])await run(desktop.cli,['plugin','--profile','desktop','remove','@alcor/plugin-info'],{cwd:paths[kind].workspace,env:environmentFor(paths[kind])})
+   if(manifest.dependencies?.['@alcor/plugin-info'])await runPluginCli(paths[kind],desktop,['plugin','--profile','desktop','remove','@alcor/plugin-info'])
  }
  const installed=join(config.clientData,'alcor-extension-installed.json')
  try{if(JSON.parse(await readFile(installed,'utf8')).version!==1)throw Error('Alcor 安装记录无效，原数据已保留。')}catch(error){
@@ -188,12 +190,12 @@ if(!singleton){app.quit()}else{
  for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{quitting=true;unwatchFile(join(paths.dsh.profile,'package.json'));void Promise.all([lifecycle.close(),stopView('dsh')]).then(()=>app.exit(0),()=>app.exit(1))})
  app.on('second-instance',()=>focus());app.on('activate',()=>{if(window)focus()})
  const menu=Menu.buildFromTemplate([{label:'Alcor',submenu:[{role:'about'},{type:'separator'},{role:'hide'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{label:'退出 Alcor',accelerator:'CommandOrControl+Q',click:()=>void quit()}]},{role:'editMenu'},{role:'windowMenu'}]);Menu.setApplicationMenu(menu)
- window=new BaseWindow({title:'Alcor',width:1280,height:900,minWidth:640,minHeight:540,titleBarStyle:'hiddenInset',trafficLightPosition:{x:12,y:14},backgroundColor:'#f7f7f8'})
+ window=new BaseWindow({title:'Alcor',width:1280,height:900,minWidth:640,minHeight:540,...(process.platform==='darwin'?{titleBarStyle:'hiddenInset',trafficLightPosition:{x:12,y:14}}:{autoHideMenuBar:true}),backgroundColor:'#f7f7f8'})
  // Hidden native views must still receive mode updates and finish their pending work.
  shellView=new WebContentsView({webPreferences:{preload:join(directory,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}})
  window.contentView.addChildView(shellView)
  const [width,height]=window.getContentSize();shellView.setBounds({x:0,y:0,width,height})
- window.on('close',event=>{if(!quitting){event.preventDefault();window.hide()}})
+ window.on('close',event=>{if(!quitting){event.preventDefault();if(process.platform==='win32')void quit();else window.hide()}})
  window.on('resize',layout)
  await shellView.webContents.loadFile(join(directory,'index.html'));window.show()
  // Native selection is authoritative even when the Host cannot hot-reload a bundle.

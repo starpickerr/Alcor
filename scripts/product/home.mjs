@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile, lstat, chmod } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve, relative, sep } from 'node:path'
+import { join, resolve, relative, sep, isAbsolute } from 'node:path'
 import { canonicalizeWatchPath } from '@deepseek-ai/dsh-home-paths'
 import { createMigrationMarker, MIGRATION_CREDENTIALS, MIGRATION_DIRECTORIES, MIGRATION_DOMAINS, MIGRATION_MARKER } from '../../packages/alcor-organizer/src/migration-contract.js'
 
@@ -9,7 +9,7 @@ export async function prepareProductHome(directory, repository, kind) {
   const canonical = await canonicalizeWatchPath(candidate)
   const userHome = await canonicalizeWatchPath(homedir())
   const repo = await canonicalizeWatchPath(repository)
-  const inside = suffix => suffix === '' || (suffix !== '..' && !suffix.startsWith('..' + sep) && !suffix.startsWith(sep))
+  const inside = suffix => suffix === '' || (suffix !== '..' && !suffix.startsWith('..' + sep) && !isAbsolute(suffix) && !suffix.startsWith(sep))
   for (const reserved of [userHome, join(userHome, '.dsh'), join(userHome, '.stella'), join(userHome, '.codex'), repo]) {
     const suffix = relative(reserved, canonical)
     const forbidden = reserved === userHome ? suffix === '' : inside(suffix)

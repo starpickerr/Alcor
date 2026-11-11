@@ -10,6 +10,8 @@ import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { prepareProductHome } from './home.mjs'
 import releases from '../../product/desktop-release.lock.json' with { type: 'json' }
 
+import {windowsQuery, windowsDesktopIdentity} from './windows-runtime.mjs'
+
 const repository = fileURLToPath(new URL('../../', import.meta.url))
 const execute = promisify(execFile)
 const kinds = new Set(['alcor', 'dsh'])
@@ -68,18 +70,38 @@ export async function prepareEnvironment(root, kind) {
 export function environmentFor(paths, inherited = process.env) {
   const env = Object.fromEntries(Object.entries(inherited).filter(([key]) =>
     /^(PATH|USER|LOGNAME|SHELL|TMPDIR|LANG|LC_[A-Z_]+|https?_proxy|all_proxy|no_proxy|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS)$/.test(key)))
+  if (process.platform === 'win32') {
+    for (const [key,value] of Object.entries(inherited)) {
+      if (/^(path|systemroot|windir|comspec|pathext|systemdrive)$/i.test(key)) env[key]=value
+    }
+    Object.assign(env, {APPDATA:join(paths.home,'AppData','Roaming'), LOCALAPPDATA:join(paths.home,'AppData','Local'),
+      TEMP:paths.workspace, TMP:paths.workspace})
+  }
   return { ...env, HOME: paths.home, USERPROFILE: paths.home, ZDOTDIR: paths.home,
     XDG_CONFIG_HOME: join(paths.home, '.config'), XDG_CACHE_HOME: join(paths.home, '.cache'), XDG_DATA_HOME: join(paths.home, '.local', 'share'),
     DSH_HOME: paths.dsh, DSH_TELEMETRY_DISABLED: '1', ALCOR_APPLICATION: paths.kind, ALCOR_ENVIRONMENTS_ROOT: paths.root }
 }
 
 export function desktopApplication(executable=process.execPath) {
+  if(process.platform==='win32')return join(process.env.LOCALAPPDATA,'Programs','DeepSeekHarness')
   for(let path=executable;dirname(path)!==path;path=dirname(path))if(path.endsWith('.app'))return path
   return join(homedir(),'Applications','DeepSeek Harness.app')
 }
 
 /** Use the unchanged, signed Desktop and the CLI it ships, not a second DSH distribution. */
 export async function officialDesktop(app = desktopApplication()) {
+  if (process.platform === 'win32') {
+    app = await realpath(app)
+    const resources = join(app, 'resources'), binary = join(app, 'DeepSeek Harness.exe')
+    const identity = await windowsDesktopIdentity(binary, join(resources, 'app.asar'))
+    const release = releases.windows
+    if (process.arch !== release.arch || identity.version !== release.version ||
+        identity.status !== 'Valid' || identity.signer !== release.signer ||
+        identity.binary !== release.binarySha256 || identity.archive !== release.appAsarSha256)
+      throw Error('Windows DSH 版本、架构、归档或签名不匹配。')
+    return {app, resources, binary, version:release.version, cli:binary,
+      cliArgs:['--expose-internals',join(resources,'app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js')]}
+  }
   if (process.platform !== 'darwin') throw new Error('此入口当前仅验证了 macOS 官方 DSH 桌面版。')
   app = await realpath(app)
   const { stdout } = await execute('/usr/bin/plutil', ['-convert', 'json', '-o', '-', join(app, 'Contents', 'Info.plist')])
@@ -94,7 +116,7 @@ export async function officialDesktop(app = desktopApplication()) {
   await execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', app])
   const signature = await execute('/usr/bin/codesign', ['--display', '--verbose=4', app])
   if (!signature.stderr.includes('TeamIdentifier=' + release.teamId)) throw new Error('官方桌面签名身份不匹配。')
-  return { app, version: release.version, binary: join(app, 'Contents', 'MacOS', 'DeepSeek Harness'),
+  return { app, resources: join(app,'Contents','Resources'), version: release.version, binary: join(app, 'Contents', 'MacOS', 'DeepSeek Harness'),
     cli: join(app, 'Contents', 'Resources', 'runtime', 'cli', 'bin', 'dsh') }
 }
 
@@ -122,6 +144,10 @@ export async function desktopIsRunning(paths,desktop) {
   try{process.kill(record.pid,0)}catch(error){if(error.code==='ESRCH')return false;throw error}
   // A recycled PID must still identify this exact application and user-data directory.
   let command
+  if(process.platform==='win32'){
+    const row=await windowsQuery(`$p=Get-CimInstance Win32_Process -Filter ("ProcessId="+$env:ALCOR_PROCESS_ID); ConvertTo-Json -InputObject $p.CommandLine`,{ALCOR_PROCESS_ID:String(record.pid)})
+    return typeof row==='string' && row.includes(record.binary) && row.includes('--user-data-dir='+paths.userData)
+  }
   try{command=(await execute('/bin/ps',['-p',String(record.pid),'-o','command='])).stdout}
   catch(error){if(error.code===1)return false;throw error}
   if(!command.includes(record.binary) || !command.includes('--user-data-dir='+paths.userData))return false
@@ -132,8 +158,13 @@ export async function desktopIsRunning(paths,desktop) {
 
 async function install(paths, desktop, spec, runner) {
   if (typeof spec !== 'string' || !spec.trim() || spec.startsWith('-') || spec.includes('\0')) throw new Error('请提供标准 DSH 插件安装地址。')
-  await runner(desktop.cli, ['plugin', '--profile', 'desktop', 'add', spec, '--ignore-scripts'],
-    { cwd: paths.workspace, env: environmentFor(paths) })
+  await runPluginCli(paths, desktop, ['plugin','--profile','desktop','add',spec,'--ignore-scripts'], runner)
+}
+
+export function runPluginCli(paths, desktop, args, runner = run) {
+  const env = environmentFor(paths)
+  if (desktop.cliArgs) env.ELECTRON_RUN_AS_NODE='1'
+  return runner(desktop.cli, [...desktop.cliArgs ?? [], ...args], {cwd:paths.workspace,env,windowsHide:true})
 }
 
 export function installPlugin(paths, desktop, spec, runner = run) {

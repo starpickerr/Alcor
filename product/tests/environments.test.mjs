@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
 import { prepareEnvironment, environmentFor, installPlugin, launchEnvironment, desktopIsRunning, desktopApplication } from '../../scripts/product/environments.mjs'
@@ -33,7 +33,8 @@ test('a live Desktop outliving its launcher is recognized, focused and protected
   }finally{child.kill();await once(child,'exit')}
   await writeFile(join(paths.base,'.desktop-process.json'),JSON.stringify({pid:child.pid,binary:'/previous-location/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',userData:paths.userData}))
   assert.equal(await desktopIsRunning(paths,app),false,'an exited app may have moved since its previous launch')
-  assert.equal(desktopApplication('/Applications/DeepSeek Harness.app/Contents/Resources/runtime/bin/node'),'/Applications/DeepSeek Harness.app')
+  if(process.platform==='win32')assert.equal(desktopApplication(),join(process.env.LOCALAPPDATA,'Programs','DeepSeekHarness'))
+  else assert.equal(desktopApplication('/Applications/DeepSeek Harness.app/Contents/Resources/runtime/bin/node'),'/Applications/DeepSeek Harness.app')
 })
 
 test('applications have independent standard profiles, homes, plugin state and user data', async t => {
@@ -59,7 +60,7 @@ test('existing unowned data, incorrect identities, symbolic roots and escaping a
   await writeFile(join(alcor.base, '.alcor-environment.json'), JSON.stringify({ version: 1, application: 'dsh' }))
   await assert.rejects(prepareEnvironment(valid, 'alcor'), /身份/)
   await assert.rejects(prepareEnvironment(valid, '../dsh'), /请选择/)
-  await symlink(valid, join(parent, 'alias'))
+  await symlink(valid, join(parent, 'alias'), process.platform==='win32'?'junction':'dir')
   await assert.rejects(prepareEnvironment(join(parent, 'alias'), 'dsh'), /symbolic link/)
 })
 
@@ -67,12 +68,13 @@ test('nested directory and manifest symlinks cannot alias the other application'
   const { root } = await fixture(t)
   const alcor = await prepareEnvironment(root, 'alcor'), dsh = await prepareEnvironment(root, 'dsh')
   await rm(alcor.dsh, { recursive: true })
-  await symlink(dsh.dsh, alcor.dsh)
+  await symlink(dsh.dsh, alcor.dsh, process.platform==='win32'?'junction':'dir')
   await assert.rejects(prepareEnvironment(root, 'alcor'), /软链接/)
   await rm(alcor.dsh); await mkdir(alcor.dsh)
   await prepareEnvironment(root, 'alcor')
   await rm(join(alcor.profile, 'package.json'))
-  await symlink(join(dsh.profile, 'package.json'), join(alcor.profile, 'package.json'))
+  try { await symlink(join(dsh.profile, 'package.json'), join(alcor.profile, 'package.json')) }
+  catch(error){if(process.platform==='win32' && error.code==='EPERM')return t.skip('File symlinks require Windows Developer Mode or elevation');throw error}
   await assert.rejects(prepareEnvironment(root, 'alcor'), /普通文件/)
 })
 
@@ -117,7 +119,7 @@ test('first Alcor launch retains its install archive, and failed initialization 
   await assert.rejects(launchEnvironment(paths, desktop, { archive, runner: async (...args) => { calls.push(args); throw Error('install failed') } }), /install failed/)
   assert.equal(calls.length, 1)
   const saved = calls[0][1][4]
-  assert(saved.startsWith(paths.packages + '/')); assert.equal(await readFile(saved, 'utf8'), 'synthetic immutable archive')
+  assert.equal(dirname(saved),paths.packages); assert.equal(await readFile(saved, 'utf8'), 'synthetic immutable archive')
   const retried = []
   await launchEnvironment(paths, desktop, { archive, runner: async (...args) => retried.push(args) })
   assert.equal(retried.length, 2); assert.equal(retried[0][1][4], saved)

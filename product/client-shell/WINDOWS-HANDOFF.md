@@ -1,4 +1,14 @@
 # Windows 开发交接
+## Windows 专用分支存档
+
+本分支保留 Windows x64 本地独立外壳原型，基线为 02217cd4。后续 Windows 交付目标是官方 DSH 内的共享 Host 和 Profile。此原型的打包、进程管理和独立 Profile 改动只用于存档。可复用的工作见 [Windows 原生插件验证](../windows-native.md)。
+
+已在隔离测试目录通过双向切换、草稿与存储隔离、插件启停与卸载、停止所属后台进程、重启与恢复数据。经校验的官方 DSH 运行时与 Electron 44.7.0 Windows x64 ZIP 用于构建本地目录版，命令为 `npm run product:client:pack -- --app <官方运行时目录> --electron-zip <Electron归档> --out <新目录>`。Windows 开发依赖含 macOS 专属工作区，原型构建使用 `npm ci --ignore-scripts --force` 安装源码构建依赖。此选项不用于 DSH 插件安装。原型没有 Alcor 公共发行签名。
+
+AuraBot 1.2.1 和社区桌宠 1.0.18 在合成 Alcor 环境提供了状态接口，工作台对应接口返回 404。桌宠客户端已生成并启动进程，但未收到心跳。独立启动诊断中，上游模板报告 pushAnimRate 重复声明。未修改第三方插件，未发送真实 QQ 消息。
+
+以下内容保留原始移交时的历史背景。
+
 
 本分支 `feat/isolated-dsh-runtimes-20261111` 从 `develop` 的 `8a15a84c` 建立，包含原先完成本地安装验收的 macOS 单窗口客户端，以及后续 Alcor 原生插件启停与内置范围标注改造。后续改造尚未替换个人客户端；最终普通启动画面复核状态见下文。尚未实现 Windows 启动、打包或实机验收，不应把现有 Mac 安装包复制到 Windows 运行。
 

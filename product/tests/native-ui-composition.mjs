@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,7 +9,7 @@ assert(app, 'Set ALCOR_OFFICIAL_COMPOSITION_APP to the reviewed official App')
 const runtime=join(app,'Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/')
 assert.equal(JSON.parse(readFileSync(runtime+'dsh-app-boot/package.json')).version,'0.2.2-rc.1')
 const { loadOverlayPatches, composeEntries }=await import(pathToFileURL(runtime+'dsh-app-boot/lib/index.js'))
-const root=new URL('../../',import.meta.url).pathname
+const root=fileURLToPath(new URL('../../',import.meta.url))
 const names=['apple-sync','secretary','elearning','mail','agent-hub']
 const load=path=>loadOverlayPatches('synthetic',path)
 const base=load(runtime+'dsh-base/cordis.patch.yml'),web=load(runtime+'dsh-web-app/cordis.patch.yml')

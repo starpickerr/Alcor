@@ -18,10 +18,10 @@ export function nativeHost(paths,desktop,{onExit=()=>{}}={}) {
     finished=withFileLock(join(paths.base,'desktop-instance'),async()=>{
       if(await desktopIsRunning(paths,desktop))throw Error('请先退出此环境的旧客户端窗口。')
       if(stopping)throw Error('客户端正在退出。')
-      const resources=join(desktop.app,'Contents/Resources'),runtime=join(resources,'app.asar/dsh')
+      const resources=desktop.resources,runtime=join(resources,'app.asar/dsh')
       child=spawn(desktop.binary,['--expose-internals',join(runtime,'node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js'),runtime,paths.profile,
         join(resources,'runtime/primary-runtime'),join(resources,'runtime/primary-runtime/dependencies/pnpm/bin/pnpm.mjs'),join(resources,'runtime/bin')],
-        {cwd:paths.workspace,env:{...environmentFor(paths),ELECTRON_RUN_AS_NODE:'1',DSH_DESKTOP_NODE_EXECUTABLE:desktop.binary,ALCOR_CLIENT_SHELL:'1'},stdio:['ignore','ignore','pipe','ipc']})
+        {windowsHide:true,cwd:paths.workspace,env:{...environmentFor(paths),ELECTRON_RUN_AS_NODE:'1',DSH_DESKTOP_NODE_EXECUTABLE:desktop.binary,ALCOR_CLIENT_SHELL:'1'},stdio:['ignore','ignore','pipe','ipc']})
       // Host diagnostics can contain user data; only a generic error crosses into the shell.
       child.stderr.resume()
       await new Promise((done,fail)=>{
