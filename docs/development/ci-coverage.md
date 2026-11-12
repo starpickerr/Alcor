@@ -28,6 +28,7 @@ Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS 
 | 任务、账单、记忆和知识都来自兄弟插件仓 | 现行包承接自己的业务 Worker；`packages/alcor-secretary/business/` 与 `alcor-organizer` 维护事务和数据契约 | business/domain/execution、bill/task/tree、恢复及 receipt/CAS 用例；旧外仓的八个原始摘要继续校验 |
 | eLearning/邮件通过旧 Core 私有账户和固定旧 MCP 摘要交付 | 当前 `alcor-elearning`、`alcor-mail` 使用 DSH 凭据与 Remote，当前发行锁有独立版本、提交和摘要 | mail/elearning-credentials、source-remotes、briefing-source-selection；新增真实冻结协议任务；Legacy 来源篡改拒绝继续执行 |
 | Ubuntu 应成功保存真实 macOS Keychain 凭据 | 当前可选 `@alcor/privacy` 明确仅支持 macOS；旧 MacOSKeychain 同样依赖 Security.framework | macOS 真实临时 Keychain 的轮换、重启、锁定、无文件/环境回退测试；Linux 保留实际 HTTP/SSRF 和进程安全检查 |
+| 原生 Keychain 测试可在没有 Profile 服务的裸 Context 启动 | 更名后的 provider 在访问凭据前必须确认 Profile，拒绝未知身份或旧 provider 混用 | 主夹具和跨进程夹具声明当前 `@alcor/privacy`；生产拒绝保护不变。8 项真实 Keychain、4 项包内身份用例及 AgentHub 的 2 项身份迁移用例均保留实测，并纳入 native CI |
 | 旧 Core RunPolicy/OS 隔离直接代表官方 DSH 插件权限 | 官方 Host 是同进程可信插件模型；旧 Core 的隔离不会自动保护新 Host | 当前 real tool gate、actor/capability classification、organizer 排队后撤销、owner peer、陈旧快照和不可逆写入验证；旧 Core 边界仍在 Legacy/Linux 检查，不声称两者等价 |
 | 旧桌面路由和 18 项浏览器脚本可证明共享界面交付 | 当前顶层切换与原生服务由 secretary/plugin-info 及 DSH 插槽实现 | mode/sidebar/automation 等现行产品测试与官方客户端验收入口；18 个旧脚本全部保留，独立记录开始、结束、耗时和超时 |
 | 当前共享模式允许移除保留的独立环境测试 | 隔离实现仍有实际代码、已有环境和归档分支 | environments、extension-lifecycle、client-shell transport、child-processes 等仍在完整产品套件内 |
@@ -37,3 +38,5 @@ Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS 
 CI 合成账号、临时数据和原生 Keychain 不证明个人 Apple、学校或 IMAP 账号可用。连接器协议任务不连接真实学校或邮箱。源码和打包检查不替代签名官方 Desktop 的 GUI、升级与个人数据迁移验收；没有改变相关宿主支持范围或官方程序。
 
 完整运行结果与仍失败项记录在本任务交付记录中；路径分流或门禁名称本身不作为通过证据。
+
+原生 Swift 构建和合约探针统一在临时目录内编译完整源码快照，避免同步目录在编译期间改变输入元数据；原有 Apple 行为断言保留。只修复编译输入，不请求个人 Apple 授权。

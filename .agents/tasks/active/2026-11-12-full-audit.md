@@ -37,3 +37,13 @@ The user resumed CI work and explicitly requested adaptation to the current offi
 - Workflow YAML and shell syntax PASS. Final product audit, new Keychain/frozen connector jobs and final-head GitHub checks pending.
 - Branch pushed through `0b3767f2`. GitHub confirms `dsh-fudan-elearning` is private; Alcor has no Actions Secret names configured. Requested the user's setup of read-only `ALCOR_SOURCE_TOKEN` asynchronously. Added explicit failure and non-persistent credential checkout; no visibility change or private-source publication.
 - The user then made the school repository public; GitHub now confirms `visibility: public`. Removed the no-longer-needed Secret requirement; retain exact revisions, source digests and non-persistent checkout credentials. No visibility change was performed by this task.
+
+## Current verified implementation
+
+- A subsequent complete product audit exposed two Swift compiler failures because auxiliary inputs were read directly from the synced workspace. All three native helper builders and the three direct Swift contract probes now compile a complete temporary source snapshot. No Apple behavior/assertion changed. Targeted Apple contracts/scans: 17 PASS; worker/watcher: 3 PASS; real Apple package build PASS.
+- `make audit` after this fix: 537 PASS / 0 FAIL / 1 existing Windows-only SKIP (538 total), log `/tmp/alcor-ci-product-audit-final-20261112.log`. Confirmation, Apple and privacy helper builds PASS.
+- First real privacy run failed all eight cases before accessing Keychain because the old bare-Context fixtures lacked the current Profile service. Both main and child-process fixtures now declare the actual `@alcor/privacy` selection; production Profile rejection is unchanged. Retest: 8 real Keychain cases PASS, plus real lock/unlock refusal/recovery; 4 existing package-owned privacy identity cases and 2 AgentHub identity cases PASS. Both package-owned suites are added to native CI.
+- Current source packages built from their unchanged current locks using existing build interpreters. Extracted `.tgz` payloads were checked and run in a temporary directory: exact tools, versions, annotations, skill schemas, forbidden credential-write rejection and no plaintext secret files PASS. Log `/tmp/alcor-ci-frozen-protocol-20261112.log` also retains the SDK teardown stderr; no output was suppressed.
+- Main branch protection read returned HTTP 404 (not protected); no protection settings changed.
+- Synced-workspace license duplicates `packages/alcor-{elearning,mail}/DSH-LICENSE 2.txt` appeared during source builds; preserve them without staging or deleting unknown recovery copies.
+- Final-head GitHub execution remains the next step. No main/develop updates or personal installation.

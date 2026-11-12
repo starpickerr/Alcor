@@ -17,6 +17,7 @@ async function fixture(context, name) {
   const home = name ? join(testHome, name) : await mkdtemp(join(testHome, 'case-'))
   await mkdir(home, { recursive: true })
   const ctx = new Context()
+  ctx.provide('profileContext', { startedBundles: ['@alcor/privacy'] })
   context.after(() => ctx.fiber.dispose())
   await ctx.plugin(KeychainCredentials, { dshHome: home, keychainPath })
   return { ctx, provider: ctx.credentials, home }
