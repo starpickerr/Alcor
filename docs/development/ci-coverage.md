@@ -4,6 +4,24 @@
 
 `make audit` 与 `make check` 都完整构建当前插件并执行 `product/tests/*.test.mjs`。按用户确认的分层，每次适用 PR 保留 macOS 当前完整产品套件、包内身份/迁移检查、三平台插件构建及 Windows/Linux 业务与安全边界；保留隔离环境的现有用例仍包含在完整套件中。Native 手动运行及 main/develop 推送另执行完整 Apple/凭据包、独立临时 Keychain 和冻结连接器检查。连接器按现有发行锁核对源码摘要及协议。合并或发布前必须手动验证精确候选提交，不能用不同提交的结果拼作最终全绿；main/develop 推送检查属于集成后的复验。
 
+## 候选验收记录
+
+以下是已核实的提交证据，不能自动归入后续文档提交。此次补证只修改文档；后续提交的适用检查仍须按其精确 head 单独核对。尚未合并 main/develop，Windows 实装未完成前不作跨平台交付完成声明。
+
+| 提交与范围 | 实际结果与证据 |
+| --- | --- |
+| `4c2147485c3bb06128e17e0338ccae04cf28cefc` 当前产品 | [Native 43262852550](https://github.com/starpickerr/Alcor/actions/runs/43262852550) 四个任务全部成功：macOS 完整产品、打包及真实临时 Keychain；冻结连接器；Windows 插件；Linux 插件。当前产品 536 PASS / 0 FAIL / 1 既有平台 SKIP；真实 Keychain 8 项、包内身份 4 项及 AgentHub 身份 2 项通过。 |
+| 同一 `4c214748` 的保留安全边界 | [Linux 43262963755](https://github.com/starpickerr/Alcor/actions/runs/43262963755) 成功，99 PASS / 2 既有平台 SKIP；`full-quality` 按 `full_legacy_audit=false` 分层配置 SKIP，不能称此运行完成了历史全量审计。 |
+| 同一 `4c214748` 的 Windows Bash | [Windows Bash 43262970203](https://github.com/starpickerr/Alcor/actions/runs/43262970203) 成功；这是命令执行测试，不是官方 Windows 客户端安装验收。 |
+| `821c66aba02bb7f907dbfc1e9a52bac147988770` 历史全量 | [Legacy 43258471945](https://github.com/starpickerr/Alcor/actions/runs/43258471945) 成功：Python、ruff、旧桌面 lint/build/typecheck、Node、全部 18 个 UI 脚本、10 项 Agent evals 及 Linux 边界。它属于旧提交，不与 `4c214748` 的结果合并计数；当时成功日志只有尾行，不猜测 Python 通过／跳过数量。 |
+
+Mac 实装证据来自 2026-11-13 的 `native-candidate-be0231bb/MAC-ACCEPTANCE.md`，完整本地报告位于 `~/.local/share/Alcor/releases/official-shared-continuation-20261112-070310/`。报告以 `be0231bb7140a1afb96f8d9c14e0922ebc0dd901` 的独立 Git 归档构建；`4c214748` 与它的 `packages/`、`product/`、`scripts/product/`、根 npm 清单及 Makefile 的 Git 对象相同，故可明确复用其产品证据，但不称后续提交重新实装。
+
+- 本轮官方 Mac **0.2.2-rc.1** 通过内置 CLI 同版本刷新秘书 0.1.104、Apple 0.1.19、eLearning 0.1.13、邮件 0.1.12；原程序严格签名与 app.asar 摘要在安装前后核验。实际界面验证双向模式切换、共享工作区／插件／自动化及相关设置入口。privacy 仅构建并在临时 Keychain 测试，未安装到个人 rc.1。
+- 安装前后、启动前的 30 个跟踪数据／存储／配置文件字节一致，1003 个安装文件与候选归档对应。启动后后台继续运行，4 个数据库全文件摘要改变；只读跟进确认相对保留基线的 72 项任务、322 项日程及既有映射键仍在，不把离线一致性扩展为所有启动后文件不变，也不声称解释了安装后每一笔行变化。秘书归档 SHA-256：`c22e3fd986b6afc712dff0885e7926598feb0c462baf7db72f3d2ca7d9987b58`；其余归档摘要和细节见本地报告。
+- **本轮未验**：官方 rc.1→rc.2 升级、最终候选的完整可丢弃 Desktop 生命周期，以及真实 Apple／学校／邮件账号操作。旧 rc.2 相同执行路径的证据复用不等于本轮升级成功。Windows 当前离线，新候选未实际安装；此前 Windows 记录和此次 CI 均不能替代它。
+- 冻结协议断言和检查器退出状态通过；退出时的两处 I/O-on-closed-file stderr 保留，未采集每个冻结服务的退出码，不能称服务全部静默正常退出。
+
 ## 自动执行条件
 
 | 范围 | 自动检查 | 手动入口 |
@@ -54,7 +72,7 @@ GNU Make 的完整审计/无 Conda 验证归入已有解释器工具检查，在
 
 Legacy 扩展只读加入 `/usr/share/zoneinfo` 的系统实际解析路径。本机为 `/private/var/db/timezone/tz/2026f.1.0/zoneinfo`；不授权其父目录，不更改写入、网络或个人数据保护。GitHub macOS 的源代码解释器曾因原路径指向读取范围之外而集中失败。公共依赖准备复用生产下载器、固定 uv 与两个已核验来源的带摘要锁文件，先在临时状态准备，再供隔离测试重新校验复制；缺失缓存不再让 UI 测试提前退出。
 
-## 本次验证记录（2026-11-12）
+## 修复过程记录（2026-11-12 至 2026-11-13）
 
 - 修复前手动旧审计：140 FAIL / 33 ERROR；不是现行插件运行结果。
 - 本机旧套件诊断在原 900 秒预算外中断，保留 2464 PASS / 4 FAIL / 47 SKIP 的部分结果。两项缺本机旧桌面 TypeScript/Vite，另两项旧 MCP adoption 初始化被拒；不标完整通过。GitHub 维护任务按完整依赖与对应平台验证。
@@ -64,6 +82,6 @@ Legacy 扩展只读加入 `/usr/share/zoneinfo` 的系统实际解析路径。�
 - GitHub `977e8975`：Native 的 macOS、Windows、Linux 三任务通过；冻结来源任务因误收集未使用 MCP CLI 缺少可选 typer 而失败。Legacy Linux 通过；macOS 为 3011 PASS / 143 FAIL / 53 既有 SKIP，另有两个 UI 失败，分别为已移除入口和缺少公共依赖缓存。Windows Bash 通过。失败原始日志保留，不将该提交标绿。
 - 2026-11-13 定向回归：真实时区读取及扩展隔离 27 项通过；旧连接存储、解释器与 UI 进程管理 26 项通过；公共校验缓存准备入口通过；冻结模块收敛后两个当前包的完整协议断言通过。当前完整 `make audit` 为 536 PASS / 0 FAIL / 1 既有 Windows 专属 SKIP，总计 537；原 Make 断言迁入工具测试，不是删除覆盖。
 - GitHub `821c66ab`：三平台产品任务再次通过，连接器构建通过；协议启动发现切换临时工作目录后的相对路径问题，已改为启动前解析绝对包路径，并以 CI 同样的相对目录参数完成本地全套协议复测。[Legacy 完整审计](https://github.com/starpickerr/Alcor/actions/runs/43258471945) 最终通过：全部 Python、ruff、旧桌面 lint/build/typecheck、Node、18 个 UI 脚本、10 项 Agent evals，以及 Linux 边界。成功日志原先仅显示尾行，因此不猜测 Python 通过/跳过数量；外层现已保留成功 pytest 和 UI 的完整输出，逐项耗时不会再被折叠。
-- GitHub `79d52344` 的 [Native 全量运行](https://github.com/starpickerr/Alcor/actions/runs/43260188630) 四任务全部通过：完整 macOS 产品/打包/Keychain、冻结连接器协议、Windows 服务/构建、Linux 服务/权限边界。这是该提交的证据；分层配置更新后的精确最终提交仍需独立运行。
-- 分层提交 `be0231bb` 的 [Native](https://github.com/starpickerr/Alcor/actions/runs/43261557709)、[Linux 安全边界](https://github.com/starpickerr/Alcor/actions/runs/43261579116) 和 [Windows Bash](https://github.com/starpickerr/Alcor/actions/runs/43261568453) 均通过，精确 head 一致。当前产品 536 PASS / 0 FAIL / 1 既有平台 SKIP；真实临时 Keychain 8 项、包内身份 4 项与 AgentHub 身份 2 项通过。Linux 边界 99 PASS / 2 既有平台 SKIP。后续仅补齐历史成功日志留存及本段结果，不改变产品安装包；仍在最终提交上复验适用门禁。
-- 上述证据仅适用于标明的提交；最终候选提交必须核对其自己的 Native、适用 Linux 边界与 Windows Bash 结果，不能沿用此前结果。历史审计另行报告，不冒称当前桌面安装验收。此次未合并 main/develop，也未修改官方 DSH 或个人 Profile。
+- GitHub `79d52344` 的 [Native 全量运行](https://github.com/starpickerr/Alcor/actions/runs/43260188630) 四任务全部通过：完整 macOS 产品/打包/Keychain、冻结连接器协议、Windows 服务/构建、Linux 服务/权限边界。此为该提交的历史检查点。
+- 分层提交 `be0231bb` 的 [Native](https://github.com/starpickerr/Alcor/actions/runs/43261557709)、[Linux 安全边界](https://github.com/starpickerr/Alcor/actions/runs/43261579116) 和 [Windows Bash](https://github.com/starpickerr/Alcor/actions/runs/43261568453) 均通过，精确 head 一致。后续日志补改提交 `4c214748` 已独立完成同类适用检查，见上方候选验收记录；两者的产品输入不变。
+- 上述证据仅适用于标明的提交；最终候选提交必须核对其自己的 Native、适用 Linux 边界与 Windows Bash 结果，不能沿用此前结果。历史审计另行报告，不冒称当前桌面安装验收。本 CI 修复任务未修改官方 DSH 或个人 Profile；Mac 实装由独立验收任务完成。未合并 main/develop。
