@@ -1,15 +1,65 @@
-name: Legacy runtime quality
+name: Legacy runtime maintenance
 
 on:
   pull_request:
     branches: [develop, main]
+    paths:
+      - 'agent/**'
+      - 'application/**'
+      - 'bridge/**'
+      - 'channel/**'
+      - 'cli/**'
+      - 'common/**'
+      - 'core/**'
+      - 'desktop/**'
+      - 'models/**'
+      - 'translate/**'
+      - 'voice/**'
+      - 'tests/**'
+      - 'evals/**'
+      - 'stella-plugins-workspace/**'
+      - 'scripts/*.py'
+      - 'resources/default-plugins.json'
+      - 'resources/mcp-providers.json'
+      - 'resources/legacy-sources.lock.json'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'app.py'
+      - 'config.py'
+      - 'Makefile'
+      - '.github/workflows/project-quality.yml'
   push:
-    branches: [develop]
+    branches: [develop, main]
+    paths:
+      - 'agent/**'
+      - 'application/**'
+      - 'bridge/**'
+      - 'channel/**'
+      - 'cli/**'
+      - 'common/**'
+      - 'core/**'
+      - 'desktop/**'
+      - 'models/**'
+      - 'translate/**'
+      - 'voice/**'
+      - 'tests/**'
+      - 'evals/**'
+      - 'stella-plugins-workspace/**'
+      - 'scripts/*.py'
+      - 'resources/default-plugins.json'
+      - 'resources/mcp-providers.json'
+      - 'resources/legacy-sources.lock.json'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'app.py'
+      - 'config.py'
+      - 'Makefile'
+      - '.github/workflows/project-quality.yml'
   workflow_dispatch:
 
 jobs:
   full-quality:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       STELLA_PYTHON: python
@@ -41,7 +91,7 @@ jobs:
           path: MCP/fudan-elearning-mcp
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
       - uses: actions/setup-node@v7
         with:
@@ -52,11 +102,6 @@ jobs:
         run: python scripts/check_legacy_sources.py
       - name: Install project dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes bubblewrap apparmor-profiles
-          sudo install -m 644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
-          sudo apparmor_parser --replace /etc/apparmor.d/bwrap-userns-restrict
-          bwrap --die-with-parent --ro-bind / / --proc /proc --dev-bind /dev /dev -- /bin/true
           python -m pip install -r requirements.txt -r requirements-dev.txt
           npm --prefix desktop ci
           python -m playwright install --with-deps chromium
@@ -72,18 +117,15 @@ jobs:
           else
             echo "STELLA_CHECK_FULL=1" >> "$GITHUB_ENV"
           fi
-      - name: Run the shared quality gate
+      - name: Run the applicable Legacy maintenance gate
         run: |
-          if [[ "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
-            python scripts/quality_check.py full
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
+            make audit-legacy
           else
             make check-legacy
           fi
       - name: Run Stella product agent evals
         run: make eval
-      - name: Generate a full audit report on manual request
-        if: github.event_name == 'workflow_dispatch'
-        run: make audit
       - name: Preserve quality evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -93,3 +135,24 @@ jobs:
             Alcor/.agents/audits/code-review/Full-Audit-*.md
             Alcor/evals/reports/latest.json
           if-no-files-found: ignore
+  linux-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      STELLA_PYTHON: python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Linux boundary test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor-profiles
+          sudo install -m 644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser --replace /etc/apparmor.d/bwrap-userns-restrict
+          bwrap --die-with-parent --ro-bind / / --proc /proc --dev-bind /dev /dev -- /bin/true
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify actual Linux process, authorization and network boundaries
+        run: python scripts/run_isolated.py python -m pytest tests/test_process_sandbox.py tests/test_security_gateway.py tests/test_controlled_http.py tests/test_runtime_artifacts.py tests/test_security_ssrf_web_fetch.py tests/test_security_ssrf_path_traversal.py -q
