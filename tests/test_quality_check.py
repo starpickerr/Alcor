@@ -16,6 +16,7 @@ def test_renderer_change_selects_ui_and_typecheck():
     assert checks["typecheck"]
     assert checks["ui"]
     assert not checks["pytest"]
+    assert affected_checks(['scripts/ui_check.py'])['ui']
 
 
 def test_todo_change_selects_its_behavior_tests():
@@ -160,6 +161,29 @@ def test_python_selection_changes_run_environment_regressions():
     assert 'tests/test_python_environment.py' in checks['pytest']
     assert 'tests/test_quality_check.py' in checks['pytest']
     assert checks['node']
+
+
+def test_ui_deadline_covers_all_scripts_in_both_quality_gates(monkeypatch):
+    import sys
+    from scripts import quality_check
+    from scripts.ui_check import UI_TIMEOUT
+
+    deadlines = []
+
+    def record(name, command, _env, timeout):
+        if name == 'ui':
+            deadlines.append(timeout)
+        return name, 'PASS', command, ''
+
+    monkeypatch.setattr(quality_check, 'run_check', record)
+    monkeypatch.setattr(quality_check, 'markdown_report', lambda *_: None)
+    for mode in ('incremental', 'full'):
+        args = ['quality_check.py', mode]
+        if mode == 'incremental':
+            args += ['--files', 'desktop/src/renderer/src/pages/TasksPage.tsx']
+        monkeypatch.setattr(sys, 'argv', args)
+        assert quality_check.main() == 0
+    assert deadlines == [UI_TIMEOUT, UI_TIMEOUT]
 
 
 def test_runtime_node_regressions_are_in_incremental_and_full_gates(monkeypatch):
