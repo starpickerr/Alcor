@@ -230,3 +230,10 @@ def native_settings_action():
 
 # Optional real dependency integration uses hash-verified, offline public artifacts.
 pytest_plugins = ['tests.fixtures.runtime_artifacts', 'tests.fixtures.keychain']
+
+
+@pytest.fixture(autouse=True, scope='session')
+def public_runtime_artifacts(workspace_out_of_the_way):
+    if os.environ.get('STELLA_TEST_RUNTIME_ARTIFACTS'):
+        from tests.fixtures.runtime_artifacts import seed_runtime_artifacts
+        seed_runtime_artifacts()

@@ -106,6 +106,14 @@ def test_nested_isolation_preserves_installed_browser_cache(tmp_path, monkeypatc
     assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(browser_cache)
 
 
+def test_isolation_preserves_only_an_explicit_existing_public_artifact_cache(tmp_path, monkeypatch):
+    cache = tmp_path / 'public-artifacts'
+    monkeypatch.setenv('STELLA_TEST_RUNTIME_ARTIFACTS', str(cache))
+    assert 'STELLA_TEST_RUNTIME_ARTIFACTS' not in isolated_env(tmp_path / 'first')
+    cache.mkdir()
+    assert isolated_env(tmp_path / 'second')['STELLA_TEST_RUNTIME_ARTIFACTS'] == str(cache)
+
+
 def test_removed_backend_and_dependency_changes_expand_checks():
     deleted = affected_checks(["agent/briefing/removed.py"])
     assert "tests/test_briefing_plugin_gateway.py" in deleted["pytest"]

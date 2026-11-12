@@ -291,6 +291,10 @@ def isolated_env(root):
 
     inherited_browser_cache = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
 
+    public_artifacts = os.environ.get('STELLA_TEST_RUNTIME_ARTIFACTS')
+    if public_artifacts and Path(public_artifacts).is_dir():
+        env['STELLA_TEST_RUNTIME_ARTIFACTS'] = public_artifacts
+
     if inherited_browser_cache:
         candidate = Path(inherited_browser_cache)
         if candidate.name == "ms-playwright" and candidate.is_dir():
