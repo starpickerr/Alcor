@@ -5,6 +5,7 @@ import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renamedEnv } from './env.mjs'
 import { adaptWorkspaceClient } from './native-ui-spaces.mjs'
+import { adaptLayoutClient } from './native-ui-layout.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const clients = {
@@ -54,6 +55,8 @@ export async function verifyNativeUi(directory = join(root, 'packages/alcor-secr
       || !client.includes(marker) || !client.includes('id: "' + identity + '"')) throw new Error('Native UI artifact changed; rebuild native UI: ' + name)
     if (name === 'ui-workspace' && (entry.adapter !== hash(await readFile(join(root, 'scripts/product/native-ui-spaces.mjs')))
       || entry.upstreamClient !== hash(adaptWorkspaceClient(client.toString(), true)))) throw new Error('Native workspace adaptation changed; rebuild native UI')
+    if (name === 'ui-layout' && (entry.adapter !== hash(await readFile(join(root, 'scripts/product/native-ui-layout.mjs')))
+      || entry.upstreamClient !== hash(adaptLayoutClient(client.toString(), true)))) throw new Error('Native layout adaptation changed; rebuild native UI')
     if (name === 'ui-settings-models') {
       const originalHost = join(target, 'lib/upstream-index.js')
       if (!(await lstat(originalHost)).isFile() || entry.upstreamHost !== hash(await readFile(originalHost))
@@ -116,6 +119,11 @@ export async function buildNativeUi(source = renamedEnv('ALCOR_UPSTREAM_DIR', 'S
       await cp(join(directory, 'locale'), join(target, 'locale'), { recursive: true })
       await copyFile(join(upstream, 'LICENSE'), join(target, 'LICENSE.txt'))
       provenance.clients[name] = { module: original.name, client: hash(client), host: hash(await readFile(join(target, 'lib/index.js'))) }
+      if (name === 'ui-layout') {
+        const adapted = adaptLayoutClient(client.toString())
+        await writeFile(join(target, 'lib/client.js'), adapted)
+        provenance.clients[name] = { ...provenance.clients[name], client: hash(adapted), upstreamClient: hash(client), adapter: hash(await readFile(join(root, 'scripts/product/native-ui-layout.mjs'))) }
+      }
       if (name === 'ui-workspace') {
         const adapted = adaptWorkspaceClient(client.toString())
         await writeFile(join(target, 'lib/client.js'), adapted)

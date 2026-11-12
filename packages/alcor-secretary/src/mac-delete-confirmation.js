@@ -1,12 +1,17 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { windowsConfirmationCommand } from './windows-confirmation.js'
+
 // The pipe belongs to this one Host request. Its reply is never an API token.
 export function confirmMacDeletion(request, signal) {
-  if (process.platform !== 'darwin') return Promise.reject(new Error('当前系统尚未提供页面删除确认窗口。'))
+  if (!['darwin','win32'].includes(process.platform)) return Promise.reject(new Error('当前系统尚未提供页面删除确认窗口。'))
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
-    const child = spawn(fileURLToPath(new URL('../native/Alcor Confirm.app/Contents/MacOS/AlcorConfirm', import.meta.url)), [], {
+    const [command,args] = process.platform === 'win32' ? windowsConfirmationCommand() :
+      [fileURLToPath(new URL('../native/Alcor Confirm.app/Contents/MacOS/AlcorConfirm', import.meta.url)), []]
+    const child = spawn(command,args, {
+      windowsHide:true,
       stdio: ['pipe', 'pipe', 'ignore'], signal, timeout: 245000,
     })
     let output = ''

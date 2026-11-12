@@ -1,0 +1,17 @@
+@position-try --alcor-automation-above {
+  top: var(--alcor-anchor-top);
+  bottom: max(var(--alcor-anchor-margin), calc(anchor(top) + var(--alcor-anchor-gap)));
+  align-self: end;
+}
+@position-try --alcor-automation-window {
+  top: var(--alcor-anchor-top);
+  bottom: var(--alcor-anchor-margin);
+  align-self: safe start;
+}
+@position-try --alcor-automation-wide-window {
+  top: var(--alcor-anchor-top);
+  bottom: var(--alcor-anchor-margin);
+  left: var(--alcor-anchor-margin);
+  right: var(--alcor-anchor-margin);
+  align-self: safe start;
+}

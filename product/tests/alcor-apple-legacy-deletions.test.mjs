@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('legacy mapping and category deletions retain Apple targets without dispatching writes', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import runpy,sys
 sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
 m=runpy.run_path('product/tests/business-recovery.py');Base=m['Bridge']

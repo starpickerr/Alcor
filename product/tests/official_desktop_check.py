@@ -71,7 +71,7 @@ def enter_workspace(context, process, timeout=45):
             try:
                 plugins = page.get_by_role('button', name=re.compile(r'^(Plugins|插件)$'))
                 if plugins.count():
-                    plugins.wait_for()
+                    plugins.first.wait_for()
                     return page
                 key = page.get_by_role('button', name=re.compile(r'^(Add API Key|添加 API Key)$'))
                 skip = page.get_by_role('button', name=re.compile(r'^(Set up later|稍后配置)$'))

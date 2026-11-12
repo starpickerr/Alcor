@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -66,7 +67,8 @@ test('billing owner rejects a stale deletion snapshot inside its transaction', a
 })
 
 test('local todo deletion snapshot is compared in the owner write transaction', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
+from contextlib import closing
 import sqlite3, sys, tempfile, threading
 from pathlib import Path
 sys.path.insert(0, 'packages/alcor-secretary')
@@ -95,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-security-todo-') as root:
     def guarded(db, todo_id, preserve_children=False):
         def concurrent_write():
             try:
-                with sqlite3.connect(str(path), timeout=0.01) as other:
+                with closing(sqlite3.connect(str(path), timeout=0.01)) as other, other:
                     other.execute('UPDATE todos SET title=? WHERE id=?', ('late write', child['id']))
                 attempts.append('wrote')
             except sqlite3.OperationalError: attempts.append('locked')
@@ -120,7 +122,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-security-todo-') as root:
 })
 
 test('local nonrecurring calendar deletion rechecks target and category binding in one transaction', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys, tempfile
 from pathlib import Path
 sys.path.insert(0, 'packages/alcor-secretary')
@@ -154,7 +156,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-security-calendar-') as root:
 })
 
 test('billing owner checks receipt and current target in the same write transaction', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import tempfile, sys
 from pathlib import Path
 sys.path.insert(0, 'packages/alcor-secretary')

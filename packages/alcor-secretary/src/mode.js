@@ -1,10 +1,12 @@
 import { spaceHook, spaceOf, qqRoute, channelRoute } from './spaces.js'
+import {modeHook} from '../../alcor-plugin-info/src/assignments.js'
 const KEY = 'alcor.product-mode.v1'
 const modes = ['alcor', 'dsh']
 const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills', 'stella-schedules': 'alcor-schedules' }
 export const legacyPanelIds = Object.keys(oldPanels)
 const retiredPanels = new Set(['alcor-qq-history', 'alcor-persona', 'alcor-channels'])
 export const canonicalPanel = panel => retiredPanels.has(panel) ? 'alcor-tasks' : Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
+export const sharedPanel = panel => canonicalPanel(panel)
 const ownPanels = new Set(Object.values(oldPanels))
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
@@ -50,8 +52,10 @@ function loadModeState(storage) {
 
 export function readModeState(storage) { return loadModeState(storage).state }
 
-export function createModeController(ctx, storage) {
+export function createModeController(ctx, storage, {application=globalThis.__ALCOR_APPLICATION__, shared=false} = {}) {
   const loaded = loadModeState(storage), state = loaded.state
+  const dshHome = shared ? null : 'dsh'
+  if(application==='alcor')state.mode='alcor'
   const listeners = new Set()
   let expected = loaded.expected
   let navigating = false
@@ -78,10 +82,10 @@ export function createModeController(ctx, storage) {
     }
     let { sessionId } = ctx.uiWorkspace.selection.getSnapshot()
     const active = ctx.layout.panelInfo.getSnapshot().activePanelId
-    const panel = canonicalPanel(active)
+    const panel = shared ? sharedPanel(active) : canonicalPanel(active)
     const product = globalThis[spaceHook]?.state.getSnapshot()
     if (panel === 'alcor-qq-history') sessionId = product?.selection
-    if (product?.metadata && sessionId && spaceOf(sessionId, ctx.sessions.list.getSnapshot(), product.metadata) !== state.mode) sessionId = undefined
+    if (!shared && product?.metadata && sessionId && spaceOf(sessionId, ctx.sessions.list.getSnapshot(), product.metadata) !== state.mode) sessionId = undefined
     if (active !== panel && panelRegistered(panel)) {
       navigating = true
       try { ctx.layout.selectPanel(panel) } catch { /* Retain the canonical target for the next restore. */ }
@@ -97,13 +101,13 @@ export function createModeController(ctx, storage) {
     try {
       const saved = state.locations[state.mode]
       const product=globalThis[spaceHook]?.state.getSnapshot()
-      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? saved.panel : state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
+      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? (shared ? saved.panel === 'dsh' ? null : sharedPanel(saved.panel) : saved.panel) : state.mode === 'alcor' ? 'alcor-tasks' : dshHome
       if (saved?.sessionId) {
         const catalog = ctx.sessions.list.getSnapshot()
         if (catalog.phase === 'pending') { waitingForCatalog = true; return }
         if (!catalog.byId[saved.sessionId]) throw new Error('Session no longer available')
         const metadata = globalThis[spaceHook]?.state.getSnapshot().metadata
-        if (metadata && spaceOf(saved.sessionId, catalog, metadata) !== state.mode) throw new Error('Session belongs to another space')
+        if (!shared && metadata && spaceOf(saved.sessionId, catalog, metadata) !== state.mode) throw new Error('Session belongs to another space')
       }
       if (ownPanels.has(panel) && !panelRegistered(panel)) { waitingForPanel = true; return }
       if (saved?.sessionId) ctx.uiWorkspace.openSession(saved.sessionId)
@@ -113,7 +117,7 @@ export function createModeController(ctx, storage) {
     } catch {
       protectedLocations.add(state.mode)
       notice = '上次页面已不可用，已返回模式首页。'
-      const fallback = state.mode === 'alcor' ? 'alcor-tasks' : 'dsh'
+      const fallback = state.mode === 'alcor' ? 'alcor-tasks' : dshHome
       if (ownPanels.has(fallback) && !panelRegistered(fallback)) { waitingForPanel = true; return }
       ctx.layout.selectPanel(fallback)
     } finally { navigating = false }
@@ -135,14 +139,15 @@ export function createModeController(ctx, storage) {
   const stopRegistry = ctx.slots?.subscribe?.('main', () => {
     if (waitingForPanel) { restore(); notify() }
   }) ?? (() => {})
-  if (state.locations[state.mode]) restore()
+  if (application==='alcor' || state.locations[state.mode]) restore()
   else saveLocation()
-  return {
+  const controller = {
     getSnapshot: () => state.mode,
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) },
     get notice() { return notice },
     switchMode(mode) {
       if (!modes.includes(mode)) throw new Error('Unknown product mode')
+      if(application==='alcor' && mode!=='alcor')throw new Error('请在独立的 DSH 工作台窗口中使用工作台。')
       if (mode === state.mode) return
       saveLocation()
       state.mode = mode
@@ -153,6 +158,11 @@ export function createModeController(ctx, storage) {
       if (!waitingForCatalog && !waitingForPanel) persist()
       notify()
     },
-    dispose() { stopPreset(); stopPanel(); stopSelection(); stopCatalog(); stopRegistry(); listeners.clear() },
+    dispose() {
+      stopPreset(); stopPanel(); stopSelection(); stopCatalog(); stopRegistry(); listeners.clear()
+      if (shared && globalThis[modeHook] === controller) { delete globalThis[modeHook]; globalThis.dispatchEvent?.(new Event('alcor-mode-changed')) }
+    },
   }
+  if (shared) { globalThis[modeHook] = controller; globalThis.dispatchEvent?.(new Event('alcor-mode-changed')) }
+  return controller
 }

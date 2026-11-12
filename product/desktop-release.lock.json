@@ -15,6 +15,31 @@
       "teamId": "NAN929V4UM",
       "version": "0.2.2-rc.1",
       "appAsarSha256": "f21d83abfb33d463822a52c439cc9b15c8245dbce4ae4cf9424c90eae8eba94f"
+    },
+    {
+      "bundleId": "com.deepseek.dsh",
+      "arch": "arm64",
+      "teamId": "NAN929V4UM",
+      "version": "0.2.2-rc.2",
+      "appAsarSha256": "1535941c163698d68a0cf45dd06e1ce1a18a308108d9b84076074f35a6e9c39d"
     }
-  ]
+  ],
+  "windows": {
+    "platform": "win32",
+    "arch": "x64",
+    "version": "0.2.2-rc.1",
+    "url": "https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.2-rc.1-win-x64.exe",
+    "installerSha256": "830947F8996DC05D991CA9133FFF4D3400073E47B9CFA6507754867E79482B23",
+    "binarySha256": "BAD50D18A3CF42621AC03AEAF1DC527EE20384CA4C0B7EEE64512954DDB9A76E",
+    "appAsarSha256": "5FA8A6B21BCEB8F3E99E30EFA2270EFD0CC773A11E42AA0488F804A64B34E637",
+    "signer": "84032578657219876E273E0D1BD303CFE1B82E6F",
+    "upgradeProbe": {
+      "version": "0.2.2-rc.2",
+      "url": "https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.2-rc.2-win-x64.exe",
+      "installerSha256": "7E25286518CE520B5C0943E178C52CDBA1CC9EC3680BC7DA181B79879E080C32",
+      "binarySha256": "0C8B37C3554BB16518C876FE53F72935A541EF1DE8382463330B467667549305",
+      "appAsarSha256": "49FD1B087190D594B15C44FE6394C6FFD591200ABA76E209B5769498F83076AE",
+      "signer": "84032578657219876E273E0D1BD303CFE1B82E6F"
+    }
+  }
 }

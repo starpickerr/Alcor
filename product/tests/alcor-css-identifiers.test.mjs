@@ -1,3 +1,4 @@
+import { automationUiPlugin } from '../../scripts/product/automation-ui.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readdir, readFile } from 'node:fs/promises'
@@ -40,7 +41,7 @@ test('shared consumers use the renamed styles', async () => {
 })
 
 test('affected client entry points bundle', async () => {
-  await build({
+  await build({ plugins: [automationUiPlugin()],
     entryPoints: ['alcor-secretary', 'alcor-mail', 'alcor-elearning', 'alcor-apple-sync', 'alcor-agent-hub']
       .map(name => fileURLToPath(new URL(`packages/${name}/src/client.jsx`, root))),
     bundle: true, packages: 'external', format: 'esm', platform: 'browser',

@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises'
@@ -133,7 +134,7 @@ for(const kind of ['calendar','reminders'])for(const choice of ['keep_apple','ke
   const current=await ownerWorker.call('invoke',{domain,method:getter,arguments:{[idKey]:row.id}})
   assert.equal(current.title,choice==='keep_apple'?row.title+' changed in Apple':'Chosen Alcor content')
   const writes=await countWrites();assert.equal(writes,choice==='keep_alcor'?1:0)
-  const deliveries=async()=>JSON.parse((await exec('python3',['-c',`import sqlite3,sys,json,pathlib\np=pathlib.Path(sys.argv[1]);assert p.parent.parent.name.startswith('alcor-bound-conflict-wire-')\nwith sqlite3.connect(p) as db:\n print(json.dumps({t:db.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('reminder_deliveries','reminder_route_deliveries','reminder_occurrences')}))`,join(root,'owner','tasks.sqlite3')])).stdout)
+  const deliveries=async()=>JSON.parse((await exec(testPython,['-c',`import sqlite3,sys,json,pathlib\np=pathlib.Path(sys.argv[1]);assert p.parent.parent.name.startswith('alcor-bound-conflict-wire-')\nwith sqlite3.connect(p) as db:\n print(json.dumps({t:db.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('reminder_deliveries','reminder_route_deliveries','reminder_occurrences')}))`,join(root,'owner','tasks.sqlite3')])).stdout)
   const beforeDeliveries=await deliveries();assert.deepEqual(beforeDeliveries,{reminder_deliveries:0,reminder_route_deliveries:0,reminder_occurrences:0})
   await apple.invoke({method:'sync',arguments:{kind}});await apple.invoke({method:'sync',arguments:{kind}})
   assert.equal(await countWrites(),writes);assert.deepEqual(await deliveries(),beforeDeliveries)

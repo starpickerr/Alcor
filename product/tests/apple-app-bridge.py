@@ -14,7 +14,7 @@ class AppBridge(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(_default_helper().name, 'Alcor Apple Sync.app')
         with patch.dict(os.environ, {'STELLA_EVENTKIT_HELPER': '/legacy/helper'}, clear=True):
-            self.assertEqual(str(_default_helper()), '/legacy/helper')
+            self.assertEqual(_default_helper(), Path('/legacy/helper'))
         with patch.dict(os.environ, {'ALCOR_EVENTKIT_HELPER': '/new/helper', 'STELLA_EVENTKIT_HELPER': '/other/helper'}, clear=True):
             with self.assertRaisesRegex(BridgeError, 'Conflicting'):
                 _default_helper()
@@ -138,9 +138,13 @@ class AppBridge(unittest.TestCase):
                         def communicate(self, timeout=None): raise subprocess.TimeoutExpired('synthetic', timeout)
                         def poll(self): return self.returncode
                         def wait(self, timeout=None):
-                            if timeout == 2 and mode == 'confirmed': self.returncode = 0; return 0
-                            if timeout == 2 and mode == 'inconsistent_wait': return 0
-                            if timeout == 2: raise subprocess.TimeoutExpired('synthetic', timeout)
+                            if timeout == 2 and mode == 'confirmed':
+                                self.returncode = 0
+                                return 0
+                            if timeout == 2 and mode == 'inconsistent_wait':
+                                return 0
+                            if timeout == 2:
+                                raise subprocess.TimeoutExpired('synthetic', timeout)
                             return self.returncode
                         def terminate(self): self.returncode = -15
                         def kill(self): self.returncode = -9
@@ -187,34 +191,48 @@ class AppBridge(unittest.TestCase):
             app = Path(directory) / 'SlowWatch.app'
             (app / 'Contents/MacOS').mkdir(parents=True)
             (app / 'Contents/MacOS/AlcorCalendarBridge').touch()
-            controls=[]; callback_started=threading.Event(); release=threading.Event(); stopped=threading.Event()
+            controls=[]
+            callback_started=threading.Event()
+            release=threading.Event()
+            stopped=threading.Event()
             class Launcher:
                 def __init__(self, command, **kwargs):
                     request=json.loads(Path(command[command.index('--stdin')+1]).read_text())
-                    controls.append(Path(request['watch_control']));self.returncode=None
+                    controls.append(Path(request['watch_control']))
+                    self.returncode=None
                     Path(command[command.index('--stdout')+1]).write_text('{"changed":true}\n')
                     Path(command[command.index('--pid-file')+1]).write_text('424242')
                 def poll(self): return self.returncode
                 def wait(self,timeout=None):
-                    if timeout==2 and controls[0].read_text()=='stop':self.returncode=0
+                    if timeout==2 and controls[0].read_text()=='stop':
+                        self.returncode=0
                     return self.returncode
                 def terminate(self):self.returncode=-15
                 def kill(self):self.returncode=-9
             def slow_callback():
-                callback_started.set();release.wait(4);stopped.set()
+                callback_started.set()
+                release.wait(4)
+                stopped.set()
             with patch('apple_sync.bridge.subprocess.Popen',Launcher),patch('apple_sync.bridge.os.kill') as kill:
                 bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
                 with patch.object(bridge, 'call', return_value={'watch_control_version':1}):
-                    thread=threading.Thread(target=bridge.watch,args=(slow_callback,stopped));thread.start()
+                    thread=threading.Thread(target=bridge.watch,args=(slow_callback,stopped))
+                    thread.start()
                     self.assertTrue(callback_started.wait(2))
-                    before=controls[0].read_text();time.sleep(1.3);after=controls[0].read_text()
+                    before=controls[0].read_text()
+                    time.sleep(1.3)
+                    after=controls[0].read_text()
                     self.assertNotEqual(before,after)
-                    release.set();thread.join(3)
-                    self.assertFalse(thread.is_alive());kill.assert_not_called();bridge.close()
+                    release.set()
+                    thread.join(3)
+                    self.assertFalse(thread.is_alive())
+                    kill.assert_not_called()
+                    bridge.close()
 
     def test_legacy_helper_without_cooperative_watch_is_not_launched(self):
         with tempfile.TemporaryDirectory() as directory:
-            app=Path(directory)/'Legacy.app';(app/'Contents/MacOS').mkdir(parents=True)
+            app=Path(directory)/'Legacy.app'
+            (app/'Contents/MacOS').mkdir(parents=True)
             (app/'Contents/MacOS/StellaCalendarBridge').touch()
             bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
             with patch.object(bridge,'call',return_value={'supported':True,'authorization':'full_access'}), patch('apple_sync.bridge.subprocess.Popen') as launch:
@@ -223,72 +241,114 @@ class AppBridge(unittest.TestCase):
 
     def test_stop_during_capability_query_never_launches_watcher(self):
         with tempfile.TemporaryDirectory() as directory:
-            app=Path(directory)/'Stopped.app';(app/'Contents/MacOS').mkdir(parents=True)
-            (app/'Contents/MacOS/AlcorCalendarBridge').touch();stop=threading.Event()
+            app=Path(directory)/'Stopped.app'
+            (app/'Contents/MacOS').mkdir(parents=True)
+            (app/'Contents/MacOS/AlcorCalendarBridge').touch()
+            stop=threading.Event()
             bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
-            def capability(_):stop.set();return {'watch_control_version':1}
+            def capability(_):
+                stop.set()
+                return {'watch_control_version':1}
             with patch.object(bridge,'call',side_effect=capability), patch('apple_sync.bridge.subprocess.Popen') as launch:
                 bridge.watch(lambda:None,stop)
                 launch.assert_not_called()
 
     def test_stop_and_watch_launch_are_serialized(self):
         with tempfile.TemporaryDirectory() as directory:
-            app=Path(directory)/'Guarded.app';(app/'Contents/MacOS').mkdir(parents=True)
-            (app/'Contents/MacOS/AlcorCalendarBridge').touch();stop=threading.Event();checked=threading.Event();guard=threading.Lock()
+            app=Path(directory)/'Guarded.app'
+            (app/'Contents/MacOS').mkdir(parents=True)
+            (app/'Contents/MacOS/AlcorCalendarBridge').touch()
+            stop=threading.Event()
+            checked=threading.Event()
+            guard=threading.Lock()
             bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
-            def capability(_):checked.set();return {'watch_control_version':1}
+            def capability(_):
+                checked.set()
+                return {'watch_control_version':1}
             with patch.object(bridge,'call',side_effect=capability),patch('apple_sync.bridge.subprocess.Popen') as launch:
                 guard.acquire()
                 try:
-                    thread=threading.Thread(target=bridge.watch,args=(lambda:None,stop),kwargs={'start_lock':guard});thread.start()
-                    self.assertTrue(checked.wait(2));stop.set()
+                    thread=threading.Thread(target=bridge.watch,args=(lambda:None,stop),kwargs={'start_lock':guard})
+                    thread.start()
+                    self.assertTrue(checked.wait(2))
+                    stop.set()
                 finally:
                     guard.release()
-                thread.join(2);self.assertFalse(thread.is_alive());launch.assert_not_called()
+                thread.join(2)
+                self.assertFalse(thread.is_alive())
+                launch.assert_not_called()
 
     def test_close_cannot_observe_partially_initialized_watch_process(self):
         with tempfile.TemporaryDirectory() as directory:
-            app=Path(directory)/'Concurrent.app';(app/'Contents/MacOS').mkdir(parents=True)
+            app=Path(directory)/'Concurrent.app'
+            (app/'Contents/MacOS').mkdir(parents=True)
             (app/'Contents/MacOS/AlcorCalendarBridge').touch()
-            started=threading.Event();release=threading.Event();closed=threading.Event();errors=[]
+            started=threading.Event()
+            release=threading.Event()
+            closed=threading.Event()
+            errors=[]
             class Launcher:
                 def __init__(self,command,**kwargs):
-                    request=json.loads(Path(command[command.index('--stdin')+1]).read_text());self.control=Path(request['watch_control']);self.returncode=None
+                    request=json.loads(Path(command[command.index('--stdin')+1]).read_text())
+                    self.control=Path(request['watch_control'])
+                    self.returncode=None
                     Path(command[command.index('--pid-file')+1]).write_text('424242')
                 def __setattr__(self,name,value):
-                    if name=='alcor_control_lock':started.set();release.wait(2)
+                    if name=='alcor_control_lock':
+                        started.set()
+                        release.wait(2)
                     object.__setattr__(self,name,value)
                 def poll(self):return self.returncode
                 def wait(self,timeout=None):
-                    if timeout==2 and self.control.read_text()=='stop':self.returncode=0
+                    if timeout==2 and self.control.read_text()=='stop':
+                        self.returncode=0
                     return self.returncode
                 def terminate(self):self.returncode=-15
                 def kill(self):self.returncode=-9
             with patch('apple_sync.bridge.subprocess.Popen',Launcher),patch('apple_sync.bridge.os.kill') as kill:
                 bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
                 def start():
-                    try:bridge._start_app({'op':'watch'})
-                    except Exception as error:errors.append(error)
+                    try:
+                        bridge._start_app({'op':'watch'})
+                    except Exception as error:
+                        errors.append(error)
                 def close():
-                    try:bridge.close()
-                    except Exception as error:errors.append(error)
-                    finally:closed.set()
-                starter=threading.Thread(target=start);starter.start();self.assertTrue(started.wait(2))
-                closer=threading.Thread(target=close);closer.start();self.assertFalse(closed.wait(0.05))
-                release.set();starter.join(2);closer.join(2)
-                self.assertTrue(closed.is_set());self.assertFalse(errors);self.assertFalse(bridge._processes);kill.assert_not_called()
+                    try:
+                        bridge.close()
+                    except Exception as error:
+                        errors.append(error)
+                    finally:
+                        closed.set()
+                starter=threading.Thread(target=start)
+                starter.start()
+                self.assertTrue(started.wait(2))
+                closer=threading.Thread(target=close)
+                closer.start()
+                self.assertFalse(closed.wait(0.05))
+                release.set()
+                starter.join(2)
+                closer.join(2)
+                self.assertTrue(closed.is_set())
+                self.assertFalse(errors)
+                self.assertFalse(bridge._processes)
+                kill.assert_not_called()
 
     def test_heartbeat_thread_start_failure_cleans_launched_watcher(self):
         with tempfile.TemporaryDirectory() as directory:
-            app=Path(directory)/'ThreadFailure.app';(app/'Contents/MacOS').mkdir(parents=True)
-            (app/'Contents/MacOS/AlcorCalendarBridge').touch();controls=[]
+            app=Path(directory)/'ThreadFailure.app'
+            (app/'Contents/MacOS').mkdir(parents=True)
+            (app/'Contents/MacOS/AlcorCalendarBridge').touch()
+            controls=[]
             class Launcher:
                 def __init__(self,command,**kwargs):
-                    request=json.loads(Path(command[command.index('--stdin')+1]).read_text());controls.append(Path(request['watch_control']));self.returncode=None
+                    request=json.loads(Path(command[command.index('--stdin')+1]).read_text())
+                    controls.append(Path(request['watch_control']))
+                    self.returncode=None
                     Path(command[command.index('--pid-file')+1]).write_text('424242')
                 def poll(self):return self.returncode
                 def wait(self,timeout=None):
-                    if timeout==2 and controls[0].read_text()=='stop':self.returncode=0
+                    if timeout==2 and controls[0].read_text()=='stop':
+                        self.returncode=0
                     return self.returncode
                 def terminate(self):self.returncode=-15
                 def kill(self):self.returncode=-9
@@ -297,17 +357,26 @@ class AppBridge(unittest.TestCase):
                 with patch.object(bridge,'call',return_value={'watch_control_version':1}),patch('apple_sync.bridge.threading.Thread.start',side_effect=RuntimeError('synthetic thread failure')):
                     with self.assertRaisesRegex(RuntimeError,'synthetic thread failure'):
                         bridge.watch(lambda:None,threading.Event())
-                self.assertFalse(bridge._processes);self.assertFalse(controls[0].exists());kill.assert_not_called()
-                controls.clear();bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
+                self.assertFalse(bridge._processes)
+                self.assertFalse(controls[0].exists())
+                kill.assert_not_called()
+                controls.clear()
+                bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
                 with patch.object(bridge,'call',return_value={'watch_control_version':1}),patch('apple_sync.bridge.threading.Thread',side_effect=RuntimeError('synthetic constructor failure')):
                     with self.assertRaisesRegex(RuntimeError,'synthetic constructor failure'):
                         bridge.watch(lambda:None,threading.Event())
-                self.assertFalse(bridge._processes);self.assertFalse(controls[0].exists());kill.assert_not_called()
-                controls.clear();bridge=AppleCalendarBridge(helper_path=app,platform='darwin');stop=threading.Event()
+                self.assertFalse(bridge._processes)
+                self.assertFalse(controls[0].exists())
+                kill.assert_not_called()
+                controls.clear()
+                bridge=AppleCalendarBridge(helper_path=app,platform='darwin')
+                stop=threading.Event()
                 with patch.object(bridge,'call',return_value={'watch_control_version':1}),patch('apple_sync.bridge.threading.Event',side_effect=RuntimeError('synthetic event failure')):
                     with self.assertRaisesRegex(RuntimeError,'synthetic event failure'):
                         bridge.watch(lambda:None,stop)
-                self.assertFalse(bridge._processes);self.assertFalse(controls[0].exists());kill.assert_not_called()
+                self.assertFalse(bridge._processes)
+                self.assertFalse(controls[0].exists())
+                kill.assert_not_called()
 
     def test_unreadable_bundle_is_reported_as_missing(self):
         with tempfile.TemporaryDirectory() as directory:

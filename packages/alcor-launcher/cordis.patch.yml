@@ -1,0 +1,3 @@
+- insert:
+    - id: alcor-launcher
+      name: '@alcor/launcher'

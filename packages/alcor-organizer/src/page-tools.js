@@ -21,11 +21,11 @@ export async function callAutomation(organizer, method, args) {
 }
 
 // Retain the page API shape, but do not offer an approval dialog that cannot authorize deletion.
-export function createAutomationPageRemote({ api, scope, schedule }) {
+export function createAutomationPageRemote({ api, scope, schedule, createScope = scope }) {
   const send = (action, request) => api.automation({ scope, action, ...(request === undefined ? {} : { request }) })
   const remove = async () => { throw new Error(automationDeleteUnavailable) }
   return {
-    remote: { catalog: () => send('catalog'), create: request => send('create', request),
+    remote: { catalog: () => send('catalog'), create: request => api.automation({scope:createScope,action:'create',request}),
       edit: request => request.action === 'delete' ? remove() : send('edit', request),
       run: request => send('run', request), history: request => send('history', request),
       deleteInactive: remove, deliveryLimits: () => schedule.deliveryLimits() },

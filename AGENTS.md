@@ -2,9 +2,13 @@
 
 项目与仓库现名为 **Alcor**。原生包源码位于 `packages/alcor-*`。本机旧 Profile 已在官方 DSH 0.2.2-rc.1 完成迁移，新旧包不得同时启用。现有 Preset、工具 ID、数据目录及凭据键是兼容契约，不能批量替换；已安装旧版本仍可能显示 Stella。当前目录是外层 Alcor 多仓工作区内的 Alcor 产品仓。
 
-最终交付目标是：用户下载官方 **DSH 桌面客户端**，通过原生插件管理器安装 Alcor，在同一个客户端进入现有 Alcor 模式。网页仅用于开发预览；需要额外客户端补丁的结果不等同于“原版 DSH 只装插件即可完成”。
+Current delivery (2026-11-12): install Alcor as a standard plugin inside the unchanged official DSH Desktop. Switch Alcor/DSH in one window using public main/sidebar/shell.overlay slots and a reserved top-left header matching the independent Alcor client, sharing Host, Profile, environment and configuration. Alcor automation retains its plugin-owned manager UI and shares the official schedule service with the unchanged native DSH page. Preserve the official signature and update path; verify compatibility per host version.
 
 默认开发目标是重构后的 **DSH 原生 Alcor**，本目录已从原临时工作树迁入新版源码。先遵循工作区 [AGENTS.md](../AGENTS.md) 及其权威规则。
+
+The isolated Host/Profile client remains an optional design, preserved on origin/archive/isolated-runtimes-20261112-02217cd4 at 02217cd4. Do not delete existing environments or migrate personal databases, credentials or external channels automatically.
+
+product/client-shell and @alcor/extension remain compatibility code for the optional isolated design; the current shared implementation installs @alcor/secretary in the official Profile and does not replace official client UI modules.
 
 - 产品：根 `package.json`、`packages/`、`product/`、`scripts/product/`。
 - Apple：`packages/alcor-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。
@@ -13,7 +17,8 @@
 - `desktop/`、`agent/`、`application/`、`channel/`、`core/` 与外仓旧 `dsh-agent-hub/plugins/` 属于保留的旧运行路径；仅在用户明确要求旧版维护或读取迁移来源时使用。不要把旧版同名组件当作新版入口。
 - 修改前核对 Git 分支、原生包清单、实际 UI 注册和已安装包路径。若目标文件仅被旧版引用，重新定位新版 owner；不要通过旧 Python / React 测试证明新版完成。
 - 客户端构建会拒绝从旧 `desktop/`、`agent/`、`application/`、`channel/`、`core/` 引入代码；需要复用时将所需实现迁入原生包。新版 CI 是 `.github/workflows/native-product.yml`；保留的旧版 CI 不能代替它。旧环境安装／检查显式使用 `make setup-legacy` / `make check-legacy`；其余旧维护目标不作为新版验收。
-- 最终验收必须从未修改的官方桌面发布安装包开始：原生安装 Alcor → 进入完整模式 → 重启恢复 → 停用／卸载恢复原生 DSH，并保留宿主既有配置和数据。网页、从源码启动的 Electron 和兼容补丁各自单独记录，不能相互替代。
+- 最终验收以已校验的官方运行时、本地打包客户端和原生 Profile 为对象：同窗顶部切换、重启恢复、插件作用域及数据保留分别留证。网页、双窗口、合成账号和真实个人安装不能相互替代；官方专有桌面桥未适配时明确记录，不宣称等价支持。
+- 官方宿主边界优先于下方历史独立外壳方案：Alcor 是官方 DSH 的可选插件，不修改、替换或固定官方客户端、运行组件和更新器；官方客户端可独立更新。遇到破坏性接口变更，应适配插件并核验配置、数据和插件生命周期，不以锁定旧宿主或放宽兼容检查代替。已验证版本不构成未来版本零兼容问题的承诺。用户提出违反此边界的方案时，先指出冲突、影响及可行替代方案，再处理设计决策，不默默实施。
 - DSH 更新兼容是交付底线：插件不得安装或覆盖宿主的 `@deepseek-ai/*` 运行组件；SDK 使用宿主提供的可选 peer。扩展支持版本前，验证官方版本身份、旧 Profile 升级、配置与业务数据保留及插件不兼容时原生 DSH 仍可启动。不能用放宽 `engines.dsh` 或关闭兼容检查代替验收；入口为 `product/tests/host-compatibility.test.mjs` 与 `product/tests/upgrade-compatibility-check.py`。
 - 验收区分源码、打包产物、已安装 DSH Profile 与真实 Apple 账号。使用隔离 Profile 和合成 EventKit；默认不运行个人账号同步。
 

@@ -1,6 +1,6 @@
 import React, {useLayoutEffect, useRef, useSyncExternalStore} from 'react'
 import {remote} from './remote.js'
-import {assignments} from './assignments.js'
+import {assignments,applicationEnvironment,modeNames} from './assignments.js'
 import {pluginScope} from './scope.js'
 
 export const inject = ['layout', 'slots', 'remote', 'remote.pluginManager']
@@ -11,6 +11,8 @@ const cards = '[data-plugin-package], [data-plugin-item], [data-market-entry], [
 const labelClass = 'alcor-plugin-scope'
 
 function renderScope(label, name, scope, background, selected, editable, store) {
+  const application=applicationEnvironment()
+  if(application){scope=modeNames[application]+' 环境';background='在当前独立环境中运行';selected=undefined;editable=false}
   label.title = background
   if (!selected || !editable) {
     const text = modes[selected] ?? fixedNames[scope] ?? scope

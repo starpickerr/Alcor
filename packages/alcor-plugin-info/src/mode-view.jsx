@@ -1,7 +1,7 @@
 import React,{useSyncExternalStore} from 'react'
-import {assignments,permits,modeNames} from './assignments.js'
+import {assignments,permits,modeNames,applicationEnvironment,uiMode} from './assignments.js'
 
-export const uiMode=()=>globalThis[Symbol.for('@alcor/secretary.workspace-navigation')]?.mode?.getSnapshot() ?? 'dsh'
+export {uiMode}
 const subscribeMode=listener=>{
   window.addEventListener('alcor-mode-changed',listener)
   return ()=>window.removeEventListener('alcor-mode-changed',listener)
@@ -13,7 +13,7 @@ export function withModeView(ctx,name,View) {
     const snapshot=useSyncExternalStore(listener=>form.subscribe(listener),()=>form.getSnapshot())
     if(snapshot.status==='loading')return null
     const assigned=snapshot.value?.productScope ?? spec.initial
-    if(!permits(assigned,mode))return props.view==='summary'?null:<p>此功能已分配给 {modeNames[assigned]}。</p>
+    if(!applicationEnvironment() && !permits(assigned,mode))return props.view==='summary'?null:<p>此功能已分配给 {modeNames[assigned]}。</p>
     return <View {...props}/>
   }
 }

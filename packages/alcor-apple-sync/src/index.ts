@@ -1,4 +1,5 @@
 import {modeConfig} from '../../alcor-plugin-info/src/host-policy.js'
+import {publishApplication} from '../../alcor-plugin-info/src/assignments.js'
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
 import { Service } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -37,6 +38,7 @@ export default class AppleSync extends TypertRemoteService {
 
   async [Service.init]() {
     assertCompatibleProfile(this.ctx)
+    publishApplication(this.ctx)
     await initializeProfile(this.ctx)
     registerBundledSkills(this.ctx, 'alcor-apple-sync', new URL('../skills/', import.meta.url))
     const profile = this.ctx.get('profileContext')?.dir ?? dshHomePath('profiles', 'default')

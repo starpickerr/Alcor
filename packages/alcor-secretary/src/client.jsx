@@ -1,13 +1,18 @@
+import {sharedWorkspaceSlot} from './shared-workspace.js'
+import {sidebarOwner} from './sidebar-owner.js'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
+import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import noticeStyle from './notice.css'
+import automationAnchorStyle from './automation-anchor.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
-import { canonicalPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
+import { canonicalPanel, sharedPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
 import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
-import { AutomationPage } from './automation.jsx'
+import { AutomationPage, SharedAutomationPage } from './automation.jsx'
+import { registerAutomationUi } from 'alcor:automation-ui'
 import { installPresetFilter } from './session-presets.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { SpacePreferences } from './space-preferences.jsx'
@@ -16,16 +21,21 @@ import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
-import { Button, Menu, MenuItemButton, FishLogo, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, MenuItemButton, FishLogo, IconPanelLeftOutlineRegular, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
-export const inject = ['configForms','slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
+export const inject = ['locale','loader','configForms','slots', 'remote', 'layout', 'uiWorkspace', 'uiSession', 'sessions', 'workspaces']
 
-function ModeSwitch({ useMode, switchMode, getNotice }) {
+function ModeSwitch({ useMode, switchMode, getNotice, onReady }) {
   const mode = useMode(value => value)
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
+  // Preserve the required native sidebar through the official initial boot audit.
+  useEffect(() => { onReady?.() }, [onReady])
+  if(globalThis.__ALCOR_CLIENT_SHELL__)return null
+  if(applicationEnvironment()==='alcor')return <div className="alcor-mode-bar"><BearLogo size={20}/><span>Alcor</span>
+    {getNotice() && <Notice role="status" tone="warning" className="alcor-mode-notice">{getNotice()}</Notice>}</div>
   return <div className="alcor-mode-bar">
     {/* Portal after native chrome: Electron drag regions follow DOM order, not z-index. */}
     <Menu open={open} onClose={close} portal autoFocus className="alcor-mode-picker" listClassName="alcor-mode-menu"
@@ -72,6 +82,7 @@ function WorkbenchHistory({navigation,begin,openSession}) {
 }
 
 export async function apply(ctx) {
+  const shared = !globalThis.__ALCOR_CLIENT_SHELL__
   installPresetFilter(ctx)
   let storage
   try { storage = window.localStorage } catch { /* Settings remain available in memory. */ }
@@ -117,8 +128,8 @@ export async function apply(ctx) {
         ctx.layout.selectPanel('alcor-briefing')
       }}),
     }, BriefingPluginReturn))
-    const preferences = () => <div className="alcor-settings-content">{spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />}</div>
-    const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
+    const preferences = () => <div className="alcor-settings-content"><SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} /></div>
+    const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(shared ? sharedPanel(panel) : canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,
@@ -137,24 +148,31 @@ export async function apply(ctx) {
       },
       currentSession: () => ctx.uiSession.adapter.current.getSnapshot().props.sessionId,
       hasModeSwitch: !!modeController,
+      modeNotice: () => modeController?.notice,
     }) }, SecretaryDesk))
     const automationProps = (scope, available = false) => ({ scope, api: ctx.remote.alcorOrganizer, schedule: ctx.remote.schedule,
       available, openNative: () => ctx.layout.selectPanel('schedules'),
     })
-    for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => automationProps('alcor') }, AutomationPage))
-    ctx.slots.inject('schedule.manager.header', () => {
-      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.register({ name: 'main', key: panel, priority: -10, inject: () => automationProps('alcor', true) }, AutomationPage)
-      ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
-    })
+    if (shared) {
+      registerAutomationUi(ctx)
+      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({name:'main',key:panel,inject:()=>({api:ctx.remote.alcorOrganizer,schedule:ctx.remote.schedule})},SharedAutomationPage))
+    } else {
+      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => automationProps('alcor') }, AutomationPage))
+      ctx.slots.inject('schedule.manager.header', () => {
+        for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.register({ name: 'main', key: panel, priority: -10, inject: () => automationProps('alcor', true) }, AutomationPage)
+        ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
+      })
+    }
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
-    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
-    ctx.slots.inject('shell.top', () => {
-      const controller = createModeController(ctx, storage)
+    if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
+    ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.overlay', () => {
+      const controller = createModeController(ctx, storage, { shared })
       modeController = controller
-      const navigation = createSpaceNavigation(ctx, controller)
+      const navigation = shared ? null : createSpaceNavigation(ctx, controller)
       spaceNavigation = navigation
-      let releaseSidebar
+      let releaseSidebar, sharedOwner, ownerReady=false
       const syncSidebar = () => {
+        if (shared) { if(ownerReady) sharedOwner?.select(controller.getSnapshot()==='alcor').catch(error=>console.error('Alcor sidebar transition failed',error)); return }
         if (controller.getSnapshot() === 'alcor' && !releaseSidebar) {
           releaseSidebar = ctx.slots.register({ name: 'sidebar', priority: -10, locale: 'sidebar', inject: () => ({
             navigate,
@@ -167,16 +185,37 @@ export async function apply(ctx) {
           releaseSidebar(); releaseSidebar = undefined
         }
       }
+      if (shared) {
+        ctx.effect(() => ctx.locale.register('alcor-sidebar', {zh:{'toggle.open':'展开侧边栏','toggle.collapse':'收起侧边栏','session.new.label':'新建会话'},en:{'toggle.open':'Expand sidebar','toggle.collapse':'Collapse sidebar','session.new.label':'New session'}}))
+        sharedOwner=sidebarOwner(ctx.loader,()=>{
+          const children=Object.fromEntries(['sidebar.brand.mark','sidebar.brand.name','sidebar.toggle.badge','sidebar.workspaces','sidebar.settings'].map(name=>[name,{kind:'single',scope:'root'}]))
+          children['sidebar.workspaces']=sharedWorkspaceSlot
+          for(const name of ['sidebar.panellist','sidebar.panellist.actions','sidebar.footer.action'])children[name]={kind:'list',scope:'root'}
+          const release=ctx.slots.register({name:'sidebar',priority:-10,children,locale:'alcor-sidebar',inject:()=>({
+            nativeShared:true,navigate,startSession,toggleSidebar:()=>ctx.layout.toggleSidebar(),
+            pluginPanels:{list:()=>ctx.slots.entriesOfSlot('sidebar.panellist'),subscribe:listener=>ctx.slots.subscribe('sidebar.panellist',listener)},
+            hubForm:ctx.configForms.get('agent-hub'),
+          })},SecretarySidebar)
+          const leading=ctx.slots.register({name:'shell.leading',priority:-10},()=> <Button variant="ghost" aria-label="展开侧边栏" onClick={()=>ctx.layout.toggleSidebar()}><IconPanelLeftOutlineRegular size={17}/></Button>)
+          return ()=>{leading();release()}
+        })
+        ctx.effect(()=>()=>sharedOwner.dispose())
+      }
+      const activateSidebar=()=>{ownerReady=true;syncSidebar()}
       syncSidebar()
       const stopSidebar = controller.subscribe(syncSidebar)
-      ctx.slots.register({ name: 'shell.top', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice }) }, ModeSwitch)
+      if(!globalThis.__ALCOR_CLIENT_SHELL__)ctx.slots.register({ name: 'shell.overlay', id: 'alcor-mode', inject: () => ({ hooks: { mode: controller }, switchMode: controller.switchMode, getNotice: () => controller.notice, onReady:activateSidebar }) }, ModeSwitch)
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
-          .alcor-mode-bar { display:flex; align-items:center; gap:12px; height:44px; padding:6px 16px; box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:drag; }
+          /* Official hosts expose shell.overlay; reserve the same header row as the isolated client. */
+          div:has(> [data-shell-overlay] .alcor-mode-bar) { padding-top:calc(var(--dsh-frame-chrome-top, 0px) + 44px); }
+          div:has(> [data-shell-overlay] .alcor-mode-bar) > [data-shell-leading] { margin-top:44px; }
+          div[data-sidebar-drawer]:has(> [data-shell-overlay] .alcor-mode-bar) > :has(> [data-shortcut-modal='sidebar']) { top:calc(var(--dsh-frame-chrome-top, 0px) + 44px); }
+          .alcor-mode-bar { position:absolute; top:var(--dsh-frame-chrome-top, 0px); left:0; right:0; display:flex; align-items:center; gap:12px; height:44px; padding:6px 16px; border-bottom:1px solid var(--dsw-alias-border-base, #ddd); background:var(--dsw-specific-sidebar-fill, #f7f7f8); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:drag; pointer-events:auto; }
           html[data-platform='darwin']:not([data-fullscreen]) .alcor-mode-bar { padding-left:88px; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
-          .alcor-mode-bar button { gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
+          .alcor-mode-bar button { -webkit-app-region:no-drag; gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
           .alcor-mode-bar button > svg:last-child { margin-left:3px; color:var(--dsw-alias-label-tertiary); }
           .alcor-mode-bar button[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
           .alcor-mode-bar button:focus-visible { outline:var(--dsw-focus-ring-width) solid var(--dsw-alias-state-business-primary); outline-offset:2px; }
@@ -187,7 +226,7 @@ export async function apply(ctx) {
           .alcor-mode-bar [role=status] { font-size:12px; color:var(--dsw-alias-label-secondary); }
         `
         document.head.append(style)
-        return () => { stopSidebar(); releaseSidebar?.(); navigation.dispose(); modeController = undefined; style.remove(); controller.dispose() }
+        return () => { stopSidebar(); releaseSidebar?.(); navigation?.dispose(); modeController = undefined; style.remove(); controller.dispose() }
       })
     })
   })

@@ -1,13 +1,12 @@
 """Shared task/calendar panel geometry in the official Desktop with isolated data."""
 import json
 import os
-import tempfile
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
-from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 import official_desktop_check as desktop
 from web_check import open_secretary
+from briefing_layout_ui import check_briefing_scroll
 
 
 def main():
@@ -28,7 +27,8 @@ def main():
         desktop.native_cli(home, 'panel-install', 'add', str(desktop.PACK), '--ignore-scripts')
         with desktop.desktop(playwright, home, 'panel-layout') as (page, errors):
             page.set_viewport_size({'width': 1440, 'height': 900})
-            business = lambda domain, method, args=None: desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
+            def business(domain, method, args=None):
+                return desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
             for index in range(18):
                 business('tasks', 'create_todo', {'payload': {'title': f'面板事务 {index:02d}', 'notes': '这是用于验证面板滚动的说明。'}})
             today = page.evaluate('new Date().toLocaleDateString("sv-SE")')
@@ -101,6 +101,7 @@ def main():
             page.get_by_role('form', name='新增日程').get_by_role('button', name='取消编辑').click()
             page.get_by_role('button', name='简报', exact=True).click()
             expect(page.locator('.alcor-briefing-layout')).to_be_visible()
+            check_briefing_scroll(page, artifacts)
             page.screenshot(path=str(artifacts / 'briefing.png'), animations='disabled')
             assert not errors, errors
     print('PASS: task/calendar detail/create/edit panel geometry, outer/inner scroll, feedback, resize, reopen, keyboard, dark/narrow and briefing')

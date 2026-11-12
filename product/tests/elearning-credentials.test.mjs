@@ -1,6 +1,7 @@
+import { assertPrivatePermissions } from './private-permissions.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -16,10 +17,10 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   const folder = await mkdtemp(join(tmpdir(), 'stella-native-credentials-'))
   t.after(() => rm(folder, { recursive: true, force: true }))
   const filename = join(folder, '.credentials.yaml')
-  const command = join(folder, 'synthetic-mcp')
+  const command = join(folder, 'synthetic-mcp.mjs')
   const fixture = await readFile(new URL('./fixtures/mcp-server.mjs', import.meta.url), 'utf8')
-  await writeFile(command, '#!' + process.execPath + '\n' + fixture.replace("'synthetic-course'", "JSON.parse(process.env.ALCOR_ELEARNING_CREDENTIAL).username"), { mode: 0o700 })
-  const config = { command, cwd: folder, dataDir: folder }
+  await writeFile(command, fixture.replace("'synthetic-course'", "JSON.parse(process.env.ALCOR_ELEARNING_CREDENTIAL).username"), { mode: 0o700 })
+  const config = { command:process.execPath, args:[command], cwd: folder, dataDir: folder }
   const makeContext = async () => {
     const ctx = new Context()
     ctx.provide('logger', { warn() {} })
@@ -53,7 +54,7 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
     assert.equal((await call(name)).isError, true)
     deny()
   }
-  assert.equal((await stat(filename)).mode & 0o777, 0o600)
+  await assertPrivatePermissions(filename, 0o600)
   assert.equal((await ctx.credentials.readRecord(accountKey)).payload.password, 'first-synthetic-secret')
   assert(!JSON.stringify(await ctx.alcorElearning.state()).includes('synthetic-secret'))
   assert(!JSON.stringify(config).includes('synthetic-secret'))

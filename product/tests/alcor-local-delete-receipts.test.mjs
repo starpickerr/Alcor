@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('read-only local snapshots do not grant deletion and all original rows survive', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')
@@ -19,11 +20,12 @@ with tempfile.TemporaryDirectory(prefix='alcor-local-snapshot-') as root:
   except (ValueError,PermissionError):pass
   else:raise AssertionError('snapshot or operation ID granted permanent deletion')
  assert b.tasks.get_todo(parent['id']) and b.tasks.get_todo(child['id'])
+ b.meta.close()
 `])
 })
 
 test('reversible local cutoff preserves conditional receipt, replay, restart and ordinary undo', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 sys.path.insert(0,'packages/alcor-secretary')
 from business.worker import Business
@@ -41,5 +43,6 @@ with tempfile.TemporaryDirectory(prefix='alcor-local-cutoff-') as root:
  b.calendar.update_event(row['id'],{'repeat_until':None})
  assert b.commit_local_occurrence_delete(*args)['replayed']
  assert b.calendar.get_event(row['id'])['repeat_until'] is None
+ b.meta.close()
 `])
 })

@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+from contextlib import closing
 import sqlite3
 import sys
 import threading
@@ -53,7 +54,7 @@ class AppleWorker:
                 source = Path(legacy_directory) / filename
                 if source.is_file():
                     try:
-                        with sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True) as original, sqlite3.connect(target) as destination:
+                        with closing(sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True)) as original, closing(sqlite3.connect(target)) as destination, destination:
                             original.backup(destination)
                     except Exception:
                         target.unlink(missing_ok=True)
@@ -84,16 +85,21 @@ class AppleWorker:
         return getattr(manager, method)(**arguments)
 
     def preview_category_rebuild(self,kind,apple_id,source_id):
-        if self.verification_no_apple:raise RuntimeError('Apple sync is disabled for this verification process')
-        manager=self.managers[kind];owner=manager.todos if kind=='reminders' else manager.calendar
+        if self.verification_no_apple:
+            raise RuntimeError('Apple sync is disabled for this verification process')
+        manager=self.managers[kind]
+        owner=manager.todos if kind=='reminders' else manager.calendar
         from apple_sync.category_rebuild import preview
         return preview(manager,owner,kind,apple_id,source_id)
 
     def rebuild_category(self,kind,apple_id,source_id,snapshot):
-        if self.verification_no_apple:raise RuntimeError('Apple sync is disabled for this verification process')
-        manager=self.managers[kind];owner=manager.todos if kind=='reminders' else manager.calendar
+        if self.verification_no_apple:
+            raise RuntimeError('Apple sync is disabled for this verification process')
+        manager=self.managers[kind]
+        owner=manager.todos if kind=='reminders' else manager.calendar
         from apple_sync.category_rebuild import rebuild
-        with manager._lock:return rebuild(manager,owner,kind,apple_id,source_id,snapshot)
+        with manager._lock:
+            return rebuild(manager,owner,kind,apple_id,source_id,snapshot)
     def prepare_approved_export(self, method, arguments, operation_id):
         if self.verification_no_apple:
             raise RuntimeError('Apple sync is disabled for this verification process')
@@ -130,22 +136,26 @@ class AppleWorker:
         return run(self.managers[kind], kind, plan, authorize)
 
     def prepare_item_restore(self, kind, identity, operation_id):
-        if self.verification_no_apple:raise RuntimeError('Apple sync is disabled for this verification process')
+        if self.verification_no_apple:
+            raise RuntimeError('Apple sync is disabled for this verification process')
         from apple_sync.item_restore import prepare
         manager=self.managers[kind]
         def owner_call(request):
             return self.peer({'route':'item_restore_prepare','kind':kind,'operation_id':operation_id,
                               'local_id':identity,'method':request['method'],'args':list(request['args']),'kwargs':request['kwargs']})
         owner=Peer('tasks' if kind=='reminders' else 'calendar',owner_call)
-        with manager._lock:return prepare(manager,owner,kind,identity,operation_id)
+        with manager._lock:
+            return prepare(manager,owner,kind,identity,operation_id)
 
     def run_item_restore(self, kind, plan):
-        if self.verification_no_apple:raise RuntimeError('Apple sync is disabled for this verification process')
+        if self.verification_no_apple:
+            raise RuntimeError('Apple sync is disabled for this verification process')
         from apple_sync.item_restore import run,finish_prepared
         manager=self.managers[kind]
         receipt_finish=isinstance(plan,dict) and plan.get('mode')=='receipt_finish'
         if receipt_finish:
-            if set(plan)!={'mode','plan'}:raise ValueError('invalid restore receipt finish envelope')
+            if set(plan)!={'mode','plan'}:
+                raise ValueError('invalid restore receipt finish envelope')
             plan=plan['plan']
         context={'kind':kind,'operation_id':plan['operation_id'],'plan_fingerprint':plan['plan_fingerprint'],'local_id':plan['local_id']}
         def owner_call(request):
@@ -181,9 +191,11 @@ class AppleWorker:
     def _continue_approved_delete(self, kind, operation_id, *, finish_plan=None):
         domain='tasks' if kind=='reminders' else 'calendar'
         request={'route':'approved_delete_continue','phase':'finish_begin' if finish_plan else 'begin','domain':domain,'operation_id':operation_id}
-        if finish_plan is not None:request['plan']=finish_plan
+        if finish_plan is not None:
+            request['plan']=finish_plan
         plan=self.peer(request)
-        if plan is None:return None
+        if plan is None:
+            return None
         try:
             if plan.get('kind')!=kind or plan.get('domain')!=domain or plan.get('operation_id')!=operation_id:
                 raise ValueError('confirmed deletion continuation target changed')

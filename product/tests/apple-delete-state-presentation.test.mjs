@@ -18,7 +18,7 @@ test('category wording does not ask the user to delete manually or retry unknown
   assert.ok(source.includes('并在本机操作完成后处理本地记录'))
   assert.ok(!source.includes('失败会保留数据，可重试或取消'))
   assert.ok(source.includes("operation.state === 'pending' && <Button"))
-  const expression=source.match(/^export const appleOperationMessage = ([\s\S]+?)\n\nconst colors/m)[1]
+  const expression=source.match(/^export const appleOperationMessage = ([\s\S]+?)\r?\n\r?\nconst colors/m)[1]
   const message=Function('return ('+expression+')')()
   assert.match(message({state:'pending',action:'delete'}),/等待本次确认/)
   assert.match(message({state:'sending'}),/正在向 Apple 提交/)

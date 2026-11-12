@@ -1,6 +1,7 @@
+import { assertPrivatePermissions } from './private-permissions.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, mkdir, symlink, rm, stat, readFile } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { prepareProductHome, selectPreviewProfile, initializeFreshPreview } from '../../scripts/product/home.mjs'
@@ -21,11 +22,11 @@ test('preview root rejects personal/project directories, foreign contents and sy
     const home = await prepareProductHome(join(repo, '.local/web'), repo, 'web')
     assert.equal(JSON.parse(await readFile(join(home, '.alcor-product.json'), 'utf8')).kind, 'web')
     assert.equal(await selectPreviewProfile(home), 'alcor')
-    assert.equal((await stat(home)).mode & 0o777, 0o700)
+    await assertPrivatePermissions(home, 0o700)
     assert.equal(await prepareProductHome(home, repo, 'web'), home)
     await assert.rejects(prepareProductHome(home, repo, 'desktop'), /different runtime/)
     const alias = join(temporary, 'alias')
-    await symlink(home, alias)
+    await symlink(home, alias, process.platform === 'win32' ? 'junction' : 'dir')
     await assert.rejects(prepareProductHome(alias, repo, 'web'), /symbolic link/)
     await withFileLock(join(home, 'product-instance'), async () => {
       await assert.rejects(withFileLock(join(home, 'product-instance'), async () => assert.fail('second writer'), { waitMs: 0 }), /timed out/)

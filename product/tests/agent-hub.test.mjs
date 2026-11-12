@@ -1,6 +1,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readHubDraft, readHubMessage, clearHubDraft, hubDraftKey, hubMessageKey, jobRunning, filterHubJobs, canRetryStep } from '../../packages/alcor-agent-hub/src/agent-hub.js'
+import { readHubDraft, readHubMessage, clearHubDraft, hubDraftKey, hubMessageKey, jobRunning, filterHubJobs, canRetryStep, startHubSession } from '../../packages/alcor-agent-hub/src/agent-hub.js'
+
+test('developer conversations use the native shared workspace without requiring isolated navigation', () => {
+  const calls=[]
+  const workspace={startSession:(...args)=>calls.push(args)}
+  const navigation={startSession:()=>calls.push('isolated')}
+  startHubSession(workspace,undefined,'alcor')
+  startHubSession(workspace,navigation,'dsh')
+  startHubSession(workspace,navigation,'alcor')
+  assert.deepEqual(calls,[[undefined,{agentPreset:'agent-hub-developer'}],[undefined,{agentPreset:'agent-hub-developer'}],'isolated'])
+})
 
 test('Hub migrates browser drafts without overwriting new content or reviving cleared drafts', () => {
   const values = new Map()
