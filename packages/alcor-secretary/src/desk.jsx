@@ -35,7 +35,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNo
 export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderSlot, nativeShared=false, pluginPanels, hubForm, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
-  const applications = [...applicationViews]
+  const applications = applicationViews.map(item => nativeShared && item.id === 'alcor-schedules' ? {...item, id:'schedules'} : item)
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
   if(applicationEnvironment() && hub.status==='ready' || ['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
   const system = []

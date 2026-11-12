@@ -347,6 +347,16 @@ test('host main slots register new panels and legacy aliases with equivalent des
     assert.equal(calls.find(row => row.key === legacy)?.inject().view, current)
     assert.equal(calls.find(row => row.key === current)?.inject().view, current)
   }
+  assert.equal(calls.some(row => ['stella-schedules', 'alcor-schedules', 'schedules'].includes(row.key)), false)
+  const previous = globalThis.__ALCOR_CLIENT_SHELL__
+  try {
+    globalThis.__ALCOR_CLIENT_SHELL__ = true
+    calls.length = 0
+    await module.exports.apply(ctx)
+  } finally {
+    if (previous === undefined) delete globalThis.__ALCOR_CLIENT_SHELL__
+    else globalThis.__ALCOR_CLIENT_SHELL__ = previous
+  }
   for (const key of ['stella-schedules', 'alcor-schedules']) {
     const rows = calls.filter(row => row.key === key)
     assert.equal(rows.length, 2); assert.equal(rows[0].inject().scope, 'alcor'); assert.equal(rows[1].priority, -10)
@@ -386,4 +396,17 @@ test('official shared mode returns to the native conversation and preserves shar
   assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, null)
   assert.equal(f.ctx.uiWorkspace.selection.getSnapshot().sessionId, 'work-session')
   controller.dispose()
+})
+
+test('shared automation aliases restore the native schedules page in both modes', () => {
+  for (const panel of ['stella-schedules', 'alcor-schedules', 'schedules']) {
+    const f = fixture(JSON.stringify({mode:'alcor',locations:{alcor:{panel},dsh:{panel:'schedules'}}}))
+    const c = createModeController(f.ctx, f.storage, {shared:true})
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    c.switchMode('dsh')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    c.switchMode('alcor')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    c.dispose()
+  }
 })

@@ -5,6 +5,7 @@ const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'ste
 export const legacyPanelIds = Object.keys(oldPanels)
 const retiredPanels = new Set(['alcor-qq-history', 'alcor-persona', 'alcor-channels'])
 export const canonicalPanel = panel => retiredPanels.has(panel) ? 'alcor-tasks' : Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
+export const sharedPanel = panel => canonicalPanel(panel) === 'alcor-schedules' ? 'schedules' : canonicalPanel(panel)
 const ownPanels = new Set(Object.values(oldPanels))
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
@@ -80,7 +81,7 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
     }
     let { sessionId } = ctx.uiWorkspace.selection.getSnapshot()
     const active = ctx.layout.panelInfo.getSnapshot().activePanelId
-    const panel = canonicalPanel(active)
+    const panel = shared ? sharedPanel(active) : canonicalPanel(active)
     const product = globalThis[spaceHook]?.state.getSnapshot()
     if (panel === 'alcor-qq-history') sessionId = product?.selection
     if (!shared && product?.metadata && sessionId && spaceOf(sessionId, ctx.sessions.list.getSnapshot(), product.metadata) !== state.mode) sessionId = undefined
@@ -99,7 +100,7 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
     try {
       const saved = state.locations[state.mode]
       const product=globalThis[spaceHook]?.state.getSnapshot()
-      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? (shared && saved.panel === 'dsh' ? null : saved.panel) : state.mode === 'alcor' ? 'alcor-tasks' : dshHome
+      const panel = channelRoute(saved?.sessionId, product?.metadata) ? 'alcor-tasks' : saved ? (shared ? saved.panel === 'dsh' ? null : sharedPanel(saved.panel) : saved.panel) : state.mode === 'alcor' ? 'alcor-tasks' : dshHome
       if (saved?.sessionId) {
         const catalog = ctx.sessions.list.getSnapshot()
         if (catalog.phase === 'pending') { waitingForCatalog = true; return }

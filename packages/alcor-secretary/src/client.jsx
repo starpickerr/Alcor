@@ -8,7 +8,7 @@ import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
-import { canonicalPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
+import { canonicalPanel, sharedPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
 import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
 import { AutomationPage } from './automation.jsx'
 import { installPresetFilter } from './session-presets.js'
@@ -80,6 +80,7 @@ function WorkbenchHistory({navigation,begin,openSession}) {
 }
 
 export async function apply(ctx) {
+  const shared = !globalThis.__ALCOR_CLIENT_SHELL__
   installPresetFilter(ctx)
   let storage
   try { storage = window.localStorage } catch { /* Settings remain available in memory. */ }
@@ -126,7 +127,7 @@ export async function apply(ctx) {
       }}),
     }, BriefingPluginReturn))
     const preferences = () => <div className="alcor-settings-content">{spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />}</div>
-    const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(canonicalPanel(panel)) }
+    const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(shared ? sharedPanel(panel) : canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
       startSession,
@@ -150,15 +151,16 @@ export async function apply(ctx) {
     const automationProps = (scope, available = false) => ({ scope, api: ctx.remote.alcorOrganizer, schedule: ctx.remote.schedule,
       available, openNative: () => ctx.layout.selectPanel('schedules'),
     })
-    for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => automationProps('alcor') }, AutomationPage))
-    ctx.slots.inject('schedule.manager.header', () => {
-      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.register({ name: 'main', key: panel, priority: -10, inject: () => automationProps('alcor', true) }, AutomationPage)
-      ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
-    })
+    if (!shared) {
+      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => automationProps('alcor') }, AutomationPage))
+      ctx.slots.inject('schedule.manager.header', () => {
+        for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.register({ name: 'main', key: panel, priority: -10, inject: () => automationProps('alcor', true) }, AutomationPage)
+        ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
+      })
+    }
     ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
     if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
     ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.overlay', () => {
-      const shared = !globalThis.__ALCOR_CLIENT_SHELL__
       const controller = createModeController(ctx, storage, { shared })
       modeController = controller
       const navigation = shared ? null : createSpaceNavigation(ctx, controller)
@@ -201,7 +203,12 @@ export async function apply(ctx) {
       ctx.effect(() => {
         const style = document.createElement('style')
         style.textContent = `
-          .alcor-mode-bar { position:absolute; top:calc(var(--dsh-frame-chrome-top, 0px) + 8px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; height:36px; padding:3px 5px; border:1px solid var(--dsw-alias-border-base, #ddd); border-radius:8px; background:var(--dsw-alias-bg-base, white); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:no-drag; pointer-events:auto; }
+          /* Official hosts expose shell.overlay; reserve the same header row as the isolated client. */
+          div:has(> [data-shell-overlay] .alcor-mode-bar) { padding-top:calc(var(--dsh-frame-chrome-top, 0px) + 44px); }
+          div:has(> [data-shell-overlay] .alcor-mode-bar) > [data-shell-leading] { margin-top:44px; }
+          div[data-sidebar-drawer]:has(> [data-shell-overlay] .alcor-mode-bar) > :has(> [data-shortcut-modal='sidebar']) { top:calc(var(--dsh-frame-chrome-top, 0px) + 44px); }
+          .alcor-mode-bar { position:absolute; top:var(--dsh-frame-chrome-top, 0px); left:0; right:0; display:flex; align-items:center; gap:12px; height:44px; padding:6px 16px; border-bottom:1px solid var(--dsw-alias-border-base, #ddd); background:var(--dsw-specific-sidebar-fill, #f7f7f8); box-sizing:border-box; color:var(--dsw-alias-label-primary); font-family:var(--dsw-font-family); -webkit-app-region:drag; pointer-events:auto; }
+          html[data-platform='darwin']:not([data-fullscreen]) .alcor-mode-bar { padding-left:88px; }
           .alcor-mode-picker { position:relative; -webkit-app-region:no-drag; }
           .alcor-mode-bar button { -webkit-app-region:no-drag; gap:7px; height:30px; padding:0 9px; border-radius:var(--dsw-radius-md); font-family:inherit; font-size:13px; font-weight:500; }
           .alcor-mode-bar button > svg:last-child { margin-left:3px; color:var(--dsw-alias-label-tertiary); }

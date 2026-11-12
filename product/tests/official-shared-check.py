@@ -69,6 +69,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         expect(switch).to_be_visible(timeout=30000)
         box = switch.bounding_box()
         assert 0 <= box["y"] < 60, box
+        assert 0 <= box['x'] < 180, box
         assert switch.evaluate("e=>getComputedStyle(e).webkitAppRegion") == "no-drag"
         switch.focus()
         switch.press("ArrowDown")
@@ -92,6 +93,9 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
             and existing["workspace"]["workspaceId"] == workspace["workspaceId"]
         )
         system = navigation.get_by_role("group", name="系统")
+        navigation.get_by_role('button', name='自动化', exact=True).click()
+        expect(page.get_by_role('heading', name='自动化任务', exact=True)).to_be_visible()
+        navigation.get_by_role('button', name='事务', exact=True).click()
         expect(
             system.get_by_role("button", name="Ecosystem fixture", exact=True)
         ).to_be_visible()
@@ -118,7 +122,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         expect(narrow_switch).to_be_visible()
         bounds = narrow_switch.bounding_box()
         assert (
-            bounds["x"] >= 0
+            0 <= bounds["x"] < 180
             and bounds["x"] + bounds["width"] <= 720
             and bounds["y"] < 60
         ), bounds
