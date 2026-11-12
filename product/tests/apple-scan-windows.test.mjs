@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +28,8 @@ assert(eventScanWindows(start, start).isEmpty)
 print("PASS")
 `)
   const executable = join(directory, 'check')
-  await run('/usr/bin/swiftc', [fileURLToPath(new URL('../../packages/alcor-apple-sync/python/apple_sync/native/ScanWindows.swift', import.meta.url)), main, '-o', executable], { env: { ...process.env, DEVELOPER_DIR: process.env.DEVELOPER_DIR || '/Library/Developer/CommandLineTools' } })
+  const source = join(directory, 'ScanWindows.swift')
+  await copyFile(new URL('../../packages/alcor-apple-sync/python/apple_sync/native/ScanWindows.swift', import.meta.url), source)
+  await run('/usr/bin/swiftc', [source, main, '-o', executable], { env: { ...process.env, DEVELOPER_DIR: process.env.DEVELOPER_DIR || '/Library/Developer/CommandLineTools' } })
   assert.equal((await run(executable)).stdout.trim(), 'PASS')
 })

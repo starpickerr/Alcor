@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -56,5 +57,8 @@ assert(newEvent.url==nil)
 print("PASS: native alarms, public URL, ordinal/count recurrence and durable write receipts without Apple access")
 '''
     (root/'main.swift').write_text(main)
-    subprocess.run(['/usr/bin/swiftc','-framework','EventKit',str(root/'main.swift'),*[str(source/name) for name in ('ReminderBridge.swift','ReminderFields.swift','OccurrenceIdentity.swift','ScanWindows.swift')],'-o',str(root/'check')],check=True)
+    helpers = ('ReminderBridge.swift','ReminderFields.swift','OccurrenceIdentity.swift','ScanWindows.swift')
+    for name in helpers:
+        shutil.copyfile(source / name, root / name)
+    subprocess.run(['/usr/bin/swiftc','-framework','EventKit',str(root/'main.swift'),*[str(root/name) for name in helpers],'-o',str(root/'check')],check=True)
     subprocess.run([str(root/'check'),str(root)],check=True)

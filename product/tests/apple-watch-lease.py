@@ -1,5 +1,6 @@
 """Pure synthetic watcher lease; no EventKit access or real helper launch."""
 import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -22,5 +23,7 @@ var missing = WatchLease(now: 0, timeout: 10)
 assert(missing.shouldStop(nil, now: 0))
 ''')
     executable = Path(directory) / 'watch-lease'
-    subprocess.run(['/usr/bin/swiftc', str(source), str(main), '-o', str(executable)], check=True)
+    staged = Path(directory) / source.name
+    shutil.copyfile(source, staged)
+    subprocess.run(['/usr/bin/swiftc', str(staged), str(main), '-o', str(executable)], check=True)
     subprocess.run([str(executable)], check=True)
