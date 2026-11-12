@@ -1,4 +1,5 @@
 import {withModeView,uiMode} from '../../alcor-plugin-info/src/mode-view.jsx'
+import {startHubSession} from './agent-hub.js'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import React, {useEffect,useState} from 'react'
 import {IconUsersOutlineRegular} from '@deepseek-ai/dsh-client-ui-primitives'
@@ -31,7 +32,7 @@ export async function apply(ctx) {
   ctx.effect(()=>{const element=document.createElement('style');element.textContent=style+noticeStyle+baseStyle;document.head.append(element);return()=>element.remove()})
   await ctx.remote.$mount(remote)
   ctx.inject(['remote.agentHub'],ctx=>{
-    ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'agent-hub',inject:()=>({api:ctx.remote.agentHub,currentSession:()=>ctx.uiSession.adapter.current.getSnapshot().props.sessionId,startSession:()=>uiMode()==='alcor' ? globalThis[Symbol.for('@alcor/secretary.workspace-navigation')].startSession() : ctx.uiWorkspace.startSession(undefined,{agentPreset:'agent-hub-developer'}),openSession:id=>ctx.uiWorkspace.openSession(id)})},withModeView(ctx,'@alcor/agent-hub',DeveloperHub)))
+    ctx.slots.inject('main',()=>ctx.slots.register({name:'main',key:'agent-hub',inject:()=>({api:ctx.remote.agentHub,currentSession:()=>ctx.uiSession.adapter.current.getSnapshot().props.sessionId,startSession:()=>startHubSession(ctx.uiWorkspace,globalThis[Symbol.for('@alcor/secretary.workspace-navigation')],uiMode()),openSession:id=>ctx.uiWorkspace.openSession(id)})},withModeView(ctx,'@alcor/agent-hub',DeveloperHub)))
     const form=ctx.configForms.get('agent-hub')
     ctx.slots.inject('sidebar.panellist',()=>{
       let release

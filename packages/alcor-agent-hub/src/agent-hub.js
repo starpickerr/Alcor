@@ -71,3 +71,7 @@ export function readHubDraft(storage) {
     return { id: draft.id, title: draft.title, prompt: draft.prompt, ...(agents ? { agents: agents.map(({ name, task }) => ({ name, task })) } : {}) }
   } catch { return null }
 }
+
+export function startHubSession(workspace, navigation, mode) {
+  return mode === 'alcor' && navigation ? navigation.startSession() : workspace.startSession(undefined, {agentPreset:'agent-hub-developer'})
+}
