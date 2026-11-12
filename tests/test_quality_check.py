@@ -1,6 +1,17 @@
 from scripts.quality_check import affected_checks, isolated_env
 
 
+def test_successful_audit_keeps_suite_counts_and_each_ui_script_result(monkeypatch, capsys):
+    import subprocess
+    from scripts import quality_check
+    for name in ('pytest', 'ui'):
+        output = 'first script result\nsecond script result\n'
+        monkeypatch.setattr(quality_check.subprocess, 'run', lambda *args, **kwargs:
+            subprocess.CompletedProcess(args[0], 0, output, ''))
+        assert quality_check.run_check(name, ['python', 'check.py'], {}, 10)[1] == 'PASS'
+        assert output.strip() in capsys.readouterr().out
+
+
 def test_python_change_selects_related_tests_without_full_suite():
     checks = affected_checks(["agent/permission/gateway.py"])
 

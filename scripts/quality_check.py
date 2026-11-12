@@ -379,7 +379,7 @@ def run_check(name, command, env, timeout):
         flush=True,
     )
 
-    if status == "FAIL":
+    if status == "FAIL" or name in {"pytest", "ui"}:
         print(output, flush=True)
 
     return name, status, " ".join(command), output
