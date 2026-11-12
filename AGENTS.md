@@ -18,6 +18,7 @@ product/client-shell and @alcor/extension remain compatibility code for the opti
 - 修改前核对 Git 分支、原生包清单、实际 UI 注册和已安装包路径。若目标文件仅被旧版引用，重新定位新版 owner；不要通过旧 Python / React 测试证明新版完成。
 - 客户端构建会拒绝从旧 `desktop/`、`agent/`、`application/`、`channel/`、`core/` 引入代码；需要复用时将所需实现迁入原生包。新版 CI 是 `.github/workflows/native-product.yml`；保留的旧版 CI 不能代替它。旧环境安装／检查显式使用 `make setup-legacy` / `make check-legacy`；其余旧维护目标不作为新版验收。
 - 最终验收以已校验的官方运行时、本地打包客户端和原生 Profile 为对象：同窗顶部切换、重启恢复、插件作用域及数据保留分别留证。网页、双窗口、合成账号和真实个人安装不能相互替代；官方专有桌面桥未适配时明确记录，不宣称等价支持。
+- 官方宿主边界优先于下方历史独立外壳方案：Alcor 是官方 DSH 的可选插件，不修改、替换或固定官方客户端、运行组件和更新器；官方客户端可独立更新。遇到破坏性接口变更，应适配插件并核验配置、数据和插件生命周期，不以锁定旧宿主或放宽兼容检查代替。已验证版本不构成未来版本零兼容问题的承诺。用户提出违反此边界的方案时，先指出冲突、影响及可行替代方案，再处理设计决策，不默默实施。
 - DSH 更新兼容是交付底线：插件不得安装或覆盖宿主的 `@deepseek-ai/*` 运行组件；SDK 使用宿主提供的可选 peer。扩展支持版本前，验证官方版本身份、旧 Profile 升级、配置与业务数据保留及插件不兼容时原生 DSH 仍可启动。不能用放宽 `engines.dsh` 或关闭兼容检查代替验收；入口为 `product/tests/host-compatibility.test.mjs` 与 `product/tests/upgrade-compatibility-check.py`。
 - 验收区分源码、打包产物、已安装 DSH Profile 与真实 Apple 账号。使用隔离 Profile 和合成 EventKit；默认不运行个人账号同步。
 
