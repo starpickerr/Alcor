@@ -2,15 +2,15 @@
 
 当前交付是安装在官方 DSH 内的 `@alcor/*` 插件。入口与平台范围见 [产品说明](../../product/README.md)，实际调用链是插件 Host 服务、原生凭据、插件业务 Worker 与 MCP Remote。官方 DSH 保持原程序和更新机制。
 
-`make audit` 与 `make check` 现在都完整构建当前客户端并执行 `product/tests/*.test.mjs`，不按变更文件缩减产品测试。GitHub 的 `Native Alcor product` 执行 macOS 完整产品测试、秘书与 Apple 打包、独立临时 Keychain 实测，以及 Windows/Linux 原生插件检查。连接器任务按 `product/source-releases.lock.json` 检出当前源码、核对现有摘要、冻结打包并实际检查协议、工具注解、技能参数、版本及秘密不落盘。
+`make audit` 与 `make check` 都完整构建当前插件并执行 `product/tests/*.test.mjs`。按用户确认的分层，每次适用 PR 保留 macOS 当前完整产品套件、包内身份/迁移检查、三平台插件构建及 Windows/Linux 业务与安全边界；保留隔离环境的现有用例仍包含在完整套件中。Native 手动运行及 main/develop 推送另执行完整 Apple/凭据包、独立临时 Keychain 和冻结连接器检查。连接器按现有发行锁核对源码摘要及协议。合并或发布前必须手动验证精确候选提交，不能用不同提交的结果拼作最终全绿；main/develop 推送检查属于集成后的复验。
 
 ## 自动执行条件
 
 | 范围 | 自动检查 | 手动入口 |
 | --- | --- | --- |
-| `packages/`、`product/`、`scripts/product/`、根 npm 清单、Makefile、工作流 | 对 main/develop 的 PR，以及 main/develop 推送执行 Native；包含整个产品测试集，不只新增用例 | Native workflow dispatch；`make audit` |
+| `packages/`、`product/`、`scripts/product/`、根 npm 清单、Makefile、工作流 | 对 main/develop 的 PR 执行当前完整产品套件、构建、包内身份与三平台业务/权限边界；推送另含完整原生包及冻结连接器 | Native workflow dispatch 对精确候选提交运行完整原生包、Keychain、连接器和各平台检查；`make audit` |
 | 保留的 `product/client-shell/`、`@alcor/extension`、隔离环境管理脚本 | 仍在 Native 完整产品测试集内；保留生命周期、凭据传输、进程归属及数据保护断言 | Native workflow dispatch；原隔离方案另保留在 `archive/isolated-runtimes-20261112-02217cd4` |
-| `agent/`、`core/`、`application/`、`desktop/` 等旧运行时代码、旧 tests/evals、旧依赖与检查脚本、Legacy 来源锁 | 同样的 PR/推送事件执行 Legacy maintenance；macOS 运行适用增量检查，依赖等公共变更仍选择完整旧 Python 套件；Linux 另测实际进程、授权和 HTTP/SSRF 边界 | Legacy workflow dispatch 执行 `make audit-legacy` 完整旧审计，包含全部 18 个旧 UI 脚本；旧 Agent evals 保留 |
+| `agent/`、`core/`、`application/`、`desktop/` 等保留代码与旧依赖/检查/来源锁 | 相关 PR/推送保留 Linux 实际进程、授权、HTTP/SSRF 和工具检查；完整历史审计改为每周一 03:17 UTC（北京时间 11:17） | Legacy workflow dispatch 默认执行完整旧审计、18 个旧 UI 脚本及旧 Agent evals；`full_legacy_audit=false` 仅复验同一提交的 Linux 安全边界。`make check-legacy` 仍可定向运行 |
 | 旧 Windows Bash streaming | 原工作流继续在实现、对应测试或工作流变化的 PR 上执行 | Windows Bash workflow dispatch |
 
 Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS Security.framework，也不能用虚假凭据后端制造成功。Linux 实际隔离和网络安全检查仍单独执行。两类来源锁独立：Legacy 的历史 MCP 提交不替代当前插件连接器发行锁。
@@ -40,6 +40,14 @@ CI 合成账号、临时数据和原生 Keychain 不证明个人 Apple、学校�
 
 完整运行结果与仍失败项记录在本任务交付记录中；路径分流或门禁名称本身不作为通过证据。
 
+## 合并／发布前桌面验收缺口
+
+当前 GitHub macOS/Windows 检查证明插件构建、服务和兼容契约，**没有安装并启动完整官方 Desktop**。Linux 也不承担官方桌面交付。Apple、Keychain、学校和邮件包仍声明 macOS 平台，Windows 服务夹具通过不代表这些包已发布 Windows 版本。
+
+- Mac 补验入口：构建该提交的秘书包，使用锁内已验证签名与 app.asar 的官方应用，运行 `product/tests/official-shared-check.py` 验证同窗切换、共享生态、重启与停用；运行 `product/tests/official_desktop_check.py` 的完整路径验证安装、卸载、重装和原数据/配置保留。通过 `STELLA_CHECK_DESKTOP_APP` 指定已核验应用，使用独立测试 HOME/DSH_HOME，记录提交、包摘要、宿主版本/签名和日志。官方宿主升级后需对同一合成 Profile 再验数据及不兼容回退；历史 `upgrade-compatibility-check.py` 对更名后的 Alcor 会提前 SKIP，不能拿它证明当前升级成功。
+- Windows 补验入口：在有可交互桌面的 Windows runner/专用测试机，按 [Windows 验证说明](../../product/windows-native.md) 构建并运行 `official_shared_windows.py --app ... --package ... --aurabot ... --upgrade-app ... --expect-compatible-upgrade`；两个官方程序均由发行锁摘要和 Authenticode 校验，AuraBot 固定已核验夹具。此路径实际覆盖安装、冷停用/启用、卸载/重装、原记录与配置、rc.1→rc.2 升级及原生窗口交互。
+- 接入自动门禁时，应由 Mac/Windows 交互式 runner 提供上述已核验官方程序和夹具，在精确候选提交执行真实验收并上传脱敏证据；缺少程序、桌面或来源校验时报告未验，不用单元测试或跳过冒充安装成功。当前工作流尚未接入这两项，源码检查通过不能解除该发布验收要求。
+
 原生 Swift 构建和合约探针统一在临时目录内编译完整源码快照，避免同步目录在编译期间改变输入元数据；原有 Apple 行为断言保留。只修复编译输入，不请求个人 Apple 授权。
 
 GNU Make 的完整审计/无 Conda 验证归入已有解释器工具检查，在 macOS 和 Linux 维护任务执行；不要求 Windows 插件用户额外安装 Unix Make。插件 Host/Python 运行时边界用例则在三个系统执行。连接器冻结只收集真实 lowlevel/stdio 服务器使用的 MCP 模块，不引入未使用开发 CLI 的可选依赖；所有来源和协议断言保留。
@@ -56,4 +64,5 @@ Legacy 扩展只读加入 `/usr/share/zoneinfo` 的系统实际解析路径。�
 - GitHub `977e8975`：Native 的 macOS、Windows、Linux 三任务通过；冻结来源任务因误收集未使用 MCP CLI 缺少可选 typer 而失败。Legacy Linux 通过；macOS 为 3011 PASS / 143 FAIL / 53 既有 SKIP，另有两个 UI 失败，分别为已移除入口和缺少公共依赖缓存。Windows Bash 通过。失败原始日志保留，不将该提交标绿。
 - 2026-11-13 定向回归：真实时区读取及扩展隔离 27 项通过；旧连接存储、解释器与 UI 进程管理 26 项通过；公共校验缓存准备入口通过；冻结模块收敛后两个当前包的完整协议断言通过。当前完整 `make audit` 为 536 PASS / 0 FAIL / 1 既有 Windows 专属 SKIP，总计 537；原 Make 断言迁入工具测试，不是删除覆盖。
 - GitHub `821c66ab`：三平台产品任务再次通过，连接器构建通过；协议启动发现切换临时工作目录后的相对路径问题，已改为启动前解析绝对包路径，并以 CI 同样的相对目录参数完成本地全套协议复测。Legacy 的依赖准备与新增 Linux 时区/私有文件拒绝检查通过，macOS 完整旧审计仍在运行。
-- GitHub 修复后最终提交的完整检查待运行；完成前不宣称 CI 全绿。此次未合并 main/develop，也未修改官方 DSH 或个人 Profile。
+- GitHub `79d52344` 的 [Native 全量运行](https://github.com/starpickerr/Alcor/actions/runs/43260188630) 四任务全部通过：完整 macOS 产品/打包/Keychain、冻结连接器协议、Windows 服务/构建、Linux 服务/权限边界。这是该提交的证据；分层配置更新后的精确最终提交仍需独立运行。
+- 上述证据仅适用于标明的提交；最终候选提交必须核对其自己的 Native、适用 Linux 边界与 Windows Bash 结果，不能沿用此前结果。历史审计另行报告，不冒称当前桌面安装验收。此次未合并 main/develop，也未修改官方 DSH 或个人 Profile。

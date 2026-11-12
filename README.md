@@ -53,7 +53,7 @@ The web preview uses a separate development profile and does not replace officia
 
 Native plugin sources live under `packages/`, build scripts under `scripts/product/`, and integration tests under `product/tests/`. The earlier standalone Python/Electron application is documented in the [legacy guide](docs/guide.md).
 
-Run `make audit` for the complete current plugin build and test suite. Native CI also checks portable Windows/Linux services, frozen school/mail connector protocols and the macOS credential provider in a temporary Keychain. Changes to the retained Python/Electron runtime still trigger its own maintenance checks; its complete audit is `make audit-legacy`. See the [CI coverage map](docs/development/ci-coverage.md) for exact triggers, preserved isolation/migration/security tests, verified results and desktop acceptance limits.
+Run `make audit` for the complete current plugin build and test suite. Every applicable PR checks current plugin tests, builds and safety boundaries. Before merging or releasing, run Native CI manually on the exact candidate commit for complete native packages, frozen connector protocols and a temporary macOS Keychain; official Mac/Windows installation and upgrade acceptance require separate desktop evidence. Historical Python/Electron audits run weekly or manually with `make audit-legacy`, while relevant changes retain automatic Linux safety checks. See the [CI coverage map](docs/development/ci-coverage.md) for triggers, preserved coverage, verified results and the desktop installation gaps.
 
 ## Source and license
 

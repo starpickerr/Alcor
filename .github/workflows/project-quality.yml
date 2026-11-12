@@ -56,9 +56,17 @@ on:
       - 'Makefile'
       - '.github/workflows/project-quality.yml'
   workflow_dispatch:
+    inputs:
+      full_legacy_audit:
+        description: Run the complete retained Python/Electron audit and evals
+        type: boolean
+        default: true
+  schedule:
+    - cron: '17 3 * * 1'
 
 jobs:
   full-quality:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_legacy_audit)
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -106,29 +114,12 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-dev.txt
           npm --prefix desktop ci
           python -m playwright install --with-deps chromium
-      - name: Select the changed-file baseline
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-        run: |
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            BASE_SHA="$(git rev-parse HEAD^)"
-          fi
-          if git merge-base "$BASE_SHA" HEAD >/dev/null 2>&1; then
-            echo "STELLA_CHECK_BASE=$BASE_SHA" >> "$GITHUB_ENV"
-          else
-            echo "STELLA_CHECK_FULL=1" >> "$GITHUB_ENV"
-          fi
       - name: Prepare hash-verified public dependency artifacts in disposable state
         run: |
           python scripts/run_isolated.py python -m tests.fixtures.runtime_artifacts "$RUNNER_TEMP/alcor-public-artifacts"
           echo "STELLA_TEST_RUNTIME_ARTIFACTS=$RUNNER_TEMP/alcor-public-artifacts" >> "$GITHUB_ENV"
-      - name: Run the applicable Legacy maintenance gate
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
-            make audit-legacy
-          else
-            make check-legacy
-          fi
+      - name: Run the complete scheduled or manually requested Legacy audit
+        run: make audit-legacy
       - name: Run Stella product agent evals
         run: make eval
       - name: Preserve quality evidence

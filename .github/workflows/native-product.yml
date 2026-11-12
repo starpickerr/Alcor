@@ -11,6 +11,7 @@ on:
 
 jobs:
   native-source-connectors:
+    if: github.event_name != 'pull_request'
     runs-on: macos-15
     timeout-minutes: 25
     defaults:
@@ -139,11 +140,13 @@ jobs:
         run: |
           python3 -B -m unittest discover -s packages/alcor-agent-hub/tests -p 'test_*.py'
           node --experimental-test-module-mocks --test packages/alcor-privacy/tests/identity-synthetic.test.mjs
-      - name: Build native bundles and reject legacy client inputs
-        run: |
-          npm run product:pack
-          DEVELOPER_DIR="$(xcode-select -p)" npm run product:apple:pack
+      - name: Build the current plugin and reject legacy client inputs
+        run: npm run product:pack
+      - name: Build the complete native Apple package
+        if: github.event_name != 'pull_request'
+        run: DEVELOPER_DIR="$(xcode-select -p)" npm run product:apple:pack
       - name: Build and verify the native credential provider in an isolated Keychain
+        if: github.event_name != 'pull_request'
         run: |
           npm run product:privacy:pack
           npm run product:privacy:test
