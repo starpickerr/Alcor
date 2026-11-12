@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -16,11 +17,10 @@ def server_config(domain, data):
     repo = (
         ROOT / "MCP" / ("fudan-elearning-mcp" if domain == "elearning" else "email-mcp")
     )
-    python = ROOT / "MCP/fudan-elearning-mcp/.venv/bin/python"
     return ManagedMcpConfig({
         "name": domain,
         "type": "stdio",
-        "command": str(python),
+        "command": sys.executable,
         "args": [
             str(repo / "mcp_server.py"),
             "--data-dir",

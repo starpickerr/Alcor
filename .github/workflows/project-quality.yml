@@ -13,10 +13,32 @@ jobs:
     timeout-minutes: 30
     env:
       STELLA_PYTHON: python
+    defaults:
+      run:
+        working-directory: Alcor
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          path: Alcor
+      - name: Read fixed Legacy companion revisions
+        id: sources
+        run: python scripts/check_legacy_sources.py --github-output "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.sources.outputs.plugins_repository }}
+          ref: ${{ steps.sources.outputs.plugins_revision }}
+          path: Stella-Plugins
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.sources.outputs.email_repository }}
+          ref: ${{ steps.sources.outputs.email_revision }}
+          path: MCP/email-mcp
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.sources.outputs.elearning_repository }}
+          ref: ${{ steps.sources.outputs.elearning_revision }}
+          path: MCP/fudan-elearning-mcp
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -25,7 +47,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: Alcor/desktop/package-lock.json
+      - name: Verify Legacy companion commits and source digests
+        run: python scripts/check_legacy_sources.py
       - name: Install project dependencies
         run: |
           sudo apt-get update
@@ -66,6 +90,6 @@ jobs:
         with:
           name: stella-quality-report
           path: |
-            .agents/audits/code-review/Full-Audit-*.md
-            evals/reports/latest.json
+            Alcor/.agents/audits/code-review/Full-Audit-*.md
+            Alcor/evals/reports/latest.json
           if-no-files-found: ignore
