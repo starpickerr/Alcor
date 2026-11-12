@@ -2,7 +2,7 @@
 
 项目与仓库现名为 **Alcor**。原生包源码位于 `packages/alcor-*`。本机旧 Profile 已在官方 DSH 0.2.2-rc.1 完成迁移，新旧包不得同时启用。现有 Preset、工具 ID、数据目录及凭据键是兼容契约，不能批量替换；已安装旧版本仍可能显示 Stella。当前目录是外层 Alcor 多仓工作区内的 Alcor 产品仓。
 
-Current delivery (2026-11-12): install Alcor as a standard plugin inside the unchanged official DSH Desktop. Switch Alcor/DSH in one window using public main/sidebar/shell.bottom slots, sharing Host, Profile, environment and configuration. Preserve the official signature and update path; verify compatibility per host version.
+Current delivery (2026-11-12): install Alcor as a standard plugin inside the unchanged official DSH Desktop. Switch Alcor/DSH in one window using public main/sidebar/shell.overlay slots and a reserved top-left header matching the independent Alcor client, sharing Host, Profile, environment and configuration. Alcor automation opens the same native schedules page as DSH. Preserve the official signature and update path; verify compatibility per host version.
 
 默认开发目标是重构后的 **DSH 原生 Alcor**，本目录已从原临时工作树迁入新版源码。先遵循工作区 [AGENTS.md](../AGENTS.md) 及其权威规则。
 

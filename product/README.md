@@ -1,12 +1,18 @@
 # 官方 DSH 内的 Alcor 共享模式
 
-在未修改的官方 DSH 桌面客户端安装 `@alcor/secretary`。窗口上方只有一个 Alcor／DSH 双向切换按钮，使用官方 `shell.overlay` 插槽。Alcor 沿用原版品牌、侧栏、应用／系统分组和业务页面；DSH 模式恢复官方原生侧栏。工作区、会话、插件目录和插件页面共用同一个 Host、Profile 与配置。第三方入口在 Alcor 侧归入“系统”，仍打开原插件页面。
+在未修改的官方 DSH 桌面客户端安装 `@alcor/secretary`。窗口左上角只有一个 Alcor／DSH 双向切换按钮，使用官方 `shell.overlay` 插槽，保留独立 Alcor 客户端的 44px 标题栏布局，所有页面共用。Alcor 沿用原版品牌、侧栏、应用／系统分组和业务页面；DSH 模式恢复官方原生侧栏。工作区、会话、插件目录和插件页面共用同一个 Host、Profile 与配置。第三方入口在 Alcor 侧归入“系统”，仍打开原插件页面。
+
+Alcor 的“自动化”是 DSH 原生自动化页面的另一个入口，两个模式打开同一个 `schedules` 面板；共享模式不注册独立的 Alcor 自动化列表或覆盖原生页面。设置页从独立的产品模式状态读取当前 Alcor／DSH，不依赖分区工作区导航；Alcor 设置显示共享工作区并保留搜索和展开。
 
 侧栏所有权通过公开 Loader 生命周期可逆交接，官方工作区与设置组件继续挂载在公开插槽中；rc.2 的工作区滚动 Hook 按公开契约传递。不会替换官方安装包、签名、UI 模块或更新器。秘书／Organizer 已精确声明 alpha.3、rc.1、rc.2；其他包保持各自已验证的版本范围，不承诺未来 API 永远兼容。
 
 独立 Host/Profile 外壳继续作为可选设计保留于 `archive/isolated-runtimes-20261112-02217cd4`（02217cd4），原始个人环境不删除。个人业务数据的有限接续另行留存备份、停写与核对记录，不覆盖原生会话或无关凭据，不同时运行两套同步／机器人写入源。
 
 当前证据见 [实施记录](official-shared-plan.md) 和 [顶部入口验证](top-overlay-status.md)。下方保留历史独立方案及业务能力说明，与当前入口有冲突时以上述说明为准。
+
+模式读取代码会被编入各插件客户端。更新这一契约时应重建所有已安装的相关包：跨平台的 secretary、agent-hub，以及仅 macOS 的 apple-sync、mail、elearning。现有构建入口分别是 `product:pack`、`product:hub:pack`、`product:apple:pack`、`product:sources:pack`；不要将 macOS MCP 冻结二进制的归档安装到 Windows，也不要跳过各包的 `engines.dsh` 检查。安装验收应记录提交和归档 SHA256，不能只按同一个包版本号判定更新。
+
+离线接续原生工作区时，工作区记录表与 `global.workspaceIds` 必须一起更新，并保留原有顺序；还须验证每个会话只有一个工作区 owner。记录行数或逐行摘要相同不能代替这些关系不变量及实际 Host 启动检查。所有数据盘点、原始备份、恢复记录和个人验收截图保存在本机私有目录，不提交 Git。
 
 ---
 
