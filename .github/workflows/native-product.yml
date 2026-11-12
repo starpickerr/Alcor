@@ -120,7 +120,7 @@ jobs:
           $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
           npm run preproduct:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/native-runtime-boundary.test.mjs
   native-product:
     runs-on: macos-15
     timeout-minutes: 25

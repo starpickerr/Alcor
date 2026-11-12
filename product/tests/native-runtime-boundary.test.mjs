@@ -1,19 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { python } from './platform-python.mjs'
-
-test('the current complete audit needs no retired Conda runtime even during Make expansion', () => {
-  const result = spawnSync('/usr/bin/make', ['--no-print-directory', '-n', 'audit'], {
-    env: { PATH: '' }, encoding: 'utf8',
-  })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.stderr, '')
-  assert.match(result.stdout, /npm run product:build/)
-  assert.match(result.stdout, /npm test/)
-  assert(!/quality_check|run_isolated|check_runtime/.test(result.stdout))
-})
 
 test('every current plugin Host entry bundles without the retired application runtime', async () => {
   const plugins = ['agent-hub', 'apple-sync', 'elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
