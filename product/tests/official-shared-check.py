@@ -96,6 +96,7 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         navigation.get_by_role('button', name='自动化', exact=True).click()
         expect(page.get_by_role('heading', name='自动化任务', exact=True)).to_be_visible()
         navigation.get_by_role('button', name='事务', exact=True).click()
+        d.check_settings(page)
         expect(
             system.get_by_role("button", name="Ecosystem fixture", exact=True)
         ).to_be_visible()

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createModeController, readModeState, startSecretarySession, canonicalPanel, legacyPanelIds } from '../../packages/alcor-secretary/src/mode.js'
+import {uiMode,modeHook} from '../../packages/alcor-plugin-info/src/assignments.js'
 
 function fixture(initial = null) {
   let saved = initial
@@ -409,4 +410,16 @@ test('shared automation aliases restore the native schedules page in both modes'
     assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
     c.dispose()
   }
+})
+
+test('shared settings follow the actual product mode without a partitioned workspace navigation', () => {
+  const f=fixture()
+  const c=createModeController(f.ctx,f.storage,{shared:true})
+  assert.equal(uiMode(),'dsh')
+  c.switchMode('alcor')
+  assert.equal(uiMode(),'alcor')
+  c.switchMode('dsh')
+  assert.equal(uiMode(),'dsh')
+  c.dispose()
+  assert.equal(globalThis[modeHook],undefined)
 })

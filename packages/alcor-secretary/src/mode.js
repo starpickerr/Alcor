@@ -1,4 +1,5 @@
 import { spaceHook, spaceOf, qqRoute, channelRoute } from './spaces.js'
+import {modeHook} from '../../alcor-plugin-info/src/assignments.js'
 const KEY = 'alcor.product-mode.v1'
 const modes = ['alcor', 'dsh']
 const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills', 'stella-schedules': 'alcor-schedules' }
@@ -140,7 +141,7 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
   }) ?? (() => {})
   if (application==='alcor' || state.locations[state.mode]) restore()
   else saveLocation()
-  return {
+  const controller = {
     getSnapshot: () => state.mode,
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) },
     get notice() { return notice },
@@ -157,6 +158,11 @@ export function createModeController(ctx, storage, {application=globalThis.__ALC
       if (!waitingForCatalog && !waitingForPanel) persist()
       notify()
     },
-    dispose() { stopPreset(); stopPanel(); stopSelection(); stopCatalog(); stopRegistry(); listeners.clear() },
+    dispose() {
+      stopPreset(); stopPanel(); stopSelection(); stopCatalog(); stopRegistry(); listeners.clear()
+      if (shared && globalThis[modeHook] === controller) { delete globalThis[modeHook]; globalThis.dispatchEvent?.(new Event('alcor-mode-changed')) }
+    },
   }
+  if (shared) { globalThis[modeHook] = controller; globalThis.dispatchEvent?.(new Event('alcor-mode-changed')) }
+  return controller
 }

@@ -126,7 +126,7 @@ export async function apply(ctx) {
         ctx.layout.selectPanel('alcor-briefing')
       }}),
     }, BriefingPluginReturn))
-    const preferences = () => <div className="alcor-settings-content">{spaceNavigation && <SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} />}</div>
+    const preferences = () => <div className="alcor-settings-content"><SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} /></div>
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(shared ? sharedPanel(panel) : canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
