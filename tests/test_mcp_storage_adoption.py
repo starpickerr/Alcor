@@ -1,5 +1,4 @@
 """Owner recovery copies retained MCP private data and preserves its source."""
-import json
 from pathlib import Path
 
 import pytest
