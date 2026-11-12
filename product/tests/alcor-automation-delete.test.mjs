@@ -250,3 +250,15 @@ test('standalone automation gate cannot prepare or execute deletion through inje
   assert.equal(calls, 0)
   assert.deepEqual(await gate.preExecute({ name: 'other' }, async () => ({ kind: 'allow' })), { kind: 'allow' })
 })
+
+
+test('shared Alcor page lists all native schedules while new templates retain Alcor ownership', async () => {
+  const calls=[]
+  const adapter=createAutomationPageRemote({api:{automation:async request=>{calls.push(request);return {ok:true,value:[]}}},scope:'all',createScope:'alcor',schedule:{}})
+  await adapter.remote.catalog()
+  const request={title:'Synthetic shared template',prompt:'No external action',timing:{kind:'daily',daily:{time:'08:00',time_zone:'Asia/Shanghai'}}}
+  await adapter.remote.create(request)
+  assert.deepEqual(calls,[{scope:'all',action:'catalog'},{scope:'alcor',action:'create',request}])
+  await assert.rejects(adapter.remote.edit({id:'synthetic',action:'delete'}),/暂不支持删除/)
+  assert.equal(calls.length,2)
+})

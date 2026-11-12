@@ -93,8 +93,45 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
             and existing["workspace"]["workspaceId"] == workspace["workspaceId"]
         )
         system = navigation.get_by_role("group", name="系统")
+        native_task = d.rpc(page, 'schedule/create', {'request': {
+            'title': 'Shared native fixture', 'prompt': 'Synthetic only',
+            'timing': {'kind': 'at', 'at': '2099-01-01T00:00:00.000Z'},
+            'target': {'kind': 'new_once'},
+        }})
         navigation.get_by_role('button', name='自动化', exact=True).click()
         expect(page.get_by_role('heading', name='自动化任务', exact=True)).to_be_visible()
+        expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+        scope = page.get_by_role('button', name='自动化范围', exact=True)
+        scope.click()
+        page.get_by_role('menuitem', name='Alcor 自动化', exact=True).click()
+        expect(page.get_by_text('Shared native fixture', exact=True)).to_have_count(0)
+        scope.click()
+        page.get_by_role('menuitem', name='全部自动化', exact=True).click()
+        expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+        page.get_by_role('button', name='选择创建方式', exact=True).click()
+        page.get_by_role('menuitem', name='每日简报', exact=True).click()
+        expect(page.get_by_role('textbox', name='自动化任务名称', exact=True)).to_have_value('每日简报')
+        expect(page.get_by_role('textbox', name='自动化任务内容', exact=True)).to_have_value('整理本机今日事务、日程和待处理账单，生成并保存今日简报，然后给我一段简短摘要。仅使用本机业务记录。')
+        page.get_by_role('textbox', name='自动化任务名称', exact=True).fill('Shared Alcor template fixture')
+        page.screenshot(path=str(d.ARTIFACTS / 'alcor-automation-template.png'), scale='css')
+        page.get_by_role('button', name='创建', exact=True).click()
+        expect(page.get_by_text('Shared Alcor template fixture', exact=True).first).to_be_visible()
+        catalog = d.rpc(page, 'schedule/catalog')
+        created = next(row for row in catalog if row['title'] == 'Shared Alcor template fixture')
+        assert created['target']['create']['agentPreset'] == 'alcor'
+        page.get_by_role('button', name='新建', exact=True).click()
+        expect(page.get_by_role('button', name='关闭创建页', exact=True)).to_be_visible()
+        page.get_by_role('button', name='关闭创建页', exact=True).click()
+        assert any(row['id'] == native_task['id'] for row in d.rpc(page, 'schedule/catalog'))
+        page.get_by_role('button', name='切换使用模式，当前 Alcor').click()
+        page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
+        page.get_by_role('button', name='自动化任务', exact=True).click()
+        expect(page.get_by_text('Shared Alcor template fixture', exact=True)).to_be_visible()
+        expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='自动化范围')).to_have_count(0)
+        page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness').click()
+        page.get_by_role('menuitem', name='Alcor', exact=True).click()
+        expect(page.get_by_role('button', name='自动化范围')).to_be_visible()
         navigation.get_by_role('button', name='事务', exact=True).click()
         d.check_settings(page)
         expect(
@@ -159,6 +196,18 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         expect(
             page.get_by_role("treeitem", name="shared-workspace", exact=True)
         ).to_be_visible()
+        disabled = d.rpc(page, 'pluginManager/setBundleEnabled', {'name': '@alcor/secretary', 'enabled': False})
+        assert disabled['application'] == 'applied', disabled
+        expect(page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness')).to_have_count(0)
+        enabled = d.rpc(page, 'pluginManager/setBundleEnabled', {'name': '@alcor/secretary', 'enabled': True})
+        assert enabled['application'] == 'applied', enabled
+        page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness').click()
+        page.get_by_role('menuitem', name='Alcor', exact=True).click()
+        page.get_by_label('Alcor 秘书导航', exact=True).get_by_role('button', name='自动化', exact=True).click()
+        expect(page.get_by_role('button', name='自动化范围')).to_be_visible()
+        expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+        page.get_by_role('button', name='切换使用模式，当前 Alcor').click()
+        page.get_by_role('menuitem', name='DeepSeek Harness', exact=True).click()
         assert not errors, errors
     with d.desktop(pw, home, "shared-save-alcor") as (page, errors):
         page.get_by_role("button", name="切换使用模式，当前 DeepSeek Harness").click()

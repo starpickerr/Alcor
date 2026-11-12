@@ -6,7 +6,7 @@ const oldPanels = { stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'ste
 export const legacyPanelIds = Object.keys(oldPanels)
 const retiredPanels = new Set(['alcor-qq-history', 'alcor-persona', 'alcor-channels'])
 export const canonicalPanel = panel => retiredPanels.has(panel) ? 'alcor-tasks' : Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
-export const sharedPanel = panel => canonicalPanel(panel) === 'alcor-schedules' ? 'schedules' : canonicalPanel(panel)
+export const sharedPanel = panel => canonicalPanel(panel)
 const ownPanels = new Set(Object.values(oldPanels))
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {

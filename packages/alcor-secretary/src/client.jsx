@@ -10,7 +10,8 @@ import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
 import { canonicalPanel, sharedPanel, createModeController, legacyPanelIds, startSecretarySession } from './mode.js'
 import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
-import { AutomationPage } from './automation.jsx'
+import { AutomationPage, SharedAutomationPage } from './automation.jsx'
+import { registerAutomationUi } from 'alcor:automation-ui'
 import { installPresetFilter } from './session-presets.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { SpacePreferences } from './space-preferences.jsx'
@@ -151,7 +152,10 @@ export async function apply(ctx) {
     const automationProps = (scope, available = false) => ({ scope, api: ctx.remote.alcorOrganizer, schedule: ctx.remote.schedule,
       available, openNative: () => ctx.layout.selectPanel('schedules'),
     })
-    if (!shared) {
+    if (shared) {
+      registerAutomationUi(ctx)
+      for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({name:'main',key:panel,inject:()=>({api:ctx.remote.alcorOrganizer,schedule:ctx.remote.schedule})},SharedAutomationPage))
+    } else {
       for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => automationProps('alcor') }, AutomationPage))
       ctx.slots.inject('schedule.manager.header', () => {
         for (const panel of ['alcor-schedules', 'stella-schedules']) ctx.slots.register({ name: 'main', key: panel, priority: -10, inject: () => automationProps('alcor', true) }, AutomationPage)

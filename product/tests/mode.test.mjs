@@ -1,3 +1,4 @@
+import { automationUiPlugin } from '../../scripts/product/automation-ui.mjs'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -334,7 +335,7 @@ test('a selected legacy layout alias redirects to its registered new panel and s
 
 test('host main slots register new panels and legacy aliases with equivalent destinations', async () => {
   const { build } = await import('esbuild'), { createRequire } = await import('node:module')
-  const output = await build({ entryPoints: [fileURLToPath(new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url))],
+  const output = await build({ plugins: [automationUiPlugin()], entryPoints: [fileURLToPath(new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url))],
     bundle: true, packages: 'external', platform: 'node', format: 'cjs', loader: { '.css': 'text', '.svg': 'dataurl' }, write: false })
   const module = { exports: {} }, noop = () => {}, calls = []
   const React = { createElement: noop, useEffect: noop, useState: noop, useRef: noop }
@@ -348,7 +349,8 @@ test('host main slots register new panels and legacy aliases with equivalent des
     assert.equal(calls.find(row => row.key === legacy)?.inject().view, current)
     assert.equal(calls.find(row => row.key === current)?.inject().view, current)
   }
-  assert.equal(calls.some(row => ['stella-schedules', 'alcor-schedules', 'schedules'].includes(row.key)), false)
+  assert.equal(calls.some(row => row.key === 'schedules'), false)
+  for (const key of ['stella-schedules','alcor-schedules']) assert.equal(calls.filter(row=>row.key===key).length,1)
   const previous = globalThis.__ALCOR_CLIENT_SHELL__
   try {
     globalThis.__ALCOR_CLIENT_SHELL__ = true
@@ -399,15 +401,15 @@ test('official shared mode returns to the native conversation and preserves shar
   controller.dispose()
 })
 
-test('shared automation aliases restore the native schedules page in both modes', () => {
+test('shared automation retains Alcor management and native DSH destinations', () => {
   for (const panel of ['stella-schedules', 'alcor-schedules', 'schedules']) {
     const f = fixture(JSON.stringify({mode:'alcor',locations:{alcor:{panel},dsh:{panel:'schedules'}}}))
     const c = createModeController(f.ctx, f.storage, {shared:true})
-    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, canonicalPanel(panel))
     c.switchMode('dsh')
     assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
     c.switchMode('alcor')
-    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, canonicalPanel(panel))
     c.dispose()
   }
 })
