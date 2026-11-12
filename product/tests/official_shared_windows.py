@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -86,6 +87,90 @@ def switch(page, source, target):
     page.get_by_role('menuitem', name=target, exact=True).click()
 
 
+def check_shared_settings(page, mode, home):
+    assert page.evaluate("globalThis[Symbol.for('@alcor/product-mode')].getSnapshot()") == mode
+    page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单|More|更多)$')).last.click()
+    page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
+    dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
+    dialog.get_by_role('button', name='Alcor', exact=True).click()
+    expect(dialog.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
+    expect(dialog.get_by_text('shared-workspace', exact=True)).to_be_visible()
+    page.screenshot(path=home / f'{mode}-settings.png')
+    dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
+
+
+def check_automation(page, navigation, home):
+    native_task = rpc(page, 'schedule/create', {'request': {
+        'title': 'Shared native fixture', 'prompt': 'Synthetic only',
+        'timing': {'kind': 'at', 'at': '2099-01-01T00:00:00.000Z'},
+        'target': {'kind': 'new_once'},
+    }})
+    navigation.get_by_role('button', name='自动化', exact=True).click()
+    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    title = page.get_by_role('heading', name='自动化任务', exact=True)
+    badge = title.locator('..').get_by_text('Alcor', exact=True)
+    expect(badge).to_be_visible()
+    scope = page.get_by_role('button', name='自动化范围', exact=True)
+    scope.click()
+    page.get_by_role('menuitem', name='Alcor 自动化', exact=True).click()
+    expect(page.get_by_text('Shared native fixture', exact=True)).to_have_count(0)
+    scope.click()
+    page.get_by_role('menuitem', name='全部自动化', exact=True).click()
+    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    page.get_by_role('button', name='选择创建方式', exact=True).click()
+    page.get_by_role('menuitem', name='每日简报', exact=True).click()
+    expect(page.get_by_role('textbox', name='自动化任务名称', exact=True)).to_have_value('每日简报')
+    expect(page.get_by_role('textbox', name='自动化任务内容', exact=True)).to_have_value('整理本机今日事务、日程和待处理账单，生成并保存今日简报，然后给我一段简短摘要。仅使用本机业务记录。')
+    page.get_by_role('textbox', name='自动化任务名称', exact=True).fill('Shared Alcor template fixture')
+    original_viewport = page.evaluate('({width:innerWidth,height:innerHeight})')
+    page.set_viewport_size({'width': 1280, 'height': 540})
+    zone = page.get_by_role('button', name=re.compile(r'^时区'))
+    zone.evaluate("element => element.scrollIntoView({block:'center'})")
+    zone_box = zone.bounding_box()
+    assert 180 <= zone_box['y'] <= 420, zone_box
+    zone.click()
+    zone_menu = page.get_by_role('menu').filter(has=page.get_by_role('searchbox', name=re.compile('搜索 UTC')))
+    expect(zone_menu).to_be_visible()
+    page.screenshot(path=str(home / 'alcor-automation-zone-small.png'), scale='css')
+    menu_box = zone_menu.bounding_box()
+    assert 0 <= menu_box['y'] and menu_box['y'] + menu_box['height'] <= 540, menu_box
+    assert 0 <= menu_box['x'] and menu_box['x'] + menu_box['width'] <= 1280, menu_box
+    page.keyboard.press('Escape')
+    expect(zone_menu).to_have_count(0)
+    expect(zone).to_be_focused()
+    page.set_viewport_size(original_viewport)
+    page.get_by_role('textbox', name='自动化任务名称', exact=True).scroll_into_view_if_needed()
+    page.screenshot(path=str(home / 'alcor-automation-template.png'), scale='css')
+    page.get_by_role('button', name='创建', exact=True).click()
+    expect(page.get_by_text('Shared Alcor template fixture', exact=True).first).to_be_visible()
+    catalog = rpc(page, 'schedule/catalog')
+    created = next(row for row in catalog if row['title'] == 'Shared Alcor template fixture')
+    assert created['target']['create']['agentPreset'] == 'alcor'
+    page.get_by_role('button', name='新建', exact=True).click()
+    expect(page.get_by_role('button', name='关闭创建页', exact=True)).to_be_visible()
+    manual_title = 'Shared manual Windows fixture'
+    page.get_by_role('textbox', name='自动化任务名称', exact=True).fill(manual_title)
+    page.get_by_role('textbox', name='自动化任务内容', exact=True).fill('Synthetic only')
+    page.get_by_role('button', name='创建', exact=True).click()
+    expect(page.get_by_text(manual_title, exact=True).first).to_be_visible()
+    manual = next(row for row in rpc(page, 'schedule/catalog') if row['title'] == manual_title)
+    assert manual['target']['create']['agentPreset'] == 'alcor'
+    assert any(row['id'] == native_task['id'] for row in rpc(page, 'schedule/catalog'))
+    switch(page, 'Alcor', 'DeepSeek Harness')
+    page.get_by_role('button', name='自动化任务', exact=True).click()
+    expect(page.get_by_text('Shared Alcor template fixture', exact=True)).to_be_visible()
+    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='自动化范围')).to_have_count(0)
+    expect(badge).to_have_count(0)
+    expect(page.get_by_text(manual_title, exact=True)).to_be_visible()
+    ids = {row['id'] for row in rpc(page, 'schedule/catalog')}
+    assert {manual['id'], created['id'], native_task['id']} <= ids
+    page.screenshot(path=home / 'native-schedule.png')
+    switch(page, 'DeepSeek Harness', 'Alcor')
+    expect(page.get_by_role('button', name='自动化范围')).to_be_visible()
+    navigation.get_by_role('button', name='事务', exact=True).click()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'package', 'aurabot'):
@@ -167,6 +252,8 @@ def main():
             assert apps.bounding_box()['y'] < system.bounding_box()['y'] < workspace.bounding_box()['y']
             expect(apps.get_by_role('button', name='Aurabot')).to_have_count(0)
             page.screenshot(path=home / 'original-alcor-tasks.png')
+            check_automation(page, nav, home)
+            check_shared_settings(page, 'alcor', home)
             system.get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
             page.screenshot(path=home / 'aurabot-alcor.png')
@@ -179,6 +266,7 @@ def main():
             expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
             switch(page, 'Alcor', 'DeepSeek Harness')
             expect(nav).to_have_count(0)
+            check_shared_settings(page, 'dsh', home)
             page.get_by_role('navigation', name='全局面板').get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
             page.screenshot(path=home / 'aurabot-dsh.png')

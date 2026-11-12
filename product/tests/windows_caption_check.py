@@ -51,6 +51,9 @@ def check_caption(page, pid, home, mode):
             page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
             box = button.bounding_box()
             assert box and 0 <= box['y'] < 60
+            assert 0 <= box['x'] < 180, box
+            bar = page.locator('.alcor-mode-bar').bounding_box()
+            assert bar and bar['x'] <= 2 and abs(bar['width'] - page.evaluate('innerWidth')) <= 4, bar
             assert button.evaluate('e => getComputedStyle(e).webkitAppRegion') == 'no-drag'
             scale = page.evaluate('devicePixelRatio')
             origin = win32gui.ClientToScreen(hwnd, (0, 0))
