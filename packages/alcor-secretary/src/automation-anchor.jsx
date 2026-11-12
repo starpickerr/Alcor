@@ -16,9 +16,15 @@ export function useAutomationAnchor({ open, anchorRef, align = 'start', gap = 4,
     }
   }, [open, anchorRef, name])
   return open ? {
-    position: 'fixed', positionAnchor: name, top: `calc(anchor(bottom) + ${gap}px)`,
-    ...(align === 'end' ? { right: 'anchor(right)' } : { left: 'anchor(left)' }),
-    positionTryFallbacks: 'flip-block, flip-inline',
-    maxWidth: `calc(100vw - ${margin * 2}px)`, maxHeight: `calc(100vh - ${margin * 2}px)`,
+    '--alcor-anchor-margin': `${margin}px`, '--alcor-anchor-gap': `${gap}px`,
+    '--alcor-anchor-top': `max(${margin}px, var(--dsh-frame-overlay-top, 0px))`,
+    '--dsh-anchored-max-height': `calc(100dvh - var(--alcor-anchor-top) - ${margin}px)`,
+    '--dsh-anchored-max-width': `calc(100vw - ${margin * 2}px)`,
+    position: 'fixed', positionAnchor: name, margin: 0,
+    top: `max(var(--alcor-anchor-top), calc(anchor(bottom) + ${gap}px))`, bottom: margin,
+    left: align === 'end' ? margin : `max(${margin}px, anchor(left))`,
+    right: align === 'end' ? `max(${margin}px, anchor(right))` : margin,
+    alignSelf: 'start', justifySelf: align === 'end' ? 'end' : 'start',
+    positionTryFallbacks: '--alcor-automation-above, --alcor-automation-window, --alcor-automation-wide-window',
   } : null
 }

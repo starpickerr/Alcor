@@ -1,6 +1,7 @@
 """Official shared-profile switch acceptance with disposable data only."""
 
 import json
+import re
 from pathlib import Path
 
 import official_desktop_check as d
@@ -113,6 +114,24 @@ with fresh_test_home("alcor-official-shared-") as temp, sync_playwright() as pw:
         expect(page.get_by_role('textbox', name='自动化任务名称', exact=True)).to_have_value('每日简报')
         expect(page.get_by_role('textbox', name='自动化任务内容', exact=True)).to_have_value('整理本机今日事务、日程和待处理账单，生成并保存今日简报，然后给我一段简短摘要。仅使用本机业务记录。')
         page.get_by_role('textbox', name='自动化任务名称', exact=True).fill('Shared Alcor template fixture')
+        original_viewport = page.evaluate('({width:innerWidth,height:innerHeight})')
+        page.set_viewport_size({'width': 1280, 'height': 540})
+        zone = page.get_by_role('button', name=re.compile(r'^时区'))
+        zone.evaluate("element => element.scrollIntoView({block:'center'})")
+        zone_box = zone.bounding_box()
+        assert 180 <= zone_box['y'] <= 420, zone_box
+        zone.click()
+        zone_menu = page.get_by_role('menu').filter(has=page.get_by_role('searchbox', name=re.compile('搜索 UTC')))
+        expect(zone_menu).to_be_visible()
+        page.screenshot(path=str(d.ARTIFACTS / 'alcor-automation-zone-small.png'), scale='css')
+        menu_box = zone_menu.bounding_box()
+        assert 0 <= menu_box['y'] and menu_box['y'] + menu_box['height'] <= 540, menu_box
+        assert 0 <= menu_box['x'] and menu_box['x'] + menu_box['width'] <= 1280, menu_box
+        page.keyboard.press('Escape')
+        expect(zone_menu).to_have_count(0)
+        expect(zone).to_be_focused()
+        page.set_viewport_size(original_viewport)
+        page.get_by_role('textbox', name='自动化任务名称', exact=True).scroll_into_view_if_needed()
         page.screenshot(path=str(d.ARTIFACTS / 'alcor-automation-template.png'), scale='css')
         page.get_by_role('button', name='创建', exact=True).click()
         expect(page.get_by_text('Shared Alcor template fixture', exact=True).first).to_be_visible()

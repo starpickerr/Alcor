@@ -3,6 +3,7 @@ import {sidebarOwner} from './sidebar-owner.js'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
 import noticeStyle from './notice.css'
+import automationAnchorStyle from './automation-anchor.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
 import { BearLogo } from './bear-logo.jsx'
@@ -20,7 +21,7 @@ import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import connectionStyle from './connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
 import { Button, Menu, MenuItemButton, FishLogo, IconPanelLeftOutlineRegular, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
