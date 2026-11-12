@@ -74,14 +74,6 @@ jobs:
       - name: Read fixed Legacy companion revisions
         id: sources
         run: python scripts/check_legacy_sources.py --github-output "$GITHUB_OUTPUT"
-      - name: Require read-only access to the private school source
-        env:
-          SOURCE_TOKEN: ${{ secrets.ALCOR_SOURCE_TOKEN }}
-        run: |
-          if [[ -z "$SOURCE_TOKEN" ]]; then
-            echo '::error::Configure ALCOR_SOURCE_TOKEN with read-only Contents access to starpickerr/dsh-fudan-elearning.'
-            exit 1
-          fi
       - uses: actions/checkout@v7
         with:
           repository: ${{ steps.sources.outputs.plugins_repository }}
@@ -97,7 +89,6 @@ jobs:
           repository: ${{ steps.sources.outputs.elearning_repository }}
           ref: ${{ steps.sources.outputs.elearning_revision }}
           path: MCP/fudan-elearning-mcp
-          token: ${{ secrets.ALCOR_SOURCE_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:

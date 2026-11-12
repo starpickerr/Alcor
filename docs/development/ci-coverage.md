@@ -15,7 +15,7 @@
 
 Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS Security.framework，也不能用虚假凭据后端制造成功。Linux 实际隔离和网络安全检查仍单独执行。两类来源锁独立：Legacy 的历史 MCP 提交不替代当前插件连接器发行锁。
 
-学校来源仓库为私有仓库，来源任务需要仓库 Secret `ALCOR_SOURCE_TOKEN`，仅授予 `starpickerr/dsh-fudan-elearning` 的 Contents 只读权限。检出使用固定提交，不持久化凭据；缺少 Secret 时明确失败，不跳过测试、不更改仓库可见性、不把私有源码复制到公开仓库。
+学校来源仓库由用户改为公开，并已通过 GitHub 核验；两个来源任务均按固定提交读取公开仓库，不需要额外 Secret，也不持久化检出凭据。来源摘要和篡改拒绝校验继续执行。
 
 ## 原假设与当前覆盖
 
