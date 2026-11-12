@@ -20,6 +20,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: Alcor
+      - name: Require read-only access to the private school source
+        env:
+          SOURCE_TOKEN: ${{ secrets.ALCOR_SOURCE_TOKEN }}
+        run: |
+          if [[ -z "$SOURCE_TOKEN" ]]; then
+            echo '::error::Configure ALCOR_SOURCE_TOKEN with read-only Contents access to starpickerr/dsh-fudan-elearning.'
+            exit 1
+          fi
       - name: Read current connector source revisions
         id: sources
         run: |
@@ -36,6 +44,8 @@ jobs:
           repository: ${{ steps.sources.outputs.elearning_repository }}
           ref: ${{ steps.sources.outputs.elearning_revision }}
           path: MCP/dsh-fudan-elearning
+          token: ${{ secrets.ALCOR_SOURCE_TOKEN }}
+          persist-credentials: false
       - uses: actions/checkout@v7
         with:
           repository: ${{ steps.sources.outputs.email_repository }}
