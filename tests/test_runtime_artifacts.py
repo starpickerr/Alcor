@@ -172,7 +172,7 @@ def synthetic_registry_transport(monkeypatch, local_service):
     def local_download(method, destination, **kwargs):
         assert destination.startswith(url + '/')
         assert kwargs.pop('category') == 'public-packages'
-        return open_request(method, destination, **kwargs)
+        return open_request(method, destination, configured_origin=url, **kwargs)
     monkeypatch.setattr('core.runtime.artifacts.open_request', local_download)
 
 
