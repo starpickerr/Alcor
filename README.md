@@ -53,6 +53,8 @@ The web preview uses a separate development profile and does not replace officia
 
 Native plugin sources live under `packages/`, build scripts under `scripts/product/`, and integration tests under `product/tests/`. The earlier standalone Python/Electron application is documented in the [legacy guide](docs/guide.md).
 
+Run `make audit` for the complete current plugin build and test suite. Native CI also checks portable Windows/Linux services, frozen school/mail connector protocols and the macOS credential provider in a temporary Keychain. Changes to the retained Python/Electron runtime still trigger its own maintenance checks; its complete audit is `make audit-legacy`. See the [CI coverage map](docs/development/ci-coverage.md) for exact triggers, preserved isolation/migration/security tests, verified results and desktop acceptance limits.
+
 ## Source and license
 
 Alcor is independently developed from [CowAgent](https://github.com/zhayujie/CowAgent) (formerly `chatgpt-on-wechat`) by zhayujie and contributors. It reuses the upstream Agent, model, tool, skill, memory, and messaging foundations, and adds desktop workflows plus shared business services for tasks, calendars, bills, briefings, and security management.
