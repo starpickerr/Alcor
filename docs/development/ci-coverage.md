@@ -19,7 +19,7 @@ Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS 
 
 ## 原假设与当前覆盖
 
-本次没有删除测试、降低断言或增加 skip；变化是检查的所属范围、平台与缺失的当前产品覆盖。旧测试保留原语义，维护对应代码仍触发它们。
+本次没有删除测试或增加 skip。已移除入口的 UI 预期按实际路由适配，安全语义移到真实存储验证；其余变化是检查的所属范围、平台与缺失的当前产品覆盖。维护旧代码仍触发相应检查。
 
 | 原测试或失败组的假设 | 当前架构证据 | 保留或替代覆盖 |
 | --- | --- | --- |
@@ -31,6 +31,7 @@ Legacy 全量与真实 Keychain 集成归 macOS；不能让 Ubuntu 调用 macOS 
 | 原生 Keychain 测试可在没有 Profile 服务的裸 Context 启动 | 更名后的 provider 在访问凭据前必须确认 Profile，拒绝未知身份或旧 provider 混用 | 主夹具和跨进程夹具声明当前 `@alcor/privacy`；生产拒绝保护不变。8 项真实 Keychain、4 项包内身份用例及 AgentHub 的 2 项身份迁移用例均保留实测，并纳入 native CI |
 | 旧 Core RunPolicy/OS 隔离直接代表官方 DSH 插件权限 | 官方 Host 是同进程可信插件模型；旧 Core 的隔离不会自动保护新 Host | 当前 real tool gate、actor/capability classification、organizer 排队后撤销、owner peer、陈旧快照和不可逆写入验证；旧 Core 边界仍在 Legacy/Linux 检查，不声称两者等价 |
 | 旧桌面路由和 18 项浏览器脚本可证明共享界面交付 | 当前顶层切换与原生服务由 secretary/plugin-info 及 DSH 插槽实现 | mode/sidebar/automation 等现行产品测试与官方客户端验收入口；18 个旧脚本全部保留，独立记录开始、结束、耗时和超时 |
+| 能力目录仍展示旧连接访问设置，并调用 `/api/capabilities/access` | 当前 `SkillsPage`、API 类型与桌面路由已无该入口；旧 Core 限制事实仍保留 | UI 验证旧入口缺席且调用旧路由会失败；`test_feature_access_settings.py` 在真实存储核对初始拒绝、保存后的只读范围、版本递增及不改写为 `mcp:browser`，保留权限与主体边界 |
 | 当前共享模式允许移除保留的独立环境测试 | 隔离实现仍有实际代码、已有环境和归档分支 | environments、extension-lifecycle、client-shell transport、child-processes 等仍在完整产品套件内 |
 
 ## 证据边界
@@ -41,6 +42,10 @@ CI 合成账号、临时数据和原生 Keychain 不证明个人 Apple、学校�
 
 原生 Swift 构建和合约探针统一在临时目录内编译完整源码快照，避免同步目录在编译期间改变输入元数据；原有 Apple 行为断言保留。只修复编译输入，不请求个人 Apple 授权。
 
+GNU Make 的完整审计/无 Conda 验证归入已有解释器工具检查，在 macOS 和 Linux 维护任务执行；不要求 Windows 插件用户额外安装 Unix Make。插件 Host/Python 运行时边界用例则在三个系统执行。连接器冻结只收集真实 lowlevel/stdio 服务器使用的 MCP 模块，不引入未使用开发 CLI 的可选依赖；所有来源和协议断言保留。
+
+Legacy 扩展只读加入 `/usr/share/zoneinfo` 的系统实际解析路径。本机为 `/private/var/db/timezone/tz/2026f.1.0/zoneinfo`；不授权其父目录，不更改写入、网络或个人数据保护。GitHub macOS 的源代码解释器曾因原路径指向读取范围之外而集中失败。公共依赖准备复用生产下载器、固定 uv 与两个已核验来源的带摘要锁文件，先在临时状态准备，再供隔离测试重新校验复制；缺失缓存不再让 UI 测试提前退出。
+
 ## 本次验证记录（2026-11-12）
 
 - 修复前手动旧审计：140 FAIL / 33 ERROR；不是现行插件运行结果。
@@ -48,4 +53,6 @@ CI 合成账号、临时数据和原生 Keychain 不证明个人 Apple、学校�
 - 原生完整审计曾复现两项 Swift 输入变化失败；快照修复后 `make audit` 为 537 PASS / 0 FAIL / 1 既有 Windows 专属 SKIP，总计 538。Apple 原生打包通过，相关定向合约 17 项及 Worker/watcher 3 项通过。
 - 真实 Keychain 原测试夹具缺少新版 Profile 服务，8 项在访问凭据前失败；夹具适配后 8 项、真实锁定/恢复，以及包内身份 4 项、AgentHub 身份迁移 2 项通过。生产安全检查没有放宽。
 - 两个当前源码锁对应的冻结包构建和实际协议断言通过；测试含工具集合、写入注解、技能参数、禁止凭据写入和秘密不落盘。原始日志保留 SDK 退出时的 stderr，不将协议检查当作真实账号验收。
-- GitHub 最终提交的完整检查仍在执行准备阶段；完成前不宣称 CI 全绿。此次未合并 main/develop，也未修改官方 DSH 或个人 Profile。
+- GitHub `977e8975`：Native 的 macOS、Windows、Linux 三任务通过；冻结来源任务因误收集未使用 MCP CLI 缺少可选 typer 而失败。Legacy Linux 通过；macOS 为 3011 PASS / 143 FAIL / 53 既有 SKIP，另有两个 UI 失败，分别为已移除入口和缺少公共依赖缓存。Windows Bash 通过。失败原始日志保留，不将该提交标绿。
+- 2026-11-13 定向回归：真实时区读取及扩展隔离 27 项通过；旧连接存储、解释器与 UI 进程管理 26 项通过；公共校验缓存准备入口通过；冻结模块收敛后两个当前包的完整协议断言通过。当前完整 `make audit` 为 536 PASS / 0 FAIL / 1 既有 Windows 专属 SKIP，总计 537；原 Make 断言迁入工具测试，不是删除覆盖。
+- GitHub 修复后最终提交的完整检查待运行；完成前不宣称 CI 全绿。此次未合并 main/develop，也未修改官方 DSH 或个人 Profile。

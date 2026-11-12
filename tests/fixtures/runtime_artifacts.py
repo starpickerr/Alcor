@@ -35,3 +35,20 @@ def seed_runtime_artifacts():
 @pytest.fixture
 def offline_runtime_artifacts():
     return seed_runtime_artifacts()
+
+
+if __name__ == '__main__':
+    import argparse
+    from common.state_dir import shared_root
+    from core.runtime.artifacts import python_wheels
+    from core.runtime.tools import ManagedTools
+    parser = argparse.ArgumentParser(description='Prepare hash-verified public artifacts in disposable state')
+    parser.add_argument('destination', type=Path)
+    args = parser.parse_args()
+    ManagedTools().uv()
+    root = Path(__file__).resolve().parents[2]
+    sources = json.loads((root / 'resources/legacy-sources.lock.json').read_text())
+    for name in ('email', 'elearning'):
+        python_wheels(root.parent / sources[name]['path'] / 'requirements.lock')
+    shutil.copytree(shared_root() / 'managed-runtimes', args.destination)
+    print(f'PASS: verified public runtime artifacts prepared at {args.destination}')

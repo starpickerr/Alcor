@@ -118,6 +118,10 @@ jobs:
           else
             echo "STELLA_CHECK_FULL=1" >> "$GITHUB_ENV"
           fi
+      - name: Prepare hash-verified public dependency artifacts in disposable state
+        run: |
+          python scripts/run_isolated.py python -m tests.fixtures.runtime_artifacts "$RUNNER_TEMP/alcor-public-artifacts"
+          echo "STELLA_TEST_RUNTIME_ARTIFACTS=$RUNNER_TEMP/alcor-public-artifacts" >> "$GITHUB_ENV"
       - name: Run the applicable Legacy maintenance gate
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "${STELLA_CHECK_FULL:-0}" == "1" ]]; then
@@ -156,4 +160,4 @@ jobs:
           bwrap --die-with-parent --ro-bind / / --proc /proc --dev-bind /dev /dev -- /bin/true
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Verify actual Linux process, authorization and network boundaries
-        run: python scripts/run_isolated.py python -m pytest tests/test_process_sandbox.py tests/test_security_gateway.py tests/test_controlled_http.py tests/test_runtime_artifacts.py tests/test_security_ssrf_web_fetch.py tests/test_security_ssrf_path_traversal.py -q
+        run: python scripts/run_isolated.py python -m pytest tests/test_process_sandbox.py tests/test_security_gateway.py tests/test_controlled_http.py tests/test_runtime_artifacts.py tests/test_security_ssrf_web_fetch.py tests/test_security_ssrf_path_traversal.py tests/test_python_environment.py tests/test_extension_sandbox.py::test_extension_can_read_system_timezones_without_owner_access -q
