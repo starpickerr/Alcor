@@ -21,7 +21,8 @@ for (const source of lock.sources) {
   for (const [name, version] of Object.entries(source.dependencies)) if (metadata.versions[name] !== version) throw new Error(source.repo + ' 构建依赖版本不符：' + name)
   const freeze = await run(python, ['-B', '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--name', source.binary,
     '--distpath', join(root, '.local/source-servers'), '--workpath', join(root, '.local/source-build', source.binary), '--specpath', join(root, '.local/source-specs'),
-    '--paths', repo, '--collect-data', source.module, '--collect-submodules', 'mcp', '--exclude-module', 'pytest', '--exclude-module', 'numpy', '--exclude-module', 'torch', join(repo, 'mcp_server.py')],
+    // Both entries use lowlevel/stdio; the optional developer CLI is not a server dependency.
+    '--paths', repo, '--collect-data', source.module, '--collect-submodules', 'mcp.server.lowlevel', '--collect-submodules', 'mcp.shared', '--exclude-module', 'pytest', '--exclude-module', 'numpy', '--exclude-module', 'torch', join(repo, 'mcp_server.py')],
     { cwd: repo, env: { ...process.env, PYINSTALLER_CONFIG_DIR: join(root, '.local/source-cache', source.binary) }, maxBuffer: 4 * 1024 * 1024 })
   await writeFile(join(root, '.local/source-build', source.binary + '.log'), freeze.stdout + freeze.stderr)
   const directory = join(root, 'packages', source.package)

@@ -96,7 +96,9 @@ def test_non_mcp_restriction_can_be_managed_in_capabilities_without_mcp_prefix(a
     control, store = access
     store.set_connection_restriction(user_id='owner', subject='user:owner', connection='browser', policy={'allowed': False, 'scopes': []})
     api = control('capabilities', 'browser', kind='connection')
+    assert api.inventory()['connection'] == dict(id='browser', allowed=False, scopes=[], revision=1)
     api.save(dict(action='connection', connection_id='browser', allowed=True, scopes=['read'], revision=1))
+    assert api.inventory()['connection'] == dict(id='browser', allowed=True, scopes=['read'], revision=2)
     assert store.connection_restrictions(user_id='owner', subjects=['user:owner'], connections=['browser']) == [dict(allowed=True, scopes=['read'])]
     assert store.connection_restrictions(user_id='owner', subjects=['user:owner'], connections=['mcp:browser']) == []
 

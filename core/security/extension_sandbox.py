@@ -68,7 +68,8 @@ def prepare_extension(command, package, storage, env, *, trusted=False, writable
                  TEMP=str(temporary), XDG_CACHE_HOME=str(private_home), XDG_CONFIG_HOME=str(private_home),
                  PYTHONDONTWRITEBYTECODE='1')
     # Core chooses import roots; no caller import injection survives.
-    roots = [Path(path).resolve() for path in ('/System', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/Library', '/private/etc',
+    # macOS relocates this public database behind a /var/db/timezone symlink.
+    roots = [Path(path).resolve() for path in ('/System', '/usr', '/usr/share/zoneinfo', '/bin', '/sbin', '/lib', '/lib64', '/etc', '/Library', '/private/etc',
              sys.prefix, sys.base_prefix, str(core / 'core'),
              *([str(package)] if read_package else []), *map(str, read_roots)) if Path(path).exists()]
     executable_reads = (*executable_reads, core / 'common' / 'log.py')

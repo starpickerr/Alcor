@@ -63,6 +63,8 @@ The preview runs in an isolated DSH profile. Plugin code lives in `packages/`. T
 
 Run `npm test` for the native product suite, or `make check` to build and test together. Desktop changes should also be checked in the official client with an isolated profile. For changes to the legacy Python/Electron application, use `make check-legacy` and the [legacy desktop guide](desktop/README.md).
 
+`make audit` runs the complete current product build and suite. PRs retain current product tests, builds and safety boundaries; run the Native workflow manually on the exact merge/release candidate for complete native package checks. Official Mac/Windows installation and upgrade checks need separate desktop evidence. The retained Python/Electron full audit is `make audit-legacy`, scheduled weekly and available manually; relevant changes retain automatic Linux safety checks. See the [CI ownership and coverage map](docs/development/ci-coverage.md) for platforms, triggers, preserved tests and acceptance gaps.
+
 ## Code of conduct
 
 Be respectful and constructive. We want Alcor to be a welcoming place for everyone.

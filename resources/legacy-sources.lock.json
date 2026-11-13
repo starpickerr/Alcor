@@ -1,0 +1,17 @@
+{
+  "plugins": {
+    "repository": "starpickerr/dsh-agent-hub",
+    "revision": "d1a7481537c301c213a0542577991d97c8155fc5",
+    "path": "Stella-Plugins"
+  },
+  "email": {
+    "repository": "starpickerr/dsh-email",
+    "revision": "0d4c7b15fdee03d6ec21cfa9236484647aa42c47",
+    "path": "MCP/email-mcp"
+  },
+  "elearning": {
+    "repository": "starpickerr/dsh-fudan-elearning",
+    "revision": "cfcd286e31f27ba3b10f4e7200ea02e05c5a6894",
+    "path": "MCP/fudan-elearning-mcp"
+  }
+}

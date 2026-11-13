@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_runtime import npm_path, python_path
+from ui_check import UI_TIMEOUT
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -225,6 +226,7 @@ def affected_checks(files):
             "tests/ui_smoke.py",
             "tests/ui_briefing.py",
             "tests/ui_apple_calendar.py",
+            "scripts/ui_check.py",
         )
     )
 
@@ -288,6 +290,10 @@ def isolated_env(root):
     )
 
     inherited_browser_cache = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+
+    public_artifacts = os.environ.get('STELLA_TEST_RUNTIME_ARTIFACTS')
+    if public_artifacts and Path(public_artifacts).is_dir():
+        env['STELLA_TEST_RUNTIME_ARTIFACTS'] = public_artifacts
 
     if inherited_browser_cache:
         candidate = Path(inherited_browser_cache)
@@ -373,7 +379,7 @@ def run_check(name, command, env, timeout):
         flush=True,
     )
 
-    if status == "FAIL":
+    if status == "FAIL" or name in {"pytest", "ui"}:
         print(output, flush=True)
 
     return name, status, " ".join(command), output
@@ -591,7 +597,7 @@ def main():
             (
                 "ui",
                 [str(PYTHON), "scripts/ui_check.py"],
-                120,
+                UI_TIMEOUT,
             ),
         ]
 
@@ -667,7 +673,7 @@ def main():
             commands.append((
                 "ui",
                 [str(PYTHON), "scripts/ui_check.py"],
-                120,
+                UI_TIMEOUT,
             ))
 
     with tempfile.TemporaryDirectory(

@@ -7,6 +7,7 @@ const [operation, home, keychainPath] = process.argv.slice(2)
 assert.ok(home && keychainPath)
 await mkdir(home, { recursive: true })
 const ctx = new Context()
+ctx.provide('profileContext', { startedBundles: ['@alcor/privacy'] })
 try {
   await ctx.plugin(KeychainCredentials, { dshHome: home, keychainPath })
   const provider = ctx.credentials

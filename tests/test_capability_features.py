@@ -145,8 +145,7 @@ def test_real_elearning_server_publishes_four_public_tool_titles_and_parameters(
     from agent.tools.mcp.mcp_client import McpClient
     from core.mcp.managed import PUBLIC_TOOLS
     repo = Path(__file__).resolve().parents[2] / 'MCP/fudan-elearning-mcp'
-    python = repo / '.venv/bin/python'
-    client = McpClient({'name': 'elearning', 'type': 'stdio', 'command': str(python) if python.is_file() else sys.executable,
+    client = McpClient({'name': 'elearning', 'type': 'stdio', 'command': sys.executable,
                         'args': [str(repo / 'mcp_server.py'), '--data-dir', str(tmp_path)], 'timeout': 10})
     try:
         assert client.initialize()

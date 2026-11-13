@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,10 +10,11 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 const directory = resolve(root, 'packages/alcor-privacy')
 const temporary = await mkdtemp(resolve(tmpdir(), 'alcor-keychain-build-'))
 try {
+  await copyFile(resolve(directory, 'native/Keychain.swift'), resolve(temporary, 'Keychain.swift'))
   const sdk = execFileSync('/usr/bin/xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { encoding: 'utf8' }).trim()
   for (const architecture of ['arm64', 'x86_64']) {
     execFileSync('/usr/bin/swiftc', ['-O', '-sdk', sdk, '-target', `${architecture}-apple-macosx13.0`,
-      resolve(directory, 'native/Keychain.swift'), '-o', resolve(temporary, architecture)], { stdio: 'inherit' })
+      resolve(temporary, 'Keychain.swift'), '-o', resolve(temporary, architecture)], { stdio: 'inherit' })
   }
   execFileSync('/usr/bin/lipo', ['-create', resolve(temporary, 'arm64'), resolve(temporary, 'x86_64'),
     '-output', resolve(directory, 'native/keychain-bridge')], { stdio: 'inherit' })
