@@ -7,6 +7,8 @@ export const assignments = {
   'dsh-onebot-qq': {entry:'dsh-onebot', initial:'alcor', exclusive:true},
 }
 export const modeNames={alcor:'Alcor',dsh:'DSH 工作台',both:'两边共用'}
+export const modeHook=Symbol.for('@alcor/product-mode')
+export const uiMode=()=>applicationEnvironment() ?? globalThis[modeHook]?.getSnapshot() ?? globalThis[Symbol.for('@alcor/secretary.workspace-navigation')]?.mode?.getSnapshot() ?? 'dsh'
 export function applicationEnvironment() {
   const value=globalThis.__ALCOR_APPLICATION__ ?? globalThis.process?.env?.ALCOR_APPLICATION
   return ['alcor','dsh'].includes(value) ? value : undefined

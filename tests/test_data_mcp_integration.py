@@ -189,6 +189,7 @@ def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
     tmp_path, monkeypatch
 , native_settings_action):
     from pathlib import Path
+    import sys
     from config import conf
     from agent.tools.tool_manager import ToolManager
 
@@ -202,7 +203,7 @@ def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
     config = {
         "name": "generic-source",
         "type": "stdio",
-        "command": str(root / "MCP/email-mcp/.venv/bin/python"),
+        "command": sys.executable,
         "args": [str(package / 'server.py')],
         "timeout": 10,
         "toolOperations": {'accounts': 'read', 'messages': 'read'},

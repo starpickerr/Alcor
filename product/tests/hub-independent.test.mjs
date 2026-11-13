@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm,readFile,mkdir,writeFile} from 'node:fs/promises'
@@ -115,7 +116,7 @@ test('AgentHub package and compiled entrypoints have no secretary dependency',as
 test('migration conflicts roll back the entire import without overwriting either database',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'hub-conflict-'))
   t.after(()=>rm(directory,{recursive:true,force:true}))
-  await promisify(execFile)(process.env.ALCOR_BUSINESS_PYTHON || process.env.STELLA_BUSINESS_PYTHON || 'python3',['-B','-c',`
+  await promisify(execFile)(testPython,['-B','-c',`
 import hashlib, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])

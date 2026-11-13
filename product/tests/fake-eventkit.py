@@ -4,7 +4,6 @@ import sys
 import time
 import os
 from pathlib import Path
-import fcntl
 import uuid
 from datetime import datetime,timedelta
 
@@ -16,7 +15,13 @@ state = {'calendar': list(defaults), 'reminders': list(defaults)}
 lock = None
 if state_file:
     lock = open(state_file + '.lock', 'a')
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    if os.name == 'nt':
+        import msvcrt
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(lock, fcntl.LOCK_EX)
     if Path(state_file).exists():
         state = json.loads(Path(state_file).read_text())
 kind = 'reminders' if op.startswith('reminder') or op == 'reminders' else 'calendar'
@@ -71,7 +76,8 @@ elif op in ('upsert','reminder_upsert','delete','reminder_delete','reminder_comp
     matches=[row for row in rows if row[group]==request.get('lookup_'+group,request[group]) and (row[identity]==request.get(identity) or request.get('external_id') and row['external_id']==request['external_id'])]
     found=matches[0] if len(matches)==1 else None
     if op in ('delete','reminder_delete'):
-        if found:rows.remove(found)
+        if found:
+            rows.remove(found)
         result={'deleted':True}
     elif op=='reminder_complete':
         assert found and found['due_on']==request['occurrence_on']
@@ -85,7 +91,9 @@ elif op in ('upsert','reminder_upsert','delete','reminder_delete','reminder_comp
             rows.append(found)
         found.update({key:value for key,value in request.items() if key in ('title','notes','description','location','start_at','end_at','all_day','due_on','due_time','planned_on','remind_at','priority','completed','completed_at','timezone','url','alarms','floating',group)})
         if not reminder:
-            found['occurrence_date']=request.get('occurrence_date',found['start_at']);found['timezone']=request.get('repeat_timezone',found['timezone']);found['is_detached']=False
+            found['occurrence_date']=request.get('occurrence_date',found['start_at'])
+            found['timezone']=request.get('repeat_timezone',found['timezone'])
+            found['is_detached']=False
         if not matches or request.get('set_recurrence'):
             found['recurrence']=request.get('native_recurrence') or {'frequency':request.get('repeat_frequency','none'),'interval':request.get('repeat_interval',1),'days':request.get('repeat_days',[]),'until':request.get('repeat_until')}
         result={singular:found}

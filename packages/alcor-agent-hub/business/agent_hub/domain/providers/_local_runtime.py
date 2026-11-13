@@ -28,6 +28,23 @@ def execution_sandbox(plan):
         _SANDBOX.reset(token)
 
 
+def stop_process_tree(process, *, force=False):
+    if process.poll() is not None:
+        return
+    if os.name == 'nt':
+        # Popen retains the process handle, keeping its PID from being recycled.
+        executable = Path(os.environ['SystemRoot']) / 'System32' / 'taskkill.exe'
+        result = subprocess.run([str(executable), '/PID', str(process.pid), '/T', '/F'],
+                                capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if result.returncode and process.poll() is None:
+            raise RuntimeError('Could not stop the owned CLI process tree')
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
 def runtime_call(method, payload):
     plan = _SANDBOX.get()
     if method == 'probe':
@@ -46,7 +63,7 @@ def runtime_call(method, payload):
         output.parent.mkdir(parents=True, exist_ok=True)
         handle = output.open('wb')
         try:
-            process = subprocess.Popen(payload['argv'], cwd=workspace, stdout=handle, stderr=subprocess.STDOUT, start_new_session=True)
+            process = subprocess.Popen(payload['argv'], cwd=workspace, stdout=handle, stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')
         except Exception:
             handle.close()
             raise
@@ -65,18 +82,12 @@ def runtime_call(method, payload):
     if method == 'cancel':
         if run['process'].poll() is None:
             run['cancelled'] = True
-            try:
-                os.killpg(run['process'].pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+            stop_process_tree(run['process'])
             def force_stop():
                 try:
                     run['process'].wait(timeout=3)
                 except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(run['process'].pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                    stop_process_tree(run['process'], force=True)
             threading.Thread(target=force_stop, daemon=True).start()
         return {'status': 'acknowledged'}
     if method == 'observe':
@@ -102,19 +113,13 @@ def runtime_call(method, payload):
 def close_runs():
     processes = [run['process'] for run in _RUNS.values() if run['process'].poll() is None]
     for process in processes:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        stop_process_tree(process)
     deadline = time.monotonic() + 3
     for process in processes:
         try:
             process.wait(timeout=max(0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            stop_process_tree(process, force=True)
 
 
 def run_version_probe(argv: list[str], *, timeout: float = 8.0) -> dict[str, Any]:

@@ -2,6 +2,7 @@ import { discoverBriefingSources } from '../../packages/alcor-organizer/src/brie
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -140,8 +141,28 @@ test('unreturned Hub attempts become unknown after restart and do not replay', a
 
 test('external CLI runs use the chosen workspace, persist formal output, and support cancellation', async context => {
   const { directory, worker, invoke } = await fixture(context)
-  const binary = join(directory, 'synthetic-codex')
-  await writeFile(binary, '#!/usr/bin/env python3\nimport json,os,sys,time\nif "--version" in sys.argv:\n print("synthetic 1.0")\nelif "WAIT" in sys.argv[-1]:\n time.sleep(30)\nelse:\n print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"合成回复："+os.getcwd()}}),flush=True)\n', { mode: 0o700 })
+  const windows = process.platform === 'win32'
+  const binary = join(directory, windows ? 'synthetic-codex.exe' : 'synthetic-codex')
+  if (windows) {
+    const source = join(directory, 'SyntheticCli.cs')
+    await writeFile(source, `using System;
+using System.Text;
+using System.Threading;
+using System.Web.Script.Serialization;
+class SyntheticCli {
+  static void Main(string[] args) {
+    Console.OutputEncoding = new UTF8Encoding(false);
+    if (Array.IndexOf(args,"--version") >= 0) Console.WriteLine("synthetic 1.0");
+    else if (args[args.Length-1].Contains("WAIT")) Thread.Sleep(30000);
+    else Console.WriteLine(new JavaScriptSerializer().Serialize(new { type="item.completed",
+      item=new { type="agent_message",text="合成回复："+Environment.CurrentDirectory } }));
+  }
+}`, 'utf8')
+    execFileSync(join(process.env.SystemRoot, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
+      ['/nologo', '/codepage:65001', '/reference:System.Web.Extensions.dll', '/out:' + binary, source])
+  } else {
+    await writeFile(binary, '#!/usr/bin/env python3\nimport json,os,sys,time\nif "--version" in sys.argv:\n print("synthetic 1.0")\nelif "WAIT" in sys.argv[-1]:\n time.sleep(30)\nelse:\n print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"合成回复："+os.getcwd()}}),flush=True)\n', { mode: 0o700 })
+  }
   const provider = await invoke('agent_hub', 'upsert_provider', { provider: { providerLocalId: 'codex-cli', binaryPath: binary } })
   assert.equal((await invoke('agent_hub', 'probe_provider', { provider_config_id: provider.providerConfigId })).status, 'ready')
   const coordinator = new HubCoordinator({ logger: { warn: assert.fail } }, worker)
@@ -460,6 +481,7 @@ test('briefing source switches persist separately from source scopes and reject 
   await assert.rejects(worker.call('source_group_settings', { groups: { email: true }, expected_groups: {} }), /其他页面变化/)
   assert.deepEqual(await worker.call('source_settings'), [{ source: 'alcor_tasks', accountId: 'local' }])
   await worker.close()
-  const restarted = new BusinessWorker(directory, options); t.after(() => restarted.close())
-  assert.deepEqual(await restarted.call('source_group_settings'), { email: false })
+  const restarted = new BusinessWorker(directory, options)
+  try { assert.deepEqual(await restarted.call('source_group_settings'), { email: false }) }
+  finally { await restarted.close() }
 })

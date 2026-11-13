@@ -8,6 +8,26 @@ import sys
 import pytest
 
 
+def test_extension_can_read_system_timezones_without_owner_access(tmp_path):
+    from core.security.extension_sandbox import prepare_extension
+    package = tmp_path / 'package'
+    package.mkdir()
+    secret = tmp_path / 'owner.txt'
+    secret.write_text('OWNER_PRIVATE')
+    command = [sys.executable, '-c', '''from pathlib import Path
+from zoneinfo import ZoneInfo
+import sys
+assert ZoneInfo('Asia/Shanghai').key == 'Asia/Shanghai'
+assert ZoneInfo('UTC').key == 'UTC'
+try: Path(sys.argv[1]).read_text()
+except OSError: pass
+else: raise AssertionError('owner file became readable')
+''', str(secret)]
+    plan = prepare_extension(command, package, tmp_path / 'private', os.environ)
+    result = subprocess.run(plan.argv, cwd=plan.cwd, env=plan.env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+
+
 def test_unavailable_extension_sandbox_fails_closed(tmp_path, monkeypatch):
     from core.security.extension_sandbox import prepare_extension
     from agent.permission.process_sandbox import SandboxUnavailable

@@ -1,341 +1,111 @@
-# Alcor 客户端与 DSH 运行环境
+# 在官方 DSH 中使用 Alcor
 
-Alcor（原 Stella）在同一个客户端顶部切换 Alcor 与 DSH 工作台。两个模式各有独立的标准 DSH Host、HOME、DSH_HOME、配置、会话、浏览器状态和插件数据。第三方插件在所属模式的原生插件管理器中原样安装，无需声明 Alcor 专属字段。
+Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.104`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏、应用／系统分组和业务页面；切回 DSH 恢复官方原生侧栏。
 
-2026-11-11 用户明确纠正交付要求：保留顶部切换，必须在同一个窗口直接切换，不把 Alcor 做成 DSH 的侧栏插件。当前外壳入口见[单窗口客户端](client-shell/README.md)。官方 DSH 应用作为经校验的运行时来源保持原样；Alcor 客户端是独立标识的本地构建。此前 `@alcor/launcher` 与两个官方窗口的方案不再作为默认交付。
+两个界面共用同一个 Host、Profile、运行环境、模型、配置、会话、工作区和插件目录。切换只改变界面，不启动第二个 Host，后台继续运行。第三方插件原样安装，Alcor 的「系统」分组仍打开它们自己的页面。
 
-新环境默认位于 `~/.local/share/Alcor/environments/`；已有个人 DSH 可保留原数据根，Alcor 使用专属环境。账号、模型和插件在各自模式管理。个人安装的迁移必须单独备份、盘点、授权和核对，不能将新建空环境当作保留原数据的更新。停用、升级或卸载一个环境的插件不改变另一边的实例。
+Alcor 使用官方插件接口和公开 UI 插槽，不修改或覆盖官方程序、UI 模块、签名和更新器，也不固定用户的 DSH 版本。官方客户端可以独立更新；插件需按宿主版本适配和验证。已通过的版本不代表未来版本无需适配。
 
-Alcor 本身是可选功能插件，DSH 插件页中的 `@alcor/extension` 条目控制其启用、关闭与卸载。客户端跟随原生 Profile 的选择管理独立 Alcor 环境；关闭停止其后台、QQ 和所属桌宠进程，切回 DSH 并保留数据。顶部切换只改变当前界面，继续保留后台。工作台中的管理条目不开放 Alcor 业务 API。
+## 安装与数据
 
-Alcor 专注秘书业务。生态插件保留自身入口和身份，不自动获得秘书业务能力。QQ 通道由其所在环境的插件处理，不随顶部模式选择而转交。本次个人安装按用户要求将 AuraBot 与桌宠留在 Alcor，保留原配置、人格、记忆和历史。见[QQ 社交与秘书业务](channels.md)。
+1. 安装官方 DSH，完成目标 Profile 的初始化。已验证的桌面版本和产物身份见[版本清单](desktop-release.lock.json)，各插件仍须满足自身 `engines.dsh` 和平台声明。
+2. 在 DSH 的「插件」页选择「添加插件」，安装 `alcor-secretary-0.1.104.tgz`。构建方法见[开发与打包](#开发与打包)。安装不需要单独的 Alcor 客户端或修改官方文件。
+3. 退出并重新打开 DSH，在左上角菜单选择 Alcor。日常模式切换即时生效；安装、启用、停用及卸载后按重启使用。
+4. 按需安装下表中的独立插件，账号与插件设置由 DSH 原生插件页管理。
 
-## 桌面用户安装
-
-本地单窗口客户端面向 macOS Apple Silicon，当前验收运行时为 DSH `0.2.2-rc.1`。旧的单 Host 辅助入口另保留 `0.2.2-alpha.3` 兼容检查，不代表该版本已完成单窗口验收。客户端校验官方归档及签名，不覆盖官方应用。Apple 同步、eLearning、邮件、AgentHub 和第三方插件按所属环境安装。新环境业务库为空；已有个人数据需单独迁移和校验。兼容版本与签名标识见[桌面版本清单](desktop-release.lock.json)。
-
-直接把秘书包安装到既有 Profile 的旧共用模式仍保留兼容，顶部模式菜单只切换界面，不构成新设计的进程或数据隔离。已有 Alcor/Stella 数据或凭据缺少迁移完成记录时，仍停止启动并要求离线检查，不能把它当作新环境覆盖初始化。
-
-界面扩展保存在 Alcor 包的 `vendor/` 中，原生组合使用相对 Host 入口及原模块 ID，与官方客户端文件分开。五个模块保留 MIT 和固定来源摘要，构建会校验其完整性。它们只补充现有模式、原生工作区／设置／自动化复用接口；宿主 Agent、模型、会话和工具执行不由此替换。旧的手工客户端兼容脚本仍可用于历史预览，但不再是这条桌面安装路径的前提。
-
-## 插件名称与源码仓库
-
-客户端通过 DSH 原生显示元数据使用 GitHub 项目名称。已有 `@alcor/*` 安装标识保持兼容，安装、数据路径和凭据不因显示名变化而迁移。
-
-| 客户端名称 | 安装标识 | 当前插件源码 | 独立服务／历史仓库 |
-| --- | --- | --- | --- |
-| Alcor | `@alcor/extension`（管理）／`@alcor/secretary`（内部业务） | [客户端说明](client-shell/README.md) | — |
-| dsh-agent-hub | `@alcor/agent-hub` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-agent-hub) | [dsh-agent-hub](https://github.com/starpickerr/dsh-agent-hub) 保存旧第一方插件，新版尚未迁入 |
-| dsh-fudan-elearning | `@alcor/elearning` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-elearning) | [dsh-fudan-elearning](https://github.com/starpickerr/dsh-fudan-elearning) 提供 MCP 服务 |
-| dsh-email | `@alcor/mail` | [Alcor](https://github.com/starpickerr/Alcor/tree/develop/packages/alcor-mail) | [dsh-email](https://github.com/starpickerr/dsh-email) 提供 MCP 服务 |
-
-“插件作用范围”是客户端内置的环境标注，不需要另外安装插件，实际可用性由独立环境与原生启停决定。新版客户端迁移时移除独立 `@alcor/plugin-info` 安装；其源码与打包命令仅保留旧共用 Profile 兼容。第一方旧 `productScope` 字段不再限制独立环境；第三方无需实现 `alcor.modeAssignment` 或其他专属配置。
-
-## 客户端构建与独立环境辅助入口
-
-```sh
-npm run product:client:pack -- --config /absolute/client-config.json --out /absolute/new/Alcor.app
-
-# 以下双窗口命令仅用于单 Host 调试，不作为产品切换入口。
-npm run product:desktop -- alcor
-npm run product:desktop -- dsh
-# 从命令行安装到已退出的指定环境，插件仍走官方 CLI。
-npm run product:environment -- install alcor github:owner/plugin
-```
-
-辅助命令的 `--root /absolute/path` 选择独立数据根，`--app /absolute/path/DeepSeek\ Harness.app` 选择已验证官方应用。拒绝接管无所有权记录的目录、软链接和身份冲突。单窗口客户端默认入口由外壳持有，用户通过顶部切换；不再安装工作台启动器。
-
-独立进程和独立数据根约束正常插件的注册与默认持久化行为，不构成恶意本机插件的文件或凭据沙箱。用户手动向两边授予同一文件目录或外部账号时，外部资源仍可能共享。不要在两个环境中同时配置同一机器人账号的回复程序。
-
-## 当前源码与默认入口
-
-`packages/` 保存原生插件源码，`product/tests/` 保存集成测试，`scripts/product/` 保存构建和预览入口。运行 `make setup` 安装依赖，`make check` 构建并测试。`npm run dev` 与 `product:desktop:preview` 保留旧共用模式预览，不能证明新运行环境隔离。原生 CI 配置位于 [.github/workflows/native-product.yml](../.github/workflows/native-product.yml)。旧 Python/Electron 测试入口为 `make test-legacy`。
-
-事务列表通过左侧清单导航、顶部视图和搜索筛选；任务行可进入详情，勾选完成和右侧菜单分别操作，并支持在当前清单快速添加。删除确认说明子事务或重复系列的影响，详情状态／日期／清单／优先级集中展示。检查项按当前设计从详情和编辑页面移除，既有数据保留，编辑其他任务字段不清空旧检查项。专项官方桌面验收入口：`product/tests/task-cards-check.py`。
-
-任务表单顺序为标题、事务详情、截止日期／时间、优先级／标签，保存使用当前系统时区。新提醒从定时任务入口设置；表单只提交可编辑字段，已有任务的其他数据沿用后端局部更新契约保留。
-
-月／年账单列表采用居中限宽的纵向紧凑卡片。简报更新历史以连续竖线连接当前版本和各历史节点，按时间由新到旧排列，保留状态文字、颜色区分和版本切换。官方桌面专项验收入口：`product/tests/statements-timeline-check.py`。
-
-## 构建原生安装包
-
-需要 Node >=24.9、Python >=3.9。macOS 构建 Apple 桥另需 Swift Command Line Tools。在仓库根目录运行：
-
-```sh
-npm ci --ignore-scripts
-npm run product:client:pack -- --config /absolute/client-config.json --out /absolute/new/Alcor.app
-npm run product:apple:pack
-```
-
-当前入口产物为指定路径的 `Alcor.app`，包含秘书原生包；业务包版本以对应 package.json 为准。下方直接安装秘书包的命令仅用于旧兼容测试，不是个人 Profile 分离或升级步骤。
-
-```sh
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-secretary-0.1.88.tgz --ignore-scripts
-dsh plugin --profile <隔离测试 Profile> add /absolute/path/alcor-apple-sync-0.1.18.tgz --ignore-scripts
-```
-
-在窗口顶部切换 Alcor 或 DSH 工作台。Alcor 侧栏提供事务、日程、简报、账单和自动化。工作台首页按项目和最近对话组织专业任务，使用宿主模型和工具权限。AgentHub 的入口位于工作台，见[插件说明](../packages/alcor-agent-hub/README.md)。
-
-在 Alcor 中，可以从侧栏新建秘书对话；项目空间在「设置 → Alcor」管理。桌宠由独立的 AuraBot pet 社区模块提供，沿用上游的聊天、动画及设置。第三方插件入口显示在「系统」分组。
-
-Apple 日历与提醒事项的同步由「插件 → @alcor/apple-sync」管理，见[插件说明](../packages/alcor-apple-sync/README.md)。eLearning 和邮件接入见 [MCP 接入](mcp-connections.md)。
-
-界面复用宿主 `Button`、`Input`、`Checkbox`、系统字体和明暗偏好。Alcor 模式使用白色／浅灰与炭灰表面、蓝色主要操作及选中态，小熊图标使用暖棕／沙金色；事务分组、日程网格、简报时间轴及账单图表保留各自的信息结构。主题通过现有语义变量限定在 Alcor 模式内，切回 DSH 或停用插件恢复宿主样式，不改业务数据或核心交互。
-
-## 官方 Desktop 验证
-
-当前单窗口验收使用 `product/tests/client-shell-desktop-check.py`，见[客户端说明](client-shell/README.md)。检查同窗切换、草稿、接口与浏览器状态隔离、原样生态插件和重启恢复。
-
-旧双窗口隔离验收保留在 `product/tests/isolated-environments-check.py`；其 launcher 构建和两窗口结果仅用于历史回归，不作为当前入口或最终交付证据。所有合成验收使用测试专用 HOME/DSH_HOME，不使用个人账号。
-
-以下 `make test-desktop` 和历史升级脚本继续验证旧共用 Profile 的兼容路径。
-
-从官方 DMG 只读挂载或安装的 App 验证，发布版本、架构、签名 Team 与 `app.asar` 摘要由 `product/desktop-release.lock.json` 锁定。设置 `STELLA_CHECK_DESKTOP_APP` 可指定已安装的官方 App，默认使用 `.local/desktop-official/mount/DeepSeek Harness.app`。`make test-desktop` 使用独立 HOME、DSH_HOME 与 Electron 用户目录，经官方 Desktop 自带 CLI 验证冷安装、顶部双向切换、六应用、模式／业务重启恢复、停用与卸载；不读取个人账号或运行真实 Apple 同步。
-
-原生界面根节点热重组仍存在注册空窗；`--hot-install` 是单独的热安装检查，失败不能当作冷启动验收通过。普通交付要求安装／启停／卸载后重启，不承诺无重启热更。日常 Alcor / DSH 模式切换不受此限制。
-
-完整重建 UI 扩展时，在 `product/upstream.lock.json` 指定的官方源码和补丁上构建五个 UI 包，再执行 `ALCOR_UPSTREAM_DIR=/absolute/prepared-upstream npm run product:ui:build`。普通 `product:build` / `product:pack` 只消费并校验包内已生成的衍生产物，不把 `references/` 或个人 App 作为输入。
-
-## DSH 更新兼容
-
-插件只依赖自身业务库；`@deepseek-ai/*` SDK 均由运行中的宿主提供，声明为可选 peer，禁止随插件安装旧宿主组件。`npm test` 检查这条约束与明确的版本范围。旧版本插件曾把 alpha.3 核心组件装进 Profile，rc.1 升级兼容检查会停用这些旧组件，导致原生服务缺失；修复版秘书 0.1.7（及后续版本） 和 Apple 同步 0.1.1 必须一起升级，由包管理器移除它们遗留的宿主依赖。不要清空 Profile、业务库或账号来修复。
-
-扩展支持版本前，更新已核实的 `desktop-release.lock.json`，执行完整官方 Desktop 生命周期和旧 Profile 升级检查，确认配置、业务数据及不兼容时的原生启动。后者需要保留 0.1.5／0.1.0 旧包作为升级输入、已构建的新包和独立 alpha.3 官方 CLI：
-
-```sh
-STELLA_CHECK_DESKTOP_APP="/absolute/DeepSeek Harness.app" \
-STELLA_LEGACY_CLI="/absolute/alpha-runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" \
-make test-desktop-upgrade
-```
-
-检查使用隔离目录和合成数据，不连接个人账号。这是历史同名包升级检查，不验证 `@stella/*` 到 `@alcor/*` 的跨包迁移；使用更名后的包时会跳过。当前个人 Profile 的跨包核验结果见本页开头。
-
-## 简报来源与插件适配
-
-侧栏不再提供独立「数据」页，来源卡片位于「简报 → 设置」，开关和范围位于对应插件详情的「简报来源」；旧页面位置自动恢复到简报。来源配置、历史简报和业务库保留，原数据页的存储展示接口已删除。账号配置和插件生命周期统一使用 DSH 原生插件页，Alcor 不再提供连接、逐工具授权或旧工作区表单。
-
-适配层统一发现来源元数据、读取已选范围、校验返回身份和转换简报材料。兼容现有邮件／学校 MCP，并支持提供明确简报契约的 DSH 原生插件；不会扫描或执行全部插件工具。定时简报与手动简报共用已开启来源、有效账号及已保存范围，无需逐次手动授权；选择来源不开放通用对话或定时 MCP 调用。插件接入协议和验证边界见 [简报插件适配](briefing-plugin-adapters.md)。
-
-## 历史顶部切换兼容层
-
-用户可显式选择为官方 npm DSH `0.2.2-alpha.3` 安装本地客户端补丁。该选择提供顶部 DSH / Alcor 切换、按模式创建会话、位置恢复和原生 `workspace.browser` 组件复用，属于基于官方 DSH 的兼容版本。使用已有 `product:prepare` 生成的固定源码和补丁构建产物，先停止目标宿主，再运行：
-
-```sh
-node scripts/product/client-compat.mjs --install /absolute/dsh-runtime
-node /absolute/dsh-runtime/stella-client-compat/client-compat.mjs --check /absolute/dsh-runtime
-```
-
-`/absolute/dsh-runtime` 是包含官方 `node_modules/@deepseek-ai/dsh` 的安装目录，不是 DSH_HOME 或 Profile。仅替换四个客户端文件，原件和哈希保存在 `stella-client-compat/`。将第二条检查放在日常启动入口、官方 DSH 启动之前；检查失败时停止启动，不自动覆盖或重装。重启并刷新浏览器后出现顶部菜单，原有会话首次保持原位置。
-
-需要回退时先停止宿主，然后运行：
-
-```sh
-node /absolute/dsh-runtime/stella-client-compat/client-compat.mjs --restore /absolute/dsh-runtime
-```
-
-回退不删除会话或秘书设置。宿主升级、客户端未知修改和备份损坏会拒绝覆盖；升级前先重新验收，不强行跳过检查。验证入口为 `product/tests/client-compat.test.mjs`，以及对隔离兼容安装显式设置 `STELLA_CHECK_CLI`、`STELLA_CHECK_CLIENT_COMPAT=1` 后运行 `product/tests/plugin_check.py`。未设置这两个变量的检查继续针对未修改官方安装。
-
-## 可选 Keychain 凭据包
-
-macOS 可单独构建 `npm run product:privacy:pack`，候选产物为 `.local/artifacts/alcor-privacy-0.0.2.tgz`。它通过原生 reference/record 契约为模型和插件保存凭据，安装默认停用。由用户明确选择全局 provider 后才使用 Keychain；不会导入或改写旧凭据文件，锁定或拒绝时直接失败。启用、回退和限制见 [privacy 使用说明](../packages/alcor-privacy/README.md)。此前仅实测旧包在 DSH `0.2.2-alpha.3`、临时 Keychain 和合成凭据下的行为；新包、正式签名、真实 OAuth 与升级授权仍待验收。
-
-```sh
-npm run product:privacy:test
-# 含原版宿主安装、显式启用、模型工具往返、重启和锁定恢复；需要 Python Playwright
-python product/tests/keychain_check.py --host
-```
-
-## 旧资产离线盘点
-
-`scripts/product/inventory-legacy.py` 使用 Python 标准库和 SQLite >=3.37，不导入旧运行时。先在应用停机后制作一致的独立副本；SQLite 应使用 Backup API 或已完成 checkpoint 的停机快照，副本中存在 WAL、SHM 或 journal 时拒绝。`--confirm-offline-copy` 是操作者确认，工具无法证明其他进程没有写入。指定规范化的绝对快照根；符号链接、硬链接和特殊文件均拒绝。
-
-```sh
-python3 scripts/product/inventory-legacy.py --snapshot /absolute/offline-snapshot \
-  --agent-root agents/default --user-root users/local-default --shared-root shared \
-  --confirm-offline-copy > /absolute/reports/inventory.json
-python3 product/tests/inventory_check.py
-```
-
-各 root 相对于快照根，按旧注册信息和 `common/state_dir.py`、`core/plugins/lifecycle.py` 确认，可重复指定多 Agent/用户。旧单目录布局可对三个角色显式指定 `.`；不猜测身份或自动合并不同用户。当前覆盖：
-
-| 范围 | 盘点资产 |
+| 安装标识 | 用途与范围 |
 | --- | --- |
-| user | todos/calendar/briefing/bills/agent-hub/data 和 operations 数据库；当前 `plugins/memory`、历史 memory、output/work/runs/health、automation-records 文件数量；USER/MEMORY 与迁移标记是否存在 |
-| agent | 会话/索引 `memory/long-term/index.db`、权威调度 `scheduler/automation.db`，旧 tasks.json 是否存在 |
-| shared | knowledge 文件数量，`.env`、mcp.json 是否存在；不打开其内容 |
+| `@alcor/secretary` | Alcor 事务、日程、简报、账单、自动化与专用对话；本轮已验 macOS Apple Silicon 和 Windows x64。 |
+| `@alcor/apple-sync` | Apple Calendar／Reminders 同步；当前安装包仅 macOS，权限与限制见[Apple 插件说明](../packages/alcor-apple-sync/README.md)。 |
+| `@alcor/elearning` | 复旦 eLearning 课程、作业与公告；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
+| `@alcor/mail` | IMAP 邮件只读查询与简报来源；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
+| `@alcor/agent-hub` | 独立开发者协作插件；0.1.4 声明支持 alpha.3／rc.1，尚未声明支持 rc.2。 |
 
-输出仅含固定资产名、schema/table/root 摘要、行数、文件数量/大小及固定状态桶，未知状态归 `<other>`；不输出正文、对象 ID、实际文件名、表名、DDL、账号或 secret。虚表、FTS shadow 与 view 不查询，报告排除数量。多个范围不可直接相加；automation worker 副本只统计文件，当前记忆与旧副本分别列示。报告始终 `migration_ready=false`，未知 schema 必须人工核对。
+QQ 与桌宠来自独立 AuraBot 社区插件。秘书不加载社交人格、长期社交记忆或主动交流队列；小熊形象包与安装边界见[桌宠说明](../assets/desktop-pet/README.md)，通道设置见[QQ 社交与秘书业务](channels.md)。
 
-这是首批资产清单工具，尚不覆盖插件自定义目录、外部来源/Apple 映射、授权库与所有私有设置；不验证业务关系或完整备份，不执行复制、导入、激活或 Keychain 读取。保留现有 owner，待迁移步骤核对这些额外路径。
+秘书业务库位于目标 Profile 的 `alcor/business/`。停用或卸载不应作为清空数据的方法；重新安装验收核对原工作区和事务 ID 保留。桌面使用官方 DSH 提供的 Python 解释器，普通用户无需为秘书另装 Python。
 
-下面的独立数据根、客户端补丁与桌面启动器仅属于旧隔离预览，不是用户安装功能包的步骤。不要对个人 DSH 使用 `product/cordis.patch.yml`；它会覆盖宿主默认配置。
+已有 Stella Profile 或独立 Alcor 环境不会在安装时自动迁入。迁移需停写、备份、核对业务库及外部来源映射，保留原始环境和恢复材料；不覆盖原生会话、无关配置和凭据，不同时启用两套同步或机器人写入源。离线接续工作区还须保持记录、`global.workspaceIds` 顺序及每个会话唯一归属一致。个人数据盘点、迁移回执和截图留在本机，不进入仓库。[工作区迁移说明](workspace-migration.md)提供相关背景。
 
-## 历史隔离预览的构建与启动
+## 界面与共享关系
 
-需要 Node >=24.9、Git、网络和 macOS arm64/x64（当前 Desktop 启动脚本支持范围）。根目录运行：
+| Alcor 事务页 | 官方 DSH |
+| --- | --- |
+| ![Alcor 原侧栏、事务页和共享工作区](../docs/images/alcor-shared-tasks.png) | ![官方 DSH 原侧栏和同一共享工作区](../docs/images/dsh-shared-workspace.png) |
+
+左上角按钮通过官方 `shell.overlay` 插槽呈现，保留 44px 标题栏位置。侧栏借助可逆的 Loader 生命周期交接，工作区与设置仍由官方组件提供。两种界面使用同一工作区目录和插件管理器，无须按模式重复安装插件。
+
+共享模式不是数据或进程隔离。原生插件属于同进程可信代码，模式切换不构成操作系统沙箱。工具执行继续遵循 DSH 当前会话的权限、审批和凭据设施；打开页面或切换界面本身不调用模型。
+
+## 自动化
+
+Alcor 保留自己的自动化管理页，提供每日简报模板、手动创建和「全部／Alcor」查看范围，默认显示全部原生任务。范围切换只筛选显示。新建的 Alcor 任务带有 Alcor owner／preset；DSH 仍使用未覆盖的官方自动化页面。两个入口共享任务 ID、运行历史和唯一的 DSH 调度器。
+
+![Alcor 自动化页面中的每日简报模板和创建表单](../docs/images/alcor-automation-template.png)
+
+模板保存前不调用模型。执行时，任务所选的业务或外部来源内容可能发送给用户配置的模型；DSH 需运行才能调度。Alcor 自有 UI 与官方页面的样式和注册分开，不替换官方 `schedules` 页面。
+
+Alcor 保留删除保护：公开接口无法证明待投递状态时拒绝删除，不以确认框代替安全删除契约，也不绕过保护直接调用原生删除。
+
+## 业务入口
+
+- **事务与日程**：管理清单、子事务、重复任务、分类和日期视图。事务与日程页面中的任务引用同一记录，详情与编辑使用右侧面板；来源只读状态及 Apple 权限继续生效。
+- **简报**：在「简报 → 设置」选择来源和规则。插件／账号可用性与简报来源开关分别控制，两层有效才采集；失败不推进来源游标。运行、来源和规则按任务记录保存，重启后可显式继续。来源契约见[简报插件适配](briefing-plugin-adapters.md)。
+- **账单**：查看流水、月／年报表、分类及币种汇总。对话可按要求导入微信 XLSX／支付宝 CSV，文件须在 DSH 授权范围内；按交易号去重，不覆盖同号冲突流水。每次最多 5 个文件，单个 5 MB、合计 20 MB、每文件 10000 笔。导入工具只返回计数与汇总，不将原文件正文回传模型。
+- **对话与自动化**：页面与对话共用领域服务，已授权的操作无需再次到页面确认；宿主必要的权限和破坏性操作确认仍生效。工具范围与文件限制见[页面业务工具](page-tools.md)。
+
+Apple 真实账号、邮件／学校真实服务与合成测试分别留证，不因页面加载成功就宣称外部集成完成。可选 Keychain 包默认停用，其验证边界见[凭据插件说明](../packages/alcor-privacy/README.md)。
+
+## 开发与打包
+
+开发需要 Node.js >=24.9 和 Python >=3.9。macOS 构建 Apple 原生桥还需要 Xcode Command Line Tools。在产品仓库根目录运行：
 
 ```sh
 npm ci --ignore-scripts
-npm run product:prepare
-npm run product:preview:build
-npm run product:web -- --no-open --port 5174
-# 或
-npm run product:desktop
-```
-
-`product:prepare` 在 `.local/upstream` 克隆固定发行 tag，校验提交、顺序应用最小补丁，禁用依赖安装脚本后使用官方构建入口，准备官方 runtime 和 Electron。构建会下载固定校验和的运行资源；已有不匹配源码或冲突改动会拒绝，不能覆盖。第一次 runtime 解包后的系统校验可能耗时；失败必须查看日志，不能跳过 smoke。`npm ci` 会还原 npm Client 文件，之后重新执行准备/构建。`references/` 不参与构建。
-
-Web 默认数据根 `.local/dsh-preview`，Desktop 为 `.local/desktop-preview`。可用 `ALCOR_PRODUCT_HOME` 指定**新的专用空目录**。预览会写归属标记、设置 0700 并持有官方跨进程锁；已有未知数据、个人 `.dsh/.stella/.codex` 与项目源码目录拒绝使用。Web/Desktop 必须使用不同目录。不自动接管没有标记的旧预览目录。不要把旧数据复制进这里绕过检查。
-
-旧的 `STELLA_PRODUCT_HOME` 和 `STELLA_UPSTREAM_DIR` 仅作为迁移期回退；新旧变量同时存在且值不同时会停止，避免意外使用错误目录。
-
-launcher 不继承模型 API Key 等宿主变量。模型配置通过原生 profile/owner 设置；合成测试只使用临时假 credential。预览沿用 DSH 原生 local 凭据 provider；用户已明确选择模型 Key 和 MCP 账号均使用此机制，不启用 macOS Keychain。原生凭据文件权限为 0600，同账号可信工具仍可能读取。Web 偏好按 origin 存储，重启恢复必须使用同一个端口。Desktop 使用稳定的应用 origin。禁用/卸载秘书 bundle 后不会在重启时自动重装或启用。
-
-## 当前行为与边界
-
-2026-11-05 后端：已迁入原事务、日程、账单、简报与 AgentHub 的独立领域服务。2026-11-07 起 AgentHub 独立为开发者插件，协作数据归其私有目录，Stella 不再开放协作 `catalog`。事务、日程、账单与简报仍由页面和 `stella_business` 共用权威对象，业务库位于当前 DSH Profile 的 `stella/business/`，不使用 macOS Keychain。层级／依赖／重复、准确账目／期间／XLSX、简报修订／行动／outbox 均可通过 `catalog` 查询并调用。现有开发记录幂等迁入，原 KV 保留；旧 Stella 私人业务库仍待离线迁移。
-
-简报可选择使用当前模型整理。通过 Alcor 对话配置已连接的邮件／eLearning MCP 来源，凭据沿用 DSH；来源统一使用上次成功检查点与前一自然日零点中的较晚者。任一来源失败会保留上次简报和游标，重试复用成功来源。正文、来源游标、修订和采集回执由同一 SQLite 事务提交。模型会接收来源正文，过大的原文可能超出上下文，失败后不更新游标。事务桌面提醒由持久回执管理，失败重试不重跑 Agent；DSH 仍是唯一 Agent 调度器。Apple 桥随独立 Apple 同步插件构建，原生配置页已接，系统实际授权与真实数据同步尚未验证。前端高级入口仍按 [功能对照](feature-parity.md) 标注，不能把后端 API 可用视为全部页面验收完成。
-
-- 首次保留当前 DSH 页面与会话；由模式菜单进入 Alcor，之后恢复本窗口上次模式。窗口之间不监听彼此的模式变更。
-- 切换只恢复当前模式的页面、会话引用；不会创建会话、调用模型或改写已有会话。秘书新会话使用 `stella`；隔离预览在 DSH 新会话创建时读取并显式绑定宿主当前默认 Preset，避免复用秘书空会话而覆盖草稿，读取失败会拒绝创建。本隔离预览的默认值是 `standard`，原生安装不挂接该事件。
-- 原生 Client 保留草稿；当前已验同进程返回，未宣称所有工作区、崩溃及升级恢复完成。
-- 秘书 Preset 使用原生 scoped restriction 屏蔽未授权全局工具，包括后续新增注册，保留 `alcor_overview` 及精确授权的 MCP 工具；执行 guard 拒绝非主动用户主会话和已撤销调用。DSH 会话的全局工具与用户执行策略不变。旧隔离预览另外将 DSH 限制为 `todo_write` / `ask_user_question`，关闭通用执行入口；工具限制不能证明 OS 隐私隔离。
-- Secretary 是标准原生 bundle：Host Remote、Preset 内工具、页面、设置、storage-domain 安装记录。原版 DSH 可从首页显式开始秘书对话；预览顶部切换依赖 Client 槽补丁，原版没有切换栏。
-- 原生 Host 插件是同进程可信代码。独立数据根、工具目录与环境筛选不构成恶意插件的 OS 沙箱；安装插件仍可运行宿主代码。P1 必须验证 executor 拒绝路径、凭据与资源授权后才开放执行。
-- 没有替换或删除旧 `core/security`、Codex 适配及旧插件成果。旧安全实现不会自动保护新 DSH 进程。
-
-## 供应链修复与发行差异
-
-固定发行版的依赖审计发现 Zod/Undici/fflate/MCP client 的已知问题。npm 与 Desktop 源码构建均锁定 Zod 4.6.7、Undici 8.12.2、fflate 0.8.3、MCP client 2.3.0；上游源码配置与 lockfile 差异作为第三个补丁保留。`npm audit` 当前对根 npm 依赖图报告 0 项漏洞；这不是对上游所有内联产物、OS runtime 或社区包的安全审计。
-
-当前仍保留上游图标、账户菜单、欢迎页、更新与平台专属窗口承载，未宣称完成白标安装包。产品独立数据根与顶部切换已加入；遥测/反馈插件在 overlay 禁用，但未完成所有网络出口实证。正式发行前需要品牌/协议/更新渠道归属、签名与恢复验收，不能发布指向官方 DSH 更新渠道的 Alcor 安装包。
-
-## 验证入口
-
-```sh
-npm run product:test
-# 需要安装 Python Playwright 及 Chromium
-python product/tests/web_check.py
-python product/tests/desktop_check.py
-```
-
-Web 使用本地合成 SSE 模型，覆盖实际模型工具目录、Alcor 工具往返、DSH 独立人格、新会话、草稿切回、双窗口、390px 抽屉真实点击、键盘/Escape、同 origin 重启和设置持久化。Desktop 使用隔离临时 home，无账号/模型，覆盖真实 Electron 中切换、刷新与 520px renderer。`STELLA_CHECK_ARTIFACTS` 指定截图目录。
-
-未修改官方 Web 包与合成 Apple 生命周期（官方运行环境须放在 Alcor 工作区外，避免宿主优先解析到开发包）：
-
-```sh
-STELLA_TEST_RUNTIME="$(mktemp -d /private/tmp/stella-official-runtime.XXXXXX)"
-npm install --prefix "$STELLA_TEST_RUNTIME" --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-alpha.3
 npm run product:pack
-npm run product:apple:pack
-STELLA_CHECK_CLI="$STELLA_TEST_RUNTIME/node_modules/@deepseek-ai/dsh/lib/bin.js" python product/tests/organizer-ui-check.py
+npm test
 ```
 
-该检查使用实际打包安装文件，强制验证模式按钮、双向同步、分类／清单映射、事务树、日历各视图及窄窗口；秘书启停按冷启动契约验证，Apple 插件单独验证停用、卸载和重装。解析到 Profile 之外的开发包会立即拒绝。测试不连接真实账号或真实模型。`plugin_check.py` 的主程序仍是历史热生命周期诊断，包含本组合不支持的根 UI 热替换，不作为本轮通过证据；其公共启动 helper 为当前检查复用。补丁关联上游回归：
+秘书归档写入 `.local/artifacts/`，当前为 `alcor-secretary-0.1.104.tgz`。记录提交、包版本和归档／客户端摘要，不仅凭版本号判断产物身份。Windows 开发依赖树包含仅 macOS 的工作区包，按现有 CI 使用 `npm ci --force --ignore-scripts`；该选项只用于开发检出，不用于官方 Profile 安装或跳过兼容检查。
 
-```sh
-cd .local/upstream
-node ../../node_modules/pnpm/bin/pnpm.cjs exec vitest run packages/client/ui-workspace/tests/workspaces-service.client.spec.ts packages/client/ui-layout/tests
-```
+| 命令 | 产物或用途 |
+| --- | --- |
+| `npm run product:pack` | 秘书插件。 |
+| `npm run product:hub:pack` | 独立 AgentHub 插件。 |
+| `npm run product:apple:pack` | macOS Apple 同步插件及原生桥。 |
+| `npm run product:sources:pack` | macOS 学校／邮件插件及冻结 MCP；依赖相邻 MCP 仓库，见[MCP 接入](mcp-connections.md)。 |
+| `npm run dev` | 使用专用开发 Profile 的 Web 预览；不替代官方桌面验收。 |
 
-## 上游来源与补丁退出
+源码在 `packages/`，构建脚本在 `scripts/product/`，产品测试在 `product/tests/`。模式读取代码会编入各插件客户端；修改该契约时应重建所有受影响包，并分别遵守平台和宿主版本范围。旧 Python/Electron 路径的 `make test-legacy` 不作为当前原生插件交付证据。
 
-精确组合在 [upstream.lock.json](upstream.lock.json)；依赖完整版本与 integrity 在根 `package-lock.json`。主线研究版本与实际运行的发行版本分开。
+## 平台与验证范围
 
-| 补丁 | 改动 | 移除条件 |
-| --- | --- | --- |
-| 0001 | Desktop 不运行用户 login shell 启动文件；日志进独立 Electron userData | 官方具备受控环境来源与独立日志路径 |
-| 0003 | npm/源码构建同步锁定四个修复版本，保留更新后的 pnpm lockfile | 官方发行依赖已包含这些修复并通过组合回归 |
-| 0002 | Client 声明 `shell.top`；为 44px 产品栏保留空间/抽屉层级；公开只读导航 identity；新会话默认 Preset event | 官方提供等效可访问入口、导航引用与按调用方解析的默认 Preset |
+以下记录针对 2026-11-12 的秘书 0.1.104。运行检查与真实个人安装分别记录；绿色 CI 不替代桌面交互验收。
 
-未修改上游 Agent/Tools/Session/授权执行核心。补丁必须按固定 commit 重验，不可直接套到 master。使用与改写 DSH MIT 源码，详见 [NOTICE.md](NOTICE.md) 和 [DSH-LICENSE.txt](DSH-LICENSE.txt)。
+| 环境 | 已验证范围 |
+| --- | --- |
+| 官方 Mac rc.2，临时 Profile、合成数据 | 同窗切换、共享工作区／插件目录、原侧栏、设置、自动化模板与手动创建、范围筛选、Alcor preset 与原生同一任务 ID、热停用／重启用、窄窗抽屉、弹窗阻断、重启和冷停用恢复。1280×540 视口的时区菜单边界、Escape 关闭及焦点返回通过。 |
+| 官方 Mac rc.1，个人安装 | 已安装 0.1.104，安装前后 13 个数据文件摘要一致；双向切换、原任务、空创建表单及菜单只读观察通过。个人截图不公开。 |
+| 官方 Windows x64 rc.1 → rc.2，临时 Profile | 升级保留任务、工作区和配置；共享自动化模板／手动创建／范围及同一任务 ID、540px 高时区菜单与 Escape、720px 窄窗及原生 Ctrl+B 通过。标题栏真实拖动在 DSH 模式 720px 宽窗口通过；rc.2 Alcor 模式在外宽 720px／1180px（内宽 704px／1164px）均完成真实位移且尺寸不变。右侧两栏外边界 576→700、内部 350/350→422/278 的物理拖动通过，正文仍可见。 |
+| 官方 Windows x64 rc.2，个人安装 | 已安装 0.1.104；配置与数据保留，工作区文件字节一致，会话 ID 保留。 |
+| 产品自动化检查 | 本地完整产品测试 534 通过、1 个平台跳过、0 失败；Windows 专项 45 通过。测试服务和合成账号不代表真实外部账号验收。 |
 
-## 社区候选结果
+**尚未验证**：Mac 真实标题栏拖动与右侧分栏实际拖动，以及本轮 AgentHub 实际开发会话创建。Windows 的最小化／最大化／关闭按钮仅做命中测试，未逐项点击；DSH 模式 1180px 宽窗口的真实拖动未验。当前结果不构成所有插件、所有交互或未来 DSH 版本的兼容保证。
 
-`dsh-mnemon@0.5.39` / `dsh-email@0.21.3` 只安装在 `.local/candidates-home`。需要重建这份隔离安装时，在根目录运行 `DSH_HOME="$PWD/.local/candidates-home" node node_modules/@deepseek-ai/dsh/lib/bin.js plugin --profile candidates add dsh-mnemon@0.5.39 dsh-email@0.21.3 --ignore-scripts`，不在个人 Profile 安装。`python product/tests/candidates_check.py` 使用未修改官方 CLI，在 macOS Seatbelt 中禁止个人 home 读取、禁止外网、仅允许临时目录写入。测试显式设置临时文稿目录，避免默认工作区探测访问系统文稿；Email 无账号且提前关闭共享 updater 的自动检查。
+复现入口为 `product/tests/official-shared-check.py`（Mac）与 `product/tests/official_shared_windows.py`（Windows）；后者的安装和环境参数见[Windows 验证说明](windows-native.md)。测试必须使用可丢弃的独立 HOME／DSH_HOME、合成数据和已核验的官方程序，不连接个人账号。最终产物同时核对官方签名、归档身份及运行结果。
 
-Mnemon 在 custom dataDir、本地 provider、关闭 writeback/embedding/skills 下，通过原生 Remote 验证 runtime memory 添加、去重、另一会话读取、纠错、容量拒绝、ZIP 导出内容、删除及重启后写入拒绝。合成模型请求证明：关闭 lifecycle 时不注入测试记忆；开启 lifecycle 后，同一 custom root 的用户记忆会进入普通 DSH 对话，无需选择 Alcor。此组合不满足私人记忆仅进入秘书的准入条件，保持不安装到个人 Profile。Memory Spaces CLI 在该组合中不存在，不能声称已验证其跨会话召回。这里的成功日志只代表功能和阻塞证据已复现，不代表候选获准生产使用。
+本页及根 README 的三张截图来自官方 Mac rc.2、秘书 0.1.104 的合成 Profile 验收，已逐张查看，未包含个人数据或凭据。`alcor-shared-tasks.png`、`dsh-shared-workspace.png`、`alcor-automation-template.png` 分别为验收原图 `shared.png`、`dsh-top.png`、`alcor-automation-template.png` 的原样副本；不代表 Windows 原生窗口外观。
 
-Mnemon 的 Preset 范围与跨 Agent 事件仍需在 P1/P2 收紧；不能原样加入两个模式。Email 的 `@stardustlc/dsh-updates@0.1.3` 默认 checkEnabled=true，会注册独立后台更新协调器；产品不能并行采用它和自己的更新流程。其页面还引用非商业/版权不明的同人素材，发行许可需先澄清或去掉对应素材。真实账号范围、Keychain、消息副作用、运行中撤销、Memory Spaces 召回及后台流程尚未验收。两包均未进入默认产品组合。
+## DSH 更新与兼容边界
 
-## 工作区接入
+秘书 0.1.104 声明的宿主范围为 `0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.2`；当前共享桌面结果以上表为准，不能由声明反推所有版本均已通过相同验收。其他插件各自维护范围，不向 rc.2 强装 AgentHub 0.1.4 或 macOS 专用包。
 
-文件目录与会话执行由 DSH 管理。Alcor 与工作台分别保存项目显示名、会话归属和上次位置。QQ 新会话由社交插件管理，旧接入记录保留归档。旧身份的导入与恢复见[工作区说明](workspace-migration.md)。
+插件使用运行中宿主提供的可选 peer SDK，不把旧 `@deepseek-ai/*` 核心组件安装进 Profile。宿主升级时，须检查配置、业务数据、插件生命周期，以及插件不兼容时官方 DSH 是否仍能启动。不要通过放宽 `engines.dsh`、关闭兼容检查、修改或固定官方程序来维持旧插件运行。
 
-### 统一自动化
+公开 SDK 的使用也不意味着模块名、插槽 ID、DOM 标记和标题栏布局永久稳定。Alcor 的顶部入口和侧栏仍有版本耦合，发生上游变更时适配插件并重新验证。入口与自动化实现的过程证据见[顶部入口记录](top-overlay-status.md)；更早检查点见[实施记录](official-shared-plan.md)，其中历史状态不替代本页的交付范围。
 
-Alcor 侧栏“自动化”与 DSH 自动化共用原生列表、完整编辑器和运行记录。Alcor 默认只列出所属任务，DSH 显示全部并标记来源；修改、启停和删除作用于同一 ID。每日简报模板显式保存后由 DSH 调度，保存过程不调用模型。执行时本机业务工具读取的结果会发送给当前模型；简报会保存为业务记录。新建会话保持 Alcor 身份，可修改文件工作区。
+## 保留的独立方案与来源
 
-停用／卸载 Alcor 暂停其任务，重新启用不自动恢复，不影响其他任务。DSH 宿主需运行才能调度；日程通知单独处理，本轮未接入系统通知。完整页面由原生 Bundle 内的界面扩展提供，官方 App 无需另打补丁。
+独立 Host／Profile 客户端保留在专用分支 [`archive/isolated-runtimes-20261112-02217cd4`](https://github.com/starpickerr/Alcor/tree/archive/isolated-runtimes-20261112-02217cd4)，不是当前插件安装路径。`product/client-shell/`、`@alcor/extension`、旧双窗口入口和客户端补丁脚本属于该方案或历史兼容维护，不是使用当前共享插件的前提；不删除已有环境和原始备份。
 
-
-## 对话导入账单
-
-在 Alcor 对话提供微信 XLSX／支付宝 CSV 的绝对路径并要求导入，Alcor 可调用 `alcor_import_bills`，直接读取 DSH 允许访问的文件并写入账单。无需先在页面确认；要求预览时可 dry_run。账单页复用同一持久流水与期间汇总。
-
-支持支付平台原始导出（支付宝 UTF-8／GB18030 CSV、微信标准 XLSX），每次最多 5 个文件、单个 5 MB、合计 20 MB、每文件 10000 笔。按平台和交易号持久去重；同号内容变化拒绝整批，不覆盖用户修改。删除过的已导入流水保留去重身份。退款／退还、失败、非收支及异常行不会猜测入账，结果返回跳过计数与原因，最多展示 50 条。金额以整数分保存，汇总分值以十进制字符串返回；平台时间按 Asia/Shanghai 解析。
-
-专用工具通过执行 Agent 的 DSH fs 读取，遵循其权限；无法读取时直接报错。文件不修改，原文不回传模型；只返回导入／重复／跳过数量及汇总。没有新增通用文件／Shell 能力。`bills.catalog` 中的 `import_files(files, dry_run)` 是同一领域接口；正常对话文件导入优先调用专用工具。
-
-验证：`product/tests/bill-import*.test.mjs` 与 `bill-files.test.mjs`；`bill-import-chat-check.py` 使用合成模型与两种合成文件验证模型→工具→持久账单与重复导入，设置 `STELLA_CHECK_NATIVE_DESKTOP=1` 可验证指定的未修改官方桌面。未自动读取或导入个人账单。
-
-
-## 页面业务的对话调用
-
-六类业务页面与 Alcor 对话共用服务。用户可直接要求管理事务／日程、处理简报、导入或导出账单、启动协作、创建与暂停自动化；支持范围、文件限制与验证入口见 [页面业务工具](page-tools.md)。页面展示同一份结果，无需额外页面确认。
-
-## 账单页面
-
-明细按发生日期分组，显示分类、时间、收支和当日小计。月／年账单先列出各期间，进入后查看收入、支出、结余、周期、汇总时间、分类构成及收支排行。多币种分别查看；待处理与已冲正流水仍显示在明细，但不计入已记账统计。归档不改变账本收支。
-
-页面与对话通过同一 bills owner 获取 `ledger_report(start,end)` 和 `statement_reports(period_type,year)`，后者读取既有期间快照与明细聚合。金额最小单位返回十进制字符串，避免 JavaScript 丢失精度。单条页面记账默认已记账，支持类别、秒级时间、状态及备注；编辑保留未更改的原始时间精度／时区，写入和删除检查 revision。删除须确认；修改后刷新相关期间与年度。CSV 导出当前所选期间及币种，包含分类和原始时刻。
-
-验证入口：`bill-reports.test.mjs`、`bill-view.test.mjs`、`bills-ui-check.py`。UI 检查使用隔离 Profile 与合成账单，可通过 `STELLA_CHECK_NATIVE_DESKTOP=1` 验证未修改官方客户端。服务暂时不可用的 HTTP 注入只在 Web 验证，桌面使用原生 RPC 桥；真实账号和旧私人账本迁移不在该检查范围。
-
-
-## 学校与邮件插件
-
-学校与邮件插件的安装包为 `alcor-elearning-0.1.7.tgz` 与 `alcor-mail-0.1.9.tgz`。两包包含所需 MCP 运行环境，不使用开发目录。保存账号后点击检查；简报来源范围在对应插件中选择，对话工具继承 DSH 当前会话策略。账号与来源安装不自动触发读取。生命周期、凭据及验证边界见 [MCP 连接](mcp-connections.md)。
-
-## 插件附带业务指南
-
-秘书随包提供事务、日程、账单、简报、自动化和协作六项 Skill，仅挂载到 Alcor preset；eLearning、邮件与 Apple 同步插件分别提供自己的 Skill。复用 DSH 原生 skills registry 和 bundled filesystem provider；Alcor preset 显式挂载 DSH 原生 skill 工具，先展示简短目录，正文按需读取，停用/卸载按所属插件撤销，不复制到用户全局 Skill 目录。已有用户 Skill 和宿主工具策略保留。
-
-未知业务方法可查询 `alcor_business(domain=..., method="catalog", arguments={"method":"目标方法"})`，只返回该方法；不传 method 保持原目录兼容。按需指南示例由 `product/tests/bundled-skills.test.mjs` 执行验证，打包后用原生宿主检验发现、加载与持久化。
-
-简报 `0.1.39` 使用独立 DSH 执行会话和仅允许结构化提交的 `stella-briefing` Preset。页面、聊天及原生定时入口共用运行记录；聊天手动调用返回任务，定时调用等待实际保存结果。运行固定模型、来源/窗口和规则，完成的来源与模型批次保存在 Profile 私有业务存储；刷新和切页不取消，重启后显式继续。失败/取消不推进游标，旧结果已提交时按操作 ID 对账。中断期间若结果或来源游标已更新，旧运行不能继续覆盖新结果。未完成来源可能重采，尚未收到并保存的模型批次可能再次调用。专项验收：`product/tests/briefing-runs.test.mjs`、`product/tests/briefing-runs-check.py`。
-
-简报 `0.1.40`：工具栏以单一齿轮图标进入完整设置页，合并信息来源与筛选/写作规则；返回简报保留当前报告与版本选择。来源授权、保存冲突保护和规则接口保持原有契约。
-
-简报 `0.1.41`：规则用摘要卡片展示，点击以宿主 Markdown 组件查看全文，可编辑、启停和确认删除；桌面设置采用来源与规则双栏，窄窗自动单栏。
-
-简报 `0.1.42`：来源页只读聚合卡片，Email 多账号合并一张。Email 使用插件内账号开启/停用按钮统一控制全部读取入口，已开启邮箱自动成为简报来源，不再维护第二份订阅名单；学校账号随原生插件启停。通过官方 plugins.detail.section 在 eLearning 和 Alcor 插件详情管理课程/本机范围。既有账号、范围及游标保留。通用适配器尚无包归属元数据的来源由 Alcor 的简报适配层管理。
-
-邮件 `0.1.6` 在宿主统一调用入口复核账号开关，覆盖邮件正文、目录、游标和连接测试；停用/移除立即撤销后续调用。邮箱与学校实时来源取自已启用插件目录，旧邮箱订阅记录仅保留作兼容，不再授予或阻止访问。原有 DSH 调用权限与定时任务的明确本机范围保持有效。
-
-简报 `0.1.43`：按用户最终确认采用双层开关。插件/账号可用性与简报来源启停独立，两层均有效才采集；来源关闭不写插件/邮箱配置，课程范围与游标保留。来源与规则卡片、规则详情/编辑统一使用灰色滑块；两侧工具栏及首张卡片对齐，规则刷新仅读取规则列表。来源开关单独存储并保持并发冲突保护，Agent 不能自行开启。
-
-
-日程 `0.1.47`：页面通过“＋”选择新建日程或事务，编辑器可切换类型并保留各自草稿。有日期的事务以圆形完成控件显示在日／周／月／年／列表视图，写回同一事务，不复制为日程；事务页可选择和管理清单（如 planA）。旧日期文件导入退出主界面，后端接口及已有日期记录保留。编辑按记录时区保存，全天日程结束日期保持排他语义。
-
-Apple `0.1.11`：双方分类／清单取并集并建立一一映射，补齐 Stella → Apple 新建、双方名称／颜色／删除，以及项目更换分类的原地移动。旧 list_name 事务补建稳定分类身份，简报和未分类记录也纳入同步。首次配置与后台入口复用同一分类生命周期逻辑；权限、失败重试与公开 EventKit 的字段限制见 [Apple 插件说明](../packages/alcor-apple-sync/README.md)。官方 Desktop 隔离验证：`product/tests/unified-calendar-check.py`。
-
-
-日程 `0.1.48` / Apple `0.1.12`：日程页将所有事务清单聚合为一个“事务”筛选，实际清单与 Apple 一一映射保持不变。日程和事务必须归属有效分类／清单；旧无分类数据迁入默认分类，保留内容和 ID。省略分类的旧创建接口使用默认分类，显式传空拒绝，数据库也阻止无效归属。删除分类时同一事务内删除其中日程／重复系列，或事务／子事务及待发送提醒，并保留来源墓碑；不再保留无分类记录。分类管理采用颜色、名称和数量列表，单独新建／编辑与危险操作确认。验证：`required-categories.test.mjs`、`business-recovery.py`、`unified-calendar-check.py`。
-
-日程 `0.1.50` / Apple `0.1.14`：完成 Apple 同步契约修复，含分离权限、持久待确认操作、身份重建保护、跨账户同名、复杂提醒只读保留、冲突恢复、原生实例范围、重复提醒完成历史、时区／浮动时间、公开字段及私有回执、按需范围与 Apple 默认归属。旧数据不清理，详细能力见 Apple 插件 README。
-
-日程／事务 `0.1.51`：卡片和月、周、日、列表支持右键及 Shift+F10 菜单；“显示简介”打开分组面板，支持沿用编辑、归属移动、完成、拷贝文本和删除确认。分类选择在同一菜单内继续选择，窄窗可滚动，跨账户同名显示来源。Apple `0.1.15` 修复单次重复日程移动时原日历查找与目标日历写入的区分。
-
-事务与清单 `0.1.52`：事务列表采用清单侧栏、紧凑任务行、备注预览与快速添加；清单管理支持搜索、配色、账户选择、切换保留草稿、分项权限、待确认操作取消和删除确认。新增子事务默认继承父事务清单，不额外创建默认清单；已有记录不迁移。官方 Desktop 的 `tasks-layout-check.py`、`lists-manager-check.py`、`unified-calendar-check.py` 与 `task-cards-check.py` 验证相关交互和数据保留。
-
-日程与统一侧栏 `0.1.53`：日程日期导航、五种视图、全天区域和时间网格重新整理。日程与事务共享浅灰侧栏和账户分组样式；日历以复选框控制显示，事务按单清单切换。官方 Desktop 隔离 Profile 验证视图、筛选、事务完成、只读保护、详情/编辑、深色、窄窗口和已有字段保留。
-
-日程右侧面板 `0.1.54`：日历内日程和事务的查看、编辑及新建在右侧完成，空间不足时日历来源侧栏折为“日历与日期”。支持固定操作区、草稿放弃确认、失败后重试、键盘与焦点返回、深色和窄窗口；业务数据及同步规则不变。
-
-事务右侧面板 `0.1.55`：事务页与日程复用同一详情及编辑面板。单击、右键简介、编辑和新建统一在右侧完成，原列表筛选保持；保存或取消编辑回到详情。保留子事务、重复按次完成、旧字段和权限限制；隔离官方 Desktop 验证数据保留、草稿确认、删除确认、深色、窄窗口及重启。
-
-简报 `0.1.58`：每次运行由一个持久 `stella-briefing` 会话执行筛选和写作，不再为批次启动子 Agent。小型全新窗口可一次提交筛选及报告；较大或增量窗口由同一会话分批处理，较长原文可通过受限工具按顺序分页读取，业务层校验完整覆盖后才保存检查点。规则、模型和来源范围按运行冻结，每步与读取、提交时复核授权；取消在保存前生效时不推进游标；若保存已先完成，按已保存结果对账。未通过校验不推进游标。旧版未完成任务须新建，不会把旧批次当作新协议恢复。空窗口和内容未变化的刷新不调用模型。上下文超限或输出不完整时会失败并保留来源游标；模型摘要和会话历史可能增加调用或成本，不能保证任何窗口均节省 token 或与旧报告完全相同。
-
-0.1.101 起，秘书使用 DSH 当前对话历史与已授权业务工具，不再加载社交人格、长期社交记忆或主动交流队列。旧社交数据与会话保留归档。0.1.102 起移除内置悬浮小熊，桌宠改用独立的 AuraBot pet 模块与[小熊形象包](../assets/desktop-pet/README.md)。详见[QQ 社交与秘书业务](channels.md)。
+包内 MIT 衍生 UI 保留来源及摘要，见 [`NATIVE-UI-PROVENANCE.json`](../packages/alcor-secretary/vendor/NATIVE-UI-PROVENANCE.json)、[DSH 来源声明](NOTICE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)。当前共享路径仅注册 Alcor 自有页面和所需插件组件，不替换官方模块；历史预览所用补丁不应用到个人官方客户端。

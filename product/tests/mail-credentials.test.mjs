@@ -14,8 +14,8 @@ import MailConnection from '../../packages/alcor-mail/src/connection.js'
 test('mail owns native credential lifecycle, preserves other mailboxes and revokes stale MCP connections', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'alcor-mail-credentials-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
-  const filename = join(dir, '.credentials.yaml'); const command = join(dir, 'synthetic-mail')
-  await writeFile(command, '#!' + process.execPath + '\n' + `
+  const filename = join(dir, '.credentials.yaml'); const command = join(dir, 'synthetic-mail.mjs')
+  await writeFile(command, `
 import {createInterface} from 'node:readline';
 const accounts=JSON.parse(process.env.ALCOR_EMAIL_CREDENTIAL).accounts;
 for await (const line of createInterface({input:process.stdin})) {
@@ -25,7 +25,7 @@ for await (const line of createInterface({input:process.stdin})) {
  else result={content:[],structuredContent:{value:r.params.name==='test_connection'?(accounts.find(a=>a.id===r.params.arguments.payload.id)?.folder==='AuthFailure'?{connected:false,folder_accessible:false,error_code:'auth_failed'}:{connected:true,folder_accessible:true}):accounts.map(a=>({user:a.user}))}};
  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:r.id,result})+'\\n');
 }`, { mode: 0o700 })
-  const config = { command, cwd: dir, dataDir: dir }
+  const config = { command:process.execPath, args:[command], cwd: dir, dataDir: dir }
   const make = async input => {
     const ctx = new Context(); ctx.provide('logger', { warn() {} })
     await ctx.plugin(Credentials, { path: filename, watch: false }).await(); await ctx.plugin(Authorization).await()

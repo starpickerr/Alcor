@@ -13,9 +13,10 @@ import math
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'packages/alcor-secretary'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-secretary'))
 from business.briefing.domain.models import SourceItem, EmailMessage, FilterRule
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def load(path, name):

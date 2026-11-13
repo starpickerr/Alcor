@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('real worker Apple preview is read-only and cannot authorize raw deletion or an invalid private native snapshot', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import sys,tempfile
 sys.path.insert(0,'packages/alcor-secretary')
 from business.worker import Business
@@ -16,5 +17,6 @@ with tempfile.TemporaryDirectory(prefix='alcor-apple-closed-') as root:
   except (ValueError,PermissionError):pass
   else:raise AssertionError('preview granted permanent deletion')
  assert b.tasks.get_todo(row['id']) and not b.tasks.apple_operations()
+ b.meta.close()
 `])
 })

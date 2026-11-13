@@ -111,3 +111,11 @@ def test_make_explicit_python_needs_no_other_python_on_path():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == sys.executable
+
+    env.pop('STELLA_PYTHON')
+    audit = subprocess.run([make, '--no-print-directory', '-n', 'audit'],
+        cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True)
+    assert audit.returncode == 0, audit.stderr
+    assert audit.stderr == ''
+    assert 'npm run product:build' in audit.stdout and 'npm test' in audit.stdout
+    assert not any(name in audit.stdout for name in ('quality_check', 'run_isolated', 'check_runtime'))

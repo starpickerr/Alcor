@@ -18,6 +18,7 @@ class Incremental(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.business = Business(self.tmp.name)
+        self.addCleanup(lambda: self.business.meta.close())
         self.business.briefing.update_preferences({"time_zone": "Asia/Shanghai"})
         self.scope = {"source": "email", "accountId": "a"}
 

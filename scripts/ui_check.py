@@ -12,9 +12,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_runtime import npm_path, python_path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from common.process_tree import stop_process_tree  # noqa: E402
+
+SCRIPT_TIMEOUT = 90
+UI_TIMEOUT = 1800
 
 
-def run_server(server, client, port=None):
+def run_clients(clients, env, timeout=SCRIPT_TIMEOUT):
+    failed = False
+    for client in clients:
+        name = client[-1]
+        print(f'RUN ui: {name}', flush=True)
+        started = time.monotonic()
+        process = subprocess.Popen(client, cwd=ROOT, env=env, start_new_session=True)
+        expired = False
+        try:
+            code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            code, expired = 1, True
+        finally:
+            stop_process_tree(process, owned_session=True)
+        failed = failed or code != 0
+        detail = f'; timeout after {timeout}s' if expired else f'; exit {code}'
+        status = 'FAIL' if code else 'PASS'
+        print(f'{status} ui: {name} ({time.monotonic() - started:.2f}s{detail})', flush=True)
+    return int(failed)
+
+
+def run_server(server, clients, port=None):
     with socket.socket() as reservation:
         try:
             reservation.bind(('127.0.0.1', port or 0))
@@ -40,7 +67,7 @@ def run_server(server, client, port=None):
                 raise RuntimeError('renderer startup timeout')
             if process.poll() is not None:
                 raise RuntimeError('renderer exited before browser check')
-            return subprocess.run(client, cwd=ROOT, env=env, timeout=90).returncode
+            return run_clients(clients, env)
         finally:
             if os.name == 'nt':
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
@@ -63,7 +90,6 @@ if __name__ == '__main__':
                'tests/ui_run_policy.py', 'tests/ui_knowledge_links.py', 'tests/ui_settings_entry.py',
                'tests/ui_information_architecture.py', 'tests/ui_capabilities.py', 'tests/ui_capability_details.py', 'tests/ui_capability_features.py', 'tests/ui_model_selection.py',
                'tests/ui_data_management.py', 'tests/ui_elearning_settings.py']
-    scripts = [path for path in scripts if (ROOT / path).is_file()]
-    checks = [str(python_path(ROOT)), '-c', 'import runpy; ' + '; '.join(
-        f'runpy.run_path({path!r})' for path in scripts)]
+    checks = [[str(python_path(ROOT)), '-u', '-c',
+               'import runpy, sys; runpy.run_path(sys.argv[1])', path] for path in scripts]
     sys.exit(run_server([npm_path(), '--prefix', 'desktop', 'run', 'dev:renderer', '--', '--host', '127.0.0.1', '--port', '{port}'], checks))

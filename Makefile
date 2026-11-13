@@ -2,13 +2,12 @@ ifndef PYTHON
 ifdef STELLA_PYTHON
 PYTHON := $(STELLA_PYTHON)
 else
-PYTHON := $(shell python3 scripts/check_runtime.py)
+PYTHON = $(shell python3 scripts/check_runtime.py)
 endif
 endif
-export STELLA_PYTHON := $(PYTHON)
-ISOLATED = "$(PYTHON)" scripts/run_isolated.py
+ISOLATED = STELLA_PYTHON="$(PYTHON)" "$(PYTHON)" scripts/run_isolated.py
 
-.PHONY: setup setup-legacy dev lint test test-legacy test-desktop test-desktop-upgrade test-integration test-e2e eval audit check check-legacy
+.PHONY: setup setup-legacy dev lint test test-legacy test-desktop test-desktop-upgrade test-integration test-e2e eval audit audit-legacy check check-legacy
 
 setup:
 	npm ci --ignore-scripts
@@ -49,11 +48,14 @@ eval:
 	$(ISOLATED) "$(PYTHON)" evals/run.py
 
 audit:
-	"$(PYTHON)" scripts/quality_check.py full
+	$(MAKE) check
+
+audit-legacy:
+	STELLA_PYTHON="$(PYTHON)" "$(PYTHON)" scripts/quality_check.py full
 
 check:
 	npm run product:build
 	npm test
 
 check-legacy:
-	"$(PYTHON)" scripts/quality_check.py incremental
+	STELLA_PYTHON="$(PYTHON)" "$(PYTHON)" scripts/quality_check.py incremental

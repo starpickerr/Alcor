@@ -1,25 +1,4 @@
-# Profile-owned UI extensions leave the signed official application unchanged.
-- id: ui-layout
-  disabled: true
-- id: ui-workspace
-  disabled: true
-- id: ui-settings-general
-  disabled: true
-- id: ui-schedule
-  disabled: true
-- id: ui-settings-models
-  disabled: true
-- insert:
-    - id: alcor-ui-layout
-      name: './vendor/ui-layout/lib/index.js'
-    - id: alcor-ui-workspace
-      name: './vendor/ui-workspace/lib/index.js'
-    - id: alcor-ui-settings-general
-      name: './vendor/ui-settings-general/lib/index.js'
-    - id: alcor-ui-schedule
-      name: './vendor/ui-schedule/lib/index.js'
-    - id: alcor-ui-settings-models
-      name: './vendor/ui-settings-models/lib/index.js'
+# Use official client modules; keep the application and its updater unchanged.
 - insert:
     - id: alcor-organizer
       name: '@alcor/secretary/organizer'

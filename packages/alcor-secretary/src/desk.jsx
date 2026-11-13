@@ -1,3 +1,4 @@
+import {sharedWorkspaceContext} from './shared-workspace.js'
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -31,10 +32,10 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNo
   </section>
 }
 
-export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, pluginPanels, hubForm, t }) {
+export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderSlot, nativeShared=false, pluginPanels, hubForm, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
-  const applications = [...applicationViews]
+  const applications = applicationViews
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
   if(applicationEnvironment() && hub.status==='ready' || ['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
   const system = []
@@ -43,13 +44,13 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
   const sidebar = useRef()
   const wide = drawer || !collapsed
   useModalLayer(sidebar, drawer && !collapsed, toggleSidebar)
-  return <aside className="alcor-sidebar" ref={sidebar} style={{ width: wide ? width : 56 }} data-collapsed={!wide || undefined} data-shortcut-modal={drawer ? 'sidebar' : undefined} role={drawer && !collapsed ? 'dialog' : undefined} aria-modal={drawer && !collapsed ? true : undefined} tabIndex={-1} aria-label="Alcor 秘书导航">
+  return <aside className="alcor-sidebar" data-native-shared={nativeShared || undefined} ref={sidebar} style={{ width: wide ? width : 56 }} data-collapsed={!wide || undefined} data-shortcut-modal={drawer ? 'sidebar' : undefined} role={drawer && !collapsed ? 'dialog' : undefined} aria-modal={drawer && !collapsed ? true : undefined} tabIndex={-1} aria-label="Alcor 秘书导航">
     <div className="alcor-sidebar-brand"><span className="alcor-emblem" aria-hidden="true"><BearLogo size={32} /></span>{wide && <span>Alcor</span>}<button type="button" data-sidebar-toggle title={t(collapsed ? 'toggle.open' : 'toggle.collapse')} aria-label={t(collapsed ? 'toggle.open' : 'toggle.collapse')} onClick={toggleSidebar}><IconPanelLeftOutlineRegular size={17} /></button></div>
     <button type="button" className="alcor-sidebar-chat" title={t('session.new.label')} aria-label={t('session.new.label')} onClick={async () => { setError(''); try { await startSession() } catch (reason) { setError(reason.message) } }}><IconNewChatOutlineRegular size={17} />{wide && <span>新对话</span>}</button>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
     <nav aria-label="秘书功能">{[['应用', applications], ['系统', system]].map(([group, items]) => <div className="alcor-nav-group" role="group" aria-label={group} key={group}>{wide && <p>{group}</p>}{items.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}{group==='系统' && <PluginPanels source={pluginPanels} wide={wide} panel={panel} navigate={navigate} />}</div>)}</nav>
-    <section className="alcor-sidebar-workspaces" aria-label="工作区与会话">{renderFactorySlot('workspace.browser', { wide, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
-    <footer>{renderFactorySlot('settings.shell', { wide })}</footer>
+    <section className="alcor-sidebar-workspaces" aria-label="工作区与会话">{nativeShared ? renderSlot('sidebar.workspaces', {wide,expandSidebar:()=>{if(collapsed)toggleSidebar()}}, {hookContext:sharedWorkspaceContext}) : renderFactorySlot('workspace.browser', { wide, expandSidebar: () => { if (collapsed) toggleSidebar() } })}</section>
+    <footer>{nativeShared ? <>{renderSlot('sidebar.footer.action',{wide})}{renderSlot('sidebar.settings',{wide})}</> : renderFactorySlot('settings.shell', { wide })}</footer>
   </aside>
 }
 

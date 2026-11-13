@@ -1,8 +1,9 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 
 test('Apple preview binds the exact target; old pending intent cannot authorize background dispatch', () => {
-  execFileSync('python3', ['-B', '-c', `
+  execFileSync(testPython, ['-B', '-c', `
 import hashlib,json,runpy,sys
 sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
 m=runpy.run_path('product/tests/apple-contracts.py')

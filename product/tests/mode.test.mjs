@@ -1,6 +1,9 @@
+import { automationUiPlugin } from '../../scripts/product/automation-ui.mjs'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createModeController, readModeState, startSecretarySession, canonicalPanel, legacyPanelIds } from '../../packages/alcor-secretary/src/mode.js'
+import {uiMode,modeHook} from '../../packages/alcor-plugin-info/src/assignments.js'
 
 function fixture(initial = null) {
   let saved = initial
@@ -332,7 +335,7 @@ test('a selected legacy layout alias redirects to its registered new panel and s
 
 test('host main slots register new panels and legacy aliases with equivalent destinations', async () => {
   const { build } = await import('esbuild'), { createRequire } = await import('node:module')
-  const output = await build({ entryPoints: [new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url).pathname],
+  const output = await build({ plugins: [automationUiPlugin()], entryPoints: [fileURLToPath(new URL('../../packages/alcor-secretary/src/client.jsx', import.meta.url))],
     bundle: true, packages: 'external', platform: 'node', format: 'cjs', loader: { '.css': 'text', '.svg': 'dataurl' }, write: false })
   const module = { exports: {} }, noop = () => {}, calls = []
   const React = { createElement: noop, useEffect: noop, useState: noop, useRef: noop }
@@ -345,6 +348,17 @@ test('host main slots register new panels and legacy aliases with equivalent des
   for (const [legacy, current] of Object.entries({ stella: 'alcor-tasks', 'stella-history': 'alcor-tasks', 'stella-attention': 'alcor-tasks', 'stella-agents': 'alcor-tasks', 'stella-sources': 'alcor-briefing', 'stella-tasks': 'alcor-tasks', 'stella-calendar': 'alcor-calendar', 'stella-briefing': 'alcor-briefing', 'stella-bills': 'alcor-bills' })) {
     assert.equal(calls.find(row => row.key === legacy)?.inject().view, current)
     assert.equal(calls.find(row => row.key === current)?.inject().view, current)
+  }
+  assert.equal(calls.some(row => row.key === 'schedules'), false)
+  for (const key of ['stella-schedules','alcor-schedules']) assert.equal(calls.filter(row=>row.key===key).length,1)
+  const previous = globalThis.__ALCOR_CLIENT_SHELL__
+  try {
+    globalThis.__ALCOR_CLIENT_SHELL__ = true
+    calls.length = 0
+    await module.exports.apply(ctx)
+  } finally {
+    if (previous === undefined) delete globalThis.__ALCOR_CLIENT_SHELL__
+    else globalThis.__ALCOR_CLIENT_SHELL__ = previous
   }
   for (const key of ['stella-schedules', 'alcor-schedules']) {
     const rows = calls.filter(row => row.key === key)
@@ -363,4 +377,51 @@ test('retired social settings restore to secretary tasks without redirecting thi
     controller.dispose()
   }
   assert.equal(canonicalPanel('independent-plugin'), 'independent-plugin')
+})
+
+test('official shared profile keeps official UI owners enabled', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { parse } = await import('yaml')
+  const rows = parse(await readFile(new URL('../../packages/alcor-secretary/cordis.patch.yml', import.meta.url), 'utf8'))
+  const official = new Set(['ui-layout', 'ui-workspace', 'ui-settings-general', 'ui-schedule', 'ui-settings-models'])
+  assert.equal(rows.some(row => official.has(row.id) && row.disabled), false)
+  assert.equal(rows.flatMap(row => row.insert ?? []).some(row => row.name?.startsWith('./vendor/')), false)
+})
+
+test('official shared mode returns to the native conversation and preserves shared sessions', () => {
+  const f = fixture(JSON.stringify({ mode: 'dsh', locations: { dsh: { panel: 'dsh', sessionId: 'work-session' } } }))
+  const controller = createModeController(f.ctx, f.storage, { shared: true })
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, null)
+  assert.equal(f.ctx.uiWorkspace.selection.getSnapshot().sessionId, 'work-session')
+  controller.switchMode('alcor')
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'alcor-tasks')
+  controller.switchMode('dsh')
+  assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, null)
+  assert.equal(f.ctx.uiWorkspace.selection.getSnapshot().sessionId, 'work-session')
+  controller.dispose()
+})
+
+test('shared automation retains Alcor management and native DSH destinations', () => {
+  for (const panel of ['stella-schedules', 'alcor-schedules', 'schedules']) {
+    const f = fixture(JSON.stringify({mode:'alcor',locations:{alcor:{panel},dsh:{panel:'schedules'}}}))
+    const c = createModeController(f.ctx, f.storage, {shared:true})
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, canonicalPanel(panel))
+    c.switchMode('dsh')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, 'schedules')
+    c.switchMode('alcor')
+    assert.equal(f.ctx.layout.panelInfo.getSnapshot().activePanelId, canonicalPanel(panel))
+    c.dispose()
+  }
+})
+
+test('shared settings follow the actual product mode without a partitioned workspace navigation', () => {
+  const f=fixture()
+  const c=createModeController(f.ctx,f.storage,{shared:true})
+  assert.equal(uiMode(),'dsh')
+  c.switchMode('alcor')
+  assert.equal(uiMode(),'alcor')
+  c.switchMode('dsh')
+  assert.equal(uiMode(),'dsh')
+  c.dispose()
+  assert.equal(globalThis[modeHook],undefined)
 })

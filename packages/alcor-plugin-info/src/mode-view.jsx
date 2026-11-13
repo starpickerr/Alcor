@@ -1,7 +1,7 @@
 import React,{useSyncExternalStore} from 'react'
-import {assignments,permits,modeNames,applicationEnvironment} from './assignments.js'
+import {assignments,permits,modeNames,applicationEnvironment,uiMode} from './assignments.js'
 
-export const uiMode=()=>applicationEnvironment() ?? globalThis[Symbol.for('@alcor/secretary.workspace-navigation')]?.mode?.getSnapshot() ?? 'dsh'
+export {uiMode}
 const subscribeMode=listener=>{
   window.addEventListener('alcor-mode-changed',listener)
   return ()=>window.removeEventListener('alcor-mode-changed',listener)

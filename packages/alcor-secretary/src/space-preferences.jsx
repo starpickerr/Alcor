@@ -4,7 +4,24 @@ import { projectViews, qqRoute, spaceOf } from './spaces.js'
 import { Notice } from './notice.jsx'
 import { applicationEnvironment } from '../../alcor-plugin-info/src/assignments.js'
 
-export function SpacePreferences({ navigation, allWorkspaces, allSessions }) {
+export function SpacePreferences(props) {
+  return props.navigation ? <IsolatedSpacePreferences {...props}/> : <SharedSpacePreferences allWorkspaces={props.allWorkspaces}/>
+}
+
+function SharedSpacePreferences({allWorkspaces}) {
+  const list=useSyncExternalStore(listener=>allWorkspaces.subscribe(listener),()=>allWorkspaces.getSnapshot())
+  const [filter,setFilter]=useState(''),[expanded,setExpanded]=useState(false)
+  const visible=list.items.filter(item=>(item.title+' '+item.path).toLowerCase().includes(filter.trim().toLowerCase()))
+  const shown=expanded || filter ? visible : visible.slice(0,6)
+  return <section className="alcor-space-settings"><h2>当前空间的项目</h2>
+    {list.items.length>6 && <input className="alcor-project-filter" type="search" aria-label="查找当前空间项目" placeholder="查找项目" value={filter} onChange={event=>setFilter(event.target.value)}/>}
+    {shown.map(item=><div className="alcor-space-row" key={item.workspaceId}><IconFolderOpenRegular size={20}/><span><strong>{item.title}</strong><small>{item.path}</small></span><small>{item.sessionIds.length} 段对话</small></div>)}
+    {!visible.length && <p className="alcor-muted">{filter ? '未找到匹配的项目。' : '当前空间暂无项目。'}</p>}
+    {visible.length>6 && !filter && <button className="alcor-show-projects" type="button" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?'收起项目':'查看全部 '+visible.length+' 个项目'}</button>}
+  </section>
+}
+
+function IsolatedSpacePreferences({ navigation, allWorkspaces, allSessions }) {
   const { metadata, error: loadError } = useSyncExternalStore(navigation.state.subscribe, navigation.state.getSnapshot)
   const list = useSyncExternalStore(listener => allWorkspaces.subscribe(listener), () => allWorkspaces.getSnapshot())
   const visible=useSyncExternalStore(navigation.workspaces.subscribe,navigation.workspaces.getSnapshot).items

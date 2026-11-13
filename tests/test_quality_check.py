@@ -1,6 +1,17 @@
 from scripts.quality_check import affected_checks, isolated_env
 
 
+def test_successful_audit_keeps_suite_counts_and_each_ui_script_result(monkeypatch, capsys):
+    import subprocess
+    from scripts import quality_check
+    for name in ('pytest', 'ui'):
+        output = 'first script result\nsecond script result\n'
+        monkeypatch.setattr(quality_check.subprocess, 'run', lambda *args, **kwargs:
+            subprocess.CompletedProcess(args[0], 0, output, ''))
+        assert quality_check.run_check(name, ['python', 'check.py'], {}, 10)[1] == 'PASS'
+        assert output.strip() in capsys.readouterr().out
+
+
 def test_python_change_selects_related_tests_without_full_suite():
     checks = affected_checks(["agent/permission/gateway.py"])
 
@@ -16,6 +27,7 @@ def test_renderer_change_selects_ui_and_typecheck():
     assert checks["typecheck"]
     assert checks["ui"]
     assert not checks["pytest"]
+    assert affected_checks(['scripts/ui_check.py'])['ui']
 
 
 def test_todo_change_selects_its_behavior_tests():
@@ -105,6 +117,14 @@ def test_nested_isolation_preserves_installed_browser_cache(tmp_path, monkeypatc
     assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(browser_cache)
 
 
+def test_isolation_preserves_only_an_explicit_existing_public_artifact_cache(tmp_path, monkeypatch):
+    cache = tmp_path / 'public-artifacts'
+    monkeypatch.setenv('STELLA_TEST_RUNTIME_ARTIFACTS', str(cache))
+    assert 'STELLA_TEST_RUNTIME_ARTIFACTS' not in isolated_env(tmp_path / 'first')
+    cache.mkdir()
+    assert isolated_env(tmp_path / 'second')['STELLA_TEST_RUNTIME_ARTIFACTS'] == str(cache)
+
+
 def test_removed_backend_and_dependency_changes_expand_checks():
     deleted = affected_checks(["agent/briefing/removed.py"])
     assert "tests/test_briefing_plugin_gateway.py" in deleted["pytest"]
@@ -160,6 +180,29 @@ def test_python_selection_changes_run_environment_regressions():
     assert 'tests/test_python_environment.py' in checks['pytest']
     assert 'tests/test_quality_check.py' in checks['pytest']
     assert checks['node']
+
+
+def test_ui_deadline_covers_all_scripts_in_both_quality_gates(monkeypatch):
+    import sys
+    from scripts import quality_check
+    from scripts.ui_check import UI_TIMEOUT
+
+    deadlines = []
+
+    def record(name, command, _env, timeout):
+        if name == 'ui':
+            deadlines.append(timeout)
+        return name, 'PASS', command, ''
+
+    monkeypatch.setattr(quality_check, 'run_check', record)
+    monkeypatch.setattr(quality_check, 'markdown_report', lambda *_: None)
+    for mode in ('incremental', 'full'):
+        args = ['quality_check.py', mode]
+        if mode == 'incremental':
+            args += ['--files', 'desktop/src/renderer/src/pages/TasksPage.tsx']
+        monkeypatch.setattr(sys, 'argv', args)
+        assert quality_check.main() == 0
+    assert deadlines == [UI_TIMEOUT, UI_TIMEOUT]
 
 
 def test_runtime_node_regressions_are_in_incremental_and_full_gates(monkeypatch):

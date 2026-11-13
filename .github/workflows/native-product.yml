@@ -3,16 +3,128 @@ name: Native Alcor product
 on:
   pull_request:
     branches: [develop, main]
-    paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/native-product.yml']
+    paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   push:
-    branches: [develop]
-    paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/native-product.yml']
+    branches: [develop, main]
+    paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   workflow_dispatch:
 
 jobs:
+  native-source-connectors:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Alcor
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: Alcor
+      - name: Read current connector source revisions
+        id: sources
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for source in json.load(open('product/source-releases.lock.json'))['sources']:
+                  name = source['module'].removesuffix('_mcp')
+                  output.write(f'{name}_repository=starpickerr/{source["repo"]}\n')
+                  output.write(f'{name}_revision={source["sourceRevision"]}\n')
+          PY
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.sources.outputs.elearning_repository }}
+          ref: ${{ steps.sources.outputs.elearning_revision }}
+          path: MCP/dsh-fudan-elearning
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.sources.outputs.email_repository }}
+          ref: ${{ steps.sources.outputs.email_revision }}
+          path: MCP/dsh-email
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: Alcor/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: MCP/*/requirements.lock
+      - name: Install fixed connector build dependencies
+        run: |
+          npm ci --ignore-scripts
+          for source in dsh-fudan-elearning dsh-email; do
+            python -m venv "../MCP/$source/.venv"
+            "../MCP/$source/.venv/bin/python" -m pip install --require-hashes -r "../MCP/$source/requirements.lock"
+            "../MCP/$source/.venv/bin/python" -m pip install PyInstaller==6.22.3
+          done
+      - name: Verify pinned sources and package current connectors
+        run: npm run product:sources:pack
+      - name: Test actual frozen protocols without development paths or real accounts
+        run: |
+          mkdir -p .local/source-check/@alcor/elearning .local/source-check/@alcor/mail
+          for source in elearning mail; do
+            archive=$(node -p 'const p=require("./packages/alcor-'"$source"'/package.json");"alcor-'"$source"'-"+p.version+".tgz"')
+            tar -xzf ".local/artifacts/$archive" --strip-components=1 -C ".local/source-check/@alcor/$source"
+          done
+          ../MCP/dsh-fudan-elearning/.venv/bin/python product/tests/source-protocol-check.py .local/source-check
+  linux-native-plugin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Linux development dependencies
+        run: |
+          python -m pip install tzdata
+          npm ci --force --ignore-scripts
+      - name: Package the shared secretary plugin
+        run: npm run product:pack
+      - name: Test portable plugin services and authorization boundaries
+        run: |
+          export ALCOR_BUSINESS_PYTHON="$(command -v python)"
+          npm run preproduct:test
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/alcor-security-policy.test.mjs product/tests/alcor-security-bill-gate.test.mjs product/tests/alcor-organizer-security-boundary.test.mjs product/tests/native-runtime-boundary.test.mjs
+  windows-native-plugin:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Windows development dependencies
+        run: |
+          python -m pip install tzdata
+          # The monorepo also contains required macOS-only development workspaces.
+          npm ci --force --ignore-scripts
+      - name: Package the shared secretary plugin
+        run: npm run product:pack
+      - name: Test native Windows plugin services
+        shell: pwsh
+        run: |
+          $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
+          npm run preproduct:test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/native-runtime-boundary.test.mjs
   native-product:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -24,7 +136,17 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Test native services and migration recovery
         run: npm test
-      - name: Build native bundles and reject legacy client inputs
+      - name: Test package-owned identity and legacy-data compatibility
         run: |
-          npm run product:pack
-          DEVELOPER_DIR="$(xcode-select -p)" npm run product:apple:pack
+          python3 -B -m unittest discover -s packages/alcor-agent-hub/tests -p 'test_*.py'
+          node --experimental-test-module-mocks --test packages/alcor-privacy/tests/identity-synthetic.test.mjs
+      - name: Build the current plugin and reject legacy client inputs
+        run: npm run product:pack
+      - name: Build the complete native Apple package
+        if: github.event_name != 'pull_request'
+        run: DEVELOPER_DIR="$(xcode-select -p)" npm run product:apple:pack
+      - name: Build and verify the native credential provider in an isolated Keychain
+        if: github.event_name != 'pull_request'
+        run: |
+          npm run product:privacy:pack
+          npm run product:privacy:test

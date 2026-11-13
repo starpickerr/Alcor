@@ -82,7 +82,7 @@ test('guide examples execute with the actual business wrapper and single-method 
     ['alcor-calendar','create_event',row=>{assert.equal(row.title,'项目例会');assert.equal(Date.parse(row.end_at)-Date.parse(row.start_at),3600000)}],
   ]){
     const skill=await ctx.skills.get(name,{cwd:tmpdir()})
-    const examples=[...skill.content.matchAll(/```json\n([\s\S]*?)\n```/g)].map(match=>JSON.parse(match[1]))
+    const examples=[...skill.content.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g)].map(match=>JSON.parse(match[1]))
     const example=examples.find(row=>row.method===method)
     assert(example,'Guide must include an executable example for '+method)
     check(await invoke(example,'skill-'+name))

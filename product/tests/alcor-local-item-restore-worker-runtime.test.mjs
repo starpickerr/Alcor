@@ -1,3 +1,4 @@
+import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
@@ -44,7 +45,7 @@ for(const kind of ['calendar','reminders'])for(const scenario of ['restore','own
     if(['item_restore_prepare','item_restore_owner'].includes(input.route)){
       if(scenario==='recreated-id'&&!recreated&&input.method==='apple_restore_item'){
         recreated=true
-        await exec('python3',['-c',`import sqlite3,sys,json,pathlib
+        await exec(testPython,['-c',`import sqlite3,sys,json,pathlib
 p=pathlib.Path(sys.argv[1]);assert p.parent.parent.name.startswith('alcor-local-restore-wire-')
 row=json.loads(sys.argv[3]);row['title']='Concurrent local incarnation'
 with sqlite3.connect(p) as db:db.execute('INSERT INTO '+sys.argv[2]+' ('+','.join(row)+') VALUES ('+','.join('?' for _ in row)+')',tuple(row.values()))`,dbPath,table,JSON.stringify(rawRow)])
@@ -60,7 +61,7 @@ with sqlite3.connect(p) as db:db.execute('INSERT INTO '+sys.argv[2]+' ('+','.joi
   const rows=await ownerWorker.call('invoke',{domain,method:kind==='calendar'?'list_events':'list_todos',arguments:{}});assert(rows.length)
   const row=rows[0]
   // Fixture-only SQL removes one synthetic owner row; leaves old generation/binding evidence for the real CAS.
-  const removed=await exec('python3',['-c',`import sqlite3,sys,pathlib,json
+  const removed=await exec(testPython,['-c',`import sqlite3,sys,pathlib,json
 p=pathlib.Path(sys.argv[1]);assert p.parent.parent.name.startswith('alcor-local-restore-wire-')
 with sqlite3.connect(p) as db:
  db.row_factory=sqlite3.Row
@@ -148,7 +149,7 @@ with sqlite3.connect(p) as db:
   }else assert.match(JSON.stringify(first),/success/)
   const restored=await ownerWorker.call('invoke',{domain,method:getter,arguments:{[idKey]:row.id}});assert.equal(restored.id,row.id);assert.equal(restored.title,row.title+' changed in Apple')
   assert.equal(asks,0);assert.equal(peers.filter(x=>x.method==='apple_restore_item').length,1);assert.equal(apple.itemRestores.size,0)
-  const deliveries=async()=>JSON.parse((await exec('python3',['-c',`import sqlite3,sys,json,pathlib
+  const deliveries=async()=>JSON.parse((await exec(testPython,['-c',`import sqlite3,sys,json,pathlib
 p=pathlib.Path(sys.argv[1]);assert p.parent.parent.name.startswith('alcor-local-restore-wire-')
 with sqlite3.connect(p) as db:
  tables=('reminder_deliveries','reminder_route_deliveries','reminder_occurrences')
