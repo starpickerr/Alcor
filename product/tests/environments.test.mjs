@@ -2,10 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
-import { prepareEnvironment, environmentFor, installPlugin, launchEnvironment, desktopIsRunning, desktopApplication } from '../../scripts/product/environments.mjs'
+import { prepareEnvironment, environmentFor, installPlugin, launchEnvironment, desktopIsRunning, desktopApplication, officialDesktop } from '../../scripts/product/environments.mjs'
 import { applicationEnvironment, selectedScope, publishApplication } from '../../packages/alcor-plugin-info/src/assignments.js'
 import { guardSource } from '../../packages/alcor-plugin-info/src/host-policy.js'
 
@@ -16,7 +16,13 @@ async function fixture(t) {
 }
 const desktop = { cli: '/verified-desktop/dsh', binary: '/verified-desktop/app' }
 
-test('a live Desktop outliving its launcher is recognized, focused and protected from CLI installation',async t=>{
+test('the optional isolated Desktop launcher refuses unverified platforms', { skip: process.platform === 'darwin' }, async () => {
+  await assert.rejects(officialDesktop('/unverified-desktop'), /仅验证了 macOS/)
+})
+
+test('a live Desktop outliving its launcher is recognized, focused and protected from CLI installation',{
+  skip: process.platform === 'win32' && 'The optional isolated launcher requires macOS; its process identity probe uses POSIX ps',
+},async t=>{
   const {root}=await fixture(t)
   const paths=await prepareEnvironment(root,'dsh'), app={...desktop,binary:process.execPath}
   const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)','--','--user-data-dir='+paths.userData],{stdio:'ignore'})
@@ -59,7 +65,7 @@ test('existing unowned data, incorrect identities, symbolic roots and escaping a
   await writeFile(join(alcor.base, '.alcor-environment.json'), JSON.stringify({ version: 1, application: 'dsh' }))
   await assert.rejects(prepareEnvironment(valid, 'alcor'), /身份/)
   await assert.rejects(prepareEnvironment(valid, '../dsh'), /请选择/)
-  await symlink(valid, join(parent, 'alias'))
+  await symlink(valid, join(parent, 'alias'), process.platform === 'win32' ? 'junction' : 'dir')
   await assert.rejects(prepareEnvironment(join(parent, 'alias'), 'dsh'), /symbolic link/)
 })
 
@@ -67,13 +73,20 @@ test('nested directory and manifest symlinks cannot alias the other application'
   const { root } = await fixture(t)
   const alcor = await prepareEnvironment(root, 'alcor'), dsh = await prepareEnvironment(root, 'dsh')
   await rm(alcor.dsh, { recursive: true })
-  await symlink(dsh.dsh, alcor.dsh)
+  await symlink(dsh.dsh, alcor.dsh, process.platform === 'win32' ? 'junction' : 'dir')
   await assert.rejects(prepareEnvironment(root, 'alcor'), /软链接/)
   await rm(alcor.dsh); await mkdir(alcor.dsh)
   await prepareEnvironment(root, 'alcor')
-  await rm(join(alcor.profile, 'package.json'))
-  await symlink(join(dsh.profile, 'package.json'), join(alcor.profile, 'package.json'))
-  await assert.rejects(prepareEnvironment(root, 'alcor'), /普通文件/)
+  await t.test('manifest symlinks cannot alias the other application', async t => {
+    await rm(join(alcor.profile, 'package.json'))
+    try { await symlink(join(dsh.profile, 'package.json'), join(alcor.profile, 'package.json'), 'file') }
+    catch (error) {
+      if (process.platform !== 'win32' || error.code !== 'EPERM') throw error
+      t.skip('Windows file symlink creation requires a privilege unavailable to this test account')
+      return
+    }
+    await assert.rejects(prepareEnvironment(root, 'alcor'), /普通文件/)
+  })
 })
 
 test('runtime environment retains proxy settings but does not inherit credentials or parent data roots', async t => {
@@ -117,7 +130,7 @@ test('first Alcor launch retains its install archive, and failed initialization 
   await assert.rejects(launchEnvironment(paths, desktop, { archive, runner: async (...args) => { calls.push(args); throw Error('install failed') } }), /install failed/)
   assert.equal(calls.length, 1)
   const saved = calls[0][1][4]
-  assert(saved.startsWith(paths.packages + '/')); assert.equal(await readFile(saved, 'utf8'), 'synthetic immutable archive')
+  assert.equal(dirname(saved), paths.packages); assert.equal(await readFile(saved, 'utf8'), 'synthetic immutable archive')
   const retried = []
   await launchEnvironment(paths, desktop, { archive, runner: async (...args) => retried.push(args) })
   assert.equal(retried.length, 2); assert.equal(retried[0][1][4], saved)
