@@ -37,9 +37,20 @@ test('a live Desktop outliving its launcher is recognized, focused and protected
     await writeFile(join(paths.base,'.desktop-process.json'),JSON.stringify({pid:process.pid,binary:app.binary,userData:paths.userData}))
     assert.equal(await desktopIsRunning(paths,app),false)
   }finally{child.kill();await once(child,'exit')}
-  await writeFile(join(paths.base,'.desktop-process.json'),JSON.stringify({pid:child.pid,binary:'/previous-location/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',userData:paths.userData}))
-  assert.equal(await desktopIsRunning(paths,app),false,'an exited app may have moved since its previous launch')
   assert.equal(desktopApplication('/Applications/DeepSeek Harness.app/Contents/Resources/runtime/bin/node'),'/Applications/DeepSeek Harness.app')
+})
+
+test('a process record must belong to this environment even after its process exits', async t => {
+  const { root } = await fixture(t)
+  const paths = await prepareEnvironment(root, 'dsh')
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' })
+  await once(child, 'exit')
+  const record = { pid: child.pid, binary: process.execPath, userData: paths.userData }
+  const file = join(paths.base, '.desktop-process.json')
+  await writeFile(file, JSON.stringify({ ...record, userData: paths.home }))
+  await assert.rejects(desktopIsRunning(paths, desktop), /桌面进程记录无效/)
+  await writeFile(file, JSON.stringify(record))
+  assert.equal(await desktopIsRunning(paths, desktop), false, 'an exited app may have moved since its previous launch')
 })
 
 test('applications have independent standard profiles, homes, plugin state and user data', async t => {
@@ -77,9 +88,14 @@ test('nested directory and manifest symlinks cannot alias the other application'
   await assert.rejects(prepareEnvironment(root, 'alcor'), /软链接/)
   await rm(alcor.dsh); await mkdir(alcor.dsh)
   await prepareEnvironment(root, 'alcor')
+  const manifest = join(alcor.profile, 'package.json')
+  await rm(manifest)
+  // Directory aliases can also occupy the manifest path on unprivileged Windows.
+  await symlink(dsh.profile, manifest, process.platform === 'win32' ? 'junction' : 'dir')
+  await assert.rejects(prepareEnvironment(root, 'alcor'), /普通文件/)
+  await rm(manifest)
   await t.test('manifest symlinks cannot alias the other application', async t => {
-    await rm(join(alcor.profile, 'package.json'))
-    try { await symlink(join(dsh.profile, 'package.json'), join(alcor.profile, 'package.json'), 'file') }
+    try { await symlink(join(dsh.profile, 'package.json'), manifest, 'file') }
     catch (error) {
       if (process.platform !== 'win32' || error.code !== 'EPERM') throw error
       t.skip('Windows file symlink creation requires a privilege unavailable to this test account')
