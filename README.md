@@ -20,7 +20,7 @@ These are real renderer captures from official DSH 0.2.2-rc.2 with Alcor 0.1.104
 
 ## Desktop installation
 
-Alcor 0.1.104 has been exercised on official DSH 0.2.2-rc.1 and rc.2 on macOS Apple Silicon and Windows x64. Optional bundles have their own platform and host-version requirements; see the [tested scope](product/README.md#平台与验证范围) and [official release identities](product/desktop-release.lock.json).
+Alcor 0.1.104 has been exercised on official DSH 0.2.2-rc.1 and rc.2 on macOS Apple Silicon and Windows x64. The current five Alcor bundles also support macOS Apple Silicon rc.3 after host/package upgrade validation. Optional bundles have their own platform and host-version requirements; see the [tested scope](product/README.md#平台与验证范围) and [official release identities](product/desktop-release.lock.json).
 
 1. Open the plugin manager in an initialized DSH profile and install the `@alcor/secretary` bundle from its `.tgz` file.
 2. Install any optional plugins you need from the table below.
@@ -36,7 +36,7 @@ Use the plugin manager to enable, disable or uninstall Alcor, then reopen DSH. E
 | `@alcor/mail` | Connect IMAP mailboxes for read-only queries and briefing sources. |
 | `@alcor/agent-hub` | Track development tasks and agent execution in the DSH workbench. |
 
-Apple sync, school and mail bundles currently target macOS. AgentHub 0.1.4 declares alpha.3/rc.1 support, not rc.2. QQ and the desktop pet are separate AuraBot plugins; see the [channel guide](product/channels.md) and [bear artwork](assets/desktop-pet/README.md).
+Apple sync, school and mail bundles currently target macOS. AgentHub 0.1.5 declares alpha.3/rc.1/rc.3 support; rc.2 remains unverified. QQ and the desktop pet are separate AuraBot plugins; see the [channel guide](product/channels.md) and [bear artwork](assets/desktop-pet/README.md).
 
 ## Local development
 

@@ -23,7 +23,7 @@ def config(page, package):
     if back.is_visible():
         back.click()
     page.get_by_role('heading', name=re.compile(r'^(插件|Plugins)$')).wait_for()
-    page.get_by_text(package, exact=True).click()
+    page.locator(f'[data-plugin-package="{package}"] button').first.click()
     page.locator(f'[data-plugin-detail="{package}"] [data-plugin-config]').wait_for()
 
 
