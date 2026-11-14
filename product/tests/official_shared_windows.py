@@ -8,11 +8,13 @@ import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 from official_desktop_check import ROOT, digest, enter_workspace, redact, rpc
 from playwright.sync_api import Error, expect, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from windows_caption_check import check_caption
+from windows_window_interactions import check_window_interactions
 
 
 def verify(app, *releases):
@@ -58,6 +60,15 @@ def desktop(pw, app, home, env, phase):
         errors = []
         context.on('weberror', lambda error: errors.append(str(error.error)))
         context.on('console', lambda msg: errors.append(msg.text) if 'slot entry crashed' in msg.text else None)
+        # A retained Profile can expose its workspace renderer behind the welcome window.
+        for welcome in context.pages:
+            if welcome.url.startswith('file:') and welcome.url.endswith('/welcome.html'):
+                key = welcome.get_by_role('button', name=re.compile(r'^(Add API Key|添加 API Key)$'))
+                skip = welcome.get_by_role('button', name=re.compile(r'^(Set up later|稍后配置)$'))
+                if key.is_visible():
+                    key.click()
+                if skip.is_visible():
+                    skip.click()
         page = enter_workspace(context, process)
         page.on('crash', lambda _: errors.append('Renderer crashed'))
         for name in ('继续', 'Continue'):
@@ -89,7 +100,7 @@ def switch(page, source, target):
 
 def check_shared_settings(page, mode, home):
     assert page.evaluate("globalThis[Symbol.for('@alcor/product-mode')].getSnapshot()") == mode
-    page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单|More|更多)$')).last.click()
+    page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单)$')).click()
     page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
     dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
     dialog.get_by_role('button', name='Alcor', exact=True).click()
@@ -100,28 +111,34 @@ def check_shared_settings(page, mode, home):
 
 
 def check_automation(page, navigation, home):
+    # Each execution owns its fixtures, including when a retained Profile is upgraded.
+    run_id = uuid4().hex[:10]
+    native_title = f'Shared native fixture {run_id}'
+    template_title = f'Shared Alcor template fixture {run_id}'
+    manual_title = f'Shared manual Windows fixture {run_id}'
+
     native_task = rpc(page, 'schedule/create', {'request': {
-        'title': 'Shared native fixture', 'prompt': 'Synthetic only',
+        'title': native_title, 'prompt': 'Synthetic only',
         'timing': {'kind': 'at', 'at': '2099-01-01T00:00:00.000Z'},
         'target': {'kind': 'new_once'},
     }})
     navigation.get_by_role('button', name='自动化', exact=True).click()
-    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    expect(page.get_by_text(native_title, exact=True)).to_be_visible()
     title = page.get_by_role('heading', name='自动化任务', exact=True)
     badge = title.locator('..').get_by_text('Alcor', exact=True)
     expect(badge).to_be_visible()
     scope = page.get_by_role('button', name='自动化范围', exact=True)
     scope.click()
     page.get_by_role('menuitem', name='Alcor 自动化', exact=True).click()
-    expect(page.get_by_text('Shared native fixture', exact=True)).to_have_count(0)
+    expect(page.get_by_text(native_title, exact=True)).to_have_count(0)
     scope.click()
     page.get_by_role('menuitem', name='全部自动化', exact=True).click()
-    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    expect(page.get_by_text(native_title, exact=True)).to_be_visible()
     page.get_by_role('button', name='选择创建方式', exact=True).click()
     page.get_by_role('menuitem', name='每日简报', exact=True).click()
     expect(page.get_by_role('textbox', name='自动化任务名称', exact=True)).to_have_value('每日简报')
     expect(page.get_by_role('textbox', name='自动化任务内容', exact=True)).to_have_value('整理本机今日事务、日程和待处理账单，生成并保存今日简报，然后给我一段简短摘要。仅使用本机业务记录。')
-    page.get_by_role('textbox', name='自动化任务名称', exact=True).fill('Shared Alcor template fixture')
+    page.get_by_role('textbox', name='自动化任务名称', exact=True).fill(template_title)
     original_viewport = page.evaluate('({width:innerWidth,height:innerHeight})')
     page.set_viewport_size({'width': 1280, 'height': 540})
     zone = page.get_by_role('button', name=re.compile(r'^时区'))
@@ -142,13 +159,12 @@ def check_automation(page, navigation, home):
     page.get_by_role('textbox', name='自动化任务名称', exact=True).scroll_into_view_if_needed()
     page.screenshot(path=str(home / 'alcor-automation-template.png'), scale='css')
     page.get_by_role('button', name='创建', exact=True).click()
-    expect(page.get_by_text('Shared Alcor template fixture', exact=True).first).to_be_visible()
+    expect(page.get_by_text(template_title, exact=True).first).to_be_visible()
     catalog = rpc(page, 'schedule/catalog')
-    created = next(row for row in catalog if row['title'] == 'Shared Alcor template fixture')
+    created = next(row for row in catalog if row['title'] == template_title)
     assert created['target']['create']['agentPreset'] == 'alcor'
     page.get_by_role('button', name='新建', exact=True).click()
     expect(page.get_by_role('button', name='关闭创建页', exact=True)).to_be_visible()
-    manual_title = 'Shared manual Windows fixture'
     page.get_by_role('textbox', name='自动化任务名称', exact=True).fill(manual_title)
     page.get_by_role('textbox', name='自动化任务内容', exact=True).fill('Synthetic only')
     page.get_by_role('button', name='创建', exact=True).click()
@@ -158,8 +174,8 @@ def check_automation(page, navigation, home):
     assert any(row['id'] == native_task['id'] for row in rpc(page, 'schedule/catalog'))
     switch(page, 'Alcor', 'DeepSeek Harness')
     page.get_by_role('button', name='自动化任务', exact=True).click()
-    expect(page.get_by_text('Shared Alcor template fixture', exact=True)).to_be_visible()
-    expect(page.get_by_text('Shared native fixture', exact=True)).to_be_visible()
+    expect(page.get_by_text(template_title, exact=True)).to_be_visible()
+    expect(page.get_by_text(native_title, exact=True)).to_be_visible()
     expect(page.get_by_role('button', name='自动化范围')).to_have_count(0)
     expect(badge).to_have_count(0)
     expect(page.get_by_text(manual_title, exact=True)).to_be_visible()
@@ -184,10 +200,11 @@ def main():
         parser.error('--expect-compatible-upgrade needs --upgrade-app')
     app = args.app.resolve(strict=True)
     release = json.loads((ROOT / 'product/desktop-release.lock.json').read_text())['windows']
-    verify(app, release, release['upgradeProbe'])
+    upgrade_releases = [release['upgradeProbe'], *release.get('compatibleReleases', [])]
+    verify(app, release, *upgrade_releases)
     if args.upgrade_app:
         args.upgrade_app = args.upgrade_app.resolve(strict=True)
-        verify(args.upgrade_app, release['upgradeProbe'])
+        verify(args.upgrade_app, *upgrade_releases)
     args.artifacts.mkdir(parents=True, exist_ok=True)
     home = Path(tempfile.mkdtemp(prefix='run-', dir=args.artifacts.resolve()))
     print('Synthetic Profile and acceptance evidence:', home, flush=True)
@@ -306,6 +323,17 @@ def main():
                     rows = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
                     assert any(row['id'] == task['id'] and row['title'] == task['title'] for row in rows)
                     expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
+                    if page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).count():
+                        switch(page, 'DeepSeek Harness', 'Alcor')
+                    page.get_by_role('button', name='新建会话', exact=True).click()
+                    page.get_by_role('button', name=re.compile(r'^(打开|收起)右侧边栏$')).wait_for()
+                    session = page.context.browser.new_browser_cdp_session()
+                    try:
+                        pid = next(row['id'] for row in session.send('SystemInfo.getProcessInfo')['processInfo']
+                                   if row['type'] == 'browser')
+                    finally:
+                        session.detach()
+                    check_window_interactions(page, pid, home/'home/Documents/deepseek-harness/default-workspace', home)
                 else:
                     assert entry['error']['code'] == 'incompatible-version'
                     expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)

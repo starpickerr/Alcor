@@ -49,13 +49,18 @@ def check_caption(page, pid, home, mode):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
             win32gui.SetWindowPos(hwnd, 0, 60, 60, width, 650, win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
             page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            scale = page.evaluate('devicePixelRatio')
+            bounds = win32gui.GetWindowRect(hwnd)
+            outer = page.evaluate('[screenX,screenY,outerWidth,outerHeight]')
+            native = [bounds[0], bounds[1], bounds[2]-bounds[0], bounds[3]-bounds[1]]
+            assert all(abs(css*scale-px) <= 2 for css, px in zip(outer, native)), (outer, native)
+            assert abs(native[2] - width) <= 2, native
             box = button.bounding_box()
             assert box and 0 <= box['y'] < 60
             assert 0 <= box['x'] < 180, box
             bar = page.locator('.alcor-mode-bar').bounding_box()
             assert bar and bar['x'] <= 2 and abs(bar['width'] - page.evaluate('innerWidth')) <= 4, bar
             assert button.evaluate('e => getComputedStyle(e).webkitAppRegion') == 'no-drag'
-            scale = page.evaluate('devicePixelRatio')
             origin = win32gui.ClientToScreen(hwnd, (0, 0))
             center = (origin[0] + round((box['x'] + box['width']/2) * scale),
                       origin[1] + round((box['y'] + box['height']/2) * scale))
