@@ -1,6 +1,8 @@
 # Apple 同步
 
-本机已迁入独立 DSH 原生插件 `@alcor/apple-sync@0.1.17`，与 `@alcor/secretary@0.1.60` 配合。真实账号的系统授权和删除未在这次迁移中测试。此前版本支持官方 DSH 0.2.2-alpha.3 / 0.2.2-rc.1、macOS 和公开 EventKit。安装、查看状态不请求 Apple 权限；首次点击同步由独立的 Alcor Apple Sync.app 请求完整访问，不修改官方 DSH 的签名。helper 使用新身份 `com.starpickerr.alcor.calendarbridge`，不继承或迁移旧 Stella helper 的系统授权；出现新的日历或提醒事项授权提示时，由用户确认。旧 helper 和回滚包保留。
+当前包为 `@alcor/apple-sync@0.1.20`，增加精确 `0.2.2-rc.3` 支持；本轮核对 macOS Apple Silicon 上的启动、重启和合成数据升级，未运行真实 Apple 账号同步。
+
+此前迁移记录：本机迁入独立 DSH 原生插件 `@alcor/apple-sync@0.1.17`，与 `@alcor/secretary@0.1.60` 配合。真实账号的系统授权和删除未在这次迁移中测试。此前版本支持官方 DSH 0.2.2-alpha.3 / 0.2.2-rc.1、macOS 和公开 EventKit。安装、查看状态不请求 Apple 权限；首次点击同步由独立的 Alcor Apple Sync.app 请求完整访问，不修改官方 DSH 的签名。helper 使用新身份 `com.starpickerr.alcor.calendarbridge`，不继承或迁移旧 Stella helper 的系统授权；出现新的日历或提醒事项授权提示时，由用户确认。旧 helper 和回滚包保留。
 
 配置页的“同步”连接所有可见日历／提醒事项清单，“暂停同步”保留连接关系和本地内容。分类／清单与 Apple 一一对应，事务清单在日程页聚合显示为“事务”。每条日程和事务必须有归属；新建默认采用 Apple 的默认可写日历／清单，新建分类可选择 Apple 账户。同名跨账户保留不同身份，界面显示账户。新资料库不预建额外分类；已有分类、记录 ID 和专有字段均保留，无分类旧记录迁入有效归属。
 

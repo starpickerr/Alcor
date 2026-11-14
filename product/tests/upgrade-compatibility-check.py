@@ -1,68 +1,97 @@
-"""Upgrade an existing Alpha plugin profile on the current signed Desktop; synthetic data only."""
+"""Upgrade all current Alcor packages between signed hosts; disposable data only."""
 import json
 import os
-import subprocess
-import tempfile
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+import re
+import tarfile
+
+from playwright.sync_api import expect, sync_playwright
 import official_desktop_check as desktop
-from briefing_sources_ui import check_briefing_sources
-from plugin_check import pack_briefing_fixture
+from fresh_profile_fixture import fresh_test_home
+
+PACKAGES = {'@alcor/' + name for name in ('secretary', 'apple-sync', 'elearning', 'mail', 'agent-hub')}
+
+
+def archives(directory):
+    result = {}
+    for archive in Path(directory).glob('*.tgz'):
+        with tarfile.open(archive) as bundle:
+            manifest = json.load(bundle.extractfile('package/package.json'))
+        name = manifest['name']
+        if name in PACKAGES:
+            assert name not in result, 'Only one artifact per package is allowed'
+            result[name] = archive
+    assert set(result) == PACKAGES, 'Build or provide all five Alcor packages'
+    return [str(result[name]) for name in sorted(result)]
+
+
+def check_services(page):
+    assert desktop.rpc(page, 'alcorSchool/elearningAccount', {'request': {}})['installed']
+    assert desktop.rpc(page, 'alcorMail/state', {'request': {}})['installed']
+    assert desktop.rpc(page, 'agentHub/read', {'request': {}}) == {'jobs': []}
+    assert desktop.rpc(page, 'alcorAppleSync/invoke', {'request': {'method': 'status'}})['supported']
+    expect(page.get_by_role('button', name=re.compile(r'^切换使用模式，当前 '))).to_be_visible()
 
 
 def main():
-    if json.loads((desktop.ROOT / 'packages/alcor-secretary/package.json').read_text())['name'] != '@stella/secretary':
-        print('SKIP: historical same-name upgrade check does not cover the Alcor package rename')
-        return
-    desktop.verify_release()
+    previous = Path(os.environ['ALCOR_PREVIOUS_DESKTOP_APP'])
+    current = desktop.APP
+    releases = desktop.RELEASE
+    old_packs = archives(os.environ['ALCOR_PREVIOUS_ARTIFACTS'])
+    new_packs = archives(desktop.ROOT / '.local/artifacts')
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    legacy_cli = Path(os.environ['STELLA_LEGACY_CLI'])
-    old_packs = [desktop.ROOT / '.local/artifacts/stella-secretary-0.1.5.tgz', desktop.ROOT / '.local/artifacts/stella-apple-sync-0.1.0.tgz']
-    apple_version = json.loads((desktop.ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
-    apple_pack = desktop.ROOT / f'.local/artifacts/stella-apple-sync-{apple_version}.tgz'
-    with tempfile.TemporaryDirectory(prefix='stella-upgrade-') as temporary, sync_playwright() as playwright:
+    identities = []
+    for app in (previous, current):
+        desktop.APP, desktop.RELEASE = app, releases
+        desktop.verify_release()
+        identities.append(desktop.digest(app / 'Contents/Resources/app.asar'))
+    with fresh_test_home('alcor-host-upgrade-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
-        environment = desktop.environment(home)
-        legacy_profile = home / 'dsh/profiles/compatibility'
-        legacy_profile.mkdir(parents=True)
-        (legacy_profile / 'pnpm-workspace.yaml').write_text('packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\n')
-        (legacy_profile / 'package.json').write_text(json.dumps({'name': 'upgrade-test', 'private': True, 'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
-        with (desktop.ARTIFACTS / 'legacy-install.log').open('w') as log:
-            subprocess.run(['node', str(legacy_cli), 'plugin', '--profile', 'compatibility', 'add', *map(str, old_packs), '--ignore-scripts'], cwd=home, env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=120, check=True)
+        desktop.APP = previous
+        with desktop.desktop(playwright, home, 'previous-baseline') as (page, errors):
+            assert not errors, errors
+        desktop.native_cli(home, 'previous-install', 'add', *old_packs, '--ignore-scripts')
+        with desktop.desktop(playwright, home, 'previous-installed') as (page, errors):
+            check_services(page)
+            task = desktop.rpc(page, 'alcorOrganizer/business', {'request': {
+                'domain': 'tasks', 'method': 'create_todo',
+                'arguments': {'payload': {'title': 'Synthetic host upgrade retention'}},
+            }})
+            directory = home / 'upgrade-workspace'
+            directory.mkdir()
+            workspace = desktop.rpc(page, 'workspace/create', {'request': {'path': str(directory)}})['workspace']
+            assert not errors, errors
         profile = home / 'dsh/profiles/desktop'
-        (home / 'dsh/profiles/compatibility').rename(profile)
-        patch = '# Synthetic owner configuration\n- id: agent-default-model\n  config:\n    provider: deepseek-account\n    model: deepseek-flash\n'
-        (profile / 'cordis.patch.yml').write_text(patch)
-        store = profile / 'stella/business'
-        store.mkdir(parents=True)
-        marker = store / 'retention-check.txt'
-        marker.write_text('retain existing private business storage')
-        assert (profile / 'node_modules/@deepseek-ai/dsh-tools').exists(), 'Old package must reproduce host dependency shadowing'
-        plugin_pack = pack_briefing_fixture(home)
-        desktop.native_cli(home, 'upgrade', 'add', str(desktop.PACK), str(apple_pack), str(plugin_pack), '--ignore-scripts')
-        assert (profile / 'cordis.patch.yml').read_text() == patch
-        assert marker.read_text() == 'retain existing private business storage'
-        assert not (profile / 'node_modules/@deepseek-ai/dsh-tools').exists(), 'Upgraded plugin must remove its old shadow of host tools'
-        with desktop.desktop(playwright, home, 'upgraded-restart') as (page, errors):
-            desktop.check_modes(page)
-            check_briefing_sources(page, lambda endpoint, args: desktop.rpc(page, endpoint, args), desktop.ARTIFACTS)
-            reads = profile / 'node_modules/@stella-test/briefing-source/reads.jsonl'
-            assert all(json.loads(line)['type'] == 'catalog' for line in reads.read_text().splitlines())
-            status = desktop.rpc(page, 'alcorAppleSync/invoke', {'request': {'method': 'status'}})
-            assert status['supported'] and not status['connected']
+        before = json.loads((profile / 'package.json').read_text())
+        patch = profile / 'cordis.patch.yml'
+        owner_patch = patch.read_bytes() if patch.exists() else None
+        marker = profile / 'alcor/upgrade-marker.txt'
+        marker.write_text('Synthetic owner data must survive a host upgrade')
+        desktop.APP = current
+        # Unsupported old plugins must not stop native DSH from opening.
+        with desktop.desktop(playwright, home, 'unsupported-recovery') as (page, errors):
+            expect(page.get_by_role('button', name=re.compile(r'^切换使用模式，当前 '))).to_have_count(0)
+            assert desktop.rpc(page, 'agentPresets/list')['presets']
             assert not errors, errors
-        # A future unsupported Stella must be skipped without removing host services.
-        package = profile / 'node_modules/@stella/secretary/package.json'
-        manifest = json.loads(package.read_text())
-        manifest['engines']['dsh'] = '99.0.0'
-        package.write_text(json.dumps(manifest))
-        with desktop.desktop(playwright, home, 'unsupported-stella') as (page, errors):
-            assert page.get_by_role('button', name='切换使用模式，当前 Stella', exact=True).count() == 0
-            presets = desktop.rpc(page, 'agentPresets/list')
-            assert presets['presets'], 'Native DSH must retain its agents when Stella is skipped'
-            assert not errors, errors
-        assert marker.exists()
-    print('PASS: old profile upgraded, owner patch/data retained, both plugins start; incompatible Stella skipped without breaking DSH')
+        desktop.native_cli(home, 'upgrade', 'add', *new_packs, '--ignore-scripts')
+        after = json.loads((profile / 'package.json').read_text())
+        assert after['dsh'] == before['dsh'], 'Selected bundles changed during upgrade'
+        assert (patch.read_bytes() if patch.exists() else None) == owner_patch
+        for phase in ('upgraded', 'upgraded-restart'):
+            with desktop.desktop(playwright, home, phase) as (page, errors):
+                check_services(page)
+                rows = desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos'}})
+                assert sum(row['id'] == task['id'] and row['title'] == task['title'] for row in rows) == 1
+                existing = desktop.rpc(page, 'workspace/create', {'request': {'path': str(directory)}})
+                assert not existing['created'] and existing['workspace']['workspaceId'] == workspace['workspaceId']
+                assert marker.read_text() == 'Synthetic owner data must survive a host upgrade'
+                assert (patch.read_bytes() if patch.exists() else None) == owner_patch
+                assert not errors, errors
+    for app, identity in zip((previous, current), identities):
+        desktop.APP, desktop.RELEASE = app, releases
+        desktop.verify_release()
+        assert desktop.digest(app / 'Contents/Resources/app.asar') == identity
+    print('PASS: five plugins start and restart after host/package upgrade; task, workspace, bundles and owner data retained; unsupported plugins leave native DSH usable; official apps unchanged')
 
 
 if __name__ == '__main__':

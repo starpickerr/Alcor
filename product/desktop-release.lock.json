@@ -22,6 +22,13 @@
       "teamId": "NAN929V4UM",
       "version": "0.2.2-rc.2",
       "appAsarSha256": "1535941c163698d68a0cf45dd06e1ce1a18a308108d9b84076074f35a6e9c39d"
+    },
+    {
+      "bundleId": "com.deepseek.dsh",
+      "arch": "arm64",
+      "teamId": "NAN929V4UM",
+      "version": "0.2.2-rc.3",
+      "appAsarSha256": "c0ce89f77d25e98e11952728d1fc054b6e2300db17402af83a1a225c8b36e843"
     }
   ],
   "windows": {
@@ -40,6 +47,16 @@
       "binarySha256": "0C8B37C3554BB16518C876FE53F72935A541EF1DE8382463330B467667549305",
       "appAsarSha256": "49FD1B087190D594B15C44FE6394C6FFD591200ABA76E209B5769498F83076AE",
       "signer": "84032578657219876E273E0D1BD303CFE1B82E6F"
-    }
+    },
+    "compatibleReleases": [
+      {
+        "version": "0.2.2-rc.3",
+        "url": "https://download.deepseek.com/dsh-desk/bin/win-x64/deepseek-harness-0.2.2-rc.3-win-x64.exe",
+        "installerSha256": "786C9B26050C35B62C7BE6A01DEE2541DC1C2C5D9BD5F2DBE77BEEEB8D50704E",
+        "binarySha256": "93E0E6E31A2DB74EB2E4905B3C79E339537F2C7CC9C9FF72EAC2FF5D226F6780",
+        "appAsarSha256": "14CFD81C9135BF0AFB89417543C94F9ECFE09266574452A9B106890C698725AE",
+        "signer": "84032578657219876E273E0D1BD303CFE1B82E6F"
+      }
+    ]
   }
 }
