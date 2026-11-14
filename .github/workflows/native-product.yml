@@ -5,7 +5,7 @@ on:
     branches: [develop, main]
     paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   push:
-    branches: [develop, main]
+    branches: [develop, main, fix/shared-business-tools-20261114]
     paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   workflow_dispatch:
 

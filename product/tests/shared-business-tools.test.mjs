@@ -31,7 +31,8 @@ test('installed business tools and guides serve standard and Alcor chats without
     reads++
     return [{ id: 'synthetic-task', title: 'Synthetic task' }]
   } })
-  ctx.tools.register({ name: 'bash', description: 'Native tool', parameters: {},
+  const nativeTools = ['bash', 'pwsh', 'read']
+  for (const name of nativeTools) ctx.tools.register({ name, description: 'Native tool', parameters: {},
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] }, execute: async () => 'native-result' })
   const patch = load(await readFile(new URL('../../packages/alcor-secretary/cordis.patch.yml', import.meta.url), 'utf8'), { schema: entryListSchema })
   const entries = patch.flatMap(row => row.insert ?? [])
@@ -46,8 +47,10 @@ test('installed business tools and guides serve standard and Alcor chats without
   ] })).results[0].result
   const standard = { ctx, session: { preset: 'standard', header: {}, seq: 0, surface: { nodes: [] } } }
   const alcor = { ctx, session: { preset: 'alcor', header: {}, seq: 0, surface: { nodes: [] } } }
-  assert.equal((await call(standard, 'bash')).isError, false, 'Installing Alcor must not restrict native DSH file tools')
-  assert.equal((await call(alcor, 'bash')).isError, true, 'Alcor keeps its personal-turn file guard')
+  for (const name of nativeTools) {
+    assert.equal((await call(standard, name)).isError, false, `Standard DSH keeps native ${name} policy`)
+    assert.equal((await call(alcor, name)).isError, true, `Alcor keeps its personal-turn guard for ${name}`)
+  }
   for (const agent of [standard, alcor]) {
     assert(ctx.tools.schemas(agent).some(row => row.name === 'alcor_business'))
     const names = (await ctx.skills.list({ scope: agent, cwd: tmpdir() })).map(row => row.name)
