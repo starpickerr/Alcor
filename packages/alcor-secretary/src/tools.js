@@ -12,6 +12,7 @@ import { createAppleExportGate, isApplePlanOperation } from './security-apple-ex
 
 export const inject = ['tools', 'alcorSecretary', 'systemPrompt']
 const desktopFileTools = new Set(['read','read_image','write','edit','apply_patch','glob','grep','bash','pwsh','job_output','job_list','job_kill'])
+const secretaryPresets = new Set(['alcor', 'stella', 'alcor-briefing', 'stella-briefing'])
 
 export function apply(ctx) {
   registerBundledSkills(ctx, 'alcor-secretary', new URL('../skills/', import.meta.url))
@@ -42,6 +43,10 @@ export function apply(ctx) {
   })
   ctx.systemPrompt.variable('alcor_identity', () => secretaryPersona)
   ctx.tools.guard(execution => {
+    // Shared business tools must not impose Alcor's file/MCP policy on other DSH presets.
+    const presets = ctx.get('agentPresets')
+    const preset = execution.agent?.session && presets?.presetForSession(execution.agent.session)
+    if (!execution.name.startsWith('alcor_') && presets && !secretaryPresets.has(preset)) return
     if ((execution.name === 'schedule_edit' && execution.arguments?.action === 'delete') || isAutomationDeletion(execution)) return automationDeleteUnavailable
     if (requiresUnimplementedAppleApproval(execution)) return '此 Apple 操作需要具体目标审批，暂不能通过对话执行。'
     if (desktopFileTools.has(execution.name) && (!personalTurn(execution.agent) || !execution.agent.session.header || execution.agent.session.header.origin === 'subagent' || execution.agent.session.header.parentSession)) return '本机文件和命令工具仅供主人发起的 Alcor 桌面对话使用。'

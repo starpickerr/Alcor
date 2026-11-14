@@ -1,6 +1,6 @@
 # 在官方 DSH 中使用 Alcor
 
-Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.105`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏、应用／系统分组和业务页面；切回 DSH 恢复官方原生侧栏。
+Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.106`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏、应用／系统分组和业务页面；切回 DSH 恢复官方原生侧栏。
 
 两个界面共用同一个 Host、Profile、运行环境、模型、配置、会话、工作区和插件目录。切换只改变界面，不启动第二个 Host，后台继续运行。第三方插件原样安装，Alcor 的「系统」分组仍打开它们自己的页面。
 
@@ -9,7 +9,7 @@ Alcor 使用官方插件接口和公开 UI 插槽，不修改或覆盖官方程�
 ## 安装与数据
 
 1. 安装官方 DSH，完成目标 Profile 的初始化。已验证的桌面版本和产物身份见[版本清单](desktop-release.lock.json)，各插件仍须满足自身 `engines.dsh` 和平台声明。
-2. 在 DSH 的「插件」页选择「添加插件」，安装 `alcor-secretary-0.1.105.tgz`。构建方法见[开发与打包](#开发与打包)。安装不需要单独的 Alcor 客户端或修改官方文件。
+2. 在 DSH 的「插件」页选择「添加插件」，安装 `alcor-secretary-0.1.106.tgz`。构建方法见[开发与打包](#开发与打包)。安装不需要单独的 Alcor 客户端或修改官方文件。
 3. 退出并重新打开 DSH，在左上角菜单选择 Alcor。日常模式切换即时生效；安装、启用、停用及卸载后按重启使用。
 4. 按需安装下表中的独立插件，账号与插件设置由 DSH 原生插件页管理。
 
@@ -66,7 +66,7 @@ npm run product:pack
 npm test
 ```
 
-秘书归档写入 `.local/artifacts/`，当前为 `alcor-secretary-0.1.105.tgz`。记录提交、包版本和归档／客户端摘要，不仅凭版本号判断产物身份。Windows 开发依赖树包含仅 macOS 的工作区包，按现有 CI 使用 `npm ci --force --ignore-scripts`；该选项只用于开发检出，不用于官方 Profile 安装或跳过兼容检查。
+秘书归档写入 `.local/artifacts/`，当前为 `alcor-secretary-0.1.106.tgz`。记录提交、包版本和归档／客户端摘要，不仅凭版本号判断产物身份。Windows 开发依赖树包含仅 macOS 的工作区包，按现有 CI 使用 `npm ci --force --ignore-scripts`；该选项只用于开发检出，不用于官方 Profile 安装或跳过兼容检查。
 
 | 命令 | 产物或用途 |
 | --- | --- |
@@ -97,6 +97,8 @@ npm test
 本页及根 README 的三张截图来自官方 Mac rc.2、秘书 0.1.104 的合成 Profile 验收，已逐张查看，未包含个人数据或凭据。`alcor-shared-tasks.png`、`dsh-shared-workspace.png`、`alcor-automation-template.png` 分别为验收原图 `shared.png`、`dsh-top.png`、`alcor-automation-template.png` 的原样副本；不代表 Windows 原生窗口外观。
 
 ## DSH 更新与兼容边界
+
+秘书 0.1.106 将业务工具和按需加载的技能注册到插件层，普通 DSH、Alcor 及历史 Stella 主会话均可调用；当前用户来源、宿主拒绝、子会话限制和具体操作审批继续生效。安装插件不把 Alcor 的文件／MCP 策略施加给普通 DSH 预设。事务数据以当前业务工具为准，不直接查询旧归档或 SQLite。此入口已在官方 Mac rc.3 使用隔离数据和模拟模型验证三种预设的实际工具目录、技能读取和事务查询；Windows 0.1.106 的实际对话入口待补验，不能复用下述 0.1.105 的桌面结果宣称通过。入口为 `product/tests/shared-business-tools.test.mjs` 和 `product/tests/shared-business-chat-check.py`。
 
 2026-11-14 补验官方 Mac Apple Silicon rc.3：产品测试 538 通过、1 个平台跳过；同窗切换、自动化、窄窗与弹窗、重启和停用恢复通过。五个插件在 rc.1 上安装旧包后升级到 rc.3，再更新插件并重启，原事务、工作区、启用列表和 owner 文件保留；不兼容旧插件被跳过时，原生 DSH 仍可使用。学校／邮件的冻结协议、配置 UI、原生凭据、来源发现、停用／恢复／卸载检查及秘书卸载重装数据保留通过。以上使用隔离 Profile、合成数据；未运行真实 Apple／学校／邮件账号操作。
 

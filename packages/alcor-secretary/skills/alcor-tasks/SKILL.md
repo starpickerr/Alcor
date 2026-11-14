@@ -1,11 +1,13 @@
 ---
 name: alcor-tasks
-description: 管理 Alcor 事务：新增、查询、完成、修改待办和重复任务，设置分类、截止时间或检查项。
+description: 管理 Alcor 事务：新增、查询、完成、修改待办和重复任务，检查重复事务，设置分类、截止时间或检查项。
 ---
 
 # 事务
 
 使用 `alcor_business`，`domain="tasks"`。下面 JSON 都是该工具的完整入参；日期、时间和 ID 仅为示例，按用户实际意图填写。工具和页面共用数据，无需让用户到页面重新操作。
+
+事务数据以当前工具返回为准，不搜索旧版 Stella 归档、不读取或修改 SQLite 文件。工具未开放时如实说明，不能以旧技能或直接访问数据库代替。
 
 新增事务的业务字段必须包在 `arguments.payload` 中。日常状态使用 `todo`（未完成）或 `completed`（完成），不要把界面文字“待处理”当枚举。`due_on` 是日期，`due_time` 是当地 HH:MM，`timezone` 是 IANA 时区。
 
@@ -20,6 +22,8 @@ description: 管理 Alcor 事务：新增、查询、完成、修改待办和重
 ```json
 {"domain":"tasks","method":"list_todos","arguments":{"include_completed":false}}
 ```
+
+检查重复事务时用 `include_completed:true` 查询，按返回的标题、课程或来源、截止时间、重复序列和父子关系核对候选；同名的循环任务历史或不同来源不直接判为重复。先报告候选和依据，用户未要求合并或删除时不修改数据。
 
 从返回结果取得真实 ID。`get_todo` 传 todo_id；`update_todo` 传 todo_id 和 payload（仅修改字段）；`complete_todo` 传 todo_id 和 completed 布尔值。重复事务的完成由服务推进下一次，不把原序列直接改成永久完成。
 
