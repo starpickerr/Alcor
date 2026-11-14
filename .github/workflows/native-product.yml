@@ -93,7 +93,7 @@ jobs:
         run: |
           export ALCOR_BUSINESS_PYTHON="$(command -v python)"
           npm run preproduct:test
-          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/alcor-security-policy.test.mjs product/tests/alcor-security-bill-gate.test.mjs product/tests/alcor-organizer-security-boundary.test.mjs product/tests/native-runtime-boundary.test.mjs
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/shared-business-tools.test.mjs product/tests/alcor-security-policy.test.mjs product/tests/alcor-security-bill-gate.test.mjs product/tests/alcor-organizer-security-boundary.test.mjs product/tests/native-runtime-boundary.test.mjs
   windows-native-plugin:
     runs-on: windows-2025
     timeout-minutes: 20
@@ -121,7 +121,7 @@ jobs:
           $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
           npm run preproduct:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/native-runtime-boundary.test.mjs
+          node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/shared-business-tools.test.mjs product/tests/native-runtime-boundary.test.mjs
   native-product:
     runs-on: macos-15
     timeout-minutes: 25
