@@ -210,8 +210,9 @@
 .alcor-agenda-list .alcor-actions { flex:none; gap:2px; }
 @media(hover:hover) { .alcor-agenda-list > li > .alcor-actions { opacity:0; } .alcor-agenda-list > li:hover > .alcor-actions,.alcor-agenda-list > li:focus-within > .alcor-actions { opacity:1; } }
 @media(max-width:600px) { .alcor-task-detail-summary { padding:14px; } .alcor-task-detail .alcor-calendar-period { align-items:flex-start; } .alcor-task-detail .alcor-calendar-period > span { display:none; } }
-.alcor-briefing-layout { display:grid; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
+.alcor-briefing-layout { display:grid; flex:1; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
 .alcor-desk:has(> .alcor-business > .alcor-briefing-layout) { container-type:size; }
+.alcor-business:has(> .alcor-briefing-layout) { display:flex; flex-direction:column; }
 .alcor-briefing-history,.alcor-briefing-revisions { contain:size; min-height:0; max-height:100cqh; overflow-y:auto; overscroll-behavior-y:contain; position:sticky; top:0; }
 .alcor-briefing-history { padding:24px 16px; border-right:1px solid var(--dsw-alias-border-l3); background:var(--alcor-surface-soft); }
 .alcor-briefing-history h2, .alcor-briefing-revisions h2 { font-size:13px; color:var(--dsw-alias-label-secondary); margin-bottom:16px; }
