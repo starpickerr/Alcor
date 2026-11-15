@@ -2,7 +2,7 @@
 body[data-ds-dark-theme] :is(.alcor-bear-logo,.alcor-empty-mascot) { filter:brightness(0) invert(.92); }
 
 /* Scope the palette to the active Alcor shell, including native dialogs and chat. */
-body:has(.alcor-sidebar) {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) {
   --alcor-canvas:#fafafa;
   --alcor-surface:#ffffff;
   --alcor-surface-soft:#f2f2f4;
@@ -53,7 +53,7 @@ body:has(.alcor-sidebar) {
   --dsw-focus-ring-color:var(--alcor-brand);
 }
 
-body[data-ds-dark-theme]:has(.alcor-sidebar) {
+body[data-ds-dark-theme]:has(.alcor-sidebar,.alcor-sidebar-actions) {
   --alcor-canvas:#141416;
   --alcor-surface:#1d1d20;
   --alcor-surface-soft:#26262b;
@@ -72,30 +72,30 @@ body[data-ds-dark-theme]:has(.alcor-sidebar) {
   --alcor-shadow:0 2px 8px #0002,0 12px 32px #0001;
 }
 
-body:has(.alcor-sidebar) .alcor-mode-bar {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) .alcor-mode-bar {
   background:var(--alcor-sidebar);
   border-bottom:1px solid var(--alcor-line);
 }
 
-body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-agenthub) {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(.alcor-desk,.alcor-agenthub) {
   background:var(--alcor-canvas);
 }
 
-body:has(.alcor-sidebar) :is(.alcor-editor-dialog,.alcor-settings-content) {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(.alcor-editor-dialog,.alcor-settings-content) {
   color:var(--alcor-ink);
 }
 
-body:has(.alcor-sidebar) :is(input,textarea)::placeholder { color:var(--alcor-muted); opacity:1; }
+body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(input,textarea)::placeholder { color:var(--alcor-muted); opacity:1; }
 
-body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) {
   transition:background-color 160ms ease,border-color 160ms ease,box-shadow 160ms ease,color 160ms ease;
 }
 
-body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary):focus-visible {
+body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary):focus-visible {
   outline:2px solid var(--alcor-brand);
   outline-offset:3px;
 }
 
 @media (prefers-reduced-motion:reduce) {
-  body:has(.alcor-sidebar) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) { transition:none; }
+  body:has(.alcor-sidebar,.alcor-sidebar-actions) :is(.alcor-desk,.alcor-sidebar,.alcor-agenthub,.alcor-settings-content,.alcor-editor-dialog) :is(button,input,select,textarea,summary) { transition:none; }
 }
