@@ -115,7 +115,9 @@ class Business:
                                        'executionSandbox': {'mode': 'core', **((arguments or {}).get('task') or {}), 'outputDirectory': str(self.root / 'executions')}}}
         result = entry.handle_invoke(request)
         if result['status'] != 'succeeded':
-            raise ValueError(result.get('error', {}).get('message') or 'Operation outcome unknown; check the saved state before retrying')
+            detail = result.get('error') or {}
+            message = detail.get('message') or 'Operation outcome unknown; check the saved state before retrying'
+            raise ValueError(f"[{detail['code']}] {message}" if detail.get('code') else message)
         return jsonable(result.get('value'))
 
     def _metadata(self, record, raw):
