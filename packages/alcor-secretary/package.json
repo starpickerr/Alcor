@@ -1,6 +1,6 @@
 {
   "name": "@alcor/secretary",
-  "version": "0.1.104",
+  "version": "0.1.105",
   "type": "module",
   "license": "MIT",
   "alcor": {
@@ -77,7 +77,7 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.2"
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

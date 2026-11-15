@@ -1,6 +1,6 @@
 {
   "name": "@alcor/elearning",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "复旦 eLearning连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",
@@ -84,7 +84,7 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1"
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3"
   },
   "repository": {
     "type": "git",

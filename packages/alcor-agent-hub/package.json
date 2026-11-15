@@ -1,6 +1,6 @@
 {
   "name": "@alcor/agent-hub",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AgentHub — DSH 工作台中的独立开发者协作工具",
   "type": "module",
   "license": "MIT",
@@ -92,7 +92,7 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1"
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3"
   },
   "repository": {
     "type": "git",
