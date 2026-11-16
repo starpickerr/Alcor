@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import Elearning, { checkConnection } from '../../alcor-secretary/src/elearning.js'
+import Elearning, { checkConnection } from './elearning.js'
 import { remote, schemas } from './remote.js'
 import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
 

@@ -1,5 +1,4 @@
 import {permits,selectedScope,publishApplication} from '../../alcor-plugin-info/src/assignments.js'
-import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as schema } from 'zod'
@@ -95,7 +94,7 @@ export default class Secretary extends TypertRemoteService {
   async checkElearning(request) {
     accountSchemas.checkElearning[0].parse(request)
     if(!permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor'))return {status:'disconnected'}
-    return checkConnection(this.ctx)
+    return this.ctx.get('alcorElearning')?.checkConnection?.() ?? { status: 'disconnected' }
   }
 
   @Remote

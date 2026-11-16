@@ -1,5 +1,7 @@
 # Alcor eLearning
 
+学校连接、凭据状态、课程列表压缩和账号设置界面由本插件维护。通知与表单组件位于共享的 `alcor-plugin-info`；秘书保留的旧学校账号接口只通过 `alcorElearning` 服务转发。简报仍通过来源工具和结构化条目接入。
+
 使用 DSH 原生凭据连接复旦 eLearning。登录优先使用本机 Microsoft Edge，其次为 Chrome、Playwright Chromium；使用独立会话，支持学校认证页的中英文登录按钮。
 
 在对话中查询课程、作业与课件，下载课程文件网页中的附件到明确指定的本地路径，或将本地文件上传并提交 Canvas 作业。插件提供 `list_courses`、`fetch`、`list_files`、`download_file`、`get_assignment` 和 `submit_assignment` 六项 MCP 工具，继续遵循 DSH 工具权限和账号撤销。

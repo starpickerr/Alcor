@@ -4,7 +4,7 @@ import { IconCheckOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { localDate, monthDays, eventOnDay } from './presentation.js'
 
 export const showTime = value => new Date(value).toLocaleString('zh-CN')
-export function Field({ label, children }) { return <label className="alcor-field"><span>{label}</span>{['select', 'textarea'].includes(children?.type) ? React.cloneElement(children, { 'aria-label': label }) : children}</label> }
+export { Field } from '../../alcor-plugin-info/src/field.jsx'
 export function Empty({ title, description, icon, mascot = false }) { return <div className="alcor-empty">{mascot ? <img className="alcor-empty-mascot" src={mascotImage} width="124" height="121" alt="" aria-hidden="true" draggable={false} /> : icon && <div className="alcor-empty-icon" aria-hidden="true">{icon}</div>}<h2>{title}</h2>{description && <p>{description}</p>}</div> }
 const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 export function MonthGrid({ day, selected, records, select, compact = false, categories = {}, open, recordTrigger, recordSelected }) {
