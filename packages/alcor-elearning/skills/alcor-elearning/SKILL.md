@@ -47,6 +47,8 @@ since/until 使用带时区 ISO 8601；没有要求历史时采用有限的近�
 {"course_id":"42","assignment_id":"20"}
 ```
 
+查看这项作业或关联作业的测验成绩时，读取 grading.score、grading.grade 和 grading.points_possible。得分为 0 时如实呈现，得分为空时结合 submission.workflow_state 说明公布或复核状态。
+
 核对 submission_types 包含 online_upload、allowed_extensions、locked_for_user、截止时间、allowed_attempts，以及 submission.attempt（未提交为 0）。当前仅支持 Canvas 原生文件上传作业；文本、网址、测验和外部系统作业按其指定方式处理。
 
 用户已明确要求提交、目标作业和具体文件清楚时，直接调用 `mcp__elearning__submit_assignment`；不强制转页面确认。用户只要求查看、下载、生成答案或准备文件时，不提交。文件有歧义时先澄清。重交已有提交须在用户已明确要求重交的范围内执行；不因网页提示自行重交。
