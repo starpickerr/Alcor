@@ -118,8 +118,8 @@ def main():
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
                 page.get_by_role('button',name='返回简报').click()
                 page.get_by_role('button', name='生成今日简报', exact=True).click()
-                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
-                expect(page.get_by_role('heading', name='简报', exact=True)).to_have_count(0)
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
                 deadline = time.monotonic() + 35
                 while not Provider.waiting.is_set() and time.monotonic() < deadline and not Provider.failure:
                     page.wait_for_timeout(100)
@@ -233,13 +233,19 @@ def main():
                 assert saved['revisions'][0]['trigger'] == 'scheduled'
                 assert len(business(page,'list_briefings')) == 1
                 page.get_by_role('button', name='更新今日简报', exact=True).click()
-                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
-                expect(page.get_by_text('Stella synthetic tool round trip passed.', exact=True)).to_be_visible(timeout=30000)
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
+                deadline = time.monotonic() + 35
+                while time.monotonic() < deadline:
+                    latest_run = business(page, 'generation_status')
+                    if latest_run.get('requestId') != after_disable['requestId'] and latest_run['phase'] in ('completed', 'failed'): break
+                    page.wait_for_timeout(100)
+                assert latest_run['phase'] == 'completed' and latest_run['requestId'] != after_disable['requestId'], latest_run
                 latest = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs'][0]
                 assert latest['trigger'] == 'manual' and latest['phase'] == 'completed', latest
                 assert latest['conversationSessionId'] != latest['sessionId']
-                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-visible-conversation.png'))
-                page.get_by_role('button', name='简报', exact=True).click()
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-stays-on-page.png'))
                 page.get_by_role('button', name='简报设置', exact=True).click()
                 page.get_by_role('tab', name='运行记录', exact=True).click()
                 history = page.get_by_role('tabpanel', name='运行记录', exact=True)
@@ -251,6 +257,9 @@ def main():
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
                 expect(page.get_by_role('heading', name='简报设置', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
+                history.get_by_role('button', name='查看会话', exact=True).first.click()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
+                expect(page.get_by_text('Stella synthetic tool round trip passed.', exact=True)).to_be_visible(timeout=30000)
                 assert not errors, errors
             assert not Provider.failure, Provider.failure
         print('PASS: signed official Desktop runs an isolated briefing session with only scoped read/submit tools; navigation/reload preserve work; restart resumes the same session and reuses source checkpoints')

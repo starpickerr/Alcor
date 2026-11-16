@@ -6,7 +6,7 @@ async function unwrap(promise) {
   return result.value
 }
 
-export async function startBriefingConversation({ session, api, openSession, context, currentSessionId, date }) {
+export async function startBriefingConversation({ session, api, context, currentSessionId, date }) {
   const preferences = await unwrap(api.business({ domain: 'briefing', method: 'get_preferences', arguments: {} }))
   let sessionId = currentSessionId
   if (preferences.task_target === 'current') {
@@ -21,6 +21,5 @@ export async function startBriefingConversation({ session, api, openSession, con
     await unwrap(session.rename({ sessionId, title: `生成/更新简报 · ${date}` }))
   }
   await unwrap(session.prompt({ sessionId, requestId: crypto.randomUUID(), mode: 'queue', content: [{ type: 'text', text: preferences.task_prompt || briefingPrompt }], clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }))
-  await openSession(sessionId)
   return sessionId
 }

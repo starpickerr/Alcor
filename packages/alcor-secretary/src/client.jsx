@@ -137,7 +137,7 @@ export async function apply(ctx) {
       openSession: id => ctx.uiWorkspace.openSession(id),
       view: canonicalPanel(panel),
       business: ctx.remote.alcorOrganizer,
-      startBriefingChat: date => startBriefingConversation({ session: ctx.remote.session, api: ctx.remote.alcorOrganizer, openSession: id => ctx.uiWorkspace.openSession(id), context: briefingContext(), currentSessionId: ctx.uiSession.adapter.current.getSnapshot().props.sessionId, date }),
+      startBriefingChat: date => startBriefingConversation({ session: ctx.remote.session, api: ctx.remote.alcorOrganizer, context: briefingContext(), currentSessionId: ctx.uiSession.adapter.current.getSnapshot().props.sessionId, date }),
       workspaces: ctx.workspaces.list,
       briefingView:() => briefingVisit?.returning ? briefingVisit.view : undefined,
       openPlugins: (name, view) => {
