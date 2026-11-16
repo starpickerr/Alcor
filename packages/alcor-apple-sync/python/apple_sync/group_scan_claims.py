@@ -181,7 +181,9 @@ def status(sync):
         if not schema(db):
             return []
         rows=[]
-        for row in db.execute("SELECT a.* FROM calendar_scan_attempts a JOIN calendar_scan_groups g USING(attempt_id) ORDER BY a.started_at"):
+        # Drive the lookup from active claims even when the retained history is large.
+        for row in db.execute("SELECT a.* FROM calendar_scan_groups g CROSS JOIN calendar_scan_attempts a "
+                              "ON a.attempt_id=g.attempt_id ORDER BY a.started_at"):
             evidence=json.loads(row['evidence'])
             rows.append({key:row[key] for key in ('attempt_id','source_id','group_id','state','window','started_at')})
             rows[-1].update(stage=evidence.get('stage'),reason=evidence.get('reason',''))

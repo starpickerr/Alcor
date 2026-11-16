@@ -15,7 +15,14 @@ const briefingSources = z.array(z.union([
 const briefingRequest = z.object({ trigger:z.enum(['manual','scheduled']).optional(), date, notes: z.string().max(12000), requestId: z.uuid(), parentSessionId: z.string().min(1).max(200).optional(), workspaceId: z.string().min(1).max(200).optional(), sources: briefingSources.optional() }).strict()
 export const briefingRunSchema = z.object({ requestId: z.uuid(), date, phase: z.enum(['starting', 'collecting', 'model', 'completed', 'cancelled', 'failed', 'interrupted']), message: z.string(), sessionId: z.string().optional(), model: z.object({ provider: z.string(), model: z.string(), reasoningEffort: z.string().optional() }).strict().optional(), createdAt: z.string(), updatedAt: z.string(), briefingId: z.string().optional(), completedSources: z.number().int().nonnegative(), completedBatches: z.number().int().nonnegative() }).strict()
 
+const calendarRange = z.object({ start: z.iso.datetime({offset:true}), end: z.iso.datetime({offset:true}) }).strict().refine(range => {
+  const days = (Date.parse(range.end) - Date.parse(range.start)) / 86400000
+  return days > 0 && days <= 370
+})
+
 export const schemas = {
+  readCalendarRange: [calendarRange, z.array(z.json())],
+  syncCalendarRange: [calendarRange, z.json().nullable()],
   briefingSources,
   sourceGroups: z.record(z.string().regex(/^(email|elearning|calendar_agenda|alcor_tasks|alcor_bills|plugin:[A-Za-z0-9_-]{1,64})$/), z.boolean()).refine(value => Object.keys(value).length <= 200),
   business: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills', 'briefing', 'apple', 'automation']), method: z.string().min(1).max(80), arguments: z.record(z.string(), z.json()).default({}), requestId: z.string().min(1).max(200).optional() }).strict(), z.json()],

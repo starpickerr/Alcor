@@ -37,6 +37,7 @@ export default class Organizer extends TypertRemoteService {
   private briefingGenerator
   private active = true
   private queue = Promise.resolve()
+  private calendarPageSyncs = new Map<string, Promise<unknown>>()
   private exportAuthorizers = new WeakMap()
   private deleteAuthorizers = new WeakMap()
   private pageDeletes = createDeletePageHost({
@@ -130,6 +131,26 @@ export default class Organizer extends TypertRemoteService {
     if (input.domain === 'briefing' && input.method === 'list_sources') return this.effectiveSources()
     if (input.domain === 'briefing' && input.method === 'available_sources') return this.ctx.tools.definitions().map(tool => tool.name).filter(name => /^(mcp__[A-Za-z0-9_-]+__(fetch_messages|fetch_source|fetch)|[A-Za-z0-9_-]{1,64}_briefing_fetch)$/.test(name))
     return this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+  }
+
+  @Remote
+  readCalendarRange(request) {
+    const dates = schemas.readCalendarRange[0].parse(request)
+    return this.queryCalendarRange({domain:'calendar', method:'list_events', arguments:dates})
+  }
+
+  @Remote
+  async syncCalendarRange(request) {
+    const {start, end} = schemas.syncCalendarRange[0].parse(request)
+    this.assertActive()
+    const key = start + '/' + end
+    const pending = this.calendarPageSyncs.get(key)
+    if (pending) return pending
+    const refresh = this.refreshCalendarRange(start, end)
+      .then(result => result ?? null)
+      .finally(() => this.calendarPageSyncs.delete(key))
+    this.calendarPageSyncs.set(key, refresh)
+    return refresh
   }
 
   private async refreshCalendarRange(start, end) {
