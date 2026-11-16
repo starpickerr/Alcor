@@ -1,6 +1,6 @@
 {
   "name": "@alcor/secretary",
-  "version": "0.1.116",
+  "version": "0.1.117",
   "type": "module",
   "license": "MIT",
   "alcor": {
@@ -20,7 +20,8 @@
     "native",
     "!business/agent_hub",
     "!skills/stella-collaboration",
-    "locale/*.json"
+    "locale/*.json",
+    "icon.svg"
   ],
   "exports": {
     ".": "./lib/index.js",
@@ -133,5 +134,7 @@
     "type": "git",
     "url": "git+https://github.com/starpickerr/Alcor.git",
     "directory": "packages/alcor-secretary"
-  }
+  },
+  "description": "Alcor 私人秘书：在对话中处理事务、日程、简报和账单。",
+  "icon": "./icon.svg"
 }

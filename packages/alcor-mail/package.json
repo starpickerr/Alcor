@@ -1,6 +1,6 @@
 {
   "name": "@alcor/mail",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "邮件连接，使用 DSH 原生凭据",
   "type": "module",
   "license": "MIT",
@@ -18,7 +18,8 @@
     "README.md",
     "THIRD_PARTY_NOTICES.md",
     "DSH-LICENSE.txt",
-    "locale/*.json"
+    "locale/*.json",
+    "icon.svg"
   ],
   "exports": {
     ".": "./lib/index.js",
@@ -90,5 +91,6 @@
     "type": "git",
     "url": "git+https://github.com/starpickerr/Alcor.git",
     "directory": "packages/alcor-mail"
-  }
+  },
+  "icon": "./icon.svg"
 }

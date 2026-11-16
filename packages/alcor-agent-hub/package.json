@@ -1,6 +1,6 @@
 {
   "name": "@alcor/agent-hub",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "AgentHub — DSH 工作台中的独立开发者协作工具",
   "type": "module",
   "license": "MIT",
@@ -12,7 +12,8 @@
     "DSH-LICENSE.txt",
     "!**/__pycache__",
     "!**/* 2.*",
-    "locale/*.json"
+    "locale/*.json",
+    "icon.svg"
   ],
   "exports": {
     ".": "./lib/index.js",
@@ -98,5 +99,6 @@
     "type": "git",
     "url": "git+https://github.com/starpickerr/Alcor.git",
     "directory": "packages/alcor-agent-hub"
-  }
+  },
+  "icon": "./icon.svg"
 }
