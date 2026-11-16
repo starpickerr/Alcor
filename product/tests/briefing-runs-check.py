@@ -205,7 +205,7 @@ def main():
                 page.get_by_role('tab', name='运行记录', exact=True).click()
                 history = page.get_by_role('tabpanel', name='运行记录', exact=True)
                 expect(history.get_by_text('手动生成 · 已完成', exact=True).first).to_be_visible()
-                expect(history.get_by_text('定时生成 · 已完成', exact=True)).to_be_visible()
+                expect(history.get_by_text('定时生成 · 已完成', exact=True).first).to_be_visible()
                 expect(history.get_by_role('button', name='查看会话', exact=True).first).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-run-history-desktop.png'))
                 page.set_viewport_size({'width': 430, 'height': 900})

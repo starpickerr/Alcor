@@ -391,9 +391,14 @@
 .alcor-briefing-task-form .alcor-field { margin:0; }
 .alcor-briefing-task-form textarea { resize:vertical; font-family:var(--dsw-font-family); }
 .alcor-briefing-task-options { padding:0 20px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); }
-.alcor-briefing-task-options .alcor-field { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 0; }
-.alcor-briefing-task-options .alcor-field + .alcor-field { border-top:1px solid var(--dsw-alias-border-l3); }
-.alcor-briefing-task-options :is(select,input) { max-width:65%; }
+.alcor-briefing-task-option { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 20px; padding:16px 0; }
+.alcor-briefing-task-option > span { flex-shrink:0; }
+.alcor-briefing-task-option + .alcor-briefing-task-option { border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-task-picker { min-width:0; max-width:65%; margin-left:auto; }
+.alcor-briefing-task-picker > button { height:auto; min-height:36px; max-width:100%; padding:8px 12px; gap:10px; border-radius:24px; font:inherit; }
+.alcor-briefing-task-picker > button[data-pill] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-briefing-task-picker > button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.alcor-briefing-task-picker > button > svg { flex-shrink:0; color:var(--dsw-alias-label-secondary); }
 .alcor-briefing-task-footer { display:flex; justify-content:flex-end; gap:12px; padding-top:20px; border-top:1px solid var(--dsw-alias-border-l3); }
 .alcor-briefing-run-list { margin:24px 0 0 8px; padding:0 0 0 24px; list-style:none; border-left:1px solid var(--dsw-alias-border-l3); }
 .alcor-briefing-run-list > li { position:relative; padding:0 0 32px; }

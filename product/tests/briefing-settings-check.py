@@ -85,7 +85,7 @@ def main():
             assert request('get_preferences')['time_zone'] == ''
             page.set_viewport_size({'width': 1440, 'height': 1000})
 
-            sidebar = page.locator('.alcor-sidebar')
+            sidebar = page.locator('.alcor-sidebar, .alcor-sidebar-actions')
             sidebar.get_by_role('button', name='插件', exact=True).click()
             page.locator('[data-plugin-package="@alcor/secretary"]').get_by_role('button').first.click()
             expect(plugin).to_be_visible()
@@ -126,7 +126,7 @@ def main():
             expect(screen.get_by_role('switch', name='启用规则：重点通知（更新）', exact=True)).to_have_attribute('aria-checked', 'false')
             expect(card).not_to_contain_text('onerror')
             expect(card).not_to_contain_text('完整规则原文')
-            expect(screen.locator('textarea')).to_have_count(0)
+            expect(screen.get_by_role('tabpanel', name='筛选与写作规则', exact=True).locator('textarea')).to_have_count(0)
             screen.get_by_role('button', name='返回简报', exact=True).click()
             expect(gear).to_be_focused()
             expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
@@ -187,13 +187,13 @@ def main():
             tasks_panel = screen.get_by_role('tabpanel', name='任务设置', exact=True)
             name = tasks_panel.get_by_role('textbox', name='任务名称', exact=True)
             content = tasks_panel.get_by_role('textbox', name='任务内容', exact=True)
-            target = tasks_panel.get_by_role('combobox', name='执行位置', exact=True)
-            workspace = tasks_panel.get_by_role('combobox', name='关联工作区', exact=True)
+            target = tasks_panel.get_by_role('button', name='执行位置', exact=True)
+            workspace = tasks_panel.get_by_role('button', name='关联工作区', exact=True)
             save = tasks_panel.get_by_role('button', name='保存修改', exact=True)
             expect(name).to_have_value('生成/更新简报')
             expect(name).to_have_attribute('readonly', '')
             expect(content).to_have_value('使用 alcor_generate_briefing 生成并保存今日简报，使用简报设置中已启用的信息来源、筛选与写作规则和时区。保存完成后给出简短摘要；失败或中断时如实说明。')
-            expect(target).to_have_value('new')
+            expect(target).to_contain_text('每次新建会话')
             expect(workspace).to_be_visible()
             expect(save).to_be_disabled()
             draft = content.input_value() + ' 只保留重要通知。'
@@ -204,10 +204,14 @@ def main():
             save.click()
             expect(save).to_be_disabled()
             assert request('get_preferences')['task_prompt'] == draft
-            target.select_option('current')
-            expect(tasks_panel.get_by_role('textbox', name='关联工作区', exact=True)).to_be_visible()
+            target.click()
+            page.get_by_role('menuitem', name='当前对话', exact=True).click()
+            expect(workspace).to_be_disabled()
             tasks_panel.get_by_role('button', name='放弃', exact=True).click()
-            expect(target).to_have_value('new')
+            expect(target).to_contain_text('每次新建会话')
+            label_box = tasks_panel.locator('.alcor-briefing-task-option > span').first.bounding_box()
+            option_box = target.bounding_box()
+            assert abs(label_box['y'] + label_box['height']/2 - option_box['y'] - option_box['height']/2) <= 2, (label_box, option_box)
             page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-task-desktop.png'))
             for theme in ('dark', 'light'):
                 page.emulate_media(color_scheme=theme)
@@ -219,7 +223,7 @@ def main():
             assert not scheduler_calls, scheduler_calls
             rows = [json.loads(line) for line in (profile / 'node_modules/@stella-test/briefing-source/reads.jsonl').read_text().splitlines()]
             assert all(row['type'] == 'catalog' for row in rows), 'Settings must not read source content'
-            expect(page.locator('.alcor-sidebar').get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
+            expect(sidebar.get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
             assert not errors, errors
     print('PASS: briefing settings preserve timezone preferences and unsaved drafts through contextual plugin return; direct plugin visits clear return context; source saves/conflicts, rule CRUD and safe Markdown, desktop/narrow themes; zero model or source content calls')
 
