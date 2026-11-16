@@ -11,6 +11,9 @@ export async function startBriefingConversation({ session, api, openSession, con
   let sessionId = currentSessionId
   if (preferences.task_target === 'current') {
     if (!sessionId) throw new Error('请先打开一个对话，或将执行位置改为每次新建会话。')
+  } else if (preferences.task_target === 'new_once') {
+    const prepared = await unwrap(api.briefingConversation(context || {}))
+    sessionId = prepared.sessionId
   } else {
     const placement = preferences.task_workspace_id ? { workspaceId: preferences.task_workspace_id } : context
     const created = await unwrap(session.create({ ...placement, agentPreset: 'alcor' }))

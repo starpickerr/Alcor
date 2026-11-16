@@ -22,6 +22,7 @@ class BriefingRuns:
         self.serialize = serialize
         self.db = business.meta
         self.db.execute('CREATE TABLE IF NOT EXISTS briefing_runs (id TEXT PRIMARY KEY, phase TEXT NOT NULL, document TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS briefing_task_session (id INTEGER PRIMARY KEY CHECK (id=1), document TEXT NOT NULL)')
         for run in self.active():
             if run['phase'] in ACTIVE:
                 record = self.invoke('result', run['requestId'])
@@ -57,6 +58,13 @@ class BriefingRuns:
             raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
 
     def invoke(self, method, request_id=None, **args):
+        if method == 'session':
+            if 'binding' in args:
+                with self.db:
+                    self.db.execute('INSERT OR REPLACE INTO briefing_task_session VALUES (1,?)', (json.dumps(args['binding']),))
+                return args['binding']
+            row = self.db.execute('SELECT document FROM briefing_task_session WHERE id=1').fetchone()
+            return json.loads(row[0]) if row else None
         if method == 'history':
             limit = args.get('limit', 20)
             if type(limit) is not int or not 1 <= limit <= 50:

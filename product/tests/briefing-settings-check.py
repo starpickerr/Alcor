@@ -205,10 +205,26 @@ def main():
             expect(save).to_be_disabled()
             assert request('get_preferences')['task_prompt'] == draft
             target.click()
-            page.get_by_role('menuitem', name='当前对话', exact=True).click()
-            expect(workspace).to_be_disabled()
+            expect(page.get_by_text('首次运行时创建，之后沿用这个会话', exact=True)).to_be_visible()
+            expect(page.get_by_text('每次运行都创建独立会话', exact=True)).to_be_visible()
+            expect(page.get_by_role('menuitem')).to_have_count(2)
+            expect(page.get_by_role('menuitem').filter(has_text='每次新建会话').locator('svg')).to_be_visible()
+            menu_box = page.get_by_role('menu').bounding_box()
+            target_box = target.bounding_box()
+            assert abs(menu_box['x'] + menu_box['width'] - target_box['x'] - target_box['width']) <= 2, (menu_box, target_box)
+            page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-target-menu-desktop.png'))
+            page.get_by_role('menuitem').filter(has_text='新建会话并复用').click()
+            expect(workspace).to_be_enabled()
+            save.click()
+            expect(save).to_be_disabled()
+            assert request('get_preferences')['task_target'] == 'new_once'
+            reuse_request = lambda: desktop.rpc(page, 'alcorOrganizer/briefingConversation', {'request': {}})
+            reusable = reuse_request()['sessionId']
+            assert reuse_request()['sessionId'] == reusable
+            target.click()
+            page.get_by_role('menuitem').filter(has_text='每次新建会话').click()
             tasks_panel.get_by_role('button', name='放弃', exact=True).click()
-            expect(target).to_contain_text('每次新建会话')
+            expect(target).to_contain_text('新建会话并复用')
             label_box = tasks_panel.locator('.alcor-briefing-task-option > span').first.bounding_box()
             option_box = target.bounding_box()
             assert abs(label_box['y'] + label_box['height']/2 - option_box['y'] - option_box['height']/2) <= 2, (label_box, option_box)
@@ -220,10 +236,18 @@ def main():
                 expect(workspace).to_be_visible()
                 assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
                 page.screenshot(path=str(desktop.ARTIFACTS / f'briefing-task-{theme}-narrow.png'))
+                target.click()
+                expect(page.get_by_text('首次运行时创建，之后沿用这个会话', exact=True)).to_be_in_viewport()
+                page.screenshot(path=str(desktop.ARTIFACTS / f'briefing-target-menu-{theme}-narrow.png'))
+                page.keyboard.press('Escape')
+                expect(target).to_be_focused()
             assert not scheduler_calls, scheduler_calls
             rows = [json.loads(line) for line in (profile / 'node_modules/@stella-test/briefing-source/reads.jsonl').read_text().splitlines()]
             assert all(row['type'] == 'catalog' for row in rows), 'Settings must not read source content'
             expect(sidebar.get_by_role('button',name='AgentHub',exact=True)).to_have_count(0)
+            assert not errors, errors
+        with desktop.desktop(playwright, home, 'briefing-reuse-restarted') as (page, errors):
+            assert desktop.rpc(page, 'alcorOrganizer/briefingConversation', {'request': {}})['sessionId'] == reusable
             assert not errors, errors
     print('PASS: briefing settings preserve timezone preferences and unsaved drafts through contextual plugin return; direct plugin visits clear return context; source saves/conflicts, rule CRUD and safe Markdown, desktop/narrow themes; zero model or source content calls')
 
