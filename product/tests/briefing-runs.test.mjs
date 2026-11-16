@@ -130,6 +130,16 @@ test('briefing button preferences persist alongside timezone and reject invalid 
   }
 })
 
+test('briefing reuse binding survives worker restart and cannot be changed through preferences', async t => {
+  const f = await fixture(t)
+  const binding = { sessionId: 'owned-session', workspaceId: 'selected-workspace' }
+  assert.equal(await f.worker.call('briefing_run', { method: 'session' }), null)
+  await f.worker.call('briefing_run', { method: 'session', binding })
+  assert.deepEqual(await f.restart().call('briefing_run', { method: 'session' }), binding)
+  await f.worker.call('invoke', { domain: 'briefing', method: 'update_preferences', arguments: { payload: { task_target: 'new_once' } } })
+  await assert.rejects(f.worker.call('invoke', { domain: 'briefing', method: 'update_preferences', arguments: { payload: { task_session_id: 'foreign' } } }))
+})
+
 test('briefing owns its root, freezes model and rules, and returns before model completion', async t => {
   const { worker } = await fixture(t), native = nativeContext()
   const generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())

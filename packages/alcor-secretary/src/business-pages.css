@@ -399,6 +399,9 @@
 .alcor-briefing-task-picker > button[data-pill] { background:var(--dsw-alias-interactive-bg-hover); }
 .alcor-briefing-task-picker > button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .alcor-briefing-task-picker > button > svg { flex-shrink:0; color:var(--dsw-alias-label-secondary); }
+.alcor-briefing-target-menu { min-width:min(360px,calc(100vw - 32px)); max-width:calc(100vw - 32px); padding:8px; }
+.alcor-briefing-target-choice { display:grid; gap:4px; padding:8px 4px; white-space:normal; text-align:left; }
+.alcor-briefing-target-description { color:var(--dsw-alias-label-secondary); font-size:13px; line-height:20px; }
 .alcor-briefing-task-footer { display:flex; justify-content:flex-end; gap:12px; padding-top:20px; border-top:1px solid var(--dsw-alias-border-l3); }
 .alcor-briefing-run-list { margin:24px 0 0 8px; padding:0 0 0 24px; list-style:none; border-left:1px solid var(--dsw-alias-border-l3); }
 .alcor-briefing-run-list > li { position:relative; padding:0 0 32px; }

@@ -43,3 +43,16 @@ test('failed session creation or prompt acceptance does not report a started bri
     assert.equal(calls.at(-1), failed)
   }
 })
+
+test('reuse sends the prompt to the Host-owned briefing session, never the current unrelated chat', async () => {
+  const calls = []
+  const organizer = api({ task_target: 'new_once' })
+  organizer.briefingConversation = async request => { calls.push(request); return { ok: true, value: { sessionId: 'owned-briefing' } } }
+  const session = { create: () => assert.fail('Host owns reuse creation'), prompt: async request => { calls.push(request); return { ok: true } } }
+  const id = await startBriefingConversation({ session, api: organizer, currentSessionId: 'unrelated-chat', context: { workspaceId: 'one' }, openSession: async id => calls.push(id) })
+  assert.equal(id, 'owned-briefing')
+  assert.deepEqual(calls[0], { workspaceId: 'one' })
+  assert.equal(calls[1].sessionId, 'owned-briefing')
+  organizer.briefingConversation = async () => ({ ok: false, error: { message: 'Host unavailable' } })
+  await assert.rejects(startBriefingConversation({ session, api: organizer }), /Host unavailable/)
+})

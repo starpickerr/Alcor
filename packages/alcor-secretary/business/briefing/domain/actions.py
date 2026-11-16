@@ -208,7 +208,7 @@ class BriefingActions:
                     raise ValueError('important_types must be strings')
                 if 'task_prompt' in payload and (not isinstance(payload['task_prompt'], str) or not payload['task_prompt'].strip() or len(payload['task_prompt']) > 12000):
                     raise ValueError('请填写任务内容，最多 12000 字。')
-                if payload.get('task_target', 'new') not in {'new', 'current'}:
+                if payload.get('task_target', 'new') not in {'new', 'new_once', 'current'}:
                     raise ValueError('无效的简报执行位置。')
                 if 'task_workspace_id' in payload and (not isinstance(payload['task_workspace_id'], str) or len(payload['task_workspace_id']) > 200):
                     raise ValueError('无效的简报工作区。')

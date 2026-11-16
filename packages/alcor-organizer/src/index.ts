@@ -31,7 +31,7 @@ function assertCompatibleProfile(ctx) {
 
 export default class Organizer extends TypertRemoteService {
   readonly agentHubDetached = true
-  static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools']
+  static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools', 'workspaceRegistry']
   private domain
   private businessWorker
   private briefingGenerator
@@ -473,6 +473,30 @@ export default class Organizer extends TypertRemoteService {
     const { requestId } = schemas.resumeBriefing[0].parse(request)
     const run = await this.businessWorker.call('briefing_run', { method: 'get', request_id: requestId })
     return this.briefingGenerator.resume(requestId, this.briefingAuthorization(run.sources))
+  }
+
+  @Remote
+  async briefingConversation(request) {
+    const input = schemas.briefingConversation[0].parse(request)
+    return this.serialize(async () => {
+      const preferences = await this.businessWorker.call('invoke', { domain: 'briefing', method: 'get_preferences', arguments: {} })
+      if (preferences.task_target !== 'new_once') throw new Error('执行位置已更改，请重新生成简报。')
+      const registry = this.ctx.workspaceRegistry
+      const workspaceId = preferences.task_workspace_id || input.workspaceId || registry.list()[0]?.id
+      const workspace = workspaceId ? registry.get(workspaceId) : undefined
+      if (workspaceId && !workspace) throw new Error('关联工作区不可用，请重新选择。')
+      const binding = await this.businessWorker.call('briefing_run', { method: 'session' })
+      if (binding && binding.workspaceId === (workspaceId || '') && !registry.archivedSessionIds.includes(binding.sessionId) && workspace?.sessionIds.includes(binding.sessionId)) {
+        const found = await this.ctx.sessionController.resolveAgent(binding.sessionId)
+        if ('error' in found && found.error.code !== 'session/not-found') throw new Error('简报会话暂时不可用，请稍后重试。')
+        if (!('error' in found) && this.ctx.agentPresets.presetForSession(found.agent.session) === 'alcor') return { sessionId: binding.sessionId }
+      }
+      const created = await this.ctx.sessionController.create({ agentPreset: 'alcor', ...(workspaceId ? { workspaceId } : {}) })
+      await this.ctx.sessionController.rename({ sessionId: created.sessionId, title: '生成/更新简报' })
+      const placed = registry.list().find(item => item.sessionIds.includes(created.sessionId))
+      await this.businessWorker.call('briefing_run', { method: 'session', binding: { sessionId: created.sessionId, workspaceId: placed?.id || workspaceId || '' } })
+      return { sessionId: created.sessionId }
+    })
   }
 
   @Remote
