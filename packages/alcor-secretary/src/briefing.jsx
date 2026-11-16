@@ -8,12 +8,13 @@ import { BriefingReport, markdownLabels } from './briefing-report.jsx'
 import { BriefingSources } from './briefing-sources.jsx'
 import { BriefingTaskSettings } from './briefing-task-settings.jsx'
 import { BriefingRuns } from './briefing-runs.jsx'
+import { BriefingProgress } from './briefing-progress.jsx'
+import { briefingRunning as active, briefingProgressVisible } from './briefing-progress.js'
 
 const settingsTabs = [['sources', '信息来源'], ['rules', '筛选与写作规则'], ['timezone', '时区'], ['tasks', '任务设置'], ['runs', '运行记录']]
 
 async function unwrap(promise) { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作未完成，请重试。'); return result.value }
 const call = (api, method, args = {}, write = false) => unwrap(api.business({ domain: 'briefing', method, arguments: args, ...(write ? { requestId: crypto.randomUUID() } : {}) }))
-const active = progress => ['starting', 'collecting', 'model'].includes(progress?.phase)
 const statusNames = { completed: '已生成', partial: '部分来源失败', failed: '生成失败', running: '生成中' }
 
 function BriefingRules({ api }) {
@@ -80,6 +81,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
   const [detail, setDetail] = useState(null)
   const [sources, setSources] = useState([])
   const [progress, setProgress] = useState({ phase: 'idle' })
+  const [dismissedProgress, setDismissedProgress] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -128,12 +130,12 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
       try {
         const value = await call(api, 'generation_status')
         if (disposed) return
-        setProgress(value)
         const key = `${value.requestId}:${value.phase}`
         if (key !== lastRun && ['completed', 'failed', 'cancelled', 'interrupted'].includes(value.phase)) {
           await refresh()
           if (value.phase === 'completed' && value.briefingId && !currentRevision.current && (!initialView || lastRun)) { setSelected(value.briefingId); setRevision(0); setDetail(await call(api, 'get_briefing', { briefing_id: value.briefingId })) }
         }
+        if (!disposed) setProgress(value)
         lastRun = key
       } catch (error) { if (!disposed) setError(error.message) } finally { polling = false }
     }
@@ -154,7 +156,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
   }
   async function resume() {
     setBusy(true); setError('')
-    try { setProgress(unwrap(await api.resumeBriefing({ requestId: progress.requestId }))) }
+    try { setProgress(await unwrap(api.resumeBriefing({ requestId: progress.requestId }))) }
     catch (error) { setError(error.message) } finally { setBusy(false) }
   }
   async function mutate(method, args) {
@@ -164,6 +166,13 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
   }
   const today = history.some(row => row.id.slice(4,14) === day)
   const report = detail?.briefing
+  const progressKey = `${progress.requestId}:${progress.phase}`
+  const showProgress = dismissedProgress !== progressKey && briefingProgressVisible(progress, selected.slice(4, 14), revision)
+  const progressPanel = showProgress && <BriefingProgress key={progress.requestId} progress={progress} busy={busy} openSession={openSession} resume={resume} dismiss={() => setDismissedProgress(progressKey)} cancel={async () => {
+    setBusy(true)
+    try { setProgress(await call(api, 'cancel_generation', { requestId: progress.requestId })) }
+    catch (error) { setError(error.message) } finally { setBusy(false) }
+  }} />
   if (settings) return <div className="alcor-business alcor-briefing-settings-page" data-briefing-settings>
     <header className="alcor-app-header"><div className="alcor-actions"><Button variant="ghost" aria-label="返回简报" title="返回简报" onClick={closeSettings}><IconChevronLeftOutlineRegular size={18} /></Button><h1 ref={settingsHeading} tabIndex={-1}>简报设置</h1></div></header>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
@@ -208,16 +217,11 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
       <div role="tabpanel" id={`${tabsId}-runs-panel`} aria-labelledby={`${tabsId}-runs-tab`} hidden={settingsTab !== 'runs'} tabIndex={0}><BriefingRuns api={api} openSession={openSession} timeZone={zone} active={settingsTab === 'runs'} progress={progress} openBriefing={id => { setSelected(id); setRevision(0); closeSettings() }} /></div>
     </div>
   </div>
-  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button className="alcor-icon-action" ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
-    {(error || progress.phase !== 'idle') && <div className="alcor-page-feedback">
-      {error && <Notice tone="error" role="alert" className="alcor-error">{error}</Notice>}
-      {active(progress) && <Notice role="status">{progress.message}<Button variant="ghost" disabled={busy} onClick={() => call(api, 'cancel_generation', { requestId: progress.requestId }).then(setProgress).catch(error => setError(error.message))}>取消生成</Button></Notice>}
-      {['failed', 'cancelled', 'interrupted'].includes(progress.phase) && <Notice role="status">{progress.message}<Button variant="outline" disabled={running} onClick={resume}>{progress.phase === 'failed' ? '重试' : '继续生成'}</Button></Notice>}
-      {progress.sessionId && <Button variant="ghost" size="sm" onClick={() => openSession(progress.sessionId)}>执行详情</Button>}
-    </div>}
+  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button className="alcor-icon-action" ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{active(progress) ? '正在更新…' : today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
+    {error && <div className="alcor-page-feedback"><Notice tone="error" role="alert" className="alcor-error">{error}</Notice></div>}
 
     <div className="alcor-briefing-layout"><aside className="alcor-briefing-history"><h2>历史简报</h2>{history.map(row => <button type="button" key={row.id} aria-current={row.id === selected ? 'true' : undefined} onClick={() => { setSelected(row.id); setRevision(0) }}><strong>{row.title}</strong><small>{statusNames[row.status]} · {row.id === selected && !revision && detail?.briefing.id === row.id ? detail.briefing.kept_count : row.kept_count} 条精选信息 · {row.id.slice(4)}</small></button>)}</aside>
-      <article className="alcor-briefing-detail">{report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div><p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">生成于 {new Date(report.generated_at).toLocaleString('zh-CN',{timeZone:zone || undefined})}</p>{report.error_message && <Notice role="status">{report.error_message}</Notice>}
+      <article className="alcor-briefing-detail">{report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div><p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">生成于 {new Date(report.generated_at).toLocaleString('zh-CN',{timeZone:zone || undefined})}</p>{progressPanel}{report.error_message && <Notice role="status">{report.error_message}</Notice>}
         <BriefingReport timeZone={zone || undefined} sources={sources} detail={detail} revision={revision} busy={running} createTask={async item => {
           const receipt = detail.actions?.[item.id]?.todo
           if (['detached', 'deleted'].includes(receipt?.state) || receipt?.result?.operation === 'matching_required') throw new Error('请打开条目，选择并关联已有事务。')
@@ -227,7 +231,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
           if (!updated.actions?.[item.id]?.todo?.business && !updated.actions?.[item.id]?.todo?.target_id) throw new Error('事务尚未建立，请打开条目核对关联建议。')
           return result
         }} renderActions={item => <><div className="alcor-actions">{['todo', 'calendar'].map(kind => { const action = detail.actions?.[item.id]?.[kind]; return <Button key={kind} variant="outline" disabled={running || !!revision} onClick={() => setDecision({ item, kind, operation: action?.target_id ? 'confirm_update' : 'create', start_at: '', end_at: '', target_id: '' })}>{action?.target_id ? '管理已关联' : '转为'}{kind === 'todo' ? '事务' : '日程'}</Button> })}</div>{Object.entries(detail.actions?.[item.id] || {}).filter(([kind, action]) => ['todo', 'calendar'].includes(kind) && action).map(([kind, action]) => <p className="alcor-muted" key={kind}>{kind === 'todo' ? '事务' : '日程'}：{({ succeeded: '已关联', ignored: '已忽略', deferred: '已推迟', suggested: '待确认', failed: '未成功', deleted: '原记录已删除', briefing_only: '仅在简报保留' })[action.state] || action.state}{action.error && ` · ${action.error}`}</p>)}</>} />
-      </> : <Empty mascot={!loading && !error} title={loading ? '正在读取简报…' : '还没有简报'}  />}</article>
+      </> : showProgress ? <><h2>{progress.date} · 简报</h2>{progressPanel}</> : <Empty mascot={!loading && !error} title={loading ? '正在读取简报…' : '还没有简报'}  />}</article>
       <BriefingTimeline timeZone={zone || undefined} revisions={detail?.revisions || []} selected={revision} onSelect={setRevision} /></div>
     <Modal open={!!decision} title="处理简报事项" closeLabel="关闭" onClose={() => { if (!busy) setDecision(null) }} className="alcor-editor-dialog">{decision && <form onSubmit={async event => { event.preventDefault(); const options = decision.kind === 'calendar' && decision.operation === 'create' ? { start_at: new Date(decision.start_at).toISOString(), end_at: new Date(decision.end_at).toISOString() } : {}; if (await mutate('update_action', { item_id: decision.item.id, payload: { kind: decision.kind, operation: decision.operation, ...(decision.operation === 'link' ? { target_id: decision.target_id } : {}), ...options } })) setDecision(null) }}><h3>{decision.item.title}</h3><Field label="处理方式"><select value={decision.operation} onChange={event => setDecision({ ...decision, operation: event.target.value })}>{Object.entries({ create: '创建新记录', link: '关联已有记录', confirm_update: '按最新来源更新关联记录', keep_current: '保留关联记录现状', ignore: '忽略建议', defer: '稍后处理', keep: '仅在简报保留', unlink: '解除关联' }).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>{decision.operation === 'link' && <Field label="关联记录"><select required value={decision.target_id} onChange={event => setDecision({ ...decision, target_id: event.target.value })}><option value="">选择已有记录</option>{targets.map(target => <option key={target.id} value={target.id}>{target.title}</option>)}</select></Field>}{decision.kind === 'calendar' && decision.operation === 'create' && <><Field label="开始时间"><Input type="datetime-local" required value={decision.start_at} onChange={event => setDecision({ ...decision, start_at: event.target.value })} /></Field><Field label="结束时间"><Input type="datetime-local" required value={decision.end_at} onChange={event => setDecision({ ...decision, end_at: event.target.value })} /></Field></>}<Button type="submit" variant="primary" disabled={busy}>确认处理</Button>{error && <Notice tone="error" role="alert">{error}</Notice>}</form>}</Modal>
   </div>
