@@ -14,7 +14,6 @@ import { SecretaryDesk, SecretarySidebar, deskViews } from './desk.jsx'
 import { AutomationPage, SharedAutomationPage } from './automation.jsx'
 import { registerAutomationUi } from 'alcor:automation-ui'
 import { installPresetFilter } from './session-presets.js'
-import { startBriefingConversation } from './briefing-task.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { SpacePreferences } from './space-preferences.jsx'
 import deskBaseStyle from './desk.css'
@@ -137,7 +136,7 @@ export async function apply(ctx) {
       openSession: id => ctx.uiWorkspace.openSession(id),
       view: canonicalPanel(panel),
       business: ctx.remote.alcorOrganizer,
-      startBriefingChat: date => startBriefingConversation({ session: ctx.remote.session, api: ctx.remote.alcorOrganizer, context: briefingContext(), currentSessionId: ctx.uiSession.adapter.current.getSnapshot().props.sessionId, date }),
+      startBriefing: date => ctx.remote.alcorOrganizer.startBriefing({ date, notes: '', requestId: crypto.randomUUID(), ...briefingContext() }),
       workspaces: ctx.workspaces.list,
       briefingView:() => briefingVisit?.returning ? briefingVisit.view : undefined,
       openPlugins: (name, view) => {

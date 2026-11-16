@@ -74,7 +74,7 @@ function BriefingTimeline({ revisions, selected, onSelect, timeZone }) {
   </aside>
 }
 
-export function BriefingWorkspace({ api, openSession, openPlugins, initialView, startBriefingChat, workspaces, currentSession }) {
+export function BriefingWorkspace({ api, openSession, openPlugins, initialView, startBriefing, workspaces, currentSession }) {
   const [history, setHistory] = useState([])
   const [selected, setSelected] = useState(initialView?.selected ?? '')
   const [revision, setRevision] = useState(initialView?.revision ?? 0)
@@ -83,6 +83,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
   const [progress, setProgress] = useState({ phase: 'idle' })
   const [dismissedProgress, setDismissedProgress] = useState('')
   const [busy, setBusy] = useState(false)
+  const starting = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settings, setSettings] = useState(initialView?.settings ?? false)
@@ -130,6 +131,8 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
       try {
         const value = await call(api, 'generation_status')
         if (disposed) return
+        if (starting.current === 'requesting') return
+        if (['completed', 'failed', 'cancelled', 'interrupted'].includes(value.phase)) starting.current = false
         const key = `${value.requestId}:${value.phase}`
         if (key !== lastRun && ['completed', 'failed', 'cancelled', 'interrupted'].includes(value.phase)) {
           await refresh()
@@ -149,10 +152,17 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
     return () => { disposed = true }
   }, [api, selected, revision])
   async function generate() {
-    setBusy(true); setError('')
+    if (starting.current || active(progress)) return
+    starting.current = 'requesting'
+    setBusy(true); setError(''); setProgress({ phase: 'starting', message: '正在启动简报…' })
     try {
-      await startBriefingChat(day)
-    } catch (error) { setError(error.message) } finally { setBusy(false) }
+      setProgress(await unwrap(startBriefing(day)))
+      starting.current = 'running'
+    } catch (error) {
+      setError(error.message)
+      try { setProgress(await call(api, 'generation_status')) } catch {}
+      starting.current = false
+    } finally { setBusy(false) }
   }
   async function resume() {
     setBusy(true); setError('')
@@ -217,7 +227,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
       <div role="tabpanel" id={`${tabsId}-runs-panel`} aria-labelledby={`${tabsId}-runs-tab`} hidden={settingsTab !== 'runs'} tabIndex={0}><BriefingRuns api={api} openSession={openSession} timeZone={zone} active={settingsTab === 'runs'} progress={progress} openBriefing={id => { setSelected(id); setRevision(0); closeSettings() }} /></div>
     </div>
   </div>
-  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button className="alcor-icon-action" ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{active(progress) ? '正在更新…' : today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
+  return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button className="alcor-icon-action" ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{busy ? '正在启动…' : active(progress) ? '正在更新…' : today ? '更新今日简报' : '生成今日简报'}</Button></div></header>
     {error && <div className="alcor-page-feedback"><Notice tone="error" role="alert" className="alcor-error">{error}</Notice></div>}
 
     <div className="alcor-briefing-layout"><aside className="alcor-briefing-history"><h2>历史简报</h2>{history.map(row => <button type="button" key={row.id} aria-current={row.id === selected ? 'true' : undefined} onClick={() => { setSelected(row.id); setRevision(0) }}><strong>{row.title}</strong><small>{statusNames[row.status]} · {row.id === selected && !revision && detail?.briefing.id === row.id ? detail.briefing.kept_count : row.kept_count} 条精选信息 · {row.id.slice(4)}</small></button>)}</aside>
