@@ -246,7 +246,7 @@ def main():
                 assert latest_run['phase'] == 'completed' and latest_run['requestId'] != after_disable['requestId'], latest_run
                 latest = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs'][0]
                 assert latest['trigger'] == 'manual' and latest['phase'] == 'completed', latest
-                assert latest['conversationSessionId'] != latest['sessionId']
+                assert latest['conversationSessionId'] and 'sessionId' not in latest, latest
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-stays-on-page.png'))
                 page.get_by_role('button', name='简报设置', exact=True).click()
