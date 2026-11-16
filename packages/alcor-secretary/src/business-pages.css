@@ -210,8 +210,9 @@
 .alcor-agenda-list .alcor-actions { flex:none; gap:2px; }
 @media(hover:hover) { .alcor-agenda-list > li > .alcor-actions { opacity:0; } .alcor-agenda-list > li:hover > .alcor-actions,.alcor-agenda-list > li:focus-within > .alcor-actions { opacity:1; } }
 @media(max-width:600px) { .alcor-task-detail-summary { padding:14px; } .alcor-task-detail .alcor-calendar-period { align-items:flex-start; } .alcor-task-detail .alcor-calendar-period > span { display:none; } }
-.alcor-briefing-layout { display:grid; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
+.alcor-briefing-layout { display:grid; flex:1; grid-template-columns:220px minmax(0,1fr) 200px; min-height:560px; }
 .alcor-desk:has(> .alcor-business > .alcor-briefing-layout) { container-type:size; }
+.alcor-business:has(> .alcor-briefing-layout) { display:flex; flex-direction:column; }
 .alcor-briefing-history,.alcor-briefing-revisions { contain:size; min-height:0; max-height:100cqh; overflow-y:auto; overscroll-behavior-y:contain; position:sticky; top:0; }
 .alcor-briefing-history { padding:24px 16px; border-right:1px solid var(--dsw-alias-border-l3); background:var(--alcor-surface-soft); }
 .alcor-briefing-history h2, .alcor-briefing-revisions h2 { font-size:13px; color:var(--dsw-alias-label-secondary); margin-bottom:16px; }
@@ -377,9 +378,36 @@
 .alcor-repeat-interval input { max-width:90px; }
 .alcor-repeat-weekdays { display:flex; flex-wrap:wrap; gap:10px 16px; }
 
- .alcor-briefing-settings { max-width:1160px; margin:0 auto; display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); align-items:start; gap:24px; }
-.alcor-briefing-settings > section, .alcor-briefing-settings-column > section { min-width:0; margin:0; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:18px; background:var(--dsw-alias-bg-layer-1); box-shadow:var(--alcor-shadow); }
-.alcor-briefing-settings-column { display:grid; gap:24px; min-width:0; }
+.alcor-briefing-settings-page { height:100%; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.alcor-briefing-settings-page > .alcor-app-header { flex-shrink:0; }
+.alcor-briefing-settings-tabs { display:flex; flex-shrink:0; gap:28px; padding:0 32px; overflow-x:auto; border-bottom:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-settings-tabs > button { flex-shrink:0; padding:16px 0; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--dsw-alias-label-secondary); font:500 14px/20px var(--dsw-font-family); cursor:pointer; }
+.alcor-briefing-settings-tabs > button[aria-selected=true] { border-bottom-color:var(--dsw-alias-state-business-primary); color:var(--dsw-alias-state-business-primary); }
+.alcor-briefing-settings { flex:1; min-height:0; width:100%; box-sizing:border-box; overflow:auto; }
+.alcor-briefing-settings > [role=tabpanel] { max-width:840px; margin:0 auto; min-width:0; }
+.alcor-briefing-settings > [hidden] { display:none; }
+.alcor-briefing-settings [role=tabpanel] > section { min-width:0; margin:0; }
+.alcor-briefing-task-form form { display:grid; gap:24px; margin-top:24px; }
+.alcor-briefing-task-form .alcor-field { margin:0; }
+.alcor-briefing-task-form textarea { resize:vertical; font-family:var(--dsw-font-family); }
+.alcor-briefing-task-options { padding:0 20px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); }
+.alcor-briefing-task-option { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 20px; padding:16px 0; }
+.alcor-briefing-task-option > span { flex-shrink:0; }
+.alcor-briefing-task-option + .alcor-briefing-task-option { border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-task-picker { min-width:0; max-width:65%; margin-left:auto; }
+.alcor-briefing-task-picker > button { height:auto; min-height:36px; max-width:100%; padding:8px 12px; gap:10px; border-radius:24px; font:inherit; }
+.alcor-briefing-task-picker > button[data-pill] { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-briefing-task-picker > button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.alcor-briefing-task-picker > button > svg { flex-shrink:0; color:var(--dsw-alias-label-secondary); }
+.alcor-briefing-task-footer { display:flex; justify-content:flex-end; gap:12px; padding-top:20px; border-top:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-run-list { margin:24px 0 0 8px; padding:0 0 0 24px; list-style:none; border-left:1px solid var(--dsw-alias-border-l3); }
+.alcor-briefing-run-list > li { position:relative; padding:0 0 32px; }
+.alcor-briefing-run-list > li::before { content:''; position:absolute; left:-29px; top:5px; width:8px; height:8px; border:1px solid var(--dsw-alias-label-tertiary); border-radius:50%; background:var(--dsw-alias-bg-layer-1); }
+.alcor-briefing-run-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 24px; }
+.alcor-briefing-run-heading time { font-size:15px; font-weight:500; }
+.alcor-briefing-run-heading span, .alcor-briefing-run-list p, .alcor-briefing-run-list summary { font-size:13px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.alcor-briefing-run-list details { margin-top:14px; }
+.alcor-briefing-run-list summary { cursor:pointer; }
 .alcor-briefing-timezone { display:grid; gap:16px; margin-top:20px; }
 .alcor-briefing-timezone > input { width:100%; min-width:0; box-sizing:border-box; }
 .alcor-briefing-timezone-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -405,7 +433,7 @@
 .alcor-rule-preview { padding:24px 0; overflow-wrap:anywhere; }
 .alcor-rule-preview pre { max-width:100%; overflow:auto; }
 .alcor-rule-delete { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:16px; border-top:1px solid var(--dsw-alias-border-l3); }
-@media(max-width:860px) { .alcor-briefing-settings { grid-template-columns:minmax(0,1fr); } .alcor-briefing-settings > section, .alcor-briefing-settings-column > section { padding:18px; } }
+@media(max-width:860px) { .alcor-briefing-settings-tabs { gap:22px; padding:0 20px; } }
 
 .alcor-source-overview-toolbar { display:flex; align-items:center; justify-content:space-between; margin:12px 0; }
 .alcor-source-cards { display:grid; gap:12px; }

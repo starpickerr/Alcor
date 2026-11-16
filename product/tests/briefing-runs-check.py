@@ -68,6 +68,7 @@ def business(page, method, arguments=None):
 
 
 def main():
+    desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK', str(desktop.PACK)))
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
@@ -110,12 +111,15 @@ def main():
                 page.get_by_role('button', name='简报', exact=True).click()
                 page.get_by_role('heading', name='简报', exact=True).wait_for()
                 page.get_by_role('button', name='简报设置', exact=True).click()
+                page.get_by_role('tab', name='时区', exact=True).click()
                 page.get_by_role('textbox', name='简报时区', exact=True).fill('Asia/Shanghai')
                 page.get_by_role('button',name='保存时区').click()
                 expect(page.get_by_role('button',name='保存时区')).to_be_disabled()
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
                 page.get_by_role('button',name='返回简报').click()
                 page.get_by_role('button', name='生成今日简报', exact=True).click()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_have_count(0)
                 deadline = time.monotonic() + 35
                 while not Provider.waiting.is_set() and time.monotonic() < deadline and not Provider.failure:
                     page.wait_for_timeout(100)
@@ -125,6 +129,8 @@ def main():
                 assert run['phase'] == 'model' and run['completedBatches'] == 0
                 assert run['sessionId'] and 'sources' not in run and 'submissions' not in run
                 assert len(reads()) == 2
+                history = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})
+                assert history['runs'][0]['conversationSessionId'] != run['sessionId']
                 page.get_by_role('button', name='事务', exact=True).click()
                 page.get_by_role('button', name='简报', exact=True).click()
                 expect(page.get_by_role('button', name='取消生成', exact=True)).to_be_visible()
@@ -187,9 +193,24 @@ def main():
                 assert any(item['source'].startswith('plugin:') for item in saved['items']), 'Scheduled updates must retain external cards'
                 assert saved['revisions'][0]['trigger'] == 'scheduled'
                 assert len(business(page,'list_briefings')) == 1
+                page.get_by_role('button', name='更新今日简报', exact=True).click()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
+                expect(page.get_by_text('Stella synthetic tool round trip passed.', exact=True)).to_be_visible(timeout=30000)
+                latest = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs'][0]
+                assert latest['trigger'] == 'manual' and latest['phase'] == 'completed', latest
+                assert latest['conversationSessionId'] != latest['sessionId']
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-visible-conversation.png'))
+                page.get_by_role('button', name='简报', exact=True).click()
+                page.get_by_role('button', name='简报设置', exact=True).click()
+                page.get_by_role('tab', name='运行记录', exact=True).click()
+                history = page.get_by_role('tabpanel', name='运行记录', exact=True)
+                expect(history.get_by_text('手动生成 · 已完成', exact=True).first).to_be_visible()
+                expect(history.get_by_text('定时生成 · 已完成', exact=True).first).to_be_visible()
+                expect(history.get_by_role('button', name='查看会话', exact=True).first).to_be_visible()
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-run-history-desktop.png'))
                 page.set_viewport_size({'width': 430, 'height': 900})
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
-                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.get_by_role('heading', name='简报设置', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
                 assert not errors, errors
             assert not Provider.failure, Provider.failure

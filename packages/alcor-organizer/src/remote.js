@@ -32,6 +32,7 @@ export const schemas = {
   generateBriefing: [briefingRequest, recordSchema],
   startBriefing: [briefingRequest, briefingRunSchema],
   resumeBriefing: [z.object({ requestId: z.uuid() }).strict(), briefingRunSchema],
+  briefingRuns: [z.object({ limit: z.number().int().min(1).max(50).default(20), before: z.uuid().optional() }).strict(), z.object({ runs: z.array(briefingRunSchema.extend({ trigger: z.enum(['manual', 'scheduled']), conversationSessionId: z.string().optional() })), nextCursor: z.uuid().nullable() }).strict()],
 
 
 

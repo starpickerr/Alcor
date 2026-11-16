@@ -2,25 +2,42 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {sidebarOwner} from '../../packages/alcor-secretary/src/sidebar-owner.js'
 
-test('sidebar ownership restores the original loader entry after rapid switching and teardown', async () => {
-  let active=true,custom=false
-  const entry={id:'native-sidebar',options:{name:'@deepseek-ai/dsh-client-ui-sidebar',disabled:false}}
-  const loader={entries:()=>[entry],update:async(id,options)=>{assert.equal(id,entry.id);active=!options.disabled}}
-  const owner=sidebarOwner(loader,()=>{assert.equal(active,false);custom=true;return()=>{custom=false}})
-  await owner.select(true);assert.equal(custom,true)
+function registry(failAt){
+  const native={options:{name:'sidebar'},component:()=>null}
+  const entries=[native]
+  let count=0
+  return {native,entries,slots:{register(options,component){
+    if(++count===failAt)throw Error('registration failed')
+    assert(!options.children,'native child declarations must remain untouched')
+    assert.notEqual(options.name,'sidebar','the native root must retain ownership')
+    const entry={options,component};entries.push(entry)
+    return()=>{const index=entries.indexOf(entry);if(index>=0)entries.splice(index,1)}
+  }}}
+}
+
+test('Alcor extends native slots while preserving the original sidebar and workspace owners',async()=>{
+  const {slots,entries,native}=registry()
+  const Actions=()=>null, Brand=()=>null
+  const owner=sidebarOwner(slots,Actions,Brand)
+  await owner.select(true)
+  assert.strictEqual(entries[0],native)
+  assert.deepEqual(entries.slice(1).map(row=>row.options.name),['sidebar.brand.mark','sidebar.brand.name','sidebar.session.action'])
+  assert.strictEqual(entries[3].component,Actions)
+  assert.equal(entries[3].options.id,'alcor-navigation')
+  await owner.select(true);assert.equal(entries.length,4)
   await Promise.all([owner.select(false),owner.select(true),owner.select(false)])
-  assert.equal(active,true);assert.equal(custom,false)
-  await owner.select(true);await owner.dispose()
-  assert.equal(active,true);assert.equal(custom,false)
+  assert.deepEqual(entries,[native])
+  await owner.select(true);await owner.dispose();await owner.select(true)
+  assert.deepEqual(entries,[native])
 })
 
-test('failure to register Alcor sidebar restores native ownership and rejects', async () => {
-  let disabled=false
-  const entry={id:'native',options:{name:'@deepseek-ai/dsh-client-ui-sidebar'}}
-  const loader={entries:()=>[entry],update:async(_id,options)=>{disabled=options.disabled}}
-  const owner=sidebarOwner(loader,()=>{throw Error('registration failed')})
+test('partial registration failure removes only Alcor contributions and allows retry',async()=>{
+  const {slots,entries,native}=registry(3)
+  const owner=sidebarOwner(slots,()=>null,()=>null)
   await assert.rejects(owner.select(true),/registration failed/)
-  assert.equal(disabled,false)
+  assert.deepEqual(entries,[native])
+  await owner.select(true);assert.equal(entries.length,4)
+  await owner.dispose();assert.deepEqual(entries,[native])
 })
 
 test('native rc.2 workspace receives its public section scroller hook', async () => {

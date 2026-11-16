@@ -90,6 +90,46 @@ test('public run output is lossless JSON across optional fields and phases', () 
   }
 })
 
+test('briefing history paginates by creation time and reveals only public run metadata', async t => {
+  const { worker } = await fixture(t)
+  const ids = []
+  for (let index = 0; index < 3; index++) {
+    const request = input(); ids.push(request.requestId)
+    await worker.call('briefing_run', { method: 'prepare', request_id: request.requestId, record: { ...request.record, notes: 'private source material' }, sources: [source], context: index === 0 ? {} : { trigger: 'scheduled', parentSessionId: `conversation-${index}` } })
+    await worker.call('briefing_run', { method: 'save', request_id: request.requestId, patch: { phase: 'cancelled', sessionId: `execution-${index}` } })
+  }
+  // Updating an older run must not move it ahead of a newer creation or skip a page.
+  await worker.call('briefing_run', { method: 'save', request_id: ids[0], patch: { message: '旧任务已更新' } })
+  const first = await worker.call('briefing_run', { method: 'history', limit: 2 })
+  schemas.briefingRuns[1].parse(first)
+  assert.deepEqual(first.runs.map(row => row.requestId), ids.slice(1).reverse())
+  assert.equal(first.runs[0].conversationSessionId, 'conversation-2')
+  assert.equal(first.runs[0].trigger, 'scheduled')
+  const last = await worker.call('briefing_run', { method: 'history', limit: 2, before: first.nextCursor })
+  assert.deepEqual(last.runs.map(row => row.requestId), [ids[0]])
+  assert.equal(last.runs[0].trigger, 'manual')
+  assert.equal(last.nextCursor, null)
+  assert(!JSON.stringify([first, last]).includes('private source material'))
+  assert(!JSON.stringify([first, last]).includes('sources'))
+  for (const limit of [0, 51, 1.5, true]) await assert.rejects(worker.call('briefing_run', { method: 'history', limit }))
+  assert.equal(schemas.briefingRuns[0].safeParse({ limit: 51 }).success, false)
+})
+
+test('briefing button preferences persist alongside timezone and reject invalid writes atomically', async t => {
+  const f = await fixture(t)
+  const call = (worker, method, payload) => worker.call('invoke', { domain: 'briefing', method, arguments: payload ? { payload } : {} })
+  const defaults = await call(f.worker, 'get_preferences')
+  assert.equal(defaults.task_target, 'new')
+  await call(f.worker, 'update_preferences', { time_zone: 'Asia/Shanghai', task_prompt: '生成重点通知简报', task_target: 'current', task_workspace_id: 'work' })
+  const saved = await call(f.restart(), 'get_preferences')
+  assert.equal(saved.task_prompt, '生成重点通知简报')
+  assert.equal(saved.time_zone, 'Asia/Shanghai')
+  for (const payload of [{ task_prompt: '' }, { task_prompt: 'x'.repeat(12001) }, { task_target: 'schedule' }, { task_workspace_id: 'x'.repeat(201) }]) {
+    await assert.rejects(call(f.worker, 'update_preferences', payload))
+    assert.deepEqual(await call(f.worker, 'get_preferences'), saved)
+  }
+})
+
 test('briefing owns its root, freezes model and rules, and returns before model completion', async t => {
   const { worker } = await fixture(t), native = nativeContext()
   const generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())

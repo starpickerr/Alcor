@@ -449,7 +449,7 @@ def main():
 def pack_briefing_fixture(home):
     plugin = home / 'synthetic-plugin'
     plugin.mkdir()
-    (plugin / 'package.json').write_text(json.dumps({'name': '@stella-test/briefing-source', 'version': '0.0.1', 'type': 'module', 'exports': './index.mjs', 'dsh': {'bundle': {'patch': './cordis.patch.yml'}}, 'engines': {'dsh': '0.2.2-alpha.3 || 0.2.2-rc.1'}}))
+    (plugin / 'package.json').write_text(json.dumps({'name': '@stella-test/briefing-source', 'version': '0.0.1', 'type': 'module', 'exports': './index.mjs', 'dsh': {'bundle': {'patch': './cordis.patch.yml'}}, 'engines': {'dsh': '0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3'}}))
     (plugin / 'index.mjs').write_text((ROOT / 'product/tests/fixtures/briefing-plugin.mjs').read_text())
     (plugin / 'cordis.patch.yml').write_text('- insert:\n    - id: synthetic-briefing-source\n      name: "@stella-test/briefing-source"\n')
     plugin_pack = home / 'synthetic-plugin.tgz'

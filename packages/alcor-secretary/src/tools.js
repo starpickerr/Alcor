@@ -12,6 +12,7 @@ import { createAppleExportGate, isApplePlanOperation } from './security-apple-ex
 
 export const inject = ['tools', 'alcorSecretary', 'systemPrompt']
 const desktopFileTools = new Set(['read','read_image','write','edit','apply_patch','glob','grep','bash','pwsh','job_output','job_list','job_kill'])
+const secretaryPresets = new Set(['alcor', 'stella', 'alcor-briefing', 'stella-briefing'])
 
 export function apply(ctx) {
   registerBundledSkills(ctx, 'alcor-secretary', new URL('../skills/', import.meta.url))
@@ -42,6 +43,10 @@ export function apply(ctx) {
   })
   ctx.systemPrompt.variable('alcor_identity', () => secretaryPersona)
   ctx.tools.guard(execution => {
+    // Shared business tools must not impose Alcor's file/MCP policy on other DSH presets.
+    const presets = ctx.get('agentPresets')
+    const preset = execution.agent?.session && presets?.presetForSession(execution.agent.session)
+    if (!execution.name.startsWith('alcor_') && presets && !secretaryPresets.has(preset)) return
     if ((execution.name === 'schedule_edit' && execution.arguments?.action === 'delete') || isAutomationDeletion(execution)) return automationDeleteUnavailable
     if (requiresUnimplementedAppleApproval(execution)) return '此 Apple 操作需要具体目标审批，暂不能通过对话执行。'
     if (desktopFileTools.has(execution.name) && (!personalTurn(execution.agent) || !execution.agent.session.header || execution.agent.session.header.origin === 'subagent' || execution.agent.session.header.parentSession)) return '本机文件和命令工具仅供主人发起的 Alcor 桌面对话使用。'
@@ -213,15 +218,14 @@ export function apply(ctx) {
       },
     }))
     for (const [name, description, execute] of [
-      ['alcor_generate_briefing', 'Start an independent briefing task using the configured sources and a fixed model. Return its run identity and execution session; starting does not mean the briefing is finished. User and scheduled turns use the same saved briefing sources, including enabled external accounts and selected scopes. Scheduled calls wait for the saved result. Source switches and account access are rechecked during generation; no per-run manual authorization is required.', async (_args, execution) => {
+      ['alcor_generate_briefing', 'Generate and save today’s briefing using the configured sources and a fixed model. Wait for the saved result before reporting completion. User and scheduled turns use the same saved briefing sources, including enabled external accounts and selected scopes. Source switches and account access are rechecked during generation; no per-run manual authorization is required.', async (_args, execution) => {
         const now = new Date()
         const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
         // Replays of one delivery reuse its run; the next delivery on the same day is a new increment.
         const scheduled = !personalTurn(execution.agent)
-        const hash = createHash('sha256').update(scheduled ? `alcor-briefing:${execution.agent.session.id}:${turnSources.get(execution.agent).start}` : execution.callId || randomUUID()).digest('hex')
+        const hash = createHash('sha256').update(scheduled ? `alcor-briefing:${execution.agent.session.id}:${turnSources.get(execution.agent).start}` : `alcor-briefing:${execution.agent.session.id}:${turnSources.get(execution.agent).start}:${execution.callId || randomUUID()}`).digest('hex')
         const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`
         const input = { date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { trigger:'scheduled' } : {}) }
-        if (!scheduled) return ctx.alcorOrganizer.startBriefing(input)
         const record = await ctx.alcorOrganizer.generateBriefing(input)
         return { id: record.id, date: record.date, body: record.body, saved: true }
       }],

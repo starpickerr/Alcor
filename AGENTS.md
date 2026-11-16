@@ -8,6 +8,8 @@ Current delivery (2026-11-12): install Alcor as a standard plugin inside the unc
 
 The isolated Host/Profile client remains an optional design, preserved on origin/archive/isolated-runtimes-20261112-02217cd4 at 02217cd4. Do not delete existing environments or migrate personal databases, credentials or external channels automatically.
 
+隔离版本分支长期保持不变，日常合并及分支清理遵循 [.agents/rules/branch-preservation.md](.agents/rules/branch-preservation.md)。
+
 product/client-shell and @alcor/extension remain compatibility code for the optional isolated design; the current shared implementation installs @alcor/secretary in the official Profile and does not replace official client UI modules.
 
 - 产品：根 `package.json`、`packages/`、`product/`、`scripts/product/`。

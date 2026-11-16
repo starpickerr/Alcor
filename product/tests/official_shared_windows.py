@@ -187,6 +187,28 @@ def check_automation(page, navigation, home):
     navigation.get_by_role('button', name='事务', exact=True).click()
 
 
+def profile_commands(app, home, env):
+    profile = Path(env['DSH_HOME']) / 'profiles/desktop'
+    manifest = profile / 'package.json'
+    modules = app.parent / 'resources/app.asar/dsh/node_modules/@deepseek-ai'
+    node_env = {**env, 'ELECTRON_RUN_AS_NODE': '1', 'npm_config_ignore_scripts': 'true'}
+    def plugin_cli(*arguments):
+        subprocess.run([app, '--expose-internals', modules / 'dsh-desktop-host/lib/cli.js', 'plugin',
+                        '--profile', 'desktop', *arguments],
+                       cwd=home, env=node_env, check=True, timeout=180)
+    def select_bundle(enabled, position):
+        module = (modules / 'dsh-app-boot/lib/index.js').as_uri()
+        script = f"""import {{readProfileManifest,writeProfileBundles}} from {json.dumps(module)};
+            const dir=process.argv[1], name='@alcor/secretary', manifest=readProfileManifest('dsh',dir);
+            const bundles=manifest.dsh.profile.bundles.filter(x=>x!==name);
+            if ({json.dumps(enabled)}) bundles.splice({position},0,name);
+            writeProfileBundles(dir,manifest,bundles);"""
+        subprocess.run([app, '--input-type=module', '-e', script, profile], cwd=home, env=node_env, check=True)
+        assert ('@alcor/secretary' in json.loads(manifest.read_text())['dsh']['profile']['bundles']) == enabled
+
+    return plugin_cli, select_bundle
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'package', 'aurabot'):
@@ -215,26 +237,10 @@ def main():
     manifest.write_text(json.dumps({'private': True, 'dsh': {'profile': {
         'bundles': ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']}}}))
     (profile / 'cordis.patch.yml').write_text('- id: ui-settings-models\n  config:\n    credentialOnboarding: false\n')
-    modules = app.parent / 'resources/app.asar/dsh/node_modules/@deepseek-ai'
-    node_env = {**env, 'ELECTRON_RUN_AS_NODE': '1', 'npm_config_ignore_scripts': 'true'}
-    def plugin_cli(*arguments):
-        subprocess.run([app, '--expose-internals', modules / 'dsh-desktop-host/lib/cli.js', 'plugin',
-                        '--profile', 'desktop', *arguments],
-                       cwd=home, env=node_env, check=True, timeout=180)
+    plugin_cli, select_bundle = profile_commands(app, home, env)
     for package in (args.package, args.aurabot):
         plugin_cli('add', package.resolve(strict=True), '--ignore-scripts')
-
     secretary_position = json.loads(manifest.read_text())['dsh']['profile']['bundles'].index('@alcor/secretary')
-
-    def select_bundle(enabled):
-        module = (modules / 'dsh-app-boot/lib/index.js').as_uri()
-        script = f"""import {{readProfileManifest,writeProfileBundles}} from {json.dumps(module)};
-            const dir=process.argv[1], name='@alcor/secretary', manifest=readProfileManifest('dsh',dir);
-            const bundles=manifest.dsh.profile.bundles.filter(x=>x!==name);
-            if ({json.dumps(enabled)}) bundles.splice({secretary_position},0,name);
-            writeProfileBundles(dir,manifest,bundles);"""
-        subprocess.run([app, '--input-type=module', '-e', script, profile], cwd=home, env=node_env, check=True)
-        assert ('@alcor/secretary' in json.loads(manifest.read_text())['dsh']['profile']['bundles']) == enabled
 
     with sync_playwright() as pw:
         with desktop(pw, app, home, env, 'shared') as page:
@@ -291,12 +297,12 @@ def main():
             switch(page, 'DeepSeek Harness', 'Alcor')
         with desktop(pw, app, home, env, 'restart') as page:
             expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible()
-        select_bundle(False)
+        select_bundle(False, secretary_position)
         with desktop(pw, app, home, env, 'disabled') as page:
             page.get_by_role('button', name='Aurabot', exact=True).click()
             expect(page.get_by_role('heading', name='大肥鱼', exact=True)).to_be_visible()
             expect(page.get_by_role('button', name='切换使用模式', exact=False)).to_have_count(0)
-        select_bundle(True)
+        select_bundle(True, secretary_position)
         with desktop(pw, app, home, env, 'restored') as page:
             expect(page.get_by_role('button', name='切换使用模式，当前 Alcor')).to_be_visible()
             restored = rpc(page, 'pluginManager/listBundles')

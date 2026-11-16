@@ -4,6 +4,8 @@
       name: '@alcor/secretary/organizer'
     - id: alcor-secretary
       name: '@alcor/secretary'
+    - id: alcor-tools
+      name: '@alcor/secretary/tools'
     - id: preset-alcor
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -34,8 +36,6 @@
             disabled: !!js process.platform !== 'win32'
           - id: alcor-workspace-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
-          - id: alcor-tools
-            name: '@alcor/secretary/tools'
           - id: alcor-skill-reader
             name: '@deepseek-ai/dsh-tool-skill'
     - id: preset-alcor-briefing
@@ -84,8 +84,6 @@
             disabled: !!js process.platform !== 'win32'
           - id: stella-workspace-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
-          - id: stella-tools
-            name: '@alcor/secretary/tools'
           - id: stella-skill-reader
             name: '@deepseek-ai/dsh-tool-skill'
     - id: preset-stella-briefing
