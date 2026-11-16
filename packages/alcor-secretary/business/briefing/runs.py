@@ -57,6 +57,24 @@ class BriefingRuns:
             raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
 
     def invoke(self, method, request_id=None, **args):
+        if method == 'history':
+            limit = args.get('limit', 20)
+            if type(limit) is not int or not 1 <= limit <= 50:
+                raise ValueError('运行记录数量须为 1 至 50。')
+            parameters = []
+            where = ''
+            if args.get('before'):
+                previous = self.get(args['before'])
+                where = "WHERE (json_extract(document, '$.createdAt'), id) < (?, ?)"
+                parameters.extend([previous['createdAt'], previous['requestId']])
+            documents = [json.loads(row[0]) for row in self.db.execute(
+                f"SELECT document FROM briefing_runs {where} ORDER BY json_extract(document, '$.createdAt') DESC, id DESC LIMIT ?", [*parameters, limit + 1])]
+            runs = []
+            for run in documents[:limit]:
+                context = run.get('context', {})
+                runs.append({**public_run(run), 'trigger': context.get('trigger', 'manual'),
+                             **({'conversationSessionId': context['parentSessionId']} if context.get('parentSessionId') else {})})
+            return {'runs': runs, 'nextCursor': runs[-1]['requestId'] if len(documents) > limit else None}
         if method == 'status':
             row = self.db.execute("SELECT document FROM briefing_runs ORDER BY (phase IN ('starting','collecting','model')) DESC, rowid DESC LIMIT 1").fetchone()
             return public_run(json.loads(row[0])) if row else {'phase': 'idle'}

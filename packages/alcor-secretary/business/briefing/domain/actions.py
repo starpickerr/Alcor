@@ -25,7 +25,7 @@ class AdapterUnavailable(RuntimeError):
     """Todo/calendar adapters are host-side; the plugin worker cannot reach them."""
 
 
-DEFAULT_PREFERENCES = {'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': []}
+DEFAULT_PREFERENCES = {'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': [], 'task_prompt': '', 'task_target': 'new', 'task_workspace_id': ''}
 
 
 def _now():
@@ -206,6 +206,12 @@ class BriefingActions:
                     raise ValueError('invalid preference option')
                 if 'important_types' in payload and (not isinstance(payload['important_types'], list) or any(not isinstance(v, str) or len(v)>100 for v in payload['important_types'])):
                     raise ValueError('important_types must be strings')
+                if 'task_prompt' in payload and (not isinstance(payload['task_prompt'], str) or not payload['task_prompt'].strip() or len(payload['task_prompt']) > 12000):
+                    raise ValueError('请填写任务内容，最多 12000 字。')
+                if payload.get('task_target', 'new') not in {'new', 'current'}:
+                    raise ValueError('无效的简报执行位置。')
+                if 'task_workspace_id' in payload and (not isinstance(payload['task_workspace_id'], str) or len(payload['task_workspace_id']) > 200):
+                    raise ValueError('无效的简报工作区。')
                 if 'time_zone' in payload:
                     zone = payload['time_zone']
                     if not isinstance(zone,str) or len(zone)>100:

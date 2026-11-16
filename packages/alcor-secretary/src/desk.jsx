@@ -10,7 +10,7 @@ import { applicationEnvironment } from '../../alcor-plugin-info/src/assignments.
 
 export const deskViews = applicationViews
 
-export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNotice, view = 'alcor-tasks', business, currentSession, briefingContext, openPlugins, briefingView }) {
+export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNotice, view = 'alcor-tasks', business, currentSession, openPlugins, briefingView, startBriefingChat, workspaces }) {
   const [startError, setStartError] = useState('')
   async function begin(prompt) {
     setStartError('')
@@ -26,7 +26,7 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNo
       <Button variant="outline" className="alcor-heading-chat" onClick={() => begin()}><IconNewChatOutlineRegular size={16} />开始 Alcor 对话</Button></div></>}
     {startError && <Notice tone="error" role="alert" className="alcor-error">{startError}</Notice>}
     {globalThis.__ALCOR_CLIENT_SHELL__ && modeNotice?.() && <Notice role="status" tone="warning">{modeNotice()}</Notice>}
-    {view === 'alcor-briefing' && <BriefingWorkspace api={business} briefingContext={briefingContext} openSession={openSession} openPlugins={openPlugins} initialView={briefingView?.()} />}
+    {view === 'alcor-briefing' && <BriefingWorkspace api={business} openSession={openSession} openPlugins={openPlugins} initialView={briefingView?.()} startBriefingChat={startBriefingChat} workspaces={workspaces} currentSession={currentSession} />}
     {application && view !== 'alcor-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} />}
     {!hasModeSwitch && <Notice role="status" className="alcor-muted">当前版本暂不支持模式切换。</Notice>}
   </section>

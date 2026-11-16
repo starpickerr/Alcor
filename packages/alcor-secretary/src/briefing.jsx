@@ -1,11 +1,15 @@
 import { Notice } from './notice.jsx'
 import { BriefingToggle } from './briefing-toggle.jsx'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { Button, Checkbox, Input, Modal, IconRefreshOutlineRegular, IconSettingsOutlineMedium, IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Empty, Field } from './business-pages.jsx'
 import { localDate } from './presentation.js'
 import { BriefingReport, markdownLabels } from './briefing-report.jsx'
 import { BriefingSources } from './briefing-sources.jsx'
+import { BriefingTaskSettings } from './briefing-task-settings.jsx'
+import { BriefingRuns } from './briefing-runs.jsx'
+
+const settingsTabs = [['sources', '信息来源'], ['rules', '筛选与写作规则'], ['timezone', '时区'], ['tasks', '任务设置'], ['runs', '运行记录']]
 
 async function unwrap(promise) { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作未完成，请重试。'); return result.value }
 const call = (api, method, args = {}, write = false) => unwrap(api.business({ domain: 'briefing', method, arguments: args, ...(write ? { requestId: crypto.randomUUID() } : {}) }))
@@ -69,7 +73,7 @@ function BriefingTimeline({ revisions, selected, onSelect, timeZone }) {
   </aside>
 }
 
-export function BriefingWorkspace({ api, briefingContext, openSession, openPlugins, initialView }) {
+export function BriefingWorkspace({ api, openSession, openPlugins, initialView, startBriefingChat, workspaces, currentSession }) {
   const [history, setHistory] = useState([])
   const [selected, setSelected] = useState(initialView?.selected ?? '')
   const [revision, setRevision] = useState(initialView?.revision ?? 0)
@@ -80,6 +84,8 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settings, setSettings] = useState(initialView?.settings ?? false)
+  const [settingsTab, setSettingsTab] = useState(initialView?.settingsTab ?? 'sources')
+  const tabsId = useId()
   const [zone, setZone] = useState(''), [zoneInput, setZoneInput] = useState(initialView?.zoneInput ?? '')
   const [zoneSaving, setZoneSaving] = useState(false), [zoneError, setZoneError] = useState('')
   const day = zone ? new Date().toLocaleDateString('sv-SE',{timeZone:zone}) : localDate()
@@ -143,8 +149,7 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   async function generate() {
     setBusy(true); setError('')
     try {
-      const run = unwrap(await api.startBriefing({ date: day, notes: '', ...briefingContext(), requestId: crypto.randomUUID() }))
-      setProgress(run)
+      await startBriefingChat(day)
     } catch (error) { setError(error.message) } finally { setBusy(false) }
   }
   async function resume() {
@@ -159,12 +164,21 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
   }
   const today = history.some(row => row.id.slice(4,14) === day)
   const report = detail?.briefing
-  if (settings) return <div className="alcor-business" data-briefing-settings>
+  if (settings) return <div className="alcor-business alcor-briefing-settings-page" data-briefing-settings>
     <header className="alcor-app-header"><div className="alcor-actions"><Button variant="ghost" aria-label="返回简报" title="返回简报" onClick={closeSettings}><IconChevronLeftOutlineRegular size={18} /></Button><h1 ref={settingsHeading} tabIndex={-1}>简报设置</h1></div></header>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
+    <div className="alcor-briefing-settings-tabs" role="tablist" aria-label="简报设置选项">{settingsTabs.map(([id, label], index) => <button key={id} type="button" role="tab" id={`${tabsId}-${id}-tab`} aria-controls={`${tabsId}-${id}-panel`} aria-selected={settingsTab === id} tabIndex={settingsTab === id ? 0 : -1} onClick={() => setSettingsTab(id)} onKeyDown={event => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? settingsTabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + settingsTabs.length) % settingsTabs.length
+      setSettingsTab(settingsTabs[next][0]); event.currentTarget.parentElement.children[next].focus()
+    }}>{label}</button>)}</div>
     <div className="alcor-page-content alcor-briefing-settings">
-      <div className="alcor-briefing-settings-column">
-        <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, selected, revision, zoneInput})} /></section>
+      <div role="tabpanel" id={`${tabsId}-sources-panel`} aria-labelledby={`${tabsId}-sources-tab`} hidden={settingsTab !== 'sources'} tabIndex={0}>
+        <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, settingsTab, selected, revision, zoneInput})} /></section>
+      </div>
+      <div role="tabpanel" id={`${tabsId}-rules-panel`} aria-labelledby={`${tabsId}-rules-tab`} hidden={settingsTab !== 'rules'} tabIndex={0}><BriefingRules api={api} /></div>
+      <div role="tabpanel" id={`${tabsId}-timezone-panel`} aria-labelledby={`${tabsId}-timezone-tab`} hidden={settingsTab !== 'timezone'} tabIndex={0}>
         <section aria-labelledby="alcor-briefing-timezone-heading">
           <h2 id="alcor-briefing-timezone-heading">简报时区</h2>
           <form className="alcor-briefing-timezone" onSubmit={async event => {
@@ -188,7 +202,10 @@ export function BriefingWorkspace({ api, briefingContext, openSession, openPlugi
           </form>
         </section>
       </div>
-      <BriefingRules api={api} />
+      <div role="tabpanel" id={`${tabsId}-tasks-panel`} aria-labelledby={`${tabsId}-tasks-tab`} hidden={settingsTab !== 'tasks'} className="alcor-briefing-task-settings" tabIndex={0}>
+        <BriefingTaskSettings api={api} workspaces={workspaces} currentSession={currentSession} />
+      </div>
+      <div role="tabpanel" id={`${tabsId}-runs-panel`} aria-labelledby={`${tabsId}-runs-tab`} hidden={settingsTab !== 'runs'} tabIndex={0}><BriefingRuns api={api} openSession={openSession} timeZone={zone} active={settingsTab === 'runs'} progress={progress} openBriefing={id => { setSelected(id); setRevision(0); closeSettings() }} /></div>
     </div>
   </div>
   return <div className="alcor-business"><header className="alcor-app-header"><div><h1>简报</h1></div><div className="alcor-actions"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新简报" title="刷新简报" onClick={() => refresh().catch(error => setError(error.message))}><IconRefreshOutlineRegular size={16} /></Button><Button className="alcor-icon-action" ref={settingsButton} variant="ghost" aria-label="简报设置" title="简报设置" onClick={() => { setZoneInput(zone); setSettings(true) }}><IconSettingsOutlineMedium size={18} /></Button><Button variant="primary" disabled={running || loading || !sources.length} onClick={generate}>{today ? '更新今日简报' : '生成今日简报'}</Button></div></header>

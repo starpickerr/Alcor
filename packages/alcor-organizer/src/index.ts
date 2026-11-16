@@ -476,6 +476,13 @@ export default class Organizer extends TypertRemoteService {
   }
 
   @Remote
+  async briefingRuns(request) {
+    const input = schemas.briefingRuns[0].parse(request)
+    this.assertActive()
+    return this.businessWorker.call('briefing_run', { method: 'history', ...input })
+  }
+
+  @Remote
   async automation(request) {
     const input = schemas.automation[0].parse(request)
     this.assertActive()

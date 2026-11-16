@@ -75,7 +75,7 @@ export class BriefingGenerator {
     try {
       await authorize()
       const selection = parent?.model?.current()
-      const context = { trigger, ...(workspaceId ? { workspaceId } : parent?.session?.header?.cwd ? { cwd: parent.session.header.cwd } : {}),
+      const context = { trigger, ...(parent?.session?.id ? { parentSessionId: parent.session.id } : {}), ...(workspaceId ? { workspaceId } : parent?.session?.header?.cwd ? { cwd: parent.session.header.cwd } : {}),
         ...(selection ? { model: selection } : {}) }
       state.run = await this.worker.call('briefing_run', { method: 'prepare', request_id: requestId, record, sources, context })
       if (state.run.phase === 'completed' || !resume && ['failed', 'cancelled', 'interrupted'].includes(state.run.phase)) { this.current = undefined; resolve(); return this.publicRun(state.run) }
