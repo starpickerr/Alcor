@@ -1,10 +1,10 @@
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
-import noticeStyle from '../../alcor-secretary/src/notice.css'
+import noticeStyle from '../../alcor-plugin-info/src/notice.css'
 import React from 'react'
 import { remote } from './remote.js'
-import { SchoolConnection } from '../../alcor-secretary/src/connection-settings.jsx'
-import style from './settings.css'
-import connectionStyle from '../../alcor-secretary/src/connection-settings.css'
+import { SchoolConnection } from './connection-settings.jsx'
+import style from '../../alcor-plugin-info/src/source-settings.css'
+import connectionStyle from '../../alcor-plugin-info/src/connection-settings.css'
 
 export const inject = ['configForms', 'slots', 'remote']
 function Settings({ api, view }) {

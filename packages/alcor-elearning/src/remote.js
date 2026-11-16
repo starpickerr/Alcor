@@ -1,4 +1,4 @@
-import { checkMessages } from '../../alcor-secretary/src/elearning-status.js'
+import { checkMessages } from '../../alcor-plugin-info/src/elearning-status.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 

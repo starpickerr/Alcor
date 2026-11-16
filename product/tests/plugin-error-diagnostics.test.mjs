@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
 import { readBriefingSourcePage, discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
-import { checkMessage as schoolMessage } from '../../packages/alcor-secretary/src/elearning-status.js'
+import { checkMessage as schoolMessage } from '../../packages/alcor-plugin-info/src/elearning-status.js'
 import { checkMessage as mailMessage } from '../../packages/alcor-mail/src/check-status.js'
 
 test('both worker boundaries retain startup cause after process error and reject with a remedy', async t => {

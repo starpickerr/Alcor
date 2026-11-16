@@ -31,12 +31,12 @@ test('shared consumers use the renamed styles', async () => {
   for (const [file, token] of [
     ['packages/alcor-mail/src/client.jsx', 'alcor-mail-connection'],
     ['packages/alcor-mail/src/style.css', '.alcor-mail-connection'],
-    ['packages/alcor-elearning/src/settings.css', '.alcor-field'],
+    ['packages/alcor-plugin-info/src/source-settings.css', '.alcor-field'],
     ['packages/alcor-apple-sync/src/style.css', '--alcor-brand'],
     ['packages/alcor-agent-hub/src/agent-hub.jsx', 'alcor-agenthub'],
     ['packages/alcor-agent-hub/src/agent-hub.css', '.alcor-agenthub'],
-    ['packages/alcor-secretary/src/notice.jsx', 'alcor-notice'],
-    ['packages/alcor-secretary/src/notice.css', '.alcor-notice'],
+    ['packages/alcor-plugin-info/src/notice.jsx', 'alcor-notice'],
+    ['packages/alcor-plugin-info/src/notice.css', '.alcor-notice'],
   ]) assert.ok((await read(file)).includes(token), `${file}: ${token}`)
 })
 
@@ -47,4 +47,12 @@ test('affected client entry points bundle', async () => {
     bundle: true, packages: 'external', format: 'esm', platform: 'browser',
     loader: { '.css': 'text', '.svg': 'dataurl' }, outdir: '/tmp/alcor-css-test-output', write: false, logLevel: 'silent',
   })
+})
+
+test('eLearning source does not depend on secretary source', async () => {
+  const directory = new URL('packages/alcor-elearning/src/', root)
+  for (const name of await readdir(directory)) {
+    if (!/\.(js|jsx|ts)$/.test(name)) continue
+    assert.doesNotMatch(await readFile(new URL(name, directory), 'utf8'), /alcor-secretary\/src\//, name)
+  }
 })

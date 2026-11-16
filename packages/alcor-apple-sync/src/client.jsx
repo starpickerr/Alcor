@@ -1,6 +1,6 @@
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
-import noticeStyle from '../../alcor-secretary/src/notice.css'
-import { Notice } from '../../alcor-secretary/src/notice.jsx'
+import noticeStyle from '../../alcor-plugin-info/src/notice.css'
+import { Notice } from '../../alcor-plugin-info/src/notice.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { Button, Modal, IconCheckOutlineRegular, IconChecklistOutlineRegular, IconClockOutlineRegular, IconWarningOutlineRegular, IconChevronRightOutlineRegular, IconCloseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { remote } from './remote.js'

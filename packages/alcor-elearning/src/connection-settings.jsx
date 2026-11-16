@@ -1,8 +1,8 @@
-import { Notice } from './notice.jsx'
+import { Notice } from '../../alcor-plugin-info/src/notice.jsx'
+import { Field } from '../../alcor-plugin-info/src/field.jsx'
 import React, { useEffect, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Field } from './business-pages.jsx'
-import { checkMessage } from './elearning-status.js'
+import { checkMessage } from '../../alcor-plugin-info/src/elearning-status.js'
 
 const unwrap = async promise => { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作失败，请重试。'); return result.value }
 

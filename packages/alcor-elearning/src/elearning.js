@@ -5,7 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import { z as schema } from 'zod'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
-import { checkMessages } from './elearning-status.js'
+import { checkMessages } from '../../alcor-plugin-info/src/elearning-status.js'
 
 export const accountKey = credentialKey('alcor-elearning', 'account')
 export const accountSchema = schema.object({ username: schema.string().trim().min(1).max(160), password: schema.string().min(1).max(4096) }).strict()
@@ -112,6 +112,8 @@ export default class Elearning extends Service {
     const account = record?.kind === 'grant' && accountSchema.safeParse(record.payload)
     return { installed: true, configured: info.configured, connected: !!this.active, writable: info.writable, ...(account?.success ? { username: account.data.username } : {}) }
   }
+
+  checkConnection() { return checkConnection(this.ctx) }
 
   async briefingSource() {
     if (!this.active) return null
