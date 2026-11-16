@@ -31,12 +31,15 @@ class Provider(NativeProvider):
             return super().do_POST()
         try:
             names = {tool['function']['name'] for tool in tools}
-            assert names == {'briefing_submit', 'briefing_read'}, 'Unexpected briefing tools: ' + ','.join(sorted(names))
             text = lambda content: content if isinstance(content, str) else '\n'.join(part.get('text', '') for part in content or [])
             prompt = next(text(m['content']) for m in reversed(payload['messages']) if '可阅读的原文数据：' in text(m.get('content')))
             entries = json.loads(prompt.split('可阅读的原文数据：\n')[1])
-            schema = submit['parameters']['properties']
-            kind = 'global' if 'decisions' in schema and 'reports' in schema else 'screen' if 'decisions' in schema else 'body'
+            import re
+            fields = re.search(r'本批字段：([^。]+)。', prompt).group(1).split(', ')
+            routed = '一次提交本批' in prompt
+            assert names == ({'briefing_submit'} if routed else {'briefing_read', 'briefing_submit'})
+            assert set(submit['parameters']['properties']) == ({'decisions'} if routed else {'decisions', 'body', 'reports', 'source_item_ids'})
+            kind = 'global' if 'decisions' in fields and 'reports' in fields else 'screen' if 'decisions' in fields else 'body'
             Provider.batches.append(kind)
             if Provider.hold:
                 Provider.waiting.set()
@@ -44,7 +47,7 @@ class Provider(NativeProvider):
             decisions = [{'id': row['id'], 'selected': True, 'reason': 'Synthetic validation', 'section': 'action', 'score': 80, 'summary': row['title']} for row in entries]
             if kind == 'screen': value = {'decisions': decisions}
             else:
-                ids = [row['id'] for row in entries] if kind == 'global' else schema['source_item_ids']['items']['enum']
+                ids = [row['id'] for row in entries] if kind == 'global' else json.loads(re.search(r'"expected_ids": (\[[^\]]*\])', prompt).group(1))
                 value = {'body': 'Synthetic structured briefing saved through DSH.', 'source_item_ids': ids,
                          'reports': [{'id': identity, 'content': 'Synthetic source report'} for identity in ids]}
                 if kind == 'global': value['decisions'] = decisions
@@ -155,7 +158,7 @@ def main():
                 expect(page.get_by_role('button', name='继续生成', exact=True)).to_be_visible(timeout=15000)
                 restored = business(page, 'generation_status')
                 assert restored['phase'] == 'interrupted' and restored['completedBatches'] == 0
-                assert Provider.batches == ['global'], 'Restart must not replay requests'
+                assert Provider.batches == ['screen'], 'Restart must not replay requests'
                 page.get_by_role('button', name='关闭提示', exact=True).click()
                 expect(page.get_by_role('region', name='简报生成进度', exact=True)).to_have_count(0)
                 page.reload()
@@ -172,7 +175,7 @@ def main():
                 expect(page.get_by_label('处理状态',exact=False)).to_have_count(0)
                 page.get_by_role('button',name='返回报告列表',exact=True).click()
                 assert finished['completedBatches'] == 1
-                assert Provider.batches == ['global', 'global']
+                assert Provider.batches == ['screen', 'screen']
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed.png'))
                 # Schedule receipt is distinct from completion: use the real DSH scheduler and wait for the saved report.

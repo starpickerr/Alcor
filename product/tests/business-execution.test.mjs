@@ -28,7 +28,7 @@ class TestBriefingGenerator extends BriefingGenerator {
     await authorize()
     const prompt = `任务\n${request.task}\n\n可阅读的原文数据：\n${JSON.stringify(request.entries)}`
     const activation = await this.ctx.subagents.startActivation({ signal: state.controller.signal,
-      request: { prompt: [{ type: 'text', text: prompt }], outputSchema: request.schema } })
+      request: { prompt: [{ type: 'text', text: prompt }], outputSchema: request.schema, submitSchema: request.submitSchema } })
     const result = await activation.result
     state.controller.signal.throwIfAborted()
     if (result.stopReason !== 'completed' || !result.structured) throw new Error('模型未提交完整简报')
@@ -223,7 +223,7 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
     const prompt = request.prompt[0].text
     const original = JSON.parse(prompt.split('可阅读的原文数据：\n')[1])
     let structured
-    if (request.outputSchema.properties.decisions) structured = { decisions: original.map(item => ({ id: item.id, selected: true, reason: 'Needs action', section: 'action', score: 90, summary: item.snippet })) }
+    if (request.outputSchema.properties.decisions) structured = { decisions: original.map(item => ({ id: item.id, selected: true, reason: 'Needs action', section: 'action', score: 90, summary: item.body })) }
     else {
       const expected = JSON.parse(prompt.slice(prompt.indexOf('{"date":'), prompt.indexOf('\n\n可阅读的原文数据：'))).items.map(item => item.id)
       structured = { body: '已核对两条来源，准备处理。', source_item_ids: expected, reports: expected.map(id => ({ id, content: '具体任务报告' })) }
@@ -245,7 +245,8 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
   mailOffline = false
   await generator.resume(requestId,async()=>{})
   const result = await generator.wait(requestId)
-  assert.equal(result.body, '已核对两条来源，准备处理。')
+  assert.match(result.body, /Candidate 0\nDue tomorrow/)
+  assert.match(result.body, /Candidate 1\nDue tomorrow/)
   assert.equal(modelCalls, 1)
   const partial = new TestBriefingGenerator({ tools: { execute: async ({ calls }) => {
     const args = JSON.parse(calls[0].arguments)
@@ -339,15 +340,19 @@ test('briefing source discovery only enumerates supported metadata and revocatio
   assert.deepEqual(result.errors, ['Source authorization revoked'])
 })
 
-test('briefing body batches expose only their own thread members and constrain output ids', async context => {
+test('legacy briefing body batches expose only their own thread members and constrain output ids', async context => {
   const { worker } = await fixture(context)
   const date = new Date().toISOString().slice(0,10)
   const stamp = new Date(Date.now()-1000).toISOString()
   let bodyBatches=0
+  let firstSubmitSchema
   const generator=new TestBriefingGenerator({tools:{execute:async()=>({results:[{result:{isError:false,value:{structuredContent:{value:{
     source_items:Array.from({length:26},(_,i)=>({source_id:'batch-'+i,thread_id:i<2?'merged-thread':'thread-'+i,title:'Synthetic '+i,snippet:'Needs attention',occurred_at:stamp,payload:{resource_type:'assignment',body:'Full original '+i}})),
     next_offset:null,errors:[],
   }}}}}]})},subagents:{startActivation:async({request})=>{
+    assertObjectJsonSchema(request.submitSchema)
+    firstSubmitSchema ??= request.submitSchema
+    assert.deepEqual(request.submitSchema, firstSubmitSchema)
     assertObjectJsonSchema(request.outputSchema)
     const prompt=request.prompt[0].text
     const original=JSON.parse(prompt.split('可阅读的原文数据：\n')[1])
@@ -368,7 +373,11 @@ test('briefing body batches expose only their own thread members and constrain o
   }}},worker)
   context.after(()=>generator.close())
   const sources=[{source:'elearning',accountId:'synthetic',tool:'mcp__elearning__fetch',method:'fetch',arguments:{}}]
-  const result=await generator.generate({record:buildBriefing([],date,'',stamp),requestId:randomUUID(),parent:{},sources})
+  const requestId = randomUUID(), record = buildBriefing([],date,'',stamp)
+  await worker.call('briefing_run', { method: 'prepare', request_id: requestId, record, sources, context: {} })
+  await worker.call('briefing_run', { method: 'save', request_id: requestId, patch: { routingVersion: null, phase: 'interrupted' } })
+  await generator.resume(requestId, async () => {})
+  const result=await generator.wait(requestId)
   assert.equal(result.kind,'briefing')
   assert.equal(bodyBatches,2)
 })
@@ -384,15 +393,16 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   const generator=new TestBriefingGenerator({tools:{execute:async({calls:[call]})=>{
     const args=JSON.parse(call.arguments);seen.push(args)
     if(failure)throw new Error('Synthetic source failure')
-    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:'A'}},
-      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
+    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{resource_type:'announcement',course_id:args.course_ids[0],body:'A'}},
+      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{resource_type:'announcement',course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
     return {results:[{result:{isError:false,value:{structuredContent:{value:{source_items:data,next_offset:null,errors:[],cursors:{elearning_state:changed?'v2':'v1'}}}}}}]}
   }},subagents:{startActivation:async({request})=>{
     modelCalls++
     const text=request.prompt[0].text
     const originals=JSON.parse(text.split('可阅读的原文数据：\n')[1])
+    if (changed) assert.deepEqual(originals.map(row => row.body), ['Changed B'])
     let structured
-    if(request.outputSchema.properties.decisions)structured={decisions:originals.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.snippet}))}
+    if(request.outputSchema.properties.decisions)structured={decisions:originals.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.body}))}
     else {const ids=request.outputSchema.properties.source_item_ids.items.enum||[];structured={body:'Synthetic report',source_item_ids:ids,reports:ids.map(id=>({id,content:'Report '+id}))}}
     return {dispose:async()=>{},result:Promise.resolve({stopReason:'completed',structured})}
   }}},worker)
@@ -411,7 +421,7 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   assert.equal(current.items.length,2,'Unchanged cards remain in the current day report')
   changed=true;empty=false
   await generate()
-  assert.equal(modelCalls,3,'Only the changed item requires selection and writing')
+  assert.equal(modelCalls,2,'Only the changed notice requires interpretation')
   const beforeFailure=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   failure=true
   await assert.rejects(generate(),/Synthetic source failure/)

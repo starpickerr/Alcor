@@ -128,7 +128,7 @@ class BriefingRuns:
         requested_date = record['date']
         record = {**record,'date':window['day']}
         current = self.business.briefing.briefing_for_date(record['date'])
-        run = {'protocol':'single-agent-window-v2', 'requestedDate':requested_date, 'window':window, 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
+        run = {'protocol':'single-agent-window-v2', 'routingVersion':1, 'requestedDate':requested_date, 'window':window, 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
                'context': args.get('context', {}), 'phase': 'starting', 'message': '正在准备简报…',
                'createdAt': stamp(), 'runAt':run_at, 'collected': [], 'submissions': [],
                'rules': self.serialize(self.business.briefing.list_rules(enabled_only=True)),

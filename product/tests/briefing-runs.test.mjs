@@ -64,10 +64,13 @@ function nativeContext() {
 function structured(request) {
   const text = request.prompt[0].text
   const rows = JSON.parse(text.split('可阅读的原文数据：\n')[1])
-  const decisions = rows.map(row => ({ id: row.id, selected: true, reason: 'Needed', section: 'action', score: 90, summary: row.snippet }))
-  if (request.outputSchema.properties.decisions && !request.outputSchema.properties.reports) return { stopReason: 'completed', structured: { decisions } }
-  const ids = request.outputSchema.properties.decisions ? rows.map(row => row.id) : request.outputSchema.properties.source_item_ids.items.enum
-  return { stopReason: 'completed', structured: { ...(request.outputSchema.properties.decisions ? { decisions } : {}), body: '已完成独立简报。', source_item_ids: ids, reports: ids.map(id => ({ id, content: '具体报告' })) } }
+  const decisions = rows.map(row => ({ id: row.id, selected: true, reason: 'Needed', section: 'action', score: 90, summary: row.snippet ?? row.body }))
+  const fields = text.match(/本批字段：([^。]+)。/)[1].split(', ')
+  const expected = text.includes('一次提交本批') ? ['decisions'] : ['decisions', 'body', 'source_item_ids', 'reports']
+  assert.deepEqual(Object.keys(request.outputSchema.properties), expected)
+  if (!fields.includes('reports')) return { stopReason: 'completed', structured: { decisions } }
+  const ids = fields.includes('decisions') ? rows.map(row => row.id) : JSON.parse(text.match(/"expected_ids": (\[[^\]]*\])/)[1])
+  return { stopReason: 'completed', structured: { ...(fields.includes('decisions') ? { decisions } : {}), body: '已完成独立简报。', source_item_ids: ids, reports: ids.map(id => ({ id, content: '具体报告' })) } }
 }
 const input = () => { const now = new Date().toISOString(); return { requestId: randomUUID(), record: buildBriefing([], now.slice(0, 10), '', now), sources: [source], parent: { session: { id: 'chat-owner', header: { cwd: '/tmp' } }, model: { current: () => route } } } }
 const state = (worker, id) => worker.call('briefing_run', { method: 'get', request_id: id })
@@ -150,8 +153,9 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   schemas.startBriefing[1].parse(started)
   assert.deepEqual(snapshotJsonValue(started), started)
   assert.notEqual(started.sessionId, 'chat-owner')
-  assert.deepEqual(native.creations, [{ agentPreset: 'alcor-briefing', cwd: '/tmp' }])
   await until(() => release)
+  const executionId = (await generator.status()).sessionId
+  assert.deepEqual(native.creations, [{ agentPreset: 'alcor-briefing', cwd: '/tmp' }])
   request.parent.model.current = () => ({ provider: 'changed', model: 'other-model' })
   await worker.call('invoke', { domain: 'briefing', method: 'create_rule', arguments: { payload: { text: 'NEW RULE MUST NOT ENTER THIS RUN', source: '*', enabled: true } } })
   const status = await generator.status()
@@ -160,10 +164,10 @@ test('briefing owns its root, freezes model and rules, and returns before model 
   assert(!('sources' in status)); assert(!('submissions' in status))
   release()
   const result = await generator.wait(request.requestId)
-  assert.equal(result.body, '已完成独立简报。')
+  assert.equal(result.body, '## 需要关注\n\n### Synthetic task\nsecret-payload')
   assert.equal(native.requests.length, 1)
   for (const call of native.requests) {
-    assert.equal(call.parent.session.id, started.sessionId)
+    assert.equal(call.parent.session.id, executionId)
     assert.equal(call.agentPreset, 'alcor-briefing')
     assert.deepEqual(call.agentOptions, route)
     assert(!call.prompt[0].text.includes('NEW RULE MUST NOT ENTER THIS RUN'))
@@ -263,8 +267,8 @@ test('cancellation during session setup waits for durable interruption and never
   let release
   native.ctx.sessionController.create = async input => { await new Promise(resolve => { release = resolve }); return create(input) }
   const generator = new BriefingGenerator(native.ctx, worker)
-  const starting = generator.start(request)
-  const rejected = assert.rejects(starting, /中断/)
+  const running = generator.generate(request)
+  const rejected = assert.rejects(running, /中断/)
   await until(() => release)
   const closing = generator.close()
   release()
@@ -296,7 +300,7 @@ test('session setup persistence failures release the run instead of leaving shut
     ? Promise.reject(new Error('Synthetic write failure')) : originalCall(action, args)
   native.ctx.sessionController.create = async () => { throw new Error('Synthetic setup failure') }
   const generator = new BriefingGenerator(native.ctx, worker)
-  await assert.rejects(generator.start(input()), /Synthetic write failure/)
+  await assert.rejects(generator.generate(input()), /Synthetic write failure/)
   assert.equal(generator.current, undefined)
   await generator.close()
 })
@@ -317,6 +321,29 @@ function directAgent(run) {
 }
 function execution(agent, parent) { return { agent, signal: new AbortController().signal, parent, token: Symbol(), concludeTurn() {} } }
 
+test('briefing prompt sends each full body once and retains independent summaries', async () => {
+  const entries = [
+    { id: 'short', snippet: '周五交作业', body: '周五交作业' },
+    { id: 'long', snippet: '周五交作业', body: '周五交作业，提交 PDF。' },
+    { id: 'different', snippet: '截止日已更正', body: '周一 17:00 提交。' },
+    { id: 'preview', snippet: '仅有摘要' },
+  ]
+  const agent = directAgent(async ({ message, tools, events, agent }) => {
+    const material = JSON.parse(message.content[0].text.split('可阅读的原文数据：\n')[1])
+    assert.deepEqual(material, [
+      { id: 'short', body: entries[0].body }, { id: 'long', body: entries[1].body }, entries[2], entries[3],
+    ])
+    const exec = execution(agent)
+    await tools.get('briefing_submit').execute({}, exec)
+    events.get('tools/result')(exec, { isError: false })
+  })
+  const generator = new BriefingGenerator({}, {})
+  const state = { run: { sessionId: 'same-session', model: route }, parent: agent, controller: new AbortController() }
+  generator.current = state
+  await generator.runAgent(state, { entries, task: '', rules: '', schema: {}, submitSchema: { type: 'object' } }, async () => {}, async () => {})
+  assert.equal(entries[0].snippet, '周五交作业')
+})
+
 test('large source JSON is read to its final character before submission in the same session', async () => {
   const body = '前'.repeat(26000) + '末尾重要事实'
   let reconstructed = '', submits = 0
@@ -329,7 +356,7 @@ test('large source JSON is read to its final character before submission in the 
       events.get('tools/result')(exec, { isError: false })
       reconstructed += result.chunk; offset = result.next_offset
     }
-    assert.equal(JSON.parse(reconstructed).body, body)
+    assert.deepEqual(JSON.parse(reconstructed), { id: 'one', body })
     const exec = execution(agent)
     await submit.execute({ decisions: [{ id: 'one' }] }, exec)
     events.get('tools/result')(exec, { isError: false }); submits++
@@ -337,7 +364,7 @@ test('large source JSON is read to its final character before submission in the 
   const generator = new BriefingGenerator({}, {})
   const state = { requestId: 'r', run: { sessionId: 'same-session', model: route }, parent: agent, controller: new AbortController() }
   generator.current = state
-  const result = await generator.runAgent(state, { entries: [{ id: 'one', body }], task: 'task', rules: 'rules', schema: { type: 'object' } }, async () => {}, async () => {})
+  const result = await generator.runAgent(state, { entries: [{ id: 'one', body, snippet: body.slice(0, 1000) }], task: 'task', rules: 'rules', schema: { type: 'object' } }, async () => {}, async () => {})
   assert.deepEqual(result, { decisions: [{ id: 'one' }] }); assert.equal(submits, 1)
 })
 
@@ -435,6 +462,7 @@ test('legacy unfinished briefing resumes its existing session after restart', as
   await assert.rejects(generator.generate(request), /模型未提交/)
   const previous = native.requests[0].parent.session
   previous.preset = 'stella-briefing'
+  await worker.call('briefing_run', { method: 'save', request_id: request.requestId, patch: { routingVersion: null } })
   await generator.close(); await worker.close()
   worker = data.restart(); generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
   native.response(async call => structured(call))
@@ -465,4 +493,76 @@ test('unfinished briefing refuses unrelated preset before model use', async () =
   }, {})
   const state = { run: { sessionId: 'unrelated', context: {} }, controller: new AbortController() }
   await assert.rejects(generator.prepareSession(state, async () => {}), /会话的配置已改变/)
+})
+
+test('a file fact is saved without a model and excluded from every mixed-run prompt', async t => {
+  for (const mixed of [false, true]) {
+    const { worker } = await fixture(t), native = nativeContext(), inputData = input()
+    const generator = new BriefingGenerator(native.ctx, worker)
+    t.after(() => generator.close())
+    const time = new Date(Date.now() - 1000).toISOString()
+    const fact = { source_id: 'f', title: 'Course file', occurred_at: time,
+      payload: { resource_type: 'file', course_id: 'school', body: 'FILE_ONLY_SENTINEL' } }
+    const notice = { source_id: 'n', title: 'Teacher notice', occurred_at: time,
+      payload: { resource_type: 'announcement', body: 'NOTICE_ONLY_SENTINEL' } }
+    native.ctx.tools.execute = async () => ({ results: [{ result: { value: { structuredContent: {
+      value: { source_items: mixed ? [fact, notice] : [fact], cursors: {}, next_offset: null },
+    } } } }] })
+    const result = await generator.generate(inputData)
+    assert.equal(native.creations.length, mixed ? 1 : 0)
+    assert.equal(native.requests.length, mixed ? 1 : 0)
+    for (const request of native.requests) {
+      assert.ok(request.prompt[0].text.includes('NOTICE_ONLY_SENTINEL'))
+      assert.ok(!request.prompt[0].text.includes('FILE_ONLY_SENTINEL'))
+    }
+    assert.ok(result.body.includes('FILE_ONLY_SENTINEL'))
+    if (mixed) assert.ok(result.body.includes('NOTICE_ONLY_SENTINEL'))
+  }
+})
+
+test('all unresolved messages arrive together with only their own material', async t => {
+  const { worker } = await fixture(t), native = nativeContext()
+  const generator = new BriefingGenerator(native.ctx, worker)
+  t.after(() => generator.close())
+  const time = new Date(Date.now() - 1000).toISOString()
+  const notices = Array.from({ length: 24 }, (_, i) => ({
+    source_id: 'n' + i, thread_id: 'shared', title: 'Notice ' + i, occurred_at: time,
+    payload: { resource_type: 'announcement', body: '正文'.repeat(750) + 'END-' + i,
+      prior_submission: 'NEVER_SEND_CONTEXT' },
+  }))
+  native.ctx.tools.execute = async () => ({ results: [{ result: { value: { structuredContent: {
+    value: { source_items: notices, cursors: {}, next_offset: null },
+  } } } }] })
+  native.response(async request => {
+    const prompt = request.prompt[0].text
+    assert.ok(!prompt.includes('NEVER_SEND_CONTEXT'))
+    const rows = JSON.parse(prompt.split('可阅读的原文数据：\n')[1])
+    assert.equal(rows.length, 24)
+    assert.ok(rows.every(row => row.body.endsWith('END-' + row.title.split(' ')[1])))
+    return structured(request)
+  })
+  const result = await generator.generate(input())
+  assert.equal(result.business.snapshot.items.length, 24)
+  assert.equal(native.requests.length, 1)
+})
+
+test('a new plugin can contribute local facts and unresolved text through the existing source contract', async t => {
+  const { worker } = await fixture(t), native = nativeContext()
+  const generator = new BriefingGenerator(native.ctx, worker)
+  t.after(() => generator.close())
+  const time = new Date(Date.now() - 1000).toISOString()
+  const config = { source: 'plugin:library:loans', accountId: 'reader', label: 'Library',
+    tool: 'library_briefing_fetch', method: 'briefing_fetch', arguments: { source_id: 'loans' } }
+  native.ctx.tools.execute = async () => ({ results: [{ result: { value: { source_id: 'loans', account_id: 'reader',
+    next_offset: null, items: [
+      { source_id: '1', title: 'Renewed', occurred_at: time, payload: { briefing_fact: 'RENEWED_LOCALLY' } },
+      { source_id: '2', title: 'Library notice', occurred_at: time, payload: { body: 'Library changes to explain' } },
+    ] } } }] })
+  const result = await generator.generate({ ...input(), sources: [config] })
+  assert.equal(native.requests.length, 1)
+  const prompt = native.requests[0].prompt[0].text
+  assert.ok(!prompt.includes('RENEWED_LOCALLY'))
+  assert.ok(prompt.includes('Library changes to explain'))
+  assert.ok(result.body.includes('RENEWED_LOCALLY'))
+  assert.equal(result.business.snapshot.items.length, 2)
 })

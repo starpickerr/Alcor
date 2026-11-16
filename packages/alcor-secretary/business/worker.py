@@ -270,7 +270,11 @@ class Business:
         from business.briefing.domain.incremental import daily_candidates, commit_daily, collection_stats
         stats = collection_stats()
         candidates = daily_candidates(self.briefing, selected, configurations, detail, window, stats)
-        if detail.get('briefing', {}).get('rule_text') != rules_document(rules):
+        routed = run and run.get('routingVersion') == 1 and not local_only
+        if routed:
+            from business.briefing.domain.routing import routed_draft, routing_rules
+        expected_rules = routing_rules(rules) if routed else rules_document(rules)
+        if detail.get('briefing', {}).get('rule_text') != expected_rules:
             candidates.decisions.clear()
             candidates.reports.clear()
             candidates.previous_reports.clear()
@@ -278,6 +282,9 @@ class Business:
             if local_only:
                 from business.briefing.domain.pipeline import compose_draft
                 draft = compose_draft(list(candidates.rows.values()), rules, record['date'])
+            elif routed:
+                draft = routed_draft(list(candidates.rows.values()), rules, record['date'],
+                                     submissions or [], candidates.decisions)
             else:
                 draft = AgentBriefingGenerator(submissions or [], global_mode=True).generate(
                     list(candidates.rows.values()), rules, briefing_date=record['date'], window_start=start,

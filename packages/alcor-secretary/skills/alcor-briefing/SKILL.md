@@ -5,7 +5,7 @@ description: 生成或更新每日简报，查看简报历史和来源、管理�
 
 # 简报
 
-用户要求今日简报时优先调用 `alcor_generate_briefing({})`。它使用插件当前开启的邮箱/学校账号、本机来源偏好与本次模型，启动独立简报任务，返回 requestId、执行会话 sessionId 和 phase；启动成功不等于简报已生成。不要先自行全量读邮件或课程，再拼成伪造的来源数据。
+用户要求今日简报时优先调用 `alcor_generate_briefing({})`。它使用插件当前开启的邮箱/学校账号、本机来源偏好，启动简报任务，返回 requestId 和 phase；仅有待解读材料时才创建执行会话。所有待解读材料一次提交，各条结论仅引用本条原文；启动成功不等于简报已生成。不要先自行全量读邮件或课程，再拼成伪造的来源数据。
 
 定时任务也通过同一入口读取已开启的外部与本机来源及已保存范围，无需逐次手动授权；定时调用会等待实际保存结果。来源开关、账号停用和范围撤销仍在运行中复核。
 
@@ -28,6 +28,8 @@ phase 为 completed 才能报告已生成；失败或中断时如实说明。用
 ```json
 {"domain":"briefing","method":"list_briefings","arguments":{}}
 ```
+
+列表返回 items、total、next_offset。每页默认 20 条，在 arguments 中传 offset 和 limit（1 至 50）翻页。按 ID 查询详情。
 
 用返回的 briefing id 调用 get_briefing(briefing_id)，list_revisions(briefing_id) 查看版本。需要含补充材料或指定日期时：
 
