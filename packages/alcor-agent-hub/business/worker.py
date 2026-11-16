@@ -43,7 +43,9 @@ def main():
                     'hubCoordinator': True, 'executionTask': args.get('task'), 'executionSandbox': {'mode': 'core', **(args.get('task') or {}), 'outputDirectory': str(root / 'executions')},
                 }})
                 if result['status'] != 'succeeded':
-                    raise ValueError(result.get('error', {}).get('message') or '协作操作未完成。')
+                    detail = result.get('error') or {}
+                    message = detail.get('message') or '协作操作未完成，请先核对任务结果再重试。'
+                    raise ValueError(f"[{detail['code']}] {message}" if detail.get('code') else message)
                 value = result.get('value')
             elif action == 'import_jobs':
                 import_jobs(service.store, payload['jobs']); value = True
@@ -56,7 +58,7 @@ def main():
             response = {'id': request['id'], 'ok': True, 'value': value}
         except Exception as error:
             traceback.print_exc(file=sys.stderr)
-            response = {'id': request['id'], 'ok': False, 'error': str(error)}
+            response = {'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__}
         print(json.dumps(response, ensure_ascii=False), flush=True)
 
 

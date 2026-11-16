@@ -32,6 +32,17 @@ def check_briefing_scroll(page, artifacts):
                 panel.evaluate('(e) => e.scrollTop = 0')
             assert page.locator('body').evaluate('(e) => e.scrollWidth <= e.clientWidth'), 'Horizontal overflow'
             page.screenshot(path=str(artifacts / f'briefing-scroll-{width}.png'), animations='disabled')
+        page.evaluate("""() => {
+          const style = document.createElement('style');
+          style.dataset.scrollFixture = '';
+          style.textContent = '.alcor-briefing-detail > * { display:none !important; }';
+          document.head.append(style);
+        }""")
+        for width, height in [(1440, 1000), (1440, 1400), (980, 1000), (520, 1000)]:
+            page.set_viewport_size({'width': width, 'height': height})
+            bounds, viewport = layout.bounding_box(), page.locator('.alcor-desk').bounding_box()
+            assert bounds['y'] + bounds['height'] >= viewport['y'] + viewport['height'] - 2, ('An empty briefing must fill the page', width, height, bounds, viewport)
+        page.locator('style[data-scroll-fixture]').evaluate('(e) => e.remove()')
         page.set_viewport_size({'width': 1440, 'height': 1000})
         before = layout.bounding_box()['height']
         page.locator('.alcor-briefing-detail').evaluate('''e => {

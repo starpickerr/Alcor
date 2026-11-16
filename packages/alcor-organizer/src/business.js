@@ -7,6 +7,14 @@ import { resolvePrimaryRuntime } from '@deepseek-ai/dsh-tool-workspace-dependenc
 
 const developmentPython = process.platform === 'win32' ? 'python' : 'python3'
 
+function operationMessage(result) {
+  if (['OperationalError', 'DatabaseError', 'IntegrityError', 'ProgrammingError', 'InterfaceError'].includes(result.errorType)) return '[storage_error] 本地数据库操作失败，请检查数据目录权限、磁盘空间和其他实例占用；保留数据库及备份，先核对保存结果，勿重复写入。'
+  if (result.errorType === 'FileNotFoundError') return '[local_path_missing] 插件需要的本地文件或程序不存在，请检查插件安装、数据目录及配置路径。'
+  if (result.errorType === 'OSError') return '[io_error] 插件读写或外部连接失败，请检查磁盘空间、系统目录权限及网络；先核对保存结果，勿重复执行。'
+  return typeof result.error === 'string' && result.error.trim() ? result.error : '[worker_operation_failed] 插件操作失败但未提供原因，请查看插件日志，核对保存结果后再重试。'
+}
+
+
 function pythonOverride(environment) {
   const current = environment.ALCOR_BUSINESS_PYTHON
   const legacy = environment.STELLA_BUSINESS_PYTHON
@@ -31,13 +39,14 @@ export class BusinessWorker {
     this.process = spawn(python, ['-X', 'utf8', '-B', '-u', toNamespacedPath(fileURLToPath(worker)), toNamespacedPath(directory)], { windowsHide:true, stdio: ['pipe', 'pipe', 'pipe'] })
     const failed = error => {
       this.closed = true
-      for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(error) }
+      this.failure ??= error
+      for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(this.failure) }
       this.pending.clear()
     }
-    this.process.on('error', error => failed(new Error('业务服务无法启动，请核对 DSH 运行环境。', { cause: error })))
-    this.process.on('exit', () => failed(new Error('业务服务已停止，执行结果可能尚未返回，请刷新核对。')))
+    this.process.on('error', error => failed(new Error(`[worker_start_failed] 业务服务无法启动（${error.code === 'ENOENT' ? 'Python 不存在' : error.code === 'EACCES' ? '系统拒绝执行 Python' : '运行环境异常'}），请修复 DSH 运行环境或显式配置的 Python。`, { cause: error })))
+    this.process.on('exit', (code, signal) => failed(new Error(`[worker_stopped] 业务服务已停止（${signal || code}），执行结果可能尚未返回，请刷新核对保存结果后重启插件，避免重复写入。`)))
     this.process.stderr.on('data', () => diagnostic('业务服务操作失败，请查看返回的具体原因。'))
-    this.process.stdin.on('error', error => failed(error))
+    this.process.stdin.on('error', () => failed(new Error('[worker_write_failed] 无法向业务服务发送请求，请刷新核对结果后重启插件，避免重复写入。')))
     createInterface({ input: this.process.stdout }).on('line', line => {
       try {
         const result = JSON.parse(line)
@@ -53,8 +62,8 @@ export class BusinessWorker {
         this.pending.delete(result.id)
         clearTimeout(pending.timeout)
         if (result.ok) pending.resolve(result.value)
-        else { const error = new Error(result.error); error.name = result.errorType || 'Error'; pending.reject(error) }
-      } catch (error) { failed(new Error('业务服务响应无效。', { cause: error })) }
+        else { const error = new Error(operationMessage(result)); error.name = result.errorType || 'Error'; pending.reject(error) }
+      } catch (error) { failed(new Error('[worker_protocol_error] 业务服务返回了无效响应，请核对插件版本和运行环境；先刷新核对保存结果，避免重复写入。', { cause: error })); this.process.kill('SIGTERM') }
     })
   }
 
@@ -63,16 +72,16 @@ export class BusinessWorker {
   }
 
   call(action, input = {}) {
-    if (this.closed) return Promise.reject(new Error('业务服务已停止。'))
+    if (this.closed) return Promise.reject(this.failure || new Error('[worker_stopped] 业务服务已停止，请重启插件后再操作。'))
     return new Promise((resolve, reject) => {
       const id = randomUUID()
       const timeout = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error('业务操作超时，结果可能已保存，请刷新核对后重试。'))
+        reject(new Error('[worker_timeout] 业务操作超时，结果可能已保存，请刷新核对后重试。'))
       }, action === 'generated_briefing' ? 180000 : 200000)
       this.pending.set(id, { resolve, reject, timeout })
       this.process.stdin.write(JSON.stringify({ id, action, input }) + '\n', error => {
-        if (error) { clearTimeout(timeout); this.pending.delete(id); reject(error) }
+        if (error) { clearTimeout(timeout); this.pending.delete(id); reject(new Error('[worker_write_failed] 业务请求发送失败，请刷新核对结果后重启插件，避免重复写入。')) }
       })
     })
   }

@@ -1,0 +1,23 @@
+/* Native sidebar keeps the workspace/settings seats; Alcor retains its original navigation. */
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) {
+  --dsh-sidebar-inline-padding:8px; --dsh-sidebar-row-padding:12px; --dsh-sidebar-label-gap:6px; --dsh-sidebar-paint-inset:3px;
+  position:relative; padding:18px 12px 10px; font-size:14px; line-height:22px;
+}
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_topStrip'] { height:0; margin:0; overflow:visible; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_logoRow'] { flex-shrink:0; height:36px; min-height:36px; margin:0 8px 22px; padding:0; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_brandMark'] { width:34px; height:34px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions) [class$='_brand'] { min-height:34px; overflow:visible; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_brandIdentity'] { gap:10px; height:34px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_brandName'] { font-size:20px; font-weight:600; letter-spacing:-.5px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [data-sidebar-toggle] { position:absolute; right:20px; top:22px; left:auto; width:28px; height:28px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_newSessionRow'], .alcor-sidebar-actions { display:contents; }
+.alcor-sidebar-actions > nav { gap:20px; }
+.alcor-sidebar-actions .alcor-sidebar-chat { margin:0 3px 10px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_panelList'] { display:none; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_scrollRegion'] { min-height:100px; margin-top:24px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_footArea'] { padding-top:12px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) { padding:18px 10px 6px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) > [class$='_logoRow'] { margin:0 0 12px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) > [class$='_scrollRegion'] { min-height:0; margin-top:12px; }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) [data-sidebar-toggle] { position:static; }
+[data-windows-titlebar] div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [data-sidebar-toggle] { position:fixed; left:12px; right:auto; top:calc((var(--dsh-windows-titlebar-height) - 28px) / 2); -webkit-app-region:no-drag; }

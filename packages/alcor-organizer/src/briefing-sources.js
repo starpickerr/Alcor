@@ -22,7 +22,14 @@ async function execute(ctx, name, args, signal) {
   const batch = await ctx.tools.execute({ signal, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })
   if(!allowedSource(ctx,name))throw Error('来源分配已变化。')
   const result = batch.results[0]?.result
-  if (!result || result.isError) throw new Error(result?.error?.message || '来源插件读取失败，请检查连接后重试。')
+  if (!result || result.isError) {
+    let detail = result?.error?.message || '来源插件未返回结果，请检查插件连接与状态。'
+    try {
+      const parsed = JSON.parse(detail)
+      if (typeof parsed.error_code === 'string' && typeof parsed.message === 'string') detail = `[${parsed.error_code}] ${parsed.message}`
+    } catch { /* Host errors can also be plain text. */ }
+    throw new Error(`${name}：${detail}`)
+  }
   return result.value?.structuredContent?.value ?? result.value
 }
 
@@ -37,7 +44,7 @@ export async function discoverBriefingSources(ctx) {
   try {
     const school = permits(selectedScope(ctx,'@alcor/elearning'),'alcor') && await ctx.get('alcorElearning')?.briefingSource()
     if (school && names.has(school.tool)) sources.push(school)
-  } catch { errors.push('学校来源暂时不可用，请检查连接。') }
+  } catch (error) { errors.push(`学校来源不可用：${error.message || '未返回具体原因，请检查插件连接。'}`) }
   for (const name of names) {
     const native = pluginPrefix.exec(name)
     if (native && names.has(native[1] + '_briefing_fetch')) {
@@ -45,7 +52,7 @@ export async function discoverBriefingSources(ctx) {
         const value = await execute(ctx, name, {}, AbortSignal.timeout(15000))
         const rows = pluginSources.parse(value?.sources)
         for (const row of rows) sources.push({ source: `plugin:${native[1]}:${row.id}`, accountId: row.account_id, label: row.label, tool: native[1] + '_briefing_fetch', method: 'briefing_fetch', arguments: { source_id: row.id } })
-      } catch { errors.push(`${native[1]} 的简报来源目录不可用，请检查插件。`) }
+      } catch (error) { errors.push(`${native[1]} 的简报来源目录不可用：${error.message || '未返回具体原因，请检查插件。'}`) }
       continue
     }
     if (!/^mcp__[A-Za-z0-9_-]+__list_sources$/.test(name)) continue
@@ -57,7 +64,7 @@ export async function discoverBriefingSources(ctx) {
       for (const row of rows) if (row.source === 'email' && typeof row.account_id === 'string' && typeof row.mailbox_id === 'string') {
         sources.push({ source: 'email', accountId: row.account_id, label: String(row.name || '邮箱'), tool: fetch, method: 'fetch_messages', arguments: { account_id: row.mailbox_id } })
       }
-    } catch { errors.push('邮件来源目录暂时不可用，请检查连接后刷新。') }
+    } catch (error) { errors.push(`邮件来源目录不可用：${error.message || '未返回具体原因，请检查连接后刷新。'}`) }
   }
   const connections = []
   for (const [service, type, name, label] of [

@@ -5,23 +5,23 @@
       "module": "elearning_mcp",
       "package": "alcor-elearning",
       "binary": "elearning-mcp",
-      "version": "1.0.8",
-      "sourceSha256": "972b29ed74fe99628a650ba71a34bba1eefb554a7bced06fe4c5f4001c56c7d6",
+      "version": "1.0.11",
+      "sourceSha256": "39dcdb6e93a88ca1ee918e3ae10fef11ca620231c8299fabd1ed8891ac41b6bf",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3",
         "playwright": "1.52.0"
       },
-      "sourceRevision": "f82d13de57518fac015903a45a3550267a83c279"
+      "sourceRevision": "1a39803d10face2ad169859f39bcc02dfb83b304"
     },
     {
       "repo": "dsh-email",
       "module": "email_mcp",
       "package": "alcor-mail",
       "binary": "email-mcp",
-      "version": "1.0.6",
-      "sourceRevision": "7bb82f44f8c16d9b5494ed2748994a3ded4d98c2",
-      "sourceSha256": "7409f8d2100f7bd8bcb99bced4ea92960487efc4c71202ad2bc7a8b4c1a0fa70",
+      "version": "1.0.7",
+      "sourceRevision": "fd0bd2b087e17e363c8bbc4359ad17bbf4e18367",
+      "sourceSha256": "baa326c520685105e561b46bc83d1552c99399f3b732776ec978ed7b8b3d62f8",
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3"

@@ -1,6 +1,6 @@
 # Apple 同步
 
-当前包为 `@alcor/apple-sync@0.1.20`，增加精确 `0.2.2-rc.3` 支持；本轮核对 macOS Apple Silicon 上的启动、重启和合成数据升级，未运行真实 Apple 账号同步。
+当前包为 `@alcor/apple-sync@0.1.21`，沿用精确 `0.2.2-rc.3` 支持，并改进共享业务进程的错误诊断。此前 macOS Apple Silicon 的启动、重启和合成数据升级已核对；本轮未运行真实 Apple 账号同步。
 
 此前迁移记录：本机迁入独立 DSH 原生插件 `@alcor/apple-sync@0.1.17`，与 `@alcor/secretary@0.1.60` 配合。真实账号的系统授权和删除未在这次迁移中测试。此前版本支持官方 DSH 0.2.2-alpha.3 / 0.2.2-rc.1、macOS 和公开 EventKit。安装、查看状态不请求 Apple 权限；首次点击同步由独立的 Alcor Apple Sync.app 请求完整访问，不修改官方 DSH 的签名。helper 使用新身份 `com.starpickerr.alcor.calendarbridge`，不继承或迁移旧 Stella helper 的系统授权；出现新的日历或提醒事项授权提示时，由用户确认。旧 helper 和回滚包保留。
 

@@ -51,3 +51,18 @@ test('collapsed plugin controls retain accessible names and an empty list adds n
   assert.equal(elements(tree,'span').length,0)
   assert.equal(PluginPanels({source:{...source,list:()=>[]},wide:true,navigate(){}}),null)
 })
+
+
+test('shared native extension reuses the original Alcor navigation and does not duplicate native workspace seats',()=>{
+  const props={nativeShell:true,collapsed:false,drawer:false,navigate(){},startSession(){},toggleSidebar(){},
+    usePanelInfo:fn=>fn({activePanelId:'alcor-tasks'}),useRemoteAccess:()=>true,
+    renderSlot(){throw Error('native child slots must stay with their owner')},pluginPanels:source,
+    hubForm:{subscribe:()=>()=>{},getSnapshot:()=>({status:'ready',value:{productScope:'alcor'}})},t:value=>value}
+  const tree=SecretarySidebar(props)
+  assert.equal(tree.props.className,'alcor-sidebar-actions')
+  assert(elements(tree,'button').some(button=>button.props['aria-label']==='事务'))
+  assert(elements(tree,'button').some(button=>button.props['aria-label']==='AgentHub'))
+  assert.deepEqual(elements(tree,'div').filter(row=>row.props?.role==='group').map(row=>row.props['aria-label']),['应用','系统'])
+  assert.equal(elements(tree,'aside').length,0)
+  assert.equal(elements(tree,'footer').length,0)
+})
