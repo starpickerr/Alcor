@@ -284,7 +284,7 @@ class Business:
                 draft = compose_draft(list(candidates.rows.values()), rules, record['date'])
             elif routed:
                 draft = routed_draft(list(candidates.rows.values()), rules, record['date'],
-                                     submissions or [], candidates.decisions)
+                                     submissions or [], candidates.decisions, stamp)
             else:
                 draft = AgentBriefingGenerator(submissions or [], global_mode=True).generate(
                     list(candidates.rows.values()), rules, briefing_date=record['date'], window_start=start,

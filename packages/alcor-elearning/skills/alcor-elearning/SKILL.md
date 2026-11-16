@@ -17,6 +17,8 @@ description: 查询 eLearning 课程、作业、公告、成绩和文件；下�
 {"since":"2026-11-05T20:00:00+08:00","until":"2026-11-06T20:00:00+08:00","course_ids":["42"],"offset":0,"limit":20}
 ```
 
+需要特定类型时传 resource_types，可选 announcement、assignment、quiz、grade（单项成绩）、course_grade（课程总评）、file。用户只要分数时先用 ["grade"]，明确要课程总评时再加入 course_grade；不要先读取全部类型再交给模型逐条挑选。得分 0 是有效成绩，score 为 null 表示未公布。
+
 since/until 使用带时区 ISO 8601；没有要求历史时采用有限的近期窗口。课程显式限定时必须传 course_ids。单页 limit 最大 50；按 next_offset 翻页，null 结束。fetch 返回 source_items、total、errors 和 status；partial 不能报告全部成功。日常列表提供摘要、课程与条目标识、时间和状态。如需一条完整原文，沿用相同筛选条件和时间窗口，以该条的 offset 和 limit: 1 重读，并核对 source_id。日常查询不传 cursors，简报由宿主管理游标。
 
 `mcp__elearning__list_files` 列文件目录，可筛选课程、file_ids 和格式：

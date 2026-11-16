@@ -1,10 +1,20 @@
 """Resolve supported facts before opening a model session."""
 import re
 from dataclasses import replace
+from zoneinfo import ZoneInfo
 
 from .generator import (NeedModel, SelectedCandidate, _sort_key, briefing_title, decision_schema,
                         report_body, rules_document, source_entry, validate_decisions)
 from .instructions import rule_document
+from .window import instant
+
+ASSIGNMENT_ONLY_RULE = (
+    '## eLearning 作业入选条件\n'
+    '只收录平台列为作业（assignment）、尚未提交且仍在有效截止时间内的事项。遇到延期，以该作业最新有效的截止时间为准。'
+    '已交、已过有效截止时间的作业，以及公告、成绩和独立课程文件，均不入选。提交状态或截止时间不明时，不推定为符合条件。\n'
+    '每份入选作业单列一张卡。同一作业的发布、催交和延期合在该卡。不同作业分别写。写清课程、作业名、提交状态和截止时间。'
+    '若尚未开放，写明何时可以开始。指定了提交入口、必交材料或特殊提交方式时，写出会影响提交的细节。'
+)
 
 
 def routing_rules(rules):
@@ -36,10 +46,32 @@ def local_record_text(item):
     return '\n'.join(parts)
 
 
-def local_result(item, email, rules):
+def assignment_only_policy(rules):
+    """Recognize the saved explicit eLearning rule; edits fall back to model review."""
+    return any(rule.enabled and rule.source == 'elearning' and
+               rule.text.strip() == ASSIGNMENT_ONLY_RULE for rule in rules)
+
+
+def local_result(item, email, rules, now):
     """Return a final (decision, content), or None when interpretation is needed."""
     data = item.payload
     body = str(data.get('body') or item.snippet).strip()
+    if item.source == 'elearning' and assignment_only_policy(rules):
+        if data.get('resource_type') != 'assignment' or data.get('submission_status') != 'unsubmitted':
+            return {'id': item.id, 'selected': False, 'reason': '不符合 eLearning 作业入选条件'}, ''
+        try:
+            due = instant(data.get('due_at'))
+        except (TypeError, ValueError):
+            return {'id': item.id, 'selected': False, 'reason': '截止时间不明确'}, ''
+        if due <= instant(now):
+            return {'id': item.id, 'selected': False, 'reason': '有效截止时间已过'}, ''
+        if not body or not data.get('course_id'):
+            return None
+        deadline = due.astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M')
+        summary = f'尚未提交，截止北京时间 {deadline}。'
+        return {'id': item.id, 'selected': True, 'section': 'action', 'reason': '未提交且未过截止时间',
+                'score': 80, 'category': 'needs_action', 'information_type': 'assignment',
+                'summary': summary}, body
     include = exclude = False
     for rule in rules:
         if not rule.enabled or rule.source not in ('*', item.source):
@@ -96,7 +128,7 @@ def local_result(item, email, rules):
             'summary': body.splitlines()[0]}, body
 
 
-def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions):
+def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions, now):
     """One local pass, up to one model submission, one source-bound result per ID."""
     rules_text = routing_rules(rules)
     results = {}
@@ -105,7 +137,7 @@ def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions):
     for item, email in rows:
         entry = source_entry(item, email)
         entries.append(entry)
-        local = local_result(item, email, rules)
+        local = local_result(item, email, rules, now)
         if local is not None:
             results[item.id] = local
             continue
