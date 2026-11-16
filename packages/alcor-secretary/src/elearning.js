@@ -1,3 +1,4 @@
+import { summarizeCoursePage } from './elearning-list.js'
 import { createHash } from 'node:crypto'
 import { Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -51,6 +52,7 @@ export default class Elearning extends Service {
         await session.commit({ kind: 'grant', payload: accountSchema.parse({ username, password }) })
       },
     })
+    this.ctx.on('tools/post-execute', summarizeCoursePage)
     this.ctx.on('tools/pre-execute', async (execution, next) => {
       const decision = await next()
       if (!execution.name.startsWith('mcp__elearning__')) return decision

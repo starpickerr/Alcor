@@ -62,7 +62,7 @@ test('installed business tools and guides serve standard and Alcor chats without
     await ctx.waterfall('agent/pre-step', { agent, signal: AbortSignal.timeout(5000), messages: [{ source: { kind: 'user' }, content: [] }] }, async () => ({ kind: 'continue', messages: [] }))
     const result = await call(agent, 'alcor_business', { domain: 'tasks', method: 'list_todos' })
     assert.equal(result.isError, false, JSON.stringify(result))
-    assert.equal(result.value.result[0].id, 'synthetic-task')
+    assert.deepEqual(result.value.result, { items: [{ id: 'synthetic-task', title: 'Synthetic task' }], total: 1, next_offset: null })
   }
   const child = { ctx, session: { preset: 'standard', header: { origin: 'subagent', parentSession: 'parent' }, seq: 0, surface: { nodes: [] } } }
   await ctx.waterfall('agent/pre-step', { agent: child, signal: AbortSignal.timeout(5000), messages: [{ source: { kind: 'user' }, content: [] }] }, async () => ({ kind: 'continue', messages: [] }))

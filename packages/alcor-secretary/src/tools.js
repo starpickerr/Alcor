@@ -1,3 +1,4 @@
+import { businessList } from './list-results.js'
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
 import { secretaryPersona } from './persona.js'
 import { createHash, randomUUID } from 'node:crypto'
@@ -213,6 +214,9 @@ export function apply(ctx) {
             const hash = createHash('sha256').update(requestId ?? execution.callId ?? randomUUID()).digest('hex')
             args = { notes: '', ...args, parentSessionId: execution.agent?.session?.id, requestId: `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}` }
           }
+        }
+        if ((domain === 'tasks' && method === 'list_todos') || (domain === 'briefing' && method === 'list_briefings')) {
+          return { result: await businessList(domain, method, args, query => ctx.alcorOrganizer.business(query)) }
         }
         return { result: await ctx.alcorOrganizer.business({ domain, method, arguments: args, requestId: domain === 'briefing' && method === 'generate' ? args.requestId : requestId ?? execution.callId }) }
       },
