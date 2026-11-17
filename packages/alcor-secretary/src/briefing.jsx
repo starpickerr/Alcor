@@ -43,7 +43,7 @@ function BriefingRules({ api }) {
     const value = await run(selected.id ? 'update_rule' : 'create_rule', { ...(selected.id ? { rule_id: selected.id } : {}), payload: { text, enabled, ...(selected.id ? {} : { source: '*' }) } })
     if (value) { setSelected(value); setEditing(false) }
   }
-  return <section className="alcor-rule-section">
+  return <section className="alcor-rule-section" id="alcor-briefing-extra-requirements">
     <div className="alcor-rule-heading"><h2>补充要求</h2><p className="alcor-muted">用于邮件、需要理解正文的通知及写作偏好。</p></div>
     <div className="alcor-rule-toolbar"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新要求" title="刷新要求" disabled={loading || busy} onClick={async () => { setLoading(true); setError(''); try { await load() } catch (error) { setError(error.message) } finally { setLoading(false) } }}><IconRefreshOutlineRegular size={16} /></Button><Button variant="outline" size="sm" onClick={() => open({ text: '', enabled: true })}><IconPlusOutlineRegular size={16} />新增要求</Button></div>
     {loading ? <Notice role="status">正在读取补充要求…</Notice> : rules.length ? <div className="alcor-rule-cards">{rules.map(rule => { const description = summary(rule.text.split('\n').slice(1).join('\n')); return <div className="alcor-rule-card" key={rule.id}><button type="button" className="alcor-rule-card-open" aria-label={`查看要求：${title(rule)}`} onClick={() => open(rule)}>

@@ -4,12 +4,12 @@ import { BriefingToggle } from './briefing-toggle.jsx'
 import { Notice } from './notice.jsx'
 
 const options = [
-  ['announcement', '公告', 'include', '完整收录公告正文、图片引用及附件'],
-  ['assignment', '作业', 'pending', '尚未提交且未过截止时间'],
-  ['quiz', '测验', 'pending', '尚未完成且未过截止时间'],
-  ['grade', '单项成绩', 'published', '已公布的作业、测验与考试成绩，含改分和零分'],
+  ['announcement', '公告', 'include', '全部新公告，保留正文、图片和附件'],
+  ['assignment', '作业', 'pending', '仅未提交且未过期的作业'],
+  ['quiz', '测验', 'pending', '仅未完成且未过期的测验'],
+  ['grade', '单项成绩', 'published', '全部已公布成绩，包括零分和改分'],
   ['course_grade', '课程总评', 'include', '课程总分、加权总评与评分组小计'],
-  ['file', '课程文件', 'grouped', '将课程文件更新汇总为一张卡片'],
+  ['file', '课程文件', 'grouped', '所有课程文件更新汇总为一张卡片'],
 ]
 
 export function BriefingPolicy({ api }) {
@@ -27,7 +27,7 @@ export function BriefingPolicy({ api }) {
   useEffect(() => { read().catch(error => setError(error.message)) }, [api])
   const changed = policy && Object.fromEntries(Object.entries(policy).filter(([key, value]) => value !== saved[key]))
   return <section className="alcor-briefing-policy" aria-labelledby="alcor-briefing-policy-heading">
-    <div className="alcor-briefing-policy-heading"><div><h2 id="alcor-briefing-policy-heading">eLearning</h2><p className="alcor-muted">选择简报要收录的内容。也可以在对话中让 Agent 调整。</p></div><Button variant="ghost" aria-label="刷新内容偏好" disabled={busy || !!Object.keys(changed || {}).length} onClick={() => { setError(''); read().catch(error => setError(error.message)) }}><IconRefreshOutlineRegular size={16} /></Button></div>
+    <div className="alcor-briefing-policy-heading"><div><h2 id="alcor-briefing-policy-heading">eLearning</h2><p className="alcor-muted">打开想看的内容。需要调整条件时，可以直接在对话中说明。</p></div><Button variant="ghost" aria-label="刷新内容偏好" disabled={busy || !!Object.keys(changed || {}).length} onClick={() => { setError(''); read().catch(error => setError(error.message)) }}><IconRefreshOutlineRegular size={16} /></Button></div>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
     {!policy ? <Button variant="ghost" disabled={busy} onClick={() => { setError(''); read().catch(error => setError(error.message)) }}>{error ? '重新读取设置' : '正在读取…'}</Button> : <form onSubmit={async event => {
       event.preventDefault(); setBusy(true); setError(''); setMessage('')
@@ -39,10 +39,8 @@ export function BriefingPolicy({ api }) {
       <div className="alcor-briefing-policy-list">{options.map(([key, label, mode, description]) => {
         const value = policy[key] || 'model', enabled = value !== 'exclude'
         return <div className="alcor-briefing-policy-row" key={key}>
-          <div><strong>{label}</strong><p>{description}</p></div>
-          {enabled && <select aria-label={`${label}收录方式`} disabled={busy} value={value} onChange={event => { setPolicy({ ...policy, [key]: event.target.value }); setMessage('') }}>
-            <option value={mode}>按上述条件收录</option><option value="model">按正文和补充要求判断</option>
-          </select>}
+          <div><strong>{label}</strong>{value === 'model' ? <p>按补充要求筛选 · <a href="#alcor-briefing-extra-requirements" aria-label={`查看${label}补充要求`}>查看要求</a></p> : <p>{description}</p>}</div>
+          {enabled && value === 'model' && <Button variant="ghost" size="sm" aria-label={`恢复${label}默认条件`} disabled={busy} onClick={() => { setPolicy({ ...policy, [key]: mode }); setMessage('') }}>恢复默认</Button>}
           <BriefingToggle label={`收录${label}`} checked={enabled} disabled={busy} onChange={enabled => { setPolicy({ ...policy, [key]: enabled ? mode : 'exclude' }); setMessage('') }} />
         </div>
       })}</div>

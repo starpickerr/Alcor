@@ -22,6 +22,8 @@ exports.registerAutomationUi = function(ctx) {
   },ScheduleManager),'alcor: automation view');
 };
 `
+      if (contents.split('props.scopeLabel &&').length !== 2) throw Error('Unexpected automation scope label')
+      contents = contents.replace('props.scopeLabel &&', '!props.hideScopeLabel && props.scopeLabel &&')
       contents = "const {useAutomationAnchor} = require('./packages/alcor-secretary/src/automation-anchor.jsx');\n" + contents.replaceAll('_deepseek_ai_dsh_client_ui_primitives.useAnchoredPosition', 'useAutomationAnchor')
       // Keep the retained view's CSS separate from the independently updated native view.
       contents = contents.replaceAll('@deepseek-ai/dsh-client-ui-schedule/', '@alcor/automation-ui/')

@@ -720,11 +720,10 @@
 .alcor-briefing-policy-row > div { flex:1; min-width:0; }
 .alcor-briefing-policy-row strong { font-size:14px; font-weight:500; }
 .alcor-briefing-policy-row p { margin:6px 0 0; font-size:12px; line-height:1.6; color:var(--dsw-alias-label-secondary); }
-.alcor-briefing-policy-row select { width:210px; flex-shrink:0; font-size:12px; }
 .alcor-briefing-policy-footer { display:flex; align-items:center; justify-content:flex-end; gap:16px; padding:16px 0; }
 .alcor-briefing-policy-footer > span { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .alcor-briefing-task-settings > section + section { margin-top:32px; padding-top:24px; border-top:1px solid var(--dsw-alias-border-l3); }
-@media(max-width:600px) { .alcor-briefing-policy-row { flex-wrap:wrap; gap:12px; padding:16px; } .alcor-briefing-policy-row > div { flex-basis:calc(100% - 70px); order:0; } .alcor-briefing-policy-row > button { order:1; } .alcor-briefing-policy-row select { order:2; width:100%; } }
+@media(max-width:600px) { .alcor-briefing-policy-row { flex-wrap:wrap; gap:12px; padding:16px; } .alcor-briefing-policy-row > div { flex-basis:calc(100% - 70px); order:0; } .alcor-briefing-policy-row > button { order:1; } }
 
 .alcor-briefing-policy-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .alcor-briefing-policy-heading h2 { margin:0 0 8px; }
