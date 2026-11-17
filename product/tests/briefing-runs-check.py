@@ -121,6 +121,8 @@ def main():
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
                 page.get_by_role('button',name='返回简报').click()
                 page.get_by_role('button', name='生成今日简报', exact=True).click()
+                expect(page.get_by_role('region', name='简报生成进度')).to_be_visible()
+                expect(page.locator('.alcor-briefing-detail')).to_be_empty()
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
                 expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
                 deadline = time.monotonic() + 35
@@ -141,7 +143,8 @@ def main():
                 page.get_by_role('heading', name='简报', exact=True).wait_for(timeout=30000)
                 progress = page.get_by_role('region', name='简报生成进度', exact=True)
                 expect(progress).to_be_visible()
-                expect(page.get_by_role('button', name='正在更新…', exact=True)).to_be_disabled()
+                expect(page.get_by_role('button', name='正在生成…', exact=True)).to_be_disabled()
+                expect(page.locator('.alcor-briefing-detail')).to_be_empty()
                 expect(page.get_by_role('button', name='查看执行会话 ↗', exact=True)).not_to_be_visible()
                 progress.get_by_role('button', name='查看生成进度', exact=True).click()
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
