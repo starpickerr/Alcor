@@ -53,7 +53,7 @@ export function classifyCapability(name, args = {}) {
   if (name === 'alcor_overview') return { kind: 'overview' }
   if (['alcor_import_bills', 'alcor_import_dates', 'alcor_export_bills'].includes(name)) return { kind: 'file' }
   if (name === 'alcor_generate_briefing') return { kind: 'briefing' }
-  if (name === 'alcor_review_tasks') return { kind: 'read' }
+  if (['alcor_review_tasks', 'alcor_read_logs'].includes(name)) return { kind: 'read' }
   if (name !== 'alcor_business' || !args || typeof args !== 'object' || Array.isArray(args)) return { kind: 'unclassified' }
   if (typeof args.domain !== 'string' || typeof args.method !== 'string') return { kind: 'unclassified' }
   if (args.domain === 'automation' && args.method === 'edit') {

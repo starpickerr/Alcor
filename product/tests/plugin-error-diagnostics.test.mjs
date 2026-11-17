@@ -19,6 +19,40 @@ test('both worker boundaries retain startup cause after process error and reject
   }
 })
 
+test('business worker diagnostics identify failed requests without logging their contents', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'alcor-safe-runtime-logs-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const messages = []
+  const worker = new BusinessWorker(root, { worker: new URL('./fixtures/business-diagnostics-worker.py', import.meta.url),
+    diagnostic: (message, level) => messages.push({ message, level }) })
+  t.after(() => worker.close())
+  await assert.rejects(worker.call('invoke', { domain: 'bills', method: 'list_ledger', arguments: { private: 'must-not-appear' } }))
+  assert(messages.some(row => row.level === 'info' && /已启动/.test(row.message)))
+  assert(messages.some(row => row.level === 'error' && /bills.list_ledger.*请求 [a-f0-9-]{36}/.test(row.message)))
+  assert(!JSON.stringify(messages).includes('must-not-appear'))
+  assert(!JSON.stringify(messages).includes('private-server-secret'))
+})
+
+test('successful worker operations log their identity and duration without inputs or results', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'alcor-success-logs-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const script = join(root, 'worker.py')
+  await writeFile(script, 'import sys,json\nfor line in sys.stdin:\n request=json.loads(line)\n print(json.dumps({"id":request["id"],"ok":True,"value":{"private":"private-result"}}),flush=True)\n')
+  const messages = []
+  const worker = new BusinessWorker(root, { worker: new URL('file://' + script), diagnostic: (message, level, domain) => messages.push({ message, level, domain }) })
+  t.after(() => worker.close())
+  assert.deepEqual(await worker.call('invoke', { domain: 'tasks', method: 'create_todo', arguments: { title: 'private-input' } }), { private: 'private-result' })
+  await worker.call('apple_peer', { domain: 'calendar', method: 'get_event', args: ['private-input'] })
+  await worker.call('due_reminders')
+  assert(messages.some(row => row.level === 'info' && /tasks.create_todo 执行成功 · 耗时 \d+ ms · 请求 [a-f0-9-]{36}/.test(row.message)))
+  assert(messages.some(row => row.level === 'debug' && /calendar.get_event 执行成功/.test(row.message)))
+  assert.equal(messages.find(row => /tasks.create_todo/.test(row.message)).domain, 'tasks')
+  assert.equal(messages.find(row => /calendar.get_event/.test(row.message)).domain, 'calendar')
+  assert.equal(messages.find(row => /due_reminders/.test(row.message)).level, 'debug')
+  assert(!JSON.stringify(messages).includes('private-input'))
+  assert(!JSON.stringify(messages).includes('private-result'))
+})
+
 test('both worker boundaries explain blank replies, protocol failures and uncertain termination', { skip: process.platform === 'win32' }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-worker-replies-'))
   t.after(() => rm(root, { recursive: true, force: true }))

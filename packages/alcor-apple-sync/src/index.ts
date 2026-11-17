@@ -53,7 +53,7 @@ export default class AppleSync extends TypertRemoteService {
         : request?.route === 'approved_delete_prepare' ? this.approvedDeletePrepare(request)
         : request?.route === 'approved_delete_continue' ? this.continueDelete(request)
         : request?.route === 'approved_delete_owner' ? this.approvedDeleteOwner(request) : this.ctx.alcorOrganizer.applePeer(request),
-      diagnostic: message => this.ctx.logger.warn(message),
+      diagnostic: (message, level = 'warn') => this.ctx.logger[level](message),
     })
     this.ctx.effect(() => () => { this.active = false; this.preparedExports.clear(); this.runningExports.clear(); this.itemRestores.clear(); this.preparingDeletes.clear(); this.preparedDeletes.clear(); this.runningDeletes.clear(); this.rebuildPage.close(); this.worker.close() })
     await this.worker.call('initialize', { legacy_directory: join(profile, 'alcor', 'business') })

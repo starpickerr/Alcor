@@ -2,7 +2,7 @@ import {sharedWorkspaceContext} from './shared-workspace.js'
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
@@ -38,7 +38,7 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
   const applications = [...applicationViews]
   const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
   if(applicationEnvironment() && hub.status==='ready' || ['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
-  const system = []
+  const system = [{ id: 'alcor-logs', label: '日志', icon: IconChecklistOutlineRegular }]
   if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
   const sidebar = useRef()
