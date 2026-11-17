@@ -52,7 +52,7 @@ export default class Organizer extends TypertRemoteService {
     await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(spec)
     const profile = this.ctx.get('profileContext')
-    this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business'), { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
+    this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business'), { python: await resolveBusinessPython(), diagnostic: (message, level = 'warn', domain) => this.ctx.logger(domain ? `alcor-${domain}` : 'alcor-organizer')[level](message) })
     try { await this.businessWorker.call('migrate', { records: [...this.domain.table('records').entries()].map(([, value]) => value) }) }
     catch (error) { await this.businessWorker.close(); await this.domain.close(); throw error }
     this.ctx.inject(['agentHub'], ctx => { void ctx.agentHub.importLegacyJobs([...this.domain.table('jobs').entries()].map(([,value])=>value)).catch(error=>this.ctx.logger.warn('旧协作记录导入失败：'+error.message)) })

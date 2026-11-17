@@ -16,12 +16,14 @@ import { registerAutomationUi } from 'alcor:automation-ui'
 import { installPresetFilter } from './session-presets.js'
 import { createSpaceNavigation } from './space-navigation.js'
 import { SpacePreferences } from './space-preferences.jsx'
+import { RuntimeLogsPage } from './logs.jsx'
+import logStyle from './logs.css'
 import deskBaseStyle from './desk.css'
 import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import connectionStyle from '../../alcor-plugin-info/src/connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle + sharedSidebarStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle + sharedSidebarStyle + logStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
 import { Button, Menu, MenuItemButton, FishLogo, IconPanelLeftOutlineRegular, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -129,6 +131,7 @@ export async function apply(ctx) {
       }}),
     }, BriefingPluginReturn))
     const preferences = () => <div className="alcor-settings-content"><SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} /></div>
+    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-logs', inject: () => ({ api: ctx.remote.alcorSecretary }) }, RuntimeLogsPage))
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(shared ? sharedPanel(panel) : canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
     for (const panel of [...new Set([...legacyPanelIds, ...deskViews.map(view => view.id)])].filter(key => canonicalPanel(key) !== 'alcor-schedules')) ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: panel, inject: () => ({
