@@ -25,7 +25,7 @@ class AdapterUnavailable(RuntimeError):
     """Todo/calendar adapters are host-side; the plugin worker cannot reach them."""
 
 
-DEFAULT_PREFERENCES = {'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': [], 'task_prompt': '', 'task_target': 'new', 'task_workspace_id': ''}
+DEFAULT_PREFERENCES = {'elearning_policy': {}, 'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': [], 'task_prompt': '', 'task_target': 'new', 'task_workspace_id': ''}
 
 
 def _now():
@@ -221,6 +221,9 @@ class BriefingActions:
                             ZoneInfo(zone)
                         except (ValueError,KeyError) as error:
                             raise ValueError('无效的简报时区。') from error
+                if 'elearning_policy' in payload:
+                    from .routing import validate_policy
+                    validate_policy(payload['elearning_policy'])
                 current.update(payload)
                 db.execute('INSERT OR REPLACE INTO briefing_preferences VALUES (1,?)', (_json(current),))
             return current

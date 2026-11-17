@@ -1,5 +1,6 @@
 """Resolve supported facts before opening a model session."""
 import re
+import json
 from dataclasses import replace
 from zoneinfo import ZoneInfo
 
@@ -17,9 +18,78 @@ ASSIGNMENT_ONLY_RULE = (
 )
 
 
-def routing_rules(rules):
-    return rules_document(rules).replace("- 合并同一邮件线程中的重复信息，保留关键变化。",
+POLICY_OPTIONS = {
+    'assignment': {'pending', 'model', 'exclude'},
+    'grade': {'published', 'model', 'exclude'},
+    'course_grade': {'include', 'model', 'exclude'},
+}
+
+
+def validate_policy(policy):
+    if not isinstance(policy, dict) or set(policy) - POLICY_OPTIONS.keys():
+        raise ValueError('无效的 eLearning 收录设置。')
+    if any(not isinstance(value, str) or value not in POLICY_OPTIONS[key] for key, value in policy.items()):
+        raise ValueError('无效的 eLearning 收录条件。')
+
+
+def policy_result(item, policy, now):
+    data = item.payload
+    kind = data.get('resource_type')
+    mode = policy.get(kind, 'model')
+    if mode == 'model':
+        return None
+    decision = {'id': item.id, 'selected': False, 'reason': '按收录设置排除'}
+    if mode == 'exclude':
+        return decision, ''
+    if kind == 'assignment':
+        if data.get('submission_status') != 'unsubmitted':
+            return {**decision, 'reason': '已提交的作业不列为待办'}, ''
+        try:
+            due = instant(data.get('due_at'))
+        except (TypeError, ValueError):
+            return None
+        if due <= instant(now):
+            return {**decision, 'reason': '有效截止时间已过'}, ''
+        body = str(data.get('body') or '').strip()
+        if not body or not data.get('course_id'):
+            return None
+        deadline = due.astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M')
+        summary = f'尚未提交，截止北京时间 {deadline}。'
+    elif kind == 'grade':
+        if data.get('submission_status') != 'graded':
+            return {**decision, 'reason': '单项成绩尚未公布'}, ''
+        score, maximum, grade = data.get('score'), data.get('points_possible'), data.get('grade')
+        if score is None and (grade is None or not str(grade).strip()):
+            return None
+        summary = f'已公布成绩：{score}' if score is not None else f'已公布评分：{grade}'
+        if score is not None and maximum is not None:
+            summary += f' / {maximum}'
+        body = summary + '。'
+        if data.get('body'):
+            body += '\n\n' + str(data['body']).strip()
+    else:
+        body = str(data.get('body') or item.snippet).strip()
+        if not body:
+            return None
+        summary = body.splitlines()[0]
+    action = kind == 'assignment'
+    return {'id': item.id, 'selected': True, 'reason': '符合 eLearning 收录设置',
+            'section': 'action' if action else 'fyi', 'score': 80 if action else 50,
+            'information_type': kind, 'category': 'needs_action' if action else 'status_update',
+            'summary': summary}, body
+
+
+def routing_rules(rules, policy=None):
+    text = rules_document(rules).replace("- 合并同一邮件线程中的重复信息，保留关键变化。",
                                          "- 每条只依据自身原文独立解读。", 1)
+
+    if policy:
+        text += ('\n\n## 收录设置（优先于下方或上文自由文本中的同类收录条件）\n'
+                 'assignment=pending 表示仅未交且未过期的作业待办；grade=published 表示已公布的单项成绩，'
+                 '含零分、已交或已过期作业；course_grade 表示总评或分组合计。exclude 排除，include 收录，model 按正文及用户规则判断。'
+                 '计分邮件遵循 grade 设置。原文另有补交、复核等要求时也应写明。\n'
+                 + json.dumps(policy, ensure_ascii=False, sort_keys=True))
+    return text
 
 
 def local_record_text(item):
@@ -128,16 +198,64 @@ def local_result(item, email, rules, now):
             'summary': body.splitlines()[0]}, body
 
 
-def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions, now):
+def duplicate_grade_notices(rows, policy):
+    if policy.get('grade') != 'published':
+        return {}
+    grades = {}
+    for item, _ in rows:
+        data = item.payload
+        if item.source == 'elearning' and data.get('resource_type') == 'grade' and data.get('submission_status') == 'graded':
+            match = re.fullmatch(r'https://elearning\.fudan\.edu\.cn/courses/(\d+)/grades#assignment_(\d+)', item.url)
+            if match:
+                grades.setdefault(match.groups(), []).append(item)
+    duplicates = {}
+    pattern = (r'您的作业 (.+?) 已计分。\s*计分日期[:：]\s*[^\n]+\n\s*'
+               r'分数[:：]\s*([0-9.]+) 次，共 ([0-9.]+) 次\s*您可在此处审阅作业[:：]\s*'
+               r'https://elearning\.fudan\.edu\.cn/courses/(\d+)/assignments/(\d+)/submissions/\d+\s*')
+    footer = ('您收到此电子邮件的原因是您通过 eLearning 参与了课程活动。要更改或关闭消息通知，请访问：'
+              '⏎ https://elearning.fudan.edu.cn/profile/communication')
+    for item, email in rows:
+        if item.source != 'email' or not email or email.sender_email.lower() != 'elearning@fudan.edu.cn':
+            continue
+        body = str(item.payload.get('body') or '').strip()
+        parts = re.split(r'_{5,}', body, maxsplit=1)
+        if len(parts) == 2 and ' '.join(parts[1].split()) != footer:
+            continue
+        match = re.fullmatch(pattern, parts[0].strip())
+        if not match or not item.title.startswith('作业已计分:'):
+            continue
+        targets = grades.get((match[4], match[5]), [])
+        if len(targets) != 1:
+            continue
+        grade = targets[0]
+        try:
+            same = float(match[2]) == float(grade.payload.get('score')) and float(match[3]) == float(grade.payload.get('points_possible'))
+        except (TypeError, ValueError):
+            same = False
+        if same:
+            duplicates[item.id] = ({'id': item.id, 'selected': False,
+                                    'reason': '同一单项成绩已在评分卡展示：' + grade.title}, '')
+    return duplicates
+
+
+def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions, now, policy=None):
     """One local pass, up to one model submission, one source-bound result per ID."""
-    rules_text = routing_rules(rules)
+    policy = policy or {}
+    validate_policy(policy)
+    rules_text = routing_rules(rules, policy)
     results = {}
+    duplicates = duplicate_grade_notices(rows, policy)
     entries = []
     pending = []
     for item, email in rows:
         entry = source_entry(item, email)
         entries.append(entry)
-        local = local_result(item, email, rules, now)
+        if item.id in duplicates:
+            local = duplicates[item.id]
+        elif item.source == 'elearning' and item.payload.get('resource_type') in policy:
+            local = policy_result(item, policy, now)
+        else:
+            local = local_result(item, email, rules, now)
         if local is not None:
             results[item.id] = local
             continue

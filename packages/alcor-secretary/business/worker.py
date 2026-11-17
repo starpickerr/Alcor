@@ -273,7 +273,8 @@ class Business:
         routed = run and run.get('routingVersion') == 1 and not local_only
         if routed:
             from business.briefing.domain.routing import routed_draft, routing_rules
-        expected_rules = routing_rules(rules) if routed else rules_document(rules)
+        policy = self.briefing.get_preferences().get('elearning_policy', {})
+        expected_rules = routing_rules(rules, policy) if routed else rules_document(rules)
         if detail.get('briefing', {}).get('rule_text') != expected_rules:
             candidates.decisions.clear()
             candidates.reports.clear()
@@ -284,7 +285,7 @@ class Business:
                 draft = compose_draft(list(candidates.rows.values()), rules, record['date'])
             elif routed:
                 draft = routed_draft(list(candidates.rows.values()), rules, record['date'],
-                                     submissions or [], candidates.decisions, stamp)
+                                     submissions or [], candidates.decisions, stamp, policy)
             else:
                 draft = AgentBriefingGenerator(submissions or [], global_mode=True).generate(
                     list(candidates.rows.values()), rules, briefing_date=record['date'], window_start=start,

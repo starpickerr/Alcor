@@ -335,7 +335,7 @@
 .alcor-briefing-title > span { font-size:12px; color:var(--dsw-alias-label-secondary); }
 .alcor-briefing-progress { margin:16px 0; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-lg); padding:8px 12px; }
 .alcor-briefing-progress-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.alcor-briefing-progress-toggle { flex:1; min-width:0; height:auto; padding:8px 0; gap:10px; justify-content:flex-start; text-align:left; white-space:normal; }
+.alcor-briefing-progress-toggle { display:flex; align-items:center; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; flex:1; min-width:0; height:auto; padding:8px 0; gap:10px; justify-content:flex-start; text-align:left; white-space:normal; }
 .alcor-briefing-progress-toggle > span { flex:1; min-width:0; line-height:1.6; overflow-wrap:anywhere; }
 .alcor-briefing-progress-toggle small { display:block; color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:400; }
 .alcor-briefing-progress-toggle > svg { flex-shrink:0; }
@@ -707,3 +707,8 @@
   .alcor-business .alcor-app-header > .alcor-actions { justify-content:flex-start; margin-left:0; }
   .alcor-business .alcor-app-header h1 { line-height:1.35; }
 }
+
+.alcor-briefing-progress-toggle:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:4px; border-radius:4px; }
+.alcor-briefing-progress-time { color:var(--dsw-alias-label-secondary); font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.alcor-briefing-policy { display:grid; gap:16px; margin-bottom:28px; }
+.alcor-briefing-policy select { background:var(--dsw-alias-background-primary); color:inherit; font:inherit; padding:8px; border:1px solid var(--dsw-alias-border-l3); border-radius:6px; max-width:100%; }

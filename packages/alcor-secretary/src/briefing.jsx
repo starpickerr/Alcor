@@ -6,6 +6,7 @@ import { Empty, Field } from './business-pages.jsx'
 import { localDate } from './presentation.js'
 import { BriefingReport, markdownLabels } from './briefing-report.jsx'
 import { BriefingSources } from './briefing-sources.jsx'
+import { BriefingPolicy } from './briefing-policy.jsx'
 import { BriefingTaskSettings } from './briefing-task-settings.jsx'
 import { BriefingRuns } from './briefing-runs.jsx'
 import { BriefingProgress } from './briefing-progress.jsx'
@@ -205,7 +206,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
       <div role="tabpanel" id={`${tabsId}-sources-panel`} aria-labelledby={`${tabsId}-sources-tab`} hidden={settingsTab !== 'sources'} tabIndex={0}>
         <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, settingsTab, selected, revision, zoneInput})} /></section>
       </div>
-      <div role="tabpanel" id={`${tabsId}-rules-panel`} aria-labelledby={`${tabsId}-rules-tab`} hidden={settingsTab !== 'rules'} tabIndex={0}><BriefingRules api={api} /></div>
+      <div role="tabpanel" id={`${tabsId}-rules-panel`} aria-labelledby={`${tabsId}-rules-tab`} hidden={settingsTab !== 'rules'} tabIndex={0}><BriefingPolicy api={api} /><BriefingRules api={api} /></div>
       <div role="tabpanel" id={`${tabsId}-timezone-panel`} aria-labelledby={`${tabsId}-timezone-tab`} hidden={settingsTab !== 'timezone'} tabIndex={0}>
         <section aria-labelledby="alcor-briefing-timezone-heading">
           <h2 id="alcor-briefing-timezone-heading">简报时区</h2>
