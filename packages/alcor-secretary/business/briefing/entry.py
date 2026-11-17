@@ -88,6 +88,22 @@ SERVICE_DESCRIPTORS = [
 ]
 
 
+# Expose the same typed preferences through Agent method discovery.
+from .domain.routing import POLICY_OPTIONS
+for _method in SERVICE_DESCRIPTORS[0]['methods']:
+    if _method['name'] == 'update_preferences':
+        _method['inputSchema']['properties']['payload'] = {
+            'type': 'object',
+            'properties': {'elearning_policy': {
+                'type': 'object',
+                'description': 'Partial update of briefing content choices. exclude disables a category; model reads its original text. Other values use local source facts.',
+                'properties': {key: {'type': 'string', 'enum': sorted(values)} for key, values in POLICY_OPTIONS.items()},
+                'additionalProperties': False,
+            }},
+            'additionalProperties': True,
+        }
+
+
 def _jsonable(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
         return _jsonable(asdict(value))

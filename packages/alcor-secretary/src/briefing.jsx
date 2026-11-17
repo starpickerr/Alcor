@@ -12,7 +12,7 @@ import { BriefingRuns } from './briefing-runs.jsx'
 import { BriefingProgress } from './briefing-progress.jsx'
 import { briefingRunning as active, briefingProgressVisible } from './briefing-progress.js'
 
-const settingsTabs = [['sources', '信息来源'], ['rules', '筛选与写作规则'], ['timezone', '时区'], ['tasks', '任务设置'], ['runs', '运行记录']]
+const settingsTabs = [['sources', '信息来源'], ['rules', '内容偏好'], ['tasks', '生成设置'], ['runs', '运行记录']]
 
 async function unwrap(promise) { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作未完成，请重试。'); return result.value }
 const call = (api, method, args = {}, write = false) => unwrap(api.business({ domain: 'briefing', method, arguments: args, ...(write ? { requestId: crypto.randomUUID() } : {}) }))
@@ -31,7 +31,7 @@ function BriefingRules({ api }) {
   const load = () => call(api, 'list_rules').then(setRules)
   useEffect(() => { load().catch(error => setError(error.message)).finally(() => setLoading(false)) }, [api])
   const summary = value => value.replace(/```[\s\S]*?```/g, '').replace(/<[^>]*>/g, '').replace(/[#*`>~]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/(^|\n)\s*(?:[-+]\s+|\d+\.\s+)/g, ' ').replace(/\s+/g, ' ').trim()
-  const title = rule => summary(rule.text.split('\n').find(line => line.trim()) || '筛选规则').slice(0, 64)
+  const title = rule => summary(rule.text.split('\n').find(line => line.trim()) || '补充要求').slice(0, 64)
   function open(rule) { setSelected(rule); setText(rule.text); setEnabled(rule.enabled); setEditing(!rule.id); setDeleting(false); setError('') }
   async function run(method, args) {
     setBusy(true); setError('')
@@ -44,16 +44,16 @@ function BriefingRules({ api }) {
     if (value) { setSelected(value); setEditing(false) }
   }
   return <section className="alcor-rule-section">
-    <div className="alcor-rule-heading"><h2>筛选与写作规则</h2></div>
-    <div className="alcor-rule-toolbar"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新规则" title="刷新规则" disabled={loading || busy} onClick={async () => { setLoading(true); setError(''); try { await load() } catch (error) { setError(error.message) } finally { setLoading(false) } }}><IconRefreshOutlineRegular size={16} /></Button><Button variant="outline" size="sm" onClick={() => open({ text: '', enabled: true })}><IconPlusOutlineRegular size={16} />新增规则</Button></div>
-    {loading ? <Notice role="status">正在读取规则…</Notice> : rules.length ? <div className="alcor-rule-cards">{rules.map(rule => { const description = summary(rule.text.split('\n').slice(1).join('\n')); return <div className="alcor-rule-card" key={rule.id}><button type="button" className="alcor-rule-card-open" aria-label={`查看规则：${title(rule)}`} onClick={() => open(rule)}>
+    <div className="alcor-rule-heading"><h2>补充要求</h2><p className="alcor-muted">用于邮件、需要理解正文的通知及写作偏好。</p></div>
+    <div className="alcor-rule-toolbar"><Button className="alcor-icon-action" variant="ghost" aria-label="刷新要求" title="刷新要求" disabled={loading || busy} onClick={async () => { setLoading(true); setError(''); try { await load() } catch (error) { setError(error.message) } finally { setLoading(false) } }}><IconRefreshOutlineRegular size={16} /></Button><Button variant="outline" size="sm" onClick={() => open({ text: '', enabled: true })}><IconPlusOutlineRegular size={16} />新增要求</Button></div>
+    {loading ? <Notice role="status">正在读取补充要求…</Notice> : rules.length ? <div className="alcor-rule-cards">{rules.map(rule => { const description = summary(rule.text.split('\n').slice(1).join('\n')); return <div className="alcor-rule-card" key={rule.id}><button type="button" className="alcor-rule-card-open" aria-label={`查看要求：${title(rule)}`} onClick={() => open(rule)}>
       <div className="alcor-rule-card-top"><strong>{title(rule)}</strong></div>
       {description && <p>{description}</p>}<IconChevronRightOutlineRegular className="alcor-rule-chevron" size={16} />
-    </button><BriefingToggle label={`启用规则：${title(rule)}`} checked={rule.enabled} disabled={busy} onChange={enabled => run('update_rule', { rule_id: rule.id, payload: { enabled } })} /></div> })}</div> : <div className="alcor-rule-empty">还没有自定义规则</div>}
+    </button><BriefingToggle label={`启用要求：${title(rule)}`} checked={rule.enabled} disabled={busy} onChange={enabled => run('update_rule', { rule_id: rule.id, payload: { enabled } })} /></div> })}</div> : <div className="alcor-rule-empty">还没有补充要求</div>}
     {error && !selected && <Notice tone="error" role="alert">{error}</Notice>}
-    <Modal open={!!selected} title={selected?.id ? '规则详情' : '新增规则'} closeLabel="关闭" onClose={() => { if (!busy) setSelected(null) }} className="alcor-editor-dialog alcor-rule-dialog">{selected && <div className="alcor-rule-detail">
-      {editing ? <form onSubmit={save}><Field label="规则内容"><textarea required autoFocus maxLength={4000} rows={12} value={text} onChange={event => setText(event.target.value)} placeholder="使用 Markdown 编写筛选和写作要求" /></Field><div className="alcor-rule-enabled"><span>启用规则</span><BriefingToggle label="启用规则" checked={enabled} disabled={busy} onChange={setEnabled} /></div><div className="alcor-actions"><Button type="submit" variant="primary" disabled={busy || !text.trim()}>{busy ? '正在保存…' : '保存规则'}</Button>{selected.id && <Button type="button" variant="ghost" disabled={busy} onClick={() => { setEditing(false); setText(selected.text); setEnabled(selected.enabled) }}>取消编辑</Button>}</div></form> : <>
-        <div className="alcor-rule-detail-toolbar"><div className="alcor-rule-enabled"><span>启用规则</span><BriefingToggle label="启用规则" checked={selected.enabled} disabled={busy} onChange={async enabled => { const previous = selected; setSelected({ ...selected, enabled }); const value = await run('update_rule', { rule_id: selected.id, payload: { enabled } }); setSelected(value || previous) }} /></div><Button variant="outline" disabled={busy} onClick={() => { setText(selected.text); setEnabled(selected.enabled); setEditing(true); setDeleting(false) }}>编辑规则</Button></div>
+    <Modal open={!!selected} title={selected?.id ? '要求详情' : '新增要求'} closeLabel="关闭" onClose={() => { if (!busy) setSelected(null) }} className="alcor-editor-dialog alcor-rule-dialog">{selected && <div className="alcor-rule-detail">
+      {editing ? <form onSubmit={save}><Field label="要求内容"><textarea required autoFocus maxLength={4000} rows={12} value={text} onChange={event => setText(event.target.value)} placeholder="写下邮件筛选、特殊通知或写作偏好" /></Field><div className="alcor-rule-enabled"><span>启用要求</span><BriefingToggle label="启用要求" checked={enabled} disabled={busy} onChange={setEnabled} /></div><div className="alcor-actions"><Button type="submit" variant="primary" disabled={busy || !text.trim()}>{busy ? '正在保存…' : '保存要求'}</Button>{selected.id && <Button type="button" variant="ghost" disabled={busy} onClick={() => { setEditing(false); setText(selected.text); setEnabled(selected.enabled) }}>取消编辑</Button>}</div></form> : <>
+        <div className="alcor-rule-detail-toolbar"><div className="alcor-rule-enabled"><span>启用要求</span><BriefingToggle label="启用要求" checked={selected.enabled} disabled={busy} onChange={async enabled => { const previous = selected; setSelected({ ...selected, enabled }); const value = await run('update_rule', { rule_id: selected.id, payload: { enabled } }); setSelected(value || previous) }} /></div><Button variant="outline" disabled={busy} onClick={() => { setText(selected.text); setEnabled(selected.enabled); setEditing(true); setDeleting(false) }}>编辑规则</Button></div>
         <div className="alcor-rule-preview"><MarkdownText text={selected.text} streaming={false} labels={markdownLabels} /></div>
         <div className="alcor-rule-delete">{deleting ? <><Notice tone="warning">删除这条规则？</Notice><Button variant="outline" disabled={busy} onClick={async () => { if (await run('delete_rule', { rule_id: selected.id }) !== undefined) setSelected(null) }}>确认删除</Button><Button variant="ghost" disabled={busy} onClick={() => setDeleting(false)}>取消</Button></> : <Button variant="ghost" disabled={busy} onClick={() => setDeleting(true)}>删除规则</Button>}</div>
       </>}{error && <Notice tone="error" role="alert">{error}</Notice>}
@@ -89,7 +89,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settings, setSettings] = useState(initialView?.settings ?? false)
-  const [settingsTab, setSettingsTab] = useState(initialView?.settingsTab ?? 'sources')
+  const [settingsTab, setSettingsTab] = useState(initialView?.settingsTab === 'timezone' ? 'tasks' : initialView?.settingsTab ?? 'sources')
   const tabsId = useId()
   const [zone, setZone] = useState(''), [zoneInput, setZoneInput] = useState(initialView?.zoneInput ?? '')
   const [zoneSaving, setZoneSaving] = useState(false), [zoneError, setZoneError] = useState('')
@@ -207,7 +207,8 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
         <section aria-labelledby="alcor-briefing-sources-heading"><h2 id="alcor-briefing-sources-heading">信息来源</h2><BriefingSources api={api} openPlugins={name => openPlugins(name, {settings:true, settingsTab, selected, revision, zoneInput})} /></section>
       </div>
       <div role="tabpanel" id={`${tabsId}-rules-panel`} aria-labelledby={`${tabsId}-rules-tab`} hidden={settingsTab !== 'rules'} tabIndex={0}><BriefingPolicy api={api} /><BriefingRules api={api} /></div>
-      <div role="tabpanel" id={`${tabsId}-timezone-panel`} aria-labelledby={`${tabsId}-timezone-tab`} hidden={settingsTab !== 'timezone'} tabIndex={0}>
+      <div role="tabpanel" id={`${tabsId}-tasks-panel`} aria-labelledby={`${tabsId}-tasks-tab`} hidden={settingsTab !== 'tasks'} className="alcor-briefing-task-settings" tabIndex={0}>
+        <BriefingTaskSettings api={api} workspaces={workspaces} currentSession={currentSession} />
         <section aria-labelledby="alcor-briefing-timezone-heading">
           <h2 id="alcor-briefing-timezone-heading">简报时区</h2>
           <form className="alcor-briefing-timezone" onSubmit={async event => {
@@ -230,9 +231,6 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
             {zoneError && <Notice tone="error" role="alert">{zoneError}</Notice>}
           </form>
         </section>
-      </div>
-      <div role="tabpanel" id={`${tabsId}-tasks-panel`} aria-labelledby={`${tabsId}-tasks-tab`} hidden={settingsTab !== 'tasks'} className="alcor-briefing-task-settings" tabIndex={0}>
-        <BriefingTaskSettings api={api} workspaces={workspaces} currentSession={currentSession} />
       </div>
       <div role="tabpanel" id={`${tabsId}-runs-panel`} aria-labelledby={`${tabsId}-runs-tab`} hidden={settingsTab !== 'runs'} tabIndex={0}><BriefingRuns api={api} openSession={openSession} timeZone={zone} active={settingsTab === 'runs'} progress={progress} openBriefing={id => { setSelected(id); setRevision(0); closeSettings() }} /></div>
     </div>

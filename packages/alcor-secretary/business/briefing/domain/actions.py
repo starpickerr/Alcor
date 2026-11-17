@@ -224,6 +224,7 @@ class BriefingActions:
                 if 'elearning_policy' in payload:
                     from .routing import validate_policy
                     validate_policy(payload['elearning_policy'])
+                    payload = {**payload, 'elearning_policy': {**current.get('elearning_policy', {}), **payload['elearning_policy']}}
                 current.update(payload)
                 db.execute('INSERT OR REPLACE INTO briefing_preferences VALUES (1,?)', (_json(current),))
             return current

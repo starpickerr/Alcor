@@ -19,6 +19,9 @@ ASSIGNMENT_ONLY_RULE = (
 
 
 POLICY_OPTIONS = {
+    'announcement': {'include', 'model', 'exclude'},
+    'quiz': {'pending', 'model', 'exclude'},
+    'file': {'grouped', 'model', 'exclude'},
     'assignment': {'pending', 'model', 'exclude'},
     'grade': {'published', 'model', 'exclude'},
     'course_grade': {'include', 'model', 'exclude'},
@@ -41,9 +44,12 @@ def policy_result(item, policy, now):
     decision = {'id': item.id, 'selected': False, 'reason': '按收录设置排除'}
     if mode == 'exclude':
         return decision, ''
-    if kind == 'assignment':
-        if data.get('submission_status') != 'unsubmitted':
-            return {**decision, 'reason': '已提交的作业不列为待办'}, ''
+    if kind in ('assignment', 'quiz'):
+        status = data.get('submission_status')
+        if status in ('submitted', 'graded', 'pending_review', 'completed'):
+            return {**decision, 'reason': '已完成或已提交的项目不列为待办'}, ''
+        if status != 'unsubmitted':
+            return None
         try:
             due = instant(data.get('due_at'))
         except (TypeError, ValueError):
@@ -68,11 +74,11 @@ def policy_result(item, policy, now):
         if data.get('body'):
             body += '\n\n' + str(data['body']).strip()
     else:
-        body = str(data.get('body') or item.snippet).strip()
+        body = str(data.get('body') or '').strip()
         if not body:
             return None
         summary = body.splitlines()[0]
-    action = kind == 'assignment'
+    action = kind in ('assignment', 'quiz')
     return {'id': item.id, 'selected': True, 'reason': '符合 eLearning 收录设置',
             'section': 'action' if action else 'fyi', 'score': 80 if action else 50,
             'information_type': kind, 'category': 'needs_action' if action else 'status_update',
@@ -85,7 +91,7 @@ def routing_rules(rules, policy=None):
 
     if policy:
         text += ('\n\n## 收录设置（优先于下方或上文自由文本中的同类收录条件）\n'
-                 'assignment=pending 表示仅未交且未过期的作业待办；grade=published 表示已公布的单项成绩，'
+                 'assignment/quiz=pending 表示仅未完成且未过期的作业或测验待办；announcement=include 完整收录公告；file=grouped 汇总文件更新；grade=published 表示已公布的单项成绩，'
                  '含零分、已交或已过期作业；course_grade 表示总评或分组合计。exclude 排除，include 收录，model 按正文及用户规则判断。'
                  '计分邮件遵循 grade 设置。原文另有补交、复核等要求时也应写明。\n'
                  + json.dumps(policy, ensure_ascii=False, sort_keys=True))
@@ -310,5 +316,28 @@ def routed_draft(rows, rules, briefing_date, submissions, preserved_decisions, n
                       'score': candidate.score, 'snippet': decision['summary'],
                       'payload': {**item.payload, '_briefing_reason': decision['reason'], '_briefing_report': content,
                                   '_briefing_members': [{'id': item.id, 'title': item.title, 'summary': decision['summary']}]}})
+    if policy.get('file') == 'grouped':
+        grouped = {}
+        for card in cards:
+            if card['source'] != 'elearning' or card['payload'].get('resource_type') != 'file':
+                continue
+            account = card['account_id']
+            text = f"### {card['title']}\n\n{card['payload']['_briefing_report']}"
+            if card.get('url'):
+                text += f"\n\n[打开原文件]({card['url']})"
+            if account not in grouped:
+                grouped[account] = card
+                card['title'] = '课程文件更新'
+                card['payload']['_briefing_report'] = text
+            else:
+                group = grouped[account]
+                group['payload']['_briefing_report'] += '\n\n' + text
+                group['payload']['_briefing_members'].extend(card['payload']['_briefing_members'])
+        cards = [c for c in cards if c['payload'].get('resource_type') != 'file' or c['source'] != 'elearning'
+                 or grouped.get(c['account_id']) is c]
+        for index, card in enumerate(cards):
+            card['sort_order'] = index
+            if card['source'] == 'elearning' and card['payload'].get('resource_type') == 'file':
+                card['snippet'] = f"{len(card['payload']['_briefing_members'])} 份课程文件更新"
     return {'title': briefing_title(briefing_date), 'body': report_body(cards), 'items': cards,
             'mail': mail, 'rule_text': rules_text}

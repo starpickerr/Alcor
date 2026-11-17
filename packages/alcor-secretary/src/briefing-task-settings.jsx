@@ -27,7 +27,7 @@ export function BriefingTaskSettings({ api, workspaces, currentSession }) {
   const dirty = draft && JSON.stringify(draft) !== JSON.stringify(saved)
   const currentWorkspace = list.items.find(item => item.sessionIds.includes(currentSession()))
   return <section className="alcor-briefing-task-form">
-    <h2>任务设置</h2>
+    <h2>生成方式</h2>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
     {!draft ? <><Notice role="status">{error ? '任务设置暂不可用' : '正在读取任务设置…'}</Notice>{error && <Button variant="outline" onClick={() => { setError(''); read().catch(error => setError(error.message)) }}>重试</Button>}</> : <form onSubmit={async event => {
       event.preventDefault(); setBusy(true); setError('')

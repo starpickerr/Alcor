@@ -1,6 +1,6 @@
 ---
 name: alcor-briefing
-description: 生成或更新每日简报，查看简报历史和来源、管理筛选规则，将简报条目转为事务或日程。
+description: 生成或更新每日简报，查看简报历史和来源、管理内容偏好和补充要求，将简报条目转为事务或日程。
 ---
 
 # 简报
@@ -48,3 +48,27 @@ phase 为 completed 才能报告已生成；失败或中断时如实说明。用
 ```
 
 不要用 run_pipeline、直接写快照或游标代替正常生成；建议不等于已经创建事务或设置提醒。
+
+
+## 内容偏好
+
+用户可以通过对话开启、关闭或调整简报中的六类 eLearning 内容。先用 get_preferences 查询实际值，再用 update_preferences 部分更新 payload.elearning_policy；只传用户要改的类别，核对工具返回结果后报告已保存。该设置决定简报收录内容。
+
+| 类别 | 字段 | 程序处理值 | 其他值 |
+| --- | --- | --- | --- |
+| 公告 | announcement | include，完整正文及图片附件引用 | exclude 关闭；model 按正文与补充要求判断 |
+| 作业 | assignment | pending，仅未交且未过期 | exclude 或 model |
+| 测验 | quiz | pending，仅未完成且未过期 | exclude 或 model |
+| 单项成绩 | grade | published，已公布的作业／测验／考试成绩，含零分与改分 | exclude 或 model |
+| 课程总评 | course_grade | include，包含总评与评分组小计 | exclude 或 model |
+| 课程文件 | file | grouped，同一学校账户的文件更新汇总 | exclude 或 model |
+
+例如「关闭公告，保留每项作业的分数，关闭课程总分」：
+
+```json
+{"domain":"briefing","method":"update_preferences","arguments":{"payload":{"elearning_policy":{"announcement":"exclude","grade":"published","course_grade":"exclude"}}}}
+```
+
+已提交或过截止时间的作业仍可能出分，grade 独立于 assignment。设置生效后下一次生成会重新评估当前日的候选，来源游标按正常采集流程推进。源字段不足时允许剩余原文进入同一次模型批次。
+
+邮件判断及需要理解正文的例外仍可通过 create_rule / update_rule / delete_rule 管理。先 list_rules 查看已有要求，保留用户的具体内容，避免同时写入与收录设置冲突的重复自然语言条件。对话管理内容偏好复用页面相同服务，无需用户切换到页面操作。

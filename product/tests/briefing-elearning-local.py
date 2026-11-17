@@ -94,6 +94,37 @@ class RoutingTests(unittest.TestCase):
                 routed_draft(rows, [], '2026-11-16', [], {}, NOW, policy)
             self.assertEqual([e['id'] for e in pending.exception.request['entries']], ['mail'])
 
+    def test_all_six_categories_and_file_grouping(self):
+        policy = {'announcement': 'include', 'assignment': 'pending', 'quiz': 'pending',
+                  'grade': 'published', 'course_grade': 'exclude', 'file': 'grouped'}
+        rows = [(item('notice', 'announcement', body='公告原文末段 ![示意图](https://example.test/image) [附件](https://example.test/file)'), None),
+                (item('quiz', 'quiz', submission_status='unsubmitted', due_at='2026-11-17T13:30:00+08:00'), None),
+                (item('completed-quiz', 'quiz', submission_status='completed'), None),
+                (item('file-a', 'file', body='课程 A 文件'), None),
+                (item('file-b', 'file', body='课程 B 文件'), None)]
+        draft = routed_draft(rows, [], '2026-11-16', [], {}, NOW, policy)
+        self.assertEqual(len(draft['items']), 3)
+        files = next(c for c in draft['items'] if c['title'] == '课程文件更新')
+        self.assertEqual(len(files['payload']['_briefing_members']), 2)
+        for text in ('课程 A 文件', '课程 B 文件', '公告原文末段', 'https://example.test/image'):
+            self.assertIn(text, draft['body'])
+        with self.assertRaises(NeedModel):
+            routed_draft([(item('unknown-quiz', 'quiz'), None)], [], '2026-11-16', [], {}, NOW, policy)
+
+    def test_agent_partial_updates_and_catalog(self):
+        import tempfile
+        from business.briefing.domain.store import BriefingStore
+        from business.briefing.domain.service import BriefingService
+        from business.briefing.entry import SERVICE_DESCRIPTORS
+        with tempfile.TemporaryDirectory() as temporary:
+            service = BriefingService(BriefingStore(Path(temporary) / 'briefing.sqlite3'))
+            service.update_preferences({'elearning_policy': {'grade': 'published', 'course_grade': 'exclude'}})
+            value = service.update_preferences({'elearning_policy': {'announcement': 'exclude'}})
+            self.assertEqual(value['elearning_policy'], {'grade': 'published', 'course_grade': 'exclude', 'announcement': 'exclude'})
+            method = next(m for m in SERVICE_DESCRIPTORS[0]['methods'] if m['name'] == 'update_preferences')
+            schema = method['inputSchema']['properties']['payload']['properties']['elearning_policy']
+            self.assertEqual(set(schema['properties']), {'announcement', 'assignment', 'quiz', 'grade', 'course_grade', 'file'})
+
     def test_invalid_policies_are_rejected(self):
         for value in ([], {'grade': True}, {'grade': []}, {'unknown': 'exclude'}):
             with self.assertRaises(ValueError):
