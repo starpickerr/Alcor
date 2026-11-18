@@ -190,7 +190,7 @@ def _dispatch(svc: BriefingService, method: str, params: dict[str, Any], invoke_
     return getattr(svc, method)(**params)
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
     if spec is None:
@@ -207,16 +207,28 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         return {'status':'unknown','sideEffects':'unknown','operationId':invoke_params.get('idempotencyKey') or method,
                 'error': {'code': 'peer_outcome_unknown', 'message': '业务委托已发出，但结果无法确认。请刷新核对目标业务及操作回执，勿直接重复执行。'}}
     except AdapterUnavailable as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("unsupported", str(exc))
     except PermissionError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail('permission_denied', str(exc))
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except sqlite3.IntegrityError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("conflict", str(exc))
     except (ValueError, TypeError) as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("invalid_argument", str(exc))
     except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
         return _unexpected(exc, read_only=effect == "query")
     if effect == "query":
         return {"status": "succeeded", "sideEffects": "none", "value": value}

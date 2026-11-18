@@ -1,3 +1,4 @@
+import { reportHostFailure } from './worker-diagnostic.js'
 import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
 import { Service } from '@deepseek-ai/cordis'
 import { createDeletePageHost } from '../../alcor-secretary/src/delete-page-host.js'
@@ -530,6 +531,18 @@ export default class Organizer extends TypertRemoteService {
   @Remote
   async automation(request) {
     const input = schemas.automation[0].parse(request)
+    try {
+      const result = await this.executeAutomation(input)
+      if (result?.code) reportHostFailure(this.ctx, 'automation', 'automation.' + input.action, result, '调度服务返回失败回执。')
+      return result
+    } catch (error) {
+      const known = [automationDeleteUnavailable, '只能读取 Alcor 自动化。', '只能管理 Alcor 自动化。']
+      reportHostFailure(this.ctx, 'automation', 'automation.' + input.action, error, known.includes(error.message) ? error.message : '调度服务未完成该操作。')
+      throw error
+    }
+  }
+
+  private async executeAutomation(input) {
     this.assertActive()
     if (input.action === 'deleteInactive' || (input.action === 'edit' && input.request.action === 'delete')) {
       throw new Error(automationDeleteUnavailable)

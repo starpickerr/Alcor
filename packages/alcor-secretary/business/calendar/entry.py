@@ -120,7 +120,7 @@ def _dispatch(svc: CalendarService, method: str, p: dict[str, Any]) -> Any:
     raise LookupError(method)
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     params = dict(invoke_params.get("input") or {})
     idem = invoke_params.get("idempotencyKey")
@@ -130,10 +130,16 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         svc = _service(invoke_params)
         value = _dispatch(svc, method, params)
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _failed("not_found", str(exc.args[0]) if exc.args else "not found")
     except ValueError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _failed("invalid_argument", str(exc))
     except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
         return _unexpected(exc, read_only=method not in WRITE_METHODS)
     if method in WRITE_METHODS:
         op_id = idem or (value.get("id") if isinstance(value, dict) else None) or method

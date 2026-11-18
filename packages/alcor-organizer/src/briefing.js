@@ -1,3 +1,4 @@
+import { reportHostFailure } from './worker-diagnostic.js'
 import { randomUUID } from 'node:crypto'
 import { readBriefingSourcePage } from './briefing-sources.js'
 
@@ -180,6 +181,8 @@ export class BriefingGenerator {
         await this.checkpoint(state, { phase: 'completed', message: '简报已保存', briefingId: saved.business.briefingId })
         return saved
       }
+      if (!signal.aborted) reportHostFailure(this.ctx, 'briefing', 'briefing.generate', error,
+        '简报生成中断，阶段 ' + state.run.phase, state.requestId)
       await this.checkpoint(state, { phase: signal.aborted ? (this.closed ? 'interrupted' : 'cancelled') : 'failed',
         message: signal.aborted ? (this.closed ? '生成已中断，可继续未完成的部分。' : '简报生成已取消。') : error.message })
       throw error

@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, chmod, rm, symlink } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
+import { projectLog } from '../../packages/alcor-secretary/src/log-host.js'
 import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
 import { readBriefingSourcePage, discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import { checkMessage as schoolMessage } from '../../packages/alcor-plugin-info/src/elearning-status.js'
@@ -106,4 +108,23 @@ test('connection pages distinguish proxy DNS, local paths and mailbox login stag
   assert.match(mailMessage({ status: 'failed', code: 'storage_error' }), /数据库/)
   assert.match(mailMessage({ status: 'failed', code: 'folder_denied' }), /已登录/)
   assert.match(mailMessage({ status: 'failed', code: 'mail_server_error' }), /不能据此认定授权码错误/)
+})
+
+test('a missing task retains its original domain exception and source location across RPC', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'alcor-missing-todo-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const messages = []
+  const linked = join(root, 'plugin-business')
+  await symlink(fileURLToPath(new URL('../../packages/alcor-secretary/business/', import.meta.url)), linked, 'junction')
+  const worker = new BusinessWorker(root, { worker: pathToFileURL(join(linked, 'worker.py')),
+    diagnostic: message => messages.push(message) })
+  t.after(() => worker.close())
+  await assert.rejects(worker.call('invoke', { domain: 'tasks', method: 'get_todo', arguments: { todo_id: 'private-item-id' } }), /not_found/)
+  const failure = messages.map(message => projectLog({ message })).find(row => row.outcome === 'failure')
+  assert.equal(failure.diagnostic.code, 'KeyError')
+  assert.equal(failure.diagnostic.businessCode, 'not_found')
+  assert.equal(failure.diagnostic.reason, 'todo not found')
+  assert.match(failure.diagnostic.locations.at(-1), /^tasks\/domain\/service\.py:\d+ in get_todo$/)
+  assert.ok(failure.requestId && failure.durationMs >= 0)
+  assert(!JSON.stringify(messages).includes('private-item-id'))
 })

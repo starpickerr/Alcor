@@ -1,3 +1,4 @@
+import { workerFailure } from './worker-diagnostic.js'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
@@ -70,8 +71,7 @@ export class BusinessWorker {
           pending.resolve(result.value)
         }
         else {
-          const code = /^[A-Za-z]{1,60}$/.test(result.errorType ?? '') ? result.errorType : 'OperationError'
-          report(`[worker_operation_failed] ${pending.operation} · ${code} · 请求 ${result.id}`, 'error', pending.domain)
+          report(workerFailure(result, pending.operation, Math.round(performance.now() - pending.startedAt)), 'error', pending.domain)
           const error = new Error(operationMessage(result)); error.name = result.errorType || 'Error'; pending.reject(error)
         }
       } catch (error) { failed(new Error('[worker_protocol_error] 业务服务返回了无效响应，请核对插件版本和运行环境；先刷新核对保存结果，避免重复写入。', { cause: error })); this.process.kill('SIGTERM') }
@@ -88,7 +88,7 @@ export class BusinessWorker {
       const id = randomUUID()
       const safeName = value => typeof value === 'string' && /^[a-z_]{1,80}$/.test(value) ? value : 'unknown'
       const peer = ['apple_peer', 'bound_conflict_peer', 'item_restore_peer'].includes(action)
-      const operation = action === 'invoke' || peer ? `${safeName(input.domain)}.${safeName(input.method)}` : safeName(action)
+      const operation = action === 'invoke' || peer ? `${safeName(input.domain)}.${safeName(input.method)}` : action === 'briefing_run' ? 'briefing.' + safeName(input.method) : safeName(action)
       const domain = ['tasks', 'calendar', 'bills', 'briefing', 'automation', 'apple'].includes(input.domain) ? input.domain
         : ['briefing_run', 'local_briefing', 'generated_briefing', 'source_settings', 'source_group_settings', 'source_windows', 'source_cursors', 'local_source'].includes(action) ? 'briefing'
         : action === 'calendar_agenda' ? 'calendar' : action === 'due_reminders' ? 'tasks' : undefined

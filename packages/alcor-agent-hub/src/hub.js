@@ -1,3 +1,4 @@
+import { reportHostFailure } from '../../alcor-organizer/src/worker-diagnostic.js'
 const status = step => step.attempts.at(-1)?.status ?? 'pending'
 
 export class HubCoordinator {
@@ -81,7 +82,13 @@ export class HubCoordinator {
   }
 
   async runStep(task_id, step_id, claim, state, parent, workspacePath) {
-    const sync = result => this.call('sync_attempt', { task_id, step_id, execution_id: claim.executionId, result })
+    const sync = (result, cause = undefined) => {
+      if (['failed', 'outcome_unknown'].includes(result.status)) {
+        const reason = result.status === 'failed' ? '协作步骤执行失败。' : '协作步骤的执行结果未确认。'
+        reportHostFailure(this.ctx, 'agent-hub', 'agent_hub.run_step', cause ?? { code: result.status }, reason, claim.executionId)
+      }
+      return this.call('sync_attempt', { task_id, step_id, execution_id: claim.executionId, result })
+    }
     try {
       if (state.controller.signal.aborted) return sync({ status: 'cancelled' })
       await sync({ status: 'running' })
@@ -147,7 +154,7 @@ export class HubCoordinator {
           ...(route?.model ? { actualModel: route.model } : {}) })
       } finally { state.activations.delete(activation); await activation.dispose() }
     } catch (error) {
-      return sync({ status: 'outcome_unknown', summary: error.message })
+      return sync({ status: 'outcome_unknown', summary: error.message }, error)
     }
   }
 

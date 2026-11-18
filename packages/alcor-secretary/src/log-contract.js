@@ -14,6 +14,7 @@ export const logEntry = z.object({
 export const logHistory = z.object({ entries: z.array(logEntry).max(logCapacity) }).strict()
 export const logViewEntry = logEntry.extend({
   outcome: z.enum(['success', 'failure']).nullable(), operation: z.string().max(180).nullable(),
+  diagnostic: z.object({ code: z.string(), reason: z.string().nullable(), businessCode: z.string().nullable(), systemCode: z.string().nullable(), locations: z.array(z.string()).max(8) }).optional(),
   durationMs: z.number().int().nonnegative().nullable(), requestId: z.string().uuid().nullable(),
 }).strict()
 export const logSchemas = [

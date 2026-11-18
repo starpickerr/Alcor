@@ -251,8 +251,19 @@ def main():
             value = getattr(worker, action)(**request.get('input', {}))
             emit({'id': request['id'], 'ok': True, 'value': value})
         except Exception as error:
-            traceback.print_exc(file=sys.stderr)
-            emit({'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__})
+            # Report shipped code locations and literal reasons, never frame locals or formatted user input.
+            origin = error.__cause__ or error
+            root = Path(__file__).resolve().parent
+            frames = [(frame.f_code, Path(frame.f_code.co_filename).resolve(), line)
+                      for frame, line in traceback.walk_tb(origin.__traceback__)]
+            locations = [f"{path.relative_to(root).as_posix()}:{line} in {code.co_name}"
+                         for code, path, line in frames if path.is_relative_to(root)][-8:]
+            reason = origin.args[0] if origin.args and isinstance(origin.args[0], str) else None
+            literal = reason if frames and frames[-1][1].is_relative_to(root) and reason in frames[-1][0].co_consts else None
+            emit({'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__,
+                        'locations': locations, 'reason': literal, 'diagnosticType': type(origin).__name__,
+                        'businessCode': getattr(error, 'business_code', None),
+                        'systemCode': getattr(origin, 'sqlite_errorname', None) or getattr(origin, 'errno', None)})
 
     executor = ThreadPoolExecutor(max_workers=1)
     try:
