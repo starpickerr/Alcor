@@ -63,7 +63,14 @@ export function projectLog(row) {
 export class RuntimeLogs {
   constructor(ctx, table) {
     this.table = table
-    const history = table.get('history')?.entries ?? []
+    const history = (table.get('history')?.entries ?? []).map(row => {
+      // Old builds promoted expected Apple existence probes to errors before their caller handled them.
+      const expectedMissing = row.level === 'error'
+        && /^\[worker_operation_failed\] (?:calendar.get_event|tasks.get_todo) · KeyError · /.test(row.message)
+        && /^原因：(?:event not found|todo not found)$/m.test(row.message)
+        && /^位置：worker.py:\d+ in apple_peer$/m.test(row.message)
+      return expectedMissing ? { ...row, level: 'debug' } : row
+    })
     let excessDebug = Math.max(0, history.filter(row => row.level === 'debug').length - logDebugCapacity)
     this.entries = history.filter(row => {
       if (row.level !== 'debug' || excessDebug === 0) return true
@@ -116,7 +123,7 @@ export class RuntimeLogs {
     const matches = this.entries.map(projectLog).filter(row => (!since || row.time >= since)
       && (level === 'all' || (level === 'normal' ? row.level !== 'debug' : row.level === level))
       && (outcome === 'all' || row.outcome === outcome) && (!source || row.source === source)
-      && (!category || logCategory(row) === category)
+      && (!category || (category === 'error' ? row.level === 'error' : logCategory(row) === category))
       && (!needle || `${row.message} ${row.source}`.toLocaleLowerCase().includes(needle))).reverse()
     const remaining = before ? matches.filter(row => row.id < before) : matches
     const entries = remaining.slice(0, 100)

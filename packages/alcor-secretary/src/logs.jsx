@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, IconRefreshOutlineRegular, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Notice } from './notice.jsx'
-import { logCapacity, logCategory, logCategoryLabels, logDebugCapacity, logSources } from './log-contract.js'
+import { logCapacity, logCategory, logCategoryLabels, logDebugCapacity, logFilterCategories, logSources } from './log-contract.js'
 
 const clock = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 
@@ -91,8 +91,8 @@ export function RuntimeLogsPage({ api }) {
           <option value="all">全部时间</option><option value="24">最近 24 小时</option><option value="1">最近 1 小时</option>
         </ColumnFilter>
         <ColumnFilter label="类别" value={category} activeLabel={category === 'all' ? '全部' : logCategoryLabels[category]} onChange={setCategory}>
-          <option value="normal">常用（不含调试）</option><option value="all">全部类别</option>
-          {Object.entries(logCategoryLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+          <option value="normal">常用（不含调试）</option><option value="all">全部（含调试）</option>
+          {logFilterCategories.map(value => <option key={value} value={value}>{logCategoryLabels[value]}</option>)}
         </ColumnFilter>
         <ColumnFilter label="来源" value={source} activeLabel={source} onChange={setSource}>
           <option value="">全部来源</option>{(page?.sources ?? logSources).map(value => <option key={value}>{value}</option>)}

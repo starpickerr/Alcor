@@ -71,7 +71,8 @@ export class BusinessWorker {
           pending.resolve(result.value)
         }
         else {
-          report(workerFailure(result, pending.operation, Math.round(performance.now() - pending.startedAt)), 'error', pending.domain)
+          const expectedMissing = pending.expectedMissingReason && result.errorType === 'KeyError' && result.reason === pending.expectedMissingReason
+          report(workerFailure(result, pending.operation, Math.round(performance.now() - pending.startedAt)), expectedMissing ? 'debug' : 'error', pending.domain)
           const error = new Error(operationMessage(result)); error.name = result.errorType || 'Error'; pending.reject(error)
         }
       } catch (error) { failed(new Error('[worker_protocol_error] 业务服务返回了无效响应，请核对插件版本和运行环境；先刷新核对保存结果，避免重复写入。', { cause: error })); this.process.kill('SIGTERM') }
@@ -92,14 +93,18 @@ export class BusinessWorker {
       const domain = ['tasks', 'calendar', 'bills', 'briefing', 'automation', 'apple'].includes(input.domain) ? input.domain
         : ['briefing_run', 'local_briefing', 'generated_briefing', 'source_settings', 'source_group_settings', 'source_windows', 'source_cursors', 'local_source'].includes(action) ? 'briefing'
         : action === 'calendar_agenda' ? 'calendar' : action === 'due_reminders' ? 'tasks' : undefined
-      const routine = peer || ['due_reminders', 'records', 'source_settings', 'source_group_settings', 'source_windows', 'source_cursors', 'calendar_agenda', 'local_source'].includes(action)
+      const expectedMissingReason = action !== 'apple_peer' ? null
+        : input.domain === 'calendar' && input.method === 'get_event' ? 'event not found'
+        : input.domain === 'tasks' && input.method === 'get_todo' ? 'todo not found' : null
+      const query = action === 'invoke' && /^(?:get_|list_|find_|has_|catalog$|categories$)/.test(input.method ?? '')
+      const routine = query || peer || ['due_reminders', 'records', 'source_settings', 'source_group_settings', 'source_windows', 'source_cursors', 'calendar_agenda', 'local_source'].includes(action)
         || (action === 'briefing_run' && ['status', 'get', 'history', 'result', 'session'].includes(input.method))
       const timeout = setTimeout(() => {
         this.pending.delete(id)
         this.diagnostic(`[worker_timeout] ${operation} · 请求 ${id}`, 'warn', domain)
         reject(new Error('[worker_timeout] 业务操作超时，结果可能已保存，请刷新核对后重试。'))
       }, action === 'generated_briefing' ? 180000 : 200000)
-      this.pending.set(id, { resolve, reject, timeout, operation, domain, startedAt: performance.now(), logLevel: routine ? 'debug' : 'info' })
+      this.pending.set(id, { resolve, reject, timeout, operation, domain, expectedMissingReason, startedAt: performance.now(), logLevel: routine ? 'debug' : 'info' })
       this.process.stdin.write(JSON.stringify({ id, action, input }) + '\n', error => {
         if (error) { clearTimeout(timeout); this.pending.delete(id); reject(new Error('[worker_write_failed] 业务请求发送失败，请刷新核对结果后重启插件，避免重复写入。')) }
       })
