@@ -59,7 +59,7 @@ def _service(invoke_params: dict[str, Any]) -> BillsService:
     return BillsService(BillStore(Path(db_path)))
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     params = dict(invoke_params.get("input") or {})
     idem = invoke_params.get("idempotencyKey")
@@ -128,11 +128,17 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
             "error": {"code": "not_found", "message": f"unknown method: {method}"},
         }
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return {"status": "failed", "sideEffects": "none", "error": {"code": "not_found", "message": str(exc)}}
     except ValueError as exc:
+        if on_error is not None:
+            on_error(exc)
         code = "conflict" if "conflict" in str(exc) else "invalid_argument"
         return {"status": "failed", "sideEffects": "none", "error": {"code": code, "message": str(exc)}}
     except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
         return _unexpected(exc, read_only=any(row['name'] == method and row['effect'] == 'query' for row in SERVICE_DESCRIPTORS[0]['methods']))
 
 

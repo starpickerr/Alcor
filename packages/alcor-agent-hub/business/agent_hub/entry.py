@@ -86,7 +86,7 @@ def _service(invoke_params: dict[str, Any]) -> AgentHubService:
     return _SERVICES[key]
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
     if spec is None:
@@ -108,10 +108,16 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         with execution_sandbox((invoke_params.get('_hostDataHandle') or {}).get('executionSandbox')):
             value = getattr(_service(invoke_params), method)(**params)
     except ProviderNotFound as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("not_found", str(exc))
     except (ValueError, TypeError, KeyError) as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("invalid_argument", str(exc))
     except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
         return _unexpected(exc, read_only=effect == "query")
     if effect == "query":
         return {"status": "succeeded", "sideEffects": "none", "value": value}

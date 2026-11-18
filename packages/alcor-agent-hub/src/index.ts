@@ -37,7 +37,7 @@ export default class AgentHub extends TypertRemoteService {
     const legacy = this.ctx.get('stellaOrganizer')
     if (legacy && !legacy.agentHubDetached) throw new Error('请先将 Stella 更新到支持独立 AgentHub 的版本；协作数据尚未改动。')
     const profile = this.ctx.get('profileContext')?.dir ?? dshHomePath('profiles','default')
-    this.worker = new HubWorker(join(profile,'agent-hub'), {python:await resolveHubPython(),legacyDirectory:join(profile,'alcor','business'),diagnostic:message=>this.ctx.logger.warn(message)})
+    this.worker = new HubWorker(join(profile,'agent-hub'), {python:await resolveHubPython(),legacyDirectory:join(profile,'alcor','business'),diagnostic:(message,level = 'warn')=>this.ctx.logger('alcor-agent-hub')[level](message)})
     try {
       await this.worker.call('initialize')
       if (!legacy) {

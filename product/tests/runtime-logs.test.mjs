@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
-import { RuntimeLogs, redactLog, projectLog } from '../../packages/alcor-secretary/src/log-host.js'
+import { RuntimeLogs, redactLog, projectLog, recordSourceFailure } from '../../packages/alcor-secretary/src/log-host.js'
 import { logSchemas } from '../../packages/alcor-secretary/src/log-contract.js'
 
 async function fixture(t, saved = new Map()) {
@@ -148,4 +148,16 @@ test('outcome filtering happens before pagination and keeps the full matching co
   assert.deepEqual([first.matched, second.matched, third.matched], [205, 205, 205])
   assert.deepEqual([first.entries.length, second.entries.length, third.entries.length], [100, 100, 5])
   assert.equal(third.nextBefore, null)
+})
+
+test('source tool failures keep actionable codes and exclude remote response contents', async t => {
+  const { ctx, logs } = await fixture(t)
+  recordSourceFailure(ctx, { name: 'mcp__email__test_connection' }, { value: { structuredContent: { value: { connected: true, folder_accessible: false } } } })
+  recordSourceFailure(ctx, { name: 'mcp__elearning__fetch' }, { isError: true, error: { message: JSON.stringify({ error_code: 'login_required', message: 'private-content' }) } })
+  recordSourceFailure(ctx, { name: 'mcp__unrelated__fetch' }, { isError: true })
+  const page = logSchemas[1].parse(logs.list({ category: 'failure' }))
+  assert.deepEqual(page.entries.map(row => [row.source, row.operation, row.diagnostic.code]),
+    [['eLearning', 'elearning.fetch', 'login_required'], ['邮件', 'email.test_connection', 'folder_denied']])
+  assert.match(page.entries[1].diagnostic.reason, /文件夹/)
+  assert(!JSON.stringify(page).includes('private-content'))
 })

@@ -113,11 +113,14 @@ class Business:
         request = {'method': method, 'input': arguments or {}, 'idempotencyKey': request_id,
                    '_hostDataHandle': {'hubCoordinator': True, 'sourceDirectory': [], 'executionTask': (arguments or {}).get('task'),
                                        'executionSandbox': {'mode': 'core', **((arguments or {}).get('task') or {}), 'outputDirectory': str(self.root / 'executions')}}}
-        result = entry.handle_invoke(request)
+        original = []
+        result = entry.handle_invoke(request, on_error=original.append)
         if result['status'] != 'succeeded':
             detail = result.get('error') or {}
             message = detail.get('message') or 'Operation outcome unknown; check the saved state before retrying'
-            raise ValueError(f"[{detail['code']}] {message}" if detail.get('code') else message)
+            failure = ValueError(f"[{detail['code']}] {message}" if detail.get('code') else message)
+            failure.business_code = detail.get('code')
+            raise failure from (original[0] if original else None)
         return jsonable(result.get('value'))
 
     def _metadata(self, record, raw):
@@ -622,8 +625,19 @@ def main():
                 raise ValueError('Unknown business action')
             response = {'id': request['id'], 'ok': True, 'value': value}
         except Exception as error:
-            traceback.print_exc(file=sys.stderr)
-            response = {'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__}
+            # Report shipped code locations and literal reasons, never frame locals or formatted user input.
+            origin = error.__cause__ or error
+            root = Path(__file__).resolve().parent
+            frames = [(frame.f_code, Path(frame.f_code.co_filename).resolve(), line)
+                      for frame, line in traceback.walk_tb(origin.__traceback__)]
+            locations = [f"{path.relative_to(root).as_posix()}:{line} in {code.co_name}"
+                         for code, path, line in frames if path.is_relative_to(root)][-8:]
+            reason = origin.args[0] if origin.args and isinstance(origin.args[0], str) else None
+            literal = reason if frames and frames[-1][1].is_relative_to(root) and reason in frames[-1][0].co_consts else None
+            response = {'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__,
+                        'locations': locations, 'reason': literal, 'diagnosticType': type(origin).__name__,
+                        'businessCode': getattr(error, 'business_code', None),
+                        'systemCode': getattr(origin, 'sqlite_errorname', None) or getattr(origin, 'errno', None)}
         print(json.dumps(jsonable(response), ensure_ascii=False), flush=True)
 
 

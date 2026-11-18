@@ -1,3 +1,4 @@
+import { workerFailure } from '../../alcor-organizer/src/worker-diagnostic.js'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
@@ -33,8 +34,12 @@ export class HubWorker {
   constructor(directory, { python = pythonOverride(process.env) || developmentPython, legacyDirectory = '', diagnostic = () => {} } = {}) {
     this.pending = new Map()
     this.closed = false
+    this.report = (message, level = 'error') => {
+      try { diagnostic(message, level) } catch { /* Logging cannot interrupt a worker request. */ }
+    }
     this.process = spawn(python, ['-X', 'utf8', '-B', '-u', toNamespacedPath(fileURLToPath(new URL('../business/worker.py', import.meta.url))), toNamespacedPath(directory), legacyDirectory], { windowsHide:true, stdio: ['pipe', 'pipe', 'pipe'] })
     const failed = error => {
+      if (!this.closed) this.report(error.message)
       this.closed = true
       this.failure ??= error
       for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(this.failure) }
@@ -43,14 +48,17 @@ export class HubWorker {
     this.process.on('error', error => failed(new Error(`[worker_start_failed] AgentHub 无法启动（${error.code === 'ENOENT' ? 'Python 不存在' : error.code === 'EACCES' ? '系统拒绝执行 Python' : '运行环境异常'}），请修复 DSH 运行环境或显式配置的 Python。`)))
     this.process.on('exit', (code, signal) => failed(new Error(`[worker_stopped] AgentHub 服务已停止（${signal || code}），请刷新核对任务结果后重启插件，避免重复执行。`)))
     this.process.stdin.on('error', () => failed(new Error('[worker_write_failed] AgentHub 请求发送失败，请刷新核对任务结果后重启插件，避免重复执行。')))
-    this.process.stderr.on('data', () => diagnostic('AgentHub 操作失败，请查看返回的具体错误。'))
+    this.process.stderr.on('data', () => this.report('AgentHub 服务向标准错误流写入诊断。', 'warn'))
     createInterface({ input: this.process.stdout }).on('line', line => {
       try {
         const result = JSON.parse(line), call = this.pending.get(result.id)
         if (!call) return
         clearTimeout(call.timer); this.pending.delete(result.id)
         if (result.ok) call.resolve(result.value)
-        else call.reject(new Error(operationMessage(result)))
+        else {
+          this.report(workerFailure(result, call.operation, Math.round(performance.now() - call.startedAt)))
+          call.reject(new Error(operationMessage(result)))
+        }
       } catch { failed(new Error('[worker_protocol_error] AgentHub 返回了无效响应，请核对插件版本和运行环境；先刷新核对任务结果，避免重复执行。')); this.process.kill('SIGTERM') }
     })
   }
@@ -58,8 +66,10 @@ export class HubWorker {
     if (this.closed) return Promise.reject(this.failure || new Error('[worker_stopped] AgentHub 服务已停用，请重新启用插件后再操作。'))
     return new Promise((resolve, reject) => {
       const id = randomUUID()
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('[worker_timeout] AgentHub 操作超时，请刷新核对，避免重复执行。')) }, 200000)
-      this.pending.set(id, { resolve, reject, timer })
+      const name = action === 'invoke' ? input.method : action
+      const operation = 'agent_hub.' + (/^[a-z_]{1,80}$/.test(name ?? '') ? name : 'unknown')
+      const timer = setTimeout(() => { this.pending.delete(id); this.report(`[worker_timeout] ${operation} · 请求 ${id}`, 'warn'); reject(new Error('[worker_timeout] AgentHub 操作超时，请刷新核对，避免重复执行。')) }, 200000)
+      this.pending.set(id, { resolve, reject, timer, operation, startedAt: performance.now() })
       this.process.stdin.write(JSON.stringify({ id, action, input }) + '\n', error => {
         if (error) { clearTimeout(timer); this.pending.delete(id); reject(new Error('[worker_write_failed] AgentHub 请求发送失败，请刷新核对任务结果后重启插件，避免重复执行。')) }
       })

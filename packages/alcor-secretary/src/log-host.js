@@ -1,10 +1,13 @@
+import { checkMessages as mailErrors } from '../../alcor-mail/src/check-status.js'
+import { checkMessages as schoolErrors } from '../../alcor-plugin-info/src/elearning-status.js'
+import { reportHostFailure } from '../../alcor-organizer/src/worker-diagnostic.js'
 import { Logger } from '@deepseek-ai/cordis'
 import { logCapacity, logCategory, logDebugCapacity, logSchemas, logSources } from './log-contract.js'
 
 // Default Cordis logger names come from each native plugin's class name.
 const sources = new Map(Object.entries({ secretary: 'Alcor', organizer: 'Alcor', tasks: '事务', calendar: '日程',
   briefing: '简报', bills: '账单', automation: '自动化', apple: 'Apple 同步', 'apple-sync': 'Apple 同步',
-  'school-remote': 'eLearning', elearning: 'eLearning', 'mail-remote': '邮件', mail: '邮件', 'agent-hub': 'AgentHub' }))
+  'school-remote': 'eLearning', elearning: 'eLearning', 'mail-remote': '邮件', 'mail-connection': '邮件', mail: '邮件', 'agent-hub': 'AgentHub' }))
 
 export function logSource(message) {
   const name = message.name.replace(/^@alcor\//, '').replace(/^alcor-/, '')
@@ -22,15 +25,39 @@ export function redactLog(text) {
     .replace(/(?:\/Users\/|\/home\/)[^/\s]+|[A-Z]:\\Users\\[^\\\s]+/gi, '[用户目录]')
 }
 
+// MCP errors may contain mail bodies, credentials or server responses. Resolve only known codes.
+export function recordSourceFailure(ctx, execution, result) {
+  const match = /^mcp__(email|elearning)__([a-z_]{1,80})$/.exec(execution.name)
+  if (!match) return
+  const value = result.value?.structuredContent?.value
+  const mailCheck = execution.name === 'mcp__email__test_connection'
+  if (!result.isError && !(mailCheck && (value?.connected === false || value?.folder_accessible === false))) return
+  const messages = match[1] === 'email' ? mailErrors : schoolErrors
+  let code = value?.error_code
+  if (!code && typeof result.error?.message === 'string') {
+    try { code = JSON.parse(result.error.message)?.error_code } catch { /* Unstructured remote response. */ }
+  }
+  if (mailCheck && value?.connected === true && value?.folder_accessible === false) code = 'folder_denied'
+  if (typeof code !== 'string' || !Object.hasOwn(messages, code)) code = 'query_failed'
+  reportHostFailure(ctx, match[1] === 'email' ? 'mail' : 'elearning', match[1] + '.' + match[2],
+    { code }, messages[code], execution.callId)
+}
+
 // Only explicit native worker events attest an operation outcome; severity alone does not.
 export function projectLog(row) {
-  const event = row.message.match(/^\[(worker_operation_succeeded|worker_operation_failed|worker_timeout|worker_start_failed|worker_stopped|worker_write_failed|worker_protocol_error)\]\s*/)
+  const [header, ...details] = row.message.split('\n')
+  const event = header.match(/^\[(worker_operation_succeeded|business_operation_failed|worker_operation_failed|worker_timeout|worker_start_failed|worker_stopped|worker_write_failed|worker_protocol_error)\]\s*/)
   const outcome = event ? event[1] === 'worker_operation_succeeded' ? 'success' : 'failure' : null
-  const operation = event ? row.message.slice(event[0].length).match(/^([a-z_]+(?:\.[a-z_]+)?)(?:\s|$)/)?.[1] ?? null : null
-  const duration = event ? row.message.match(/ · 耗时 (\d+) ms · 请求 /)?.[1] : undefined
+  const operation = event ? header.slice(event[0].length).match(/^([a-z_]+(?:\.[a-zA-Z_]+)?)(?:\s|$)/)?.[1] ?? null : null
+  const duration = event ? header.match(/ · 耗时 (\d+) ms · 请求 /)?.[1] : undefined
   const durationMs = duration !== undefined && Number.isSafeInteger(Number(duration)) ? Number(duration) : null
-  const requestId = event ? row.message.match(/ · 请求 ([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i)?.[1] ?? null : null
-  return { ...row, outcome, operation, durationMs, requestId }
+  const requestId = event ? header.match(/ · 请求 ([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i)?.[1] ?? null : null
+  const code = outcome === 'failure' ? header.match(/ · ([A-Za-z_][\w-]{0,63})(?: · |$)/)?.[1] ?? event[1] : null
+  const diagnostic = code ? { code, reason: details.find(line => line.startsWith('原因：'))?.slice(3) ?? null,
+    businessCode: details.find(line => line.startsWith('业务错误：'))?.slice(5) ?? null,
+    systemCode: details.find(line => line.startsWith('系统错误：'))?.slice(5) ?? null,
+    locations: details.filter(line => line.startsWith('位置：')).slice(0, 8).map(line => line.slice(3)) } : undefined
+  return { ...row, outcome, operation, durationMs, requestId, ...(diagnostic ? { diagnostic } : {}) }
 }
 
 export class RuntimeLogs {
@@ -50,6 +77,7 @@ export class RuntimeLogs {
     this.revision = 0
     this.queue = Promise.resolve()
     this.active = true
+    ctx.on('tools/result', (execution, result) => { recordSourceFailure(ctx, execution, result) })
     ctx.logger.exporter({ colors: false, levels: { default: 3 }, export: message => {
       // A broken diagnostic sink must never interrupt a business operation.
       try {

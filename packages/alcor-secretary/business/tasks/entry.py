@@ -151,7 +151,7 @@ def _complete_scheduler_link(svc: TodoService, params: dict[str, Any]) -> dict[s
     return {"todo_id": todo_id, "outcome": outcome}
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
     if spec is None:
@@ -184,12 +184,18 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         elif method == "sync_briefing_facts":
             value = list(value)
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except ValueError as exc:
+        if on_error is not None:
+            on_error(exc)
         text = str(exc)
         code = "conflict" if "conflict" in text or text.startswith("unfinished_dependencies") else "invalid_argument"
         return _fail(code, text)
     except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
         return _unexpected(exc, read_only=effect == "query")
     if effect == "query":
         return _ok(value)
