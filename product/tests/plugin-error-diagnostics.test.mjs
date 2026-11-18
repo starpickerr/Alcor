@@ -128,3 +128,27 @@ test('a missing task retains its original domain exception and source location a
   assert.ok(failure.requestId && failure.durationMs >= 0)
   assert(!JSON.stringify(messages).includes('private-item-id'))
 })
+
+test('only missing Apple object probes use debug while genuine query and peer errors retain errors', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'alcor-probe-logs-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const rows = []
+  const worker = new BusinessWorker(root, {
+    worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url),
+    diagnostic: (message, level) => rows.push({ message, level }),
+  })
+  t.after(() => worker.close())
+  for (const [domain, method] of [['calendar', 'get_event'], ['tasks', 'get_todo']]) {
+    await assert.rejects(worker.call('apple_peer', { domain, method, args: ['synthetic-missing'] }), /not found/)
+    assert.equal(rows.at(-1).level, 'debug')
+    assert.match(rows.at(-1).message, /KeyError/)
+  }
+  await assert.rejects(worker.call('invoke', { domain: 'tasks', method: 'get_todo', arguments: { todo_id: 'synthetic-missing' } }))
+  assert.equal(rows.at(-1).level, 'error')
+  await assert.rejects(worker.call('apple_peer', { domain: 'calendar', method: 'get_event', args: [] }))
+  assert.equal(rows.at(-1).level, 'error')
+  await assert.rejects(worker.call('apple_peer', { domain: 'calendar', method: 'unknown' }))
+  assert.equal(rows.at(-1).level, 'error')
+  await worker.call('invoke', { domain: 'tasks', method: 'list_todos', arguments: {} })
+  assert.equal(rows.at(-1).level, 'debug')
+})

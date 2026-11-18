@@ -125,8 +125,9 @@ test('execution outcome is explicit and independent of severity, with compatible
   assert.equal(logs.list({ outcome: 'failure' }).entries[0].outcome, 'failure')
   assert.equal(logs.list({ category: 'success' }).matched, 1)
   assert.equal(logs.list({ category: 'debug' }).entries[0].outcome, 'success')
-  assert.equal(logs.list({ category: 'failure' }).entries[0].level, 'warn')
-  assert.equal(logs.list({ category: 'warn' }).matched, 0)
+  assert.equal(logs.list({ category: 'failure' }).entries[0].level, 'error')
+  assert.equal(logs.list({ category: 'failure' }).matched, 1)
+  assert.equal(logs.list({ category: 'warn' }).matched, 1)
   assert.equal(logs.list({ category: 'error' }).matched, 1)
   assert.equal(logs.list({ category: 'info' }).matched, 1)
   assert.throws(() => logs.list({ category: 'invented' }))
@@ -160,4 +161,17 @@ test('source tool failures keep actionable codes and exclude remote response con
     [['eLearning', 'elearning.fetch', 'login_required'], ['邮件', 'email.test_connection', 'folder_denied']])
   assert.match(page.entries[1].diagnostic.reason, /文件夹/)
   assert(!JSON.stringify(page).includes('private-content'))
+})
+
+test('old Apple existence probes become bounded debug history while direct failures remain visible', async t => {
+  const message = '[worker_operation_failed] calendar.get_event · KeyError · 请求 3cc58a30-2693-4fe3-896d-61319e5455e6\n原因：event not found\n位置：worker.py:574 in apple_peer'
+  const rows = Array.from({ length: 201 }, (_, index) => ({
+    id: index + 1, time: '2026-11-18T00:00:00.000Z', level: 'error', source: '日程',
+    message: index === 0 ? message.replace(' in apple_peer', ' in _invoke') : message,
+  }))
+  const { logs } = await fixture(t, new Map([['history', { entries: rows }]]))
+  assert.equal(logs.list({ level: 'normal' }).matched, 1)
+  assert.equal(logs.list({ category: 'failure' }).matched, 1)
+  assert.equal(logs.list({ category: 'debug' }).matched, 100)
+  assert.equal(logs.list({ category: 'failure' }).entries[0].id, 1)
 })
