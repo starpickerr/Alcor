@@ -14,7 +14,7 @@ def host(tmp_path, monkeypatch):
     monkeypatch.setenv("STELLA_BILLS_PLUGIN", "1")
     root = Path("stella-plugins-workspace/plugins/bills")
     if not root.is_dir():
-        root = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "bills"
+        root = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "bills"
     monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(root.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))
     from core.services import bills_facade, bills_gateway

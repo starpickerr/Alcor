@@ -13,7 +13,7 @@ parser.add_argument("--domain", required=True)
 args, rest = parser.parse_known_args()
 root = Path(__file__).resolve().parents[3]
 repo = (
-    root / "MCP" / ("fudan-elearning-mcp" if args.domain == "elearning" else "email-mcp")
+    root / ("dsh-fudan-elearning" if args.domain == "elearning" else "dsh-email")
 )
 pkg = "elearning_mcp" if args.domain == "elearning" else "email_mcp"
 if (Path(__file__).parent / pkg).is_dir():

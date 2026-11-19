@@ -12,7 +12,7 @@ import pytest
 from core.services import briefing_gateway
 
 WORKSPACE_ROOT = Path("stella-plugins-workspace/plugins/briefing")
-SIBLING_ROOT = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "briefing"
+SIBLING_ROOT = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "briefing"
 
 NOW = "2026-09-09T06:00:00Z"
 

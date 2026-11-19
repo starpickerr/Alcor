@@ -44,7 +44,7 @@ test('confirmation subprocess accepts only this request reply; malformed, denied
       assert(!state.args.join(' ').includes(request.detail))
     } else {
       assert.deepEqual(state.args, [])
-      assert.match(state.path, /native\/Alcor Confirm.app\/Contents\/MacOS\/AlcorConfirm$/)
+      assert.match(state.path, /native\/AlcorConfirm$/)
     }
     assert.equal(state.options.timeout, 245000); assert.equal(state.options.signal, controller.signal)
   }

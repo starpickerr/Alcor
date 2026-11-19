@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='stella-feature-ui-') as state:
         discovered = [tool for tool in client.list_tools() if tool['name'] in PUBLIC_TOOLS['elearning']]
     finally:
         client.shutdown()
-    bills_manifest = json.loads((ROOT.parent / 'Stella-Plugins/plugins/bills/plugin.json').read_text())
+    bills_manifest = json.loads((ROOT / 'stella-plugins-workspace/plugins/bills/plugin.json').read_text())
     providers = [plugin('stella.bills', '账单', bills_manifest['contributes']),
                  plugin('example.viewer', '资料查看器', {'pages': ['viewer.main']}),
                  plugin('example.second', '第二查看器', {'pages': ['viewer.main']}),

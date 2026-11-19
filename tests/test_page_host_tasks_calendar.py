@@ -15,9 +15,9 @@ def host(tmp_path, monkeypatch):
     tasks = Path("stella-plugins-workspace/plugins/tasks")
     calendar = Path("stella-plugins-workspace/plugins/calendar")
     if not tasks.is_dir():
-        tasks = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "tasks"
+        tasks = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "tasks"
     if not calendar.is_dir():
-        calendar = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "calendar"
+        calendar = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "calendar"
     monkeypatch.setenv("STELLA_TASKS_PLUGIN_ROOT", str(tasks.resolve()))
     monkeypatch.setenv("STELLA_CALENDAR_PLUGIN_ROOT", str(calendar.resolve()))
     from core.services import calendar_facade, todos_facade

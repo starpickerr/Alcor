@@ -141,7 +141,7 @@ def test_frozen_runner_initializes_default_domain_plugins(frozen_runner, domain,
     from core.plugins.host import PluginSession
     from core.plugins.registry import PluginRegistry
 
-    sibling = REPO.parent / "Stella-Plugins" / "plugins" / domain
+    sibling = REPO / "stella-plugins-workspace" / "plugins" / domain
     workspace = REPO / "stella-plugins-workspace" / "plugins" / domain
     root = sibling if sibling.is_dir() else workspace
     if not root.is_dir():
@@ -192,7 +192,7 @@ def test_frozen_bills_exports_xlsx_without_system_python(frozen_runner, tmp_path
 
     monkeypatch.setenv('PATH', '/nonexistent')
     monkeypatch.delenv('PYTHONPATH', raising=False)
-    session = PluginSession(REPO.parent / 'Stella-Plugins/plugins/bills', source_label='frozen-export',
+    session = PluginSession(REPO / 'stella-plugins-workspace/plugins/bills', source_label='frozen-export',
                             registry=PluginRegistry(), runner_command=[str(frozen_runner)])
     handle = {'namespace': 'stella.bills', 'dbPath': str(tmp_path / 'bills.sqlite')}
     try:

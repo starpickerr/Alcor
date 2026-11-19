@@ -29,6 +29,13 @@
       "teamId": "NAN929V4UM",
       "version": "0.2.2-rc.3",
       "appAsarSha256": "c0ce89f77d25e98e11952728d1fc054b6e2300db17402af83a1a225c8b36e843"
+    },
+    {
+      "bundleId": "com.deepseek.dsh",
+      "arch": "arm64",
+      "teamId": "NAN929V4UM",
+      "version": "0.2.2-rc.5",
+      "appAsarSha256": "6f019878f523428f452957dbaad601c6468051df4093eda8af751ec65226f88e"
     }
   ],
   "windows": {

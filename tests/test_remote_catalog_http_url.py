@@ -23,7 +23,7 @@ def _plugins_root() -> Path:
     workspace = Path("stella-plugins-workspace/plugins")
     if workspace.is_dir():
         return workspace
-    return Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins"
+    return Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins"
 
 
 def test_absolute_http_url_installs_signed_package(tmp_path, monkeypatch):

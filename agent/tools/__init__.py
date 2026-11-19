@@ -30,7 +30,6 @@ from agent.tools.calendar.calendar_tool import CalendarTool
 from agent.tools.apple.apple_tool import AppleTool
 from agent.tools.todos.todos_tool import TodosTool
 from agent.tools.skill.skill_tool import SkillTool
-from agent.tools.agent_hub.agent_hub_tool import AgentHubTool
 
 # Import tools with optional dependencies
 def _import_optional_tools():
@@ -142,7 +141,6 @@ __all__ = [
     'AppleTool',
     'TodosTool',
     'SkillTool',
-    'AgentHubTool',
     'SchedulerTool',
     'WebSearch',
     'WebFetch',

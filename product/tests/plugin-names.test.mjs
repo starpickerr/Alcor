@@ -5,7 +5,6 @@ import { readPluginMeta } from '@deepseek-ai/dsh-app-boot'
 
 for (const [name, title] of [
   ['secretary', 'Alcor'],
-  ['agent-hub', 'dsh-agent-hub'],
   ['elearning', 'dsh-fudan-elearning'],
   ['mail', 'dsh-email'],
 ]) {

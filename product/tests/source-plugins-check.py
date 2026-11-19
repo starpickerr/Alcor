@@ -301,7 +301,7 @@ export function apply(ctx) {
         baseline = (profile / 'cordis.patch.yml').read_bytes()
         desktop.native_cli(home, 'sources-install', 'add', str(PACK), *map(str, SOURCES), '--ignore-scripts')
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
-        subprocess.run([str(ROOT.parent / 'MCP/dsh-email/.venv/bin/python'), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
+        subprocess.run([str(ROOT.parent / 'dsh-email/.venv/bin/python'), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
         with desktop.desktop(playwright, home, 'sources') as (page, errors):
             check(page, home, profile, artifacts)
             assert not errors, errors

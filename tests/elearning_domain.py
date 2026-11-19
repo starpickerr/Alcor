@@ -6,7 +6,7 @@ from importlib import import_module
 
 from tests.mcp_checkout import require_checkout
 
-root = Path(__file__).resolve().parents[2] / 'MCP/fudan-elearning-mcp/tests/domain'
+root = Path(__file__).resolve().parents[2] / 'dsh-fudan-elearning/tests/domain'
 require_checkout(root / 'support.py', 'eLearning MCP test support is not in this checkout')
 name = 'stella_elearning_test_support'
 if name not in sys.modules:

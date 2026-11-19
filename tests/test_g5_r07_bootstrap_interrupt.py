@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-CATALOG = REPO.parent / "Stella-Plugins" / "catalog" / "official.json"
+CATALOG = REPO / "stella-plugins-workspace" / "catalog" / "official.json"
 BACKEND = (
     REPO
     / "desktop"

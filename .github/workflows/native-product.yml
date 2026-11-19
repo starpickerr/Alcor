@@ -36,13 +36,13 @@ jobs:
         with:
           repository: ${{ steps.sources.outputs.elearning_repository }}
           ref: ${{ steps.sources.outputs.elearning_revision }}
-          path: MCP/dsh-fudan-elearning
+          path: dsh-fudan-elearning
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
           repository: ${{ steps.sources.outputs.email_repository }}
           ref: ${{ steps.sources.outputs.email_revision }}
-          path: MCP/dsh-email
+          path: dsh-email
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -52,14 +52,14 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: MCP/*/requirements.lock
+          cache-dependency-path: dsh-*/requirements.lock
       - name: Install fixed connector build dependencies
         run: |
           npm ci --ignore-scripts
           for source in dsh-fudan-elearning dsh-email; do
-            python -m venv "../MCP/$source/.venv"
-            "../MCP/$source/.venv/bin/python" -m pip install --require-hashes -r "../MCP/$source/requirements.lock"
-            "../MCP/$source/.venv/bin/python" -m pip install PyInstaller==6.22.3
+            python -m venv "../$source/.venv"
+            "../$source/.venv/bin/python" -m pip install --require-hashes -r "../$source/requirements.lock"
+            "../$source/.venv/bin/python" -m pip install PyInstaller==6.22.3
           done
       - name: Verify pinned sources and package current connectors
         run: npm run product:sources:pack
@@ -70,7 +70,7 @@ jobs:
             archive=$(node -p 'const p=require("./packages/alcor-'"$source"'/package.json");"alcor-'"$source"'-"+p.version+".tgz"')
             tar -xzf ".local/artifacts/$archive" --strip-components=1 -C ".local/source-check/@alcor/$source"
           done
-          ../MCP/dsh-fudan-elearning/.venv/bin/python product/tests/source-protocol-check.py .local/source-check
+          ../dsh-fudan-elearning/.venv/bin/python product/tests/source-protocol-check.py .local/source-check
   linux-native-plugin:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -92,7 +92,6 @@ jobs:
       - name: Test portable plugin services and authorization boundaries
         run: |
           export ALCOR_BUSINESS_PYTHON="$(command -v python)"
-          npm run preproduct:test
           node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/shared-business-tools.test.mjs product/tests/alcor-security-policy.test.mjs product/tests/alcor-security-bill-gate.test.mjs product/tests/alcor-organizer-security-boundary.test.mjs product/tests/native-runtime-boundary.test.mjs
   windows-native-plugin:
     runs-on: windows-2025
@@ -119,8 +118,6 @@ jobs:
         shell: pwsh
         run: |
           $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
-          npm run preproduct:test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/shared-business-tools.test.mjs product/tests/native-runtime-boundary.test.mjs
   native-product:
     runs-on: macos-15
@@ -138,7 +135,6 @@ jobs:
         run: npm test
       - name: Test package-owned identity and legacy-data compatibility
         run: |
-          python3 -B -m unittest discover -s packages/alcor-agent-hub/tests -p 'test_*.py'
           node --experimental-test-module-mocks --test packages/alcor-privacy/tests/identity-synthetic.test.mjs
       - name: Build the current plugin and reject legacy client inputs
         run: npm run product:pack

@@ -26,7 +26,7 @@ def peers(tmp_path, monkeypatch, request):
         for name, gateway in gateways.items():
             getattr(gateway, f'shutdown_{name}_session')()
             domain = 'tasks' if name == 'todos' else name
-            root = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins' / domain
+            root = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace/plugins' / domain
             op = packages.stage(root)
             packages.inspect(op.operation_id)
             packages.prepare(op.operation_id)
@@ -85,8 +85,14 @@ def test_default_owner_grants_allow_native_create_repeated_create_and_linked_vie
 def test_default_owner_grants_allow_projection_and_sync(peers, background):
     from core.plugins.caller import caller_origin_scope
 
+    from common.runtime_identity import identity_scope
+    from core.security.run_policy import save_run_policy
     item = peers.publish()['items'][0]['id']
-    with caller_origin_scope('scheduler' if background else 'desktop'):
+    if background:
+        save_run_policy('task', 'briefing-owner-test', {'filesystem_mode': 'workspace-write',
+            'capabilities': {f'plugin:stella.{domain}': {'read': 'allow', 'write': 'allow'}
+                             for domain in ('briefing', 'tasks', 'calendar')}})
+    with identity_scope(task_id='briefing-owner-test' if background else None), caller_origin_scope('scheduler' if background else 'desktop'):
         result = peers.ok('dispatch_outbox', limit=20)
         assert result['pending'] == 0 and result['projected'] == 2, result
         receipt = peers.ok('update_action', item_id=item, payload={'operation': 'create', 'kind': 'todo'})

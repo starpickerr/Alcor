@@ -20,7 +20,6 @@ DOMAIN_ENV = {
     "stella.tasks": "STELLA_TODOS_PLUGIN",
     "stella.briefing": "STELLA_BRIEFING_PLUGIN",
     "stella.automation": "STELLA_AUTOMATION_PLUGIN",
-    "stella.agent-hub": "STELLA_AGENT_HUB_PLUGIN",
 }
 
 
@@ -177,7 +176,7 @@ def _default_catalog_path() -> Path:
     """Resolve the official catalog for bootstrap.
 
     Order: ``STELLA_PLUGIN_CATALOG`` → Electron Resources seed → frozen
-    ``_MEIPASS`` copy → sibling Stella-Plugins checkout.
+    ``_MEIPASS`` copy → bundled Legacy sources.
     """
     explicit = os.environ.get("STELLA_PLUGIN_CATALOG", "").strip()
     if explicit:
@@ -192,5 +191,5 @@ def _default_catalog_path() -> Path:
     bundled = meipass / "resources" / "plugin-catalog.json"
     if bundled.is_file():
         return bundled
-    sibling = here.parents[3] / "Stella-Plugins" / "catalog" / "official.json"
+    sibling = here.parents[2] / "stella-plugins-workspace" / "catalog" / "official.json"
     return sibling

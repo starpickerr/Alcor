@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { python } from './platform-python.mjs'
 
 test('every current plugin Host entry bundles without the retired application runtime', async () => {
-  const plugins = ['agent-hub', 'apple-sync', 'elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
+  const plugins = ['apple-sync', 'elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
   const result = await build({
     entryPoints: [...plugins.map(name => `packages/alcor-${name}/src/index.ts`), 'packages/alcor-privacy/src/index.js'],
     bundle: true, packages: 'external', platform: 'node', format: 'esm',
@@ -21,7 +21,7 @@ test('shipped plugin Python sources never import the retired Core or Agent', () 
 import ast
 from pathlib import Path
 retired = {'agent', 'application', 'bridge', 'channel', 'core', 'models'}
-for package in ('alcor-secretary', 'alcor-apple-sync', 'alcor-agent-hub'):
+for package in ('alcor-secretary', 'alcor-apple-sync'):
     for path in (Path('packages') / package).rglob('*.py'):
         tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
         for node in ast.walk(tree):

@@ -16,7 +16,7 @@ class CapabilityDescriptor:
 _registered = {}
 _lock = RLock()
 _BUSINESS = {'todos': 'tasks', 'calendar': 'calendar', 'bills': 'bills', 'briefing': 'briefing',
-             'scheduler': 'automation', 'agent_hub': 'agent-hub', 'memory': 'memory', 'knowledge': 'knowledge'}
+             'scheduler': 'automation', 'memory': 'memory', 'knowledge': 'knowledge'}
 _READ = {'list', 'get', 'status', 'search', 'view', 'today', 'upcoming', 'rules', 'sources', 'history', 'categories',
          'list_rules', 'get_preferences', 'list_files', 'get_content', 'read', 'query', 'overview'}
 _WRITE = {'create', 'update', 'complete', 'status_update', 'add', 'run', 'item_status', 'add_rule', 'update_rule',
@@ -41,12 +41,6 @@ def describe_tool(name, arguments):
     if name in _BUSINESS:
         operation = 'delete' if action in _DELETE else 'read' if action in _READ else 'write' if action in _WRITE else 'unknown'
         if name == 'todos' and action == 'status':
-            operation = 'write'
-        if name == 'agent_hub' and action in {'start', 'run', 'execute', 'submit', 'continue'}:
-            operation = 'system_execute'
-        if name == 'agent_hub' and action == 'providers':
-            operation = 'read'
-        if name == 'agent_hub' and action == 'cancel':
             operation = 'write'
         return CapabilityDescriptor('plugin:stella.' + _BUSINESS[name], 'plugin', operation)
     for domain in ('memory', 'knowledge'):

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 export const logCapacity = 1000
 export const logDebugCapacity = 100
-export const logSources = ['Alcor', '事务', '日程', '简报', '账单', '自动化', 'Apple 同步', 'eLearning', '邮件', 'AgentHub']
+export const logSources = ['Alcor', ...['事务', '日程', '简报', '账单', '自动化'].map(name => `Alcor：${name}`), 'Apple 同步', 'eLearning', '邮件']
 export const logCategoryLabels = { success: '成功', failure: '失败', error: '错误', warn: '警告', info: '信息', debug: '调试' }
 export const logFilterCategories = ['success', 'failure', 'warn', 'info']
 export const logCategories = Object.keys(logCategoryLabels)

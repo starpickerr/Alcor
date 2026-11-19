@@ -22,9 +22,9 @@ from core.plugins.runtime_hub import DEFAULT_REGISTRY
 
 DOMAINS = {'stella.memory': 'memory', 'stella.knowledge': 'knowledge', 'stella.bills': 'bills', 'stella.tasks': 'todos', 'stella.calendar': 'calendar',
            'stella.briefing': 'briefing',
-           'stella.automation': 'automation', 'stella.agent-hub': 'agent_hub'}
+           'stella.automation': 'automation'}
 
-FIRST_PARTY_PLUGIN_IDS = frozenset(DOMAINS) | frozenset({'stella.agent-hub'})
+FIRST_PARTY_PLUGIN_IDS = frozenset(DOMAINS)
 
 
 def dependency_rebuild_support(manifest):
@@ -66,8 +66,6 @@ def domain_data_handle(plugin_id: str, user_id: str) -> dict:
             from common.runtime_identity import current_identity
             agent = current_identity().agent_id or get_agent_registry().default_agent_id
             return {'namespace': plugin_id, 'dbPath': str(task_records_path(path, agent, user_id))}
-        if plugin_id == 'stella.agent-hub':
-            return {'namespace': plugin_id, 'dbPath': str(state_dir.agent_hub_db(ensure=False).absolute())}
     from core.plugins.storage import private_data_handle
     return private_data_handle(plugin_id, user_id)
 

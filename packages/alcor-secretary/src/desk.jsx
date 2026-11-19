@@ -1,12 +1,11 @@
 import {sharedWorkspaceContext} from './shared-workspace.js'
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
 import { BriefingWorkspace } from './briefing.jsx'
 import { canonicalPanel } from './mode.js'
-import { applicationEnvironment } from '../../alcor-plugin-info/src/assignments.js'
 
 export const deskViews = applicationViews
 
@@ -32,12 +31,10 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNo
   </section>
 }
 
-export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderSlot, nativeShared=false, nativeShell=false, pluginPanels, hubForm, t }) {
+export function SecretarySidebar({ collapsed, drawer, width, navigate, startSession, toggleSidebar, usePanelInfo, useRemoteAccess, renderFactorySlot, renderSlot, nativeShared=false, nativeShell=false, pluginPanels, t }) {
   const panel = usePanelInfo(value => value.activePanelId)
   const canManagePlugins = useRemoteAccess('pluginManager/listBundles')
   const applications = [...applicationViews]
-  const hub=useSyncExternalStore(listener=>hubForm.subscribe(listener),()=>hubForm.getSnapshot())
-  if(applicationEnvironment() && hub.status==='ready' || ['alcor','both'].includes(hub.value?.productScope)) applications.push({id:'agent-hub',label:'AgentHub',icon:IconPluginPinwheelOutlineRegular})
   const system = [{ id: 'alcor-logs', label: '日志', icon: IconChecklistOutlineRegular }]
   if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
@@ -62,7 +59,7 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
 export function PluginPanels({source, wide, panel, navigate}) {
   const [entries,setEntries] = useState(() => source.list())
   useEffect(() => { const refresh=()=>setEntries(source.list()); const stop=source.subscribe(refresh); refresh(); return stop },[source])
-  const panels=entries.map(({options})=>options).filter(row=>!['plugins','schedules','agent-hub'].includes(row.id)).sort((a,b)=>(a.order??0)-(b.order??0))
+  const panels=entries.map(({options})=>options).filter(row=>!['plugins','schedules'].includes(row.id)).sort((a,b)=>(a.order??0)-(b.order??0))
   if (!panels.length) return null
   return <>{panels.map(row=>{
     const label=typeof row.label==='function' ? row.label() : row.label ?? row.id

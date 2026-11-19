@@ -144,7 +144,7 @@ def test_registered_plugin_adapter_outside_static_catalog_keeps_its_definition(m
 def test_real_elearning_server_publishes_four_public_tool_titles_and_parameters(tmp_path):
     from agent.tools.mcp.mcp_client import McpClient
     from core.mcp.managed import PUBLIC_TOOLS
-    repo = Path(__file__).resolve().parents[2] / 'MCP/fudan-elearning-mcp'
+    repo = Path(__file__).resolve().parents[2] / 'dsh-fudan-elearning'
     client = McpClient({'name': 'elearning', 'type': 'stdio', 'command': sys.executable,
                         'args': [str(repo / 'mcp_server.py'), '--data-dir', str(tmp_path)], 'timeout': 10})
     try:

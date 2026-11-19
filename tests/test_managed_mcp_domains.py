@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def server_config(domain, data):
     repo = (
-        ROOT / "MCP" / ("fudan-elearning-mcp" if domain == "elearning" else "email-mcp")
+        ROOT / ("dsh-fudan-elearning" if domain == "elearning" else "dsh-email")
     )
     return ManagedMcpConfig({
         "name": domain,
@@ -216,7 +216,7 @@ def fake_config(domain, data):
     import ast
     import shutil
     config = server_config(domain, data)
-    repo = ROOT / 'MCP' / ('fudan-elearning-mcp' if domain == 'elearning' else 'email-mcp')
+    repo = ROOT / ('dsh-fudan-elearning' if domain == 'elearning' else 'dsh-email')
     bundle = Path(data).parent / (domain + '-fixture-package')
     bundle.mkdir(parents=True, exist_ok=True)
     shutil.copytree(repo / (domain + '_mcp'), bundle / (domain + '_mcp'), dirs_exist_ok=True,

@@ -18,10 +18,10 @@ RESOURCES = DESKTOP / "resources"
 PACKAGES = RESOURCES / "plugin-packages"
 CATALOG_OUT = RESOURCES / "plugin-catalog.json"
 SECRET_FILE = RESOURCES / "plugin-signing.secret"
-PLUGINS_ROOT = ROOT.parent / "Stella-Plugins" / "plugins"
-OFFICIAL = ROOT.parent / "Stella-Plugins" / "catalog" / "official.json"
+PLUGINS_ROOT = ROOT / "stella-plugins-workspace" / "plugins"
+OFFICIAL = ROOT / "stella-plugins-workspace" / "catalog" / "official.json"
 
-DOMAINS = ("bills", "calendar", "tasks", "briefing", "automation", "agent-hub", "knowledge", "memory")
+DOMAINS = ("bills", "calendar", "tasks", "briefing", "automation", "knowledge", "memory")
 DEFAULT_SECRET = b"stella-first-edition-plugin-catalog"
 
 

@@ -12,7 +12,7 @@ const run = promisify(execFile)
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('此发行构建仅用于 macOS Apple Silicon。')
 await mkdir(join(root, '.local/artifacts'), { recursive: true })
 for (const source of lock.sources) {
-  const repo = join(root, '..', 'MCP', source.repo)
+  const repo = join(root, '..', source.repo)
   const files = ['mcp_server.py', 'pyproject.toml', ...(await readdir(join(repo, source.module))).filter(name => /\.(py|json|sql)$/.test(name)).map(name => source.module + '/' + name)].sort()
   const identity = (await Promise.all(files.map(async name => name + '\0' + createHash('sha256').update(await readFile(join(repo, name))).digest('hex') + '\n'))).join('')
   if (createHash('sha256').update(identity).digest('hex') !== source.sourceSha256) throw new Error(source.repo + ' 源码已变化，请先验证并更新发行锁。')

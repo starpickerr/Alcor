@@ -1,5 +1,7 @@
 # 在官方 DSH 中使用 Alcor
 
+当前候选：Alcor 0.1.134、Apple 同步 0.1.27、eLearning 0.1.23、邮件 0.1.17，适配官方 DSH 0.2.2-rc.5。AgentHub 及插件源码已移除。[本轮兼容证据](compatibility/dsh-0.2.2-rc.5.md) · [独立版本与发布规则](releases.md)。下方历史验收保留原范围。
+
 Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.118`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏的应用／系统分组和业务页面；切回 DSH 恢复官方侧栏。
 
 两个界面共用同一个 Host、Profile、运行环境、模型、配置、会话、工作区和插件目录。切换只改变界面，不启动第二个 Host，后台继续运行。第三方插件原样安装，Alcor 的「系统」分组仍打开它们自己的页面。
@@ -19,7 +21,6 @@ Alcor 使用官方插件接口和公开 UI 插槽，不修改或覆盖官方程�
 | `@alcor/apple-sync` | Apple Calendar／Reminders 同步；当前安装包仅 macOS，权限与限制见[Apple 插件说明](../packages/alcor-apple-sync/README.md)。 |
 | `@alcor/elearning` | 复旦 eLearning 课程、作业与公告；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
 | `@alcor/mail` | IMAP 邮件只读查询与简报来源；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
-| `@alcor/agent-hub` | 独立开发者协作插件；0.1.5 支持 alpha.3／rc.1／rc.3，rc.2 尚未验证。 |
 
 QQ 与桌宠来自独立 AuraBot 社区插件。秘书不加载社交人格、长期社交记忆或主动交流队列；小熊形象包与安装边界见[桌宠说明](../assets/desktop-pet/README.md)，通道设置见[QQ 社交与秘书业务](channels.md)。
 
@@ -73,7 +74,6 @@ npm test
 | 命令 | 产物或用途 |
 | --- | --- |
 | `npm run product:pack` | 秘书插件。 |
-| `npm run product:hub:pack` | 独立 AgentHub 插件。 |
 | `npm run product:apple:pack` | macOS Apple 同步插件及原生桥。 |
 | `npm run product:sources:pack` | macOS 学校／邮件插件及冻结 MCP；依赖相邻 MCP 仓库，见[MCP 接入](mcp-connections.md)。 |
 | `npm run dev` | 使用专用开发 Profile 的 Web 预览；不替代官方桌面验收。 |
@@ -110,7 +110,7 @@ npm test
 
 插件使用运行中宿主提供的可选 peer SDK，不把旧 `@deepseek-ai/*` 核心组件安装进 Profile。宿主升级时，须检查配置、业务数据、插件生命周期，以及插件不兼容时官方 DSH 是否仍能启动。不要通过放宽 `engines.dsh`、关闭兼容检查、修改或固定官方程序来维持旧插件运行。
 
-`product/tests/upgrade-compatibility-check.py` 使用五个旧包复现宿主升级后的不兼容状态，再安装当前五个包，核对插件服务、重启、工作区和事务唯一 ID、启用列表及 owner 文件保留。先构建秘书、Apple、学校／邮件和 AgentHub 包，再设置 `ALCOR_PREVIOUS_DESKTOP_APP`（已验证的旧官方程序）、`ALCOR_PREVIOUS_ARTIFACTS`（不支持新宿主的五个旧包目录）、`STELLA_CHECK_DESKTOP_APP`（新官方程序）和 `STELLA_CHECK_ARTIFACTS`（验证输出目录）执行该脚本；两个程序都必须匹配版本清单。测试只使用独立 Profile 和合成数据。
+`product/tests/upgrade-compatibility-check.py` 使用四个旧包复现宿主升级后的不兼容状态，再安装当前四个包，核对插件服务、重启、工作区和事务唯一 ID、启用列表及 owner 文件保留。先构建秘书、Apple、学校／邮件包，再设置 `ALCOR_PREVIOUS_DESKTOP_APP`（已验证的旧官方程序）、`ALCOR_PREVIOUS_ARTIFACTS`（不支持新宿主的四个旧包目录）、`STELLA_CHECK_DESKTOP_APP`（新官方程序）和 `STELLA_CHECK_ARTIFACTS`（验证输出目录）执行该脚本；两个程序都必须匹配版本清单。测试只使用独立 Profile 和合成数据。
 
 公开 SDK 的使用也不意味着模块名、插槽 ID、DOM 标记和标题栏布局永久稳定。Alcor 的顶部入口和侧栏仍有版本耦合，发生上游变更时适配插件并重新验证。入口与自动化实现的过程证据见[顶部入口记录](top-overlay-status.md)；更早检查点见[实施记录](official-shared-plan.md)，其中历史状态不替代本页的交付范围。
 

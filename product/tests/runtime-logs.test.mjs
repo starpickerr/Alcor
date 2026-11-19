@@ -18,13 +18,12 @@ async function fixture(t, saved = new Map()) {
 
 test('native exporter retains bounded, redacted history and filters before paginating', async t => {
   const { ctx, logs, saved } = await fixture(t)
-  ctx.logger('unrelated-dsh-plugin').error('Must not be collected')
   for (let i = 0; i < 1005; i++) ctx.logger('alcor-organizer').info('record %s', i)
   ctx.logger('apple-sync').warn('Bearer synthetic-secret\npassword="other-secret"\nuser@example.org')
   const latest = logSchemas[1].parse(logs.list({}))
   assert.equal(latest.retained, 1000)
   assert.equal(latest.entries.length, 100)
-  assert.deepEqual(latest.sources, ['Alcor', '事务', '日程', '简报', '账单', '自动化', 'Apple 同步', 'eLearning', '邮件', 'AgentHub'])
+  assert.deepEqual(latest.sources, ['Alcor', 'Alcor：事务', 'Alcor：日程', 'Alcor：简报', 'Alcor：账单', 'Alcor：自动化', 'Apple 同步', 'eLearning', '邮件'])
   assert(!JSON.stringify(latest).includes('synthetic-secret'))
   assert(!JSON.stringify(latest).includes('other-secret'))
   assert(!JSON.stringify(latest).includes('user@example.org'))
@@ -97,9 +96,9 @@ test('credential formats are removed before storage and before truncating multil
 
 test('business sources remain distinct and are selectable even before producing logs', async t => {
   const { ctx, logs } = await fixture(t)
-  assert.equal(logs.list({ source: '简报' }).entries.length, 0)
-  assert(logs.list({}).sources.includes('简报'))
-  for (const [domain, source] of [['tasks', '事务'], ['calendar', '日程'], ['briefing', '简报'], ['bills', '账单'], ['automation', '自动化']]) {
+  assert.equal(logs.list({ source: 'Alcor：简报' }).entries.length, 0)
+  assert(logs.list({}).sources.includes('Alcor：简报'))
+  for (const [domain, source] of [['tasks', 'Alcor：事务'], ['calendar', 'Alcor：日程'], ['briefing', 'Alcor：简报'], ['bills', 'Alcor：账单'], ['automation', 'Alcor：自动化']]) {
     ctx.logger('alcor-' + domain).info('synthetic successful operation')
     assert.equal(logs.list({ source }).entries.length, 1, source)
   }
@@ -118,7 +117,7 @@ test('execution outcome is explicit and independent of severity, with compatible
   ctx.logger('alcor-tasks').debug(`[worker_operation_succeeded] tasks.get_todo 执行成功 · 耗时 0 ms · 请求 ${id}`)
   ctx.logger('alcor-tasks').warn(`[worker_timeout] tasks.update_todo · 请求 ${id}`)
   assert.equal(logs.list({ outcome: 'success' }).matched, 2)
-  const normal = logSchemas[1].parse(logs.list({ outcome: 'success', level: 'normal', source: '事务' }))
+  const normal = logSchemas[1].parse(logs.list({ outcome: 'success', level: 'normal', source: 'Alcor：事务' }))
   assert.equal(normal.entries.length, 1)
   assert.deepEqual([normal.entries[0].operation, normal.entries[0].durationMs, normal.entries[0].requestId], ['tasks.create_todo', 42, id])
   assert.equal(logs.list({ outcome: 'failure' }).entries[0].level, 'warn')
@@ -174,4 +173,84 @@ test('old Apple existence probes become bounded debug history while direct failu
   assert.equal(logs.list({ category: 'failure' }).matched, 1)
   assert.equal(logs.list({ category: 'debug' }).matched, 100)
   assert.equal(logs.list({ category: 'failure' }).entries[0].id, 1)
+})
+
+test('unmodified third-party loggers share host collection, filtering, redaction and restart', async t => {
+  const { ctx, logs, saved } = await fixture(t)
+  const plugin = ctx.extend()
+  plugin.logger('@vendor/weather').info('Forecast ready token=private-weather')
+  plugin.logger('@vendor/weather').warn(new Error('Provider unavailable'))
+  plugin.logger('@vendor/notes').debug('Background lookup')
+  const otherHost = new Context()
+  t.after(() => otherHost.fiber.dispose())
+  otherHost.logger('@vendor/private').error('Another profile')
+  const page = logSchemas[1].parse(logs.list({ source: '@vendor/weather' }))
+  assert.equal(page.matched, 2)
+  assert(page.sources.includes('@vendor/weather'))
+  assert(page.sources.includes('@vendor/notes'))
+  assert(!page.sources.includes('@vendor/private'))
+  assert.deepEqual(page.entries.map(row => row.level), ['warn', 'info'])
+  assert(page.entries.every(row => row.outcome === null && row.durationMs === null))
+  assert(page.entries[0].message.includes('Provider unavailable'))
+  assert(!JSON.stringify(page).includes('private-weather'))
+  assert.equal(logs.list({ source: '@vendor/notes', level: 'normal' }).matched, 0)
+  assert.equal(logs.list({ query: 'no-match' }).sources.filter(name => name === '@vendor/weather').length, 1)
+  await logs.flush()
+  assert(!JSON.stringify(saved.get('history')).includes('private-weather'))
+  const restored = await fixture(t, saved)
+  assert.deepEqual(restored.logs.list({ source: '@vendor/weather' }).entries, page.entries)
+  assert(restored.logs.list({}).sources.includes('@vendor/weather'))
+})
+
+test('source names are bounded and redacted before storage and remain selectable', async t => {
+  const { ctx, logs, saved } = await fixture(t)
+  ctx.logger('token=private-source /Users/private/' + 'x'.repeat(150)).info('diagnostic')
+  ctx.logger('').info('unnamed host diagnostic')
+  const page = logSchemas[1].parse(logs.list({}))
+  const source = page.entries.find(row => row.message === 'diagnostic').source
+  assert(source.length <= 100)
+  assert(!source.includes('private-source'))
+  assert(!source.includes('/Users/private'))
+  assert.equal(logs.list({ source }).matched, 1)
+  assert.equal(logs.list({ source: 'DSH' }).matched, 1)
+  await logs.flush()
+  assert(!JSON.stringify(saved.get('history')).includes('private-source'))
+})
+
+test('source labels follow plugin ownership across old histories and restart', async t => {
+  const independent = ['Apple 同步', 'eLearning', '邮件', 'AgentHub']
+  const labels = ['事务', '日程', '简报', '账单', '自动化', ...independent, ...independent.map(name => `Alcor：${name}`), 'Alcor：事务', '@vendor/weather', 'Alcor：custom-plugin']
+  const history = labels.map((source, index) => ({ id: index + 1, source, level: 'info', time: '2026-11-18T00:00:00.000Z', message: 'historical diagnostic' }))
+  const { logs, saved } = await fixture(t, new Map([['history', { entries: history }]]))
+  const page = logSchemas[1].parse(logs.list({}))
+  assert.equal(page.matched, labels.length)
+  assert.equal(logs.list({ source: 'Alcor：事务' }).matched, 2)
+  for (const source of independent) {
+    assert.equal(logs.list({ source }).matched, 2)
+    assert(!page.sources.includes(`Alcor：${source}`))
+  }
+  assert.equal(logs.list({ source: '@vendor/weather' }).matched, 1)
+  assert.equal(logs.list({ source: 'Alcor：custom-plugin' }).matched, 1)
+  assert(!page.sources.includes('事务'))
+  assert(!page.sources.some(name => name.startsWith('Alcor：Alcor：')))
+  await logs.flush()
+  const restored = await fixture(t, saved)
+  assert.deepEqual(restored.logs.list({}).entries, page.entries)
+})
+
+test('independent Alcor ecosystem plugins retain their own source names', async t => {
+  const { ctx, logs } = await fixture(t)
+  for (const [logger, source] of [
+    ['@alcor/apple-sync', 'Apple 同步'], ['apple-sync', 'Apple 同步'], ['apple', 'Apple 同步'],
+    ['alcor-elearning', 'eLearning'], ['school-remote', 'eLearning'],
+    ['mail-remote', '邮件'], ['mail-connection', '邮件'], ['@alcor/mail', '邮件'],
+    ['alcor-agent-hub', 'AgentHub'],
+  ]) {
+    ctx.logger(logger).info('plugin diagnostic')
+    assert.equal(logSchemas[1].parse(logs.list({})).entries[0].source, source, logger)
+  }
+  for (const source of ['Apple 同步', 'eLearning', '邮件', 'AgentHub']) {
+    assert(logs.list({ source }).matched > 0, source)
+    assert.equal(logs.list({ source: `Alcor：${source}` }).matched, 0)
+  }
 })
