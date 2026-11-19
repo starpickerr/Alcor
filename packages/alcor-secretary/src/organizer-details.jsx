@@ -87,9 +87,11 @@ export function OrganizerDetails({ value, groups, busy, close, edit, complete, e
         <section className="alcor-inspector-card alcor-inspector-title" style={{ '--alcor-event-color': group?.color ?? 'var(--alcor-accent)' }}><h3>{record.title}</h3>{!task && record.details && <p>{record.details}</p>}{url && (/^https?:\/\//i.test(url) ? <a href={url} target="_blank" rel="noreferrer">{url}</a> : <p>{url}</p>)}</section>
         {(raw.apple_history || raw.apple_pending?.length > 0 || raw.apple?.can_modify === false) && <Notice role="status">{raw.apple_history ? '已完成的历史记录' : raw.apple_pending?.length ? appleOperationMessage(raw.apple_pending[0]) : 'Apple 来源内容只读'}{raw.apple_pending?.map(item => item.error).filter(Boolean).map(error => <span key={error}>{error}</span>)}</Notice>}
         {children}
-        {task && <section className="alcor-task-body" aria-label="正文">
-          <h3 className="alcor-inspector-section-title">正文</h3>
-          <p className="alcor-task-description" data-empty={!taskBody || undefined}>{taskBody ? record.details : '暂无正文'}</p>
+        {task && <section className="alcor-inspector-card" aria-label="正文">
+          <div className="alcor-inspector-row alcor-task-body">
+            <h3>正文</h3>
+            <p className="alcor-task-description" data-empty={!taskBody || undefined}>{taskBody ? record.details : '暂无正文'}</p>
+          </div>
         </section>}
         <section aria-label="日期与时间"><h3 className="alcor-inspector-section-title">日期与时间</h3><dl className="alcor-inspector-card">
           {task && raw.planned_on && <DetailRow label="安排日期" icon="date">{dateTitle(raw.planned_on)}</DetailRow>}
