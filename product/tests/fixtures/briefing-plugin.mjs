@@ -1,4 +1,5 @@
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync } from 'node:fs'
+import { setTimeout } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 export const inject = ['tools']
@@ -13,6 +14,13 @@ export function apply(ctx) {
   }, output, async execute(args) {
     record({ type: 'fetch', ...args })
     if (args.source_id !== 'inbox' || args.account_id !== 'test-account') throw new Error('Unselected source accessed')
-    return { source_id: args.source_id, account_id: args.account_id, items: [{ source_id: `item-${args.offset}`, title: `Plugin item ${args.offset}`, occurred_at: new Date(Date.now() - 1000).toISOString(), snippet: 'Synthetic plugin deadline' }], next_offset: args.offset === 0 ? 1 : null }
+    const gate = new URL('./hold-fetch', import.meta.url)
+    const deadline = Date.now() + 25_000
+    while (existsSync(gate)) {
+      if (Date.now() >= deadline) throw new Error('Test did not release the briefing source')
+      await setTimeout(25)
+    }
+    // A held response still belongs to the collection window fixed at run start.
+    return { source_id: args.source_id, account_id: args.account_id, items: [{ source_id: `item-${args.offset}`, title: `Plugin item ${args.offset}`, occurred_at: args.until, snippet: 'Synthetic plugin deadline' }], next_offset: args.offset === 0 ? 1 : null }
   } }))
 }
