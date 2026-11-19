@@ -1,6 +1,6 @@
 # 在官方 DSH 中使用 Alcor
 
-当前候选：Alcor 0.1.134、Apple 同步 0.1.27、eLearning 0.1.23、邮件 0.1.17，适配官方 DSH 0.2.2-rc.5。AgentHub 及插件源码已移除。[本轮兼容证据](compatibility/dsh-0.2.2-rc.5.md) · [独立版本与发布规则](releases.md)。下方历史验收保留原范围。
+Alcor 作为原生插件运行在官方 DSH Desktop 中。宿主版本与产物身份以[客户端版本清单](desktop-release.lock.json)为准，插件各自发布版本。[DSH 0.2.2-rc.5 兼容验证](compatibility/dsh-0.2.2-rc.5.md) · [插件版本与发布](releases.md)。
 
 Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.118`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏的应用／系统分组和业务页面；切回 DSH 恢复官方侧栏。
 
@@ -114,10 +114,8 @@ npm test
 
 公开 SDK 的使用也不意味着模块名、插槽 ID、DOM 标记和标题栏布局永久稳定。Alcor 的顶部入口和侧栏仍有版本耦合，发生上游变更时适配插件并重新验证。入口与自动化实现的过程证据见[顶部入口记录](top-overlay-status.md)；更早检查点见[实施记录](official-shared-plan.md)，其中历史状态不替代本页的交付范围。
 
-## 保留的独立方案与来源
+## 来源说明
 
-独立 Host／Profile 客户端保留在专用分支 [`archive/isolated-runtimes-20261112-02217cd4`](https://github.com/starpickerr/Alcor/tree/archive/isolated-runtimes-20261112-02217cd4)，不是当前插件安装路径。`product/client-shell/`、`@alcor/extension`、旧双窗口入口和客户端补丁脚本属于该方案或历史兼容维护，不是使用当前共享插件的前提；不删除已有环境和原始备份。
-
-包内 MIT 衍生 UI 保留来源及摘要，见 [`NATIVE-UI-PROVENANCE.json`](../packages/alcor-secretary/vendor/NATIVE-UI-PROVENANCE.json)、[DSH 来源声明](NOTICE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)。当前共享路径仅注册 Alcor 自有页面和所需插件组件，不替换官方模块；历史预览所用补丁不应用到个人官方客户端。
+Alcor 通过公开插槽注册自有页面和插件组件。包内 MIT 衍生 UI 的来源及摘要见 [`NATIVE-UI-PROVENANCE.json`](../packages/alcor-secretary/vendor/NATIVE-UI-PROVENANCE.json)、[DSH 来源声明](NOTICE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
 插件错误诊断的覆盖范围和验证边界见[错误诊断](plugin-error-diagnostics.md)。
