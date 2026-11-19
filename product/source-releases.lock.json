@@ -12,7 +12,8 @@
         "PyInstaller": "6.22.3",
         "playwright": "1.52.0"
       },
-      "sourceRevision": "9ec3ef73cc75a2ff157cbe5e96cb8a1dfc43a488"
+      "sourceRevision": "9ec3ef73cc75a2ff157cbe5e96cb8a1dfc43a488",
+      "pluginTag": "plugin-v0.2.0"
     },
     {
       "repo": "dsh-email",
@@ -25,7 +26,8 @@
       "dependencies": {
         "mcp": "1.30.0",
         "PyInstaller": "6.22.3"
-      }
+      },
+      "pluginTag": "plugin-v0.2.0"
     }
   ]
 }

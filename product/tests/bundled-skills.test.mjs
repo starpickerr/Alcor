@@ -1,3 +1,4 @@
+import { packageDirectory } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
@@ -96,7 +97,7 @@ test('optional plugin skills are independently owned and removed without affecti
   const ctx=new Context();t.after(()=>ctx.fiber.dispose());await ctx.plugin(SkillRegistry)
   const bundles=[]
   for(const name of ['elearning','mail','apple-sync']) {
-    const handle=ctx.plugin(inner=>registerBundledSkills(inner,'alcor-'+name,new URL(name === 'apple-sync' ? '../../dsh-apple-sync/skills/' : 'alcor-'+name+'/skills/',root)))
+    const handle=ctx.plugin(inner=>registerBundledSkills(inner,'alcor-'+name,new URL(`../${packageDirectory(name)}/skills/`,root)))
     await handle.await();bundles.push(handle)
   }
   assert.deepEqual((await ctx.skills.list({cwd:tmpdir()})).map(row=>row.name).sort(),['alcor-apple-sync','alcor-elearning','alcor-mail'])

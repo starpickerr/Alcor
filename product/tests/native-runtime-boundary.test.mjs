@@ -1,3 +1,4 @@
+import { packageDirectory } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
@@ -7,7 +8,7 @@ import { python } from './platform-python.mjs'
 test('every current plugin Host entry bundles without the retired application runtime', async () => {
   const plugins = ['apple-sync', 'elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
   const result = await build({
-    entryPoints: [...plugins.map(name => name === 'apple-sync' ? '../dsh-apple-sync/src/index.ts' : `packages/alcor-${name}/src/index.ts`), 'packages/alcor-privacy/src/index.js'],
+    entryPoints: [...plugins.map(name => `${packageDirectory(name)}/src/index.ts`), 'packages/alcor-privacy/src/index.js'],
     bundle: true, packages: 'external', platform: 'node', format: 'esm',
     outdir: 'out', write: false, metafile: true,
   })

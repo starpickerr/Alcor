@@ -12,8 +12,8 @@ from web_check import open_secretary, settings
 
 PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(PACK)))
 SOURCES = []
-for name in ('elearning', 'mail'):
-    version = json.loads((ROOT / 'packages' / f'alcor-{name}' / 'package.json').read_text())['version']
+for name, repo in [('elearning', 'dsh-fudan-elearning'), ('mail', 'dsh-email')]:
+    version = json.loads((ROOT.parent / repo / 'plugin/package.json').read_text())['version']
     SOURCES.append(Path(os.environ.get('STELLA_SOURCE_REVIEW_DIRECTORY',str(ROOT/'.local/artifacts'))) / f'alcor-{name}-{version}.tgz')
 
 
@@ -301,7 +301,7 @@ export function apply(ctx) {
         baseline = (profile / 'cordis.patch.yml').read_bytes()
         desktop.native_cli(home, 'sources-install', 'add', str(PACK), *map(str, SOURCES), '--ignore-scripts')
         assert (profile / 'cordis.patch.yml').read_bytes() == baseline
-        subprocess.run([str(ROOT.parent / 'dsh-email/.venv/bin/python'), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
+        subprocess.run([os.environ.get('DSH_SOURCE_PYTHON', str(ROOT.parent / 'dsh-email/.venv/bin/python')), str(ROOT / 'product/tests/source-protocol-check.py'), str(profile / 'node_modules')], check=True, timeout=60)
         with desktop.desktop(playwright, home, 'sources') as (page, errors):
             check(page, home, profile, artifacts)
             assert not errors, errors

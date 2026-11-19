@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { summarizeCoursePage } from '../../packages/alcor-elearning/src/elearning-list.js'
+import { summarizeCoursePage } from '../../../dsh-fudan-elearning/plugin/src/elearning-list.js'
 
 test('grade list keeps zero and the possible score without exposing the full body', async () => {
   const page = { source_items: [{ source_id: 'grade-1', title: '测验成绩', snippet: '0 / 100',

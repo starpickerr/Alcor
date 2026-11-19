@@ -1,3 +1,4 @@
+import { packageDirectory } from './source-test-modules.mjs'
 import { automationUiPlugin } from '../../scripts/product/automation-ui.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -29,8 +30,8 @@ test('secretary style identifiers use Alcor while application identifiers stay s
 
 test('shared consumers use the renamed styles', async () => {
   for (const [file, token] of [
-    ['packages/alcor-mail/src/client.jsx', 'alcor-mail-connection'],
-    ['packages/alcor-mail/src/style.css', '.alcor-mail-connection'],
+    ['../dsh-email/plugin/src/client.jsx', 'alcor-mail-connection'],
+    ['../dsh-email/plugin/src/style.css', '.alcor-mail-connection'],
     ['packages/alcor-plugin-info/src/source-settings.css', '.alcor-field'],
     ['../dsh-apple-sync/src/style.css', '--alcor-brand'],
     ['packages/alcor-plugin-info/src/notice.jsx', 'alcor-notice'],
@@ -41,14 +42,14 @@ test('shared consumers use the renamed styles', async () => {
 test('affected client entry points bundle', async () => {
   await build({ plugins: [automationUiPlugin()],
     entryPoints: ['alcor-secretary', 'alcor-mail', 'alcor-elearning', 'alcor-apple-sync']
-      .map(name => fileURLToPath(new URL(name === 'alcor-apple-sync' ? '../dsh-apple-sync/src/client.jsx' : `packages/${name}/src/client.jsx`, root))),
+      .map(name => fileURLToPath(new URL(`${packageDirectory(name.slice(6))}/src/client.jsx`, root))),
     bundle: true, packages: 'external', format: 'esm', platform: 'browser',
     loader: { '.css': 'text', '.svg': 'dataurl' }, outdir: '/tmp/alcor-css-test-output', write: false, logLevel: 'silent',
   })
 })
 
 test('eLearning source does not depend on secretary source', async () => {
-  const directory = new URL('packages/alcor-elearning/src/', root)
+  const directory = new URL('../dsh-fudan-elearning/plugin/src/', root)
   for (const name of await readdir(directory)) {
     if (!/\.(js|jsx|ts)$/.test(name)) continue
     assert.doesNotMatch(await readFile(new URL(name, directory), 'utf8'), /alcor-secretary\/src\//, name)

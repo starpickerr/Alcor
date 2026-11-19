@@ -1,3 +1,4 @@
+import { packageDirectory } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -25,14 +26,14 @@ test('workspace, lock, patches, remotes and loader identities agree', async () =
   assert.equal(rootPackage.name, 'alcor-product')
   assert.equal(lock.name, rootPackage.name)
   for (const name of packages) {
-    const directory = name === 'apple-sync' ? '../dsh-apple-sync' : `packages/alcor-${name}`
+    const directory = packageDirectory(name)
     const pkg = JSON.parse(await read(`${directory}/package.json`))
     assert.equal(pkg.name, `@alcor/${name}`)
-    if (name === 'apple-sync') {
+    if (directory.startsWith('../')) {
       const appleLock = JSON.parse(await read(directory + '/package-lock.json'))
       assert.equal(appleLock.name, pkg.name)
       assert.equal(appleLock.version, pkg.version)
-      assert.equal(lock.packages['packages/alcor-apple-sync'], undefined)
+      assert.equal(lock.packages[`packages/alcor-${name}`], undefined)
     } else {
       assert.equal(lock.packages[directory].name, pkg.name)
       assert.equal(lock.packages[directory].version, pkg.version)
@@ -46,7 +47,7 @@ test('workspace, lock, patches, remotes and loader identities agree', async () =
       assert.ok((await read(name === 'apple-sync' ? '../dsh-apple-sync/scripts/build.mjs' : `scripts/product/${buildFile}.mjs`)).includes(`id:"${pkg.name}"`))
     }
   }
-  assert.match(await read('scripts/product/build-sources.mjs'), /JSON\.parse\(await readFile\(join\(directory, 'package.json'\), 'utf8'\)\)\.name/)
+  assert.match(await read('scripts/product/build-sources.mjs'), /source-lock\.json/)
 })
 
 test('new services reject a selected old secretary before accessing storage', async t => {
@@ -99,7 +100,7 @@ test('each new plugin rejects an old selected peer before registration', async t
   for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy']) {
     const extension = name === 'privacy' ? 'js' : 'ts'
     const output = join(directory, `${name}.mjs`)
-    await build({ entryPoints: [join(root, name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
+    await build({ entryPoints: [join(root, name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `${packageDirectory(name)}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
     const plugin = await import(pathToFileURL(output))
     const oldName = name === 'organizer' ? 'secretary' : name
     let sideEffect = false

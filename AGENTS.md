@@ -14,7 +14,7 @@ product/client-shell and @alcor/extension remain compatibility code for the opti
 
 - 产品：根 `package.json`、`packages/`、`product/`、`scripts/product/`。
 - Apple：`../dsh-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。
-- 学校／邮件连接：`packages/alcor-elearning/`、`packages/alcor-mail/`；各自封装独立 MCP 与 DSH 凭据，不将管理接口开放给模型。构建 `npm run product:sources:pack`，只读协议与来源版本见 `product/mcp-connections.md` 及 `product/source-releases.lock.json`。新增 Remote 必须通过真实 DSH Gateway 挂载检查，避免方法名与宿主保留接口重名。
+- 学校与邮件插件源码分别位于 `../dsh-fudan-elearning/plugin/` 和 `../dsh-email/plugin/`。账号管理由各包的本机设置提供，模型工具沿用 DSH 权限。可分别运行 `npm pack`，或从本仓运行 `npm run product:sources:pack`。协议与版本见 `product/mcp-connections.md` 和 `product/source-releases.lock.json`。新增 Remote 必须通过真实 DSH Gateway 挂载检查，避免与宿主保留接口重名。
 - 依赖安装 `make setup`，默认开发 `npm run dev` / `make dev`，默认检查 `make check`，默认测试 `npm test` / `make test`。Apple 构建 `npm run product:apple:pack`；安装、版本及限制见 [product/README.md](product/README.md)。
 - `desktop/`、`agent/`、`application/`、`channel/`、`core/` 属于保留的旧运行路径；仅在用户明确要求旧版维护或读取迁移来源时使用。不要把旧版同名组件当作新版入口。
 - 修改前核对 Git 分支、原生包清单、实际 UI 注册和已安装包路径。若目标文件仅被旧版引用，重新定位新版 owner；不要通过旧 Python / React 测试证明新版完成。

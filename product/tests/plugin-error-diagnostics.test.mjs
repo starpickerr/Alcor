@@ -8,7 +8,7 @@ import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 import { projectLog } from '../../packages/alcor-secretary/src/log-host.js'
 import { readBriefingSourcePage, discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import { checkMessage as schoolMessage } from '../../packages/alcor-plugin-info/src/elearning-status.js'
-import { checkMessage as mailMessage } from '../../packages/alcor-mail/src/check-status.js'
+import { checkMessage as mailMessage } from '../../../dsh-email/plugin/src/check-status.js'
 
 test('business worker boundary retain startup cause after process error and reject with a remedy', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-worker-diagnostics-'))

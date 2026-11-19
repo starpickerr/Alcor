@@ -1,4 +1,4 @@
-import { checkMessages as mailErrors } from '../../alcor-mail/src/check-status.js'
+import { checkMessages as mailErrors } from '../../../../dsh-email/plugin/src/check-status.js'
 import { checkMessages as schoolErrors } from '../../alcor-plugin-info/src/elearning-status.js'
 import { reportHostFailure } from '../../alcor-organizer/src/worker-diagnostic.js'
 import { Logger } from '@deepseek-ai/cordis'

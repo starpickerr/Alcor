@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { businessList } from '../../packages/alcor-secretary/src/list-results.js'
-import { summarizeCoursePage } from '../../packages/alcor-elearning/src/elearning-list.js'
+import { summarizeCoursePage } from '../../../dsh-fudan-elearning/plugin/src/elearning-list.js'
 
 for (const [domain, method] of [['tasks', 'list_todos'], ['briefing', 'list_briefings']]) {
   test(`${method} paginates summaries while retaining identifiable records`, async () => {
