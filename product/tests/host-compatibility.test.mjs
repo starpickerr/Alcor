@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 for (const name of ['alcor-extension', 'alcor-launcher', 'alcor-secretary', 'alcor-apple-sync', 'alcor-privacy', 'alcor-organizer', 'alcor-elearning', 'alcor-mail', 'alcor-plugin-info']) {
   test(`${name} cannot install or shadow host-owned DSH components`, async () => {
-    const manifest = JSON.parse(await readFile(new URL(`../../packages/${name}/package.json`, import.meta.url)))
+    const manifest = JSON.parse(await readFile(new URL(name === 'alcor-apple-sync' ? '../../../dsh-apple-sync/package.json' : `../../packages/${name}/package.json`, import.meta.url)))
     for (const dependency of Object.keys(manifest.dependencies || {})) assert(!dependency.startsWith('@deepseek-ai/'), `${dependency} must come from the running host`)
     for (const dependency of Object.keys(manifest.peerDependencies || {})) assert.equal(manifest.peerDependenciesMeta?.[dependency]?.optional, true, `${dependency} must not be auto-installed by the package manager`)
     assert(manifest.engines.dsh, 'UI overrides must have an explicit supported host range')
@@ -24,7 +24,7 @@ test('shared secretary and organizer name the verified rc.2 release explicitly',
 
 test('current Alcor packages explicitly support the verified rc.5 host', async () => {
   for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail']) {
-    const manifest = JSON.parse(await readFile(new URL(`../../packages/alcor-${name}/package.json`, import.meta.url)))
+    const manifest = JSON.parse(await readFile(new URL(name === 'apple-sync' ? '../../../dsh-apple-sync/package.json' : `../../packages/alcor-${name}/package.json`, import.meta.url)))
     assert(manifest.engines.dsh.split(' || ').includes('0.2.2-rc.5'), `${name} must run after the official host update`)
     assert(!/[~^*><]/.test(manifest.engines.dsh))
   }

@@ -28,12 +28,12 @@ test('contract agrees with package manifests, stored names and active callers', 
   // Retired identities still identify old Profiles; no current package is installed for them.
   assert(MIGRATION_PACKAGE_NAMES.includes('agent-hub'))
   for (const name of MIGRATION_PACKAGE_NAMES.filter(name => name !== 'agent-hub')) {
-    const pkg = JSON.parse(await read(`packages/alcor-${name}/package.json`))
+    const pkg = JSON.parse(await read(name === 'apple-sync' ? '../dsh-apple-sync/package.json' : `packages/alcor-${name}/package.json`))
     assert.equal(pkg.name, `@alcor/${name}`)
   }
   for (const pair of MIGRATION_BUNDLES.filter(pair => pair.name !== 'agent-hub')) {
     assert.equal(pair.old, `@stella/${pair.name}`); assert.equal(pair.current, `@alcor/${pair.name}`)
-    assert((await read(`packages/alcor-${pair.name}/cordis.patch.yml`)).includes(pair.current))
+    assert((await read(pair.name === 'apple-sync' ? '../dsh-apple-sync/cordis.patch.yml' : `packages/alcor-${pair.name}/cordis.patch.yml`)).includes(pair.current))
   }
   assert.equal(accountKey, MIGRATION_CREDENTIALS.elearning.current)
   assert.equal(mailKey, MIGRATION_CREDENTIALS.email.current)
@@ -43,7 +43,7 @@ test('contract agrees with package manifests, stored names and active callers', 
   assert((await read('packages/alcor-secretary/src/tools.js')).includes(MIGRATION_BRIEFING_TOOLS.current))
   assert((await read('packages/alcor-organizer/src/index.ts')).includes(`name: '${MIGRATION_DOMAINS.organizer.current}'`))
   assert((await read('packages/alcor-secretary/src/index.ts')).includes(`name: '${MIGRATION_DOMAINS.secretary.current}'`))
-  for (const [name, path] of Object.entries({ business: 'packages/alcor-organizer/src/index.ts', appleSync: 'packages/alcor-apple-sync/src/index.ts', email: 'packages/alcor-mail/src/index.ts', elearning: 'packages/alcor-elearning/src/index.ts' })) {
+  for (const [name, path] of Object.entries({ business: 'packages/alcor-organizer/src/index.ts', appleSync: '../dsh-apple-sync/src/alcor-sync.ts', email: 'packages/alcor-mail/src/index.ts', elearning: 'packages/alcor-elearning/src/index.ts' })) {
     assert((await read(path)).includes(`'alcor', '${MIGRATION_DIRECTORIES[name]}'`), name)
   }
 })
@@ -51,7 +51,7 @@ test('contract agrees with package manifests, stored names and active callers', 
 test('plugin bundles inline the shared contract instead of requiring a runtime workspace path', async () => {
   const { build } = await import('esbuild')
   for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail']) {
-    const result = await build({ entryPoints: [join(root, `packages/alcor-${name}/src/index.ts`)], bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', write: false })
+    const result = await build({ entryPoints: [join(root, name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`)], bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', write: false })
     const output = result.outputFiles[0].text
     assert(!/from\s*["'][^"']*migration-contract(?:\.js)?["']/.test(output), name)
     assert(output.includes('stella-elearning/account'), `shared contract missing from ${name}`)

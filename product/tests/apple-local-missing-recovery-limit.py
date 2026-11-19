@@ -3,7 +3,7 @@ import copy,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
 M=runpy.run_path(str(Path(__file__).with_name('apple-category-connection-cas.py')))
-W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'packages/alcor-apple-sync/python/worker.py'))['AppleWorker']
+W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'../dsh-apple-sync/python/worker.py'))['AppleWorker']
 
 class LocalMissingLimit(unittest.TestCase):
     def test_public_guard_preserves_data_and_private_exact_restore_stays_local(self):

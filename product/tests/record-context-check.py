@@ -47,7 +47,7 @@ def main():
     artifacts.mkdir(parents=True,exist_ok=True);desktop.ARTIFACTS=artifacts
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
-    apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_version=json.loads((desktop.ROOT/'../dsh-apple-sync/package.json').read_text())['version']
     apple_pack=desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     with fresh_test_home(prefix='stella-record-context-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)

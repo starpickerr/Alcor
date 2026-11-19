@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 class NativeIdentity(unittest.TestCase):
  def test_public_query_contract_retains_candidates_and_uncertainty(self):
-  source=(ROOT/'packages/alcor-apple-sync/python/apple_sync/native/CalendarBridge.swift').read_text();code=source[source.index('func lookupEventIdentity('):source.index('func recurrenceRule(')]
+  source=(ROOT/'../dsh-apple-sync/python/apple_sync/native/CalendarBridge.swift').read_text();code=source[source.index('func lookupEventIdentity('):source.index('func recurrenceRule(')]
   harness=r'''import Foundation
 struct BridgeFailure:Error {let message:String;init(_ message:String){self.message=message}}
 func required(_ row:[String:Any],_ key:String)throws->String {guard let value=row[key] as? String,!value.isEmpty else{throw BridgeFailure(key)};return value}

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-apple-sync/python'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '../dsh-apple-sync/python'))
 from apple_sync.bridge import AppleCalendarBridge, BridgeError, _default_helper
 
 class AppBridge(unittest.TestCase):

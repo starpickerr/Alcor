@@ -10,7 +10,7 @@ from web_check import rpc, stop, open_secretary
 
 
 def main():
-    apple_version = json.loads((ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_version = json.loads((ROOT / '../dsh-apple-sync/package.json').read_text())['version']
     apple_pack = ROOT / f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/stella-organizer-plugin-artifacts'))
     artifacts.mkdir(parents=True, exist_ok=True)

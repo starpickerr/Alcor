@@ -28,7 +28,7 @@ claims.uncertain(s,token)
 '''
     child = subprocess.Popen([sys.executable, '-B', '-c', code, str(sync.db_path), group, item],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        env={**os.environ, 'PYTHONPATH': str(ROOT/'packages/alcor-apple-sync/python')})
+        env={**os.environ, 'PYTHONPATH': str(ROOT/'../dsh-apple-sync/python')})
     try:
         token = child.stdout.readline().strip()
         if not token:
@@ -97,7 +97,7 @@ class CommonClaims(unittest.TestCase):
         # Instantiate only the DB interface: reminder and calendar manager schemas differ.
         code=code.replace("from apple_sync.calendar import AppleCalendarSync", "import sqlite3\nclass AppleCalendarSync:\n def __init__(self,**kw):self.path=kw['db_path']\n def _connect(self):\n  d=sqlite3.connect(self.path);d.row_factory=sqlite3.Row;return d\n def clock(self):return '2026-11-08T00:00:00Z'")
         child=subprocess.run([sys.executable,'-B','-c',code,str(sync.db_path),group],capture_output=True,text=True,
-            env={**os.environ,'PYTHONPATH':str(ROOT/'packages/alcor-apple-sync/python')})
+            env={**os.environ,'PYTHONPATH':str(ROOT/'../dsh-apple-sync/python')})
         self.assertEqual(child.returncode,0,child.stderr)
         return child.stdout.strip()
 

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 test('legacy mapping and category deletions retain Apple targets without dispatching writes', () => {
   execFileSync(testPython, ['-B', '-c', `
 import runpy,sys
-sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
+sys.path[:0]=['packages/alcor-secretary','../dsh-apple-sync/python']
 m=runpy.run_path('product/tests/business-recovery.py');Base=m['Bridge']
 from apple_sync.calendar import AppleCalendarSync
 from apple_sync.reminders import AppleReminderSync

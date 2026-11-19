@@ -13,7 +13,7 @@ def main():
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     expected = {'@alcor/secretary': 'Alcor 私人秘书：在对话中处理事务、日程、简报和账单。',
-                '@alcor/apple-sync': 'Apple 同步：连接系统日历与提醒事项，共用 Alcor 事务和日程。',
+                '@alcor/apple-sync': 'Apple 日历与提醒事项：在 DSH 对话中查询和操作，可选连接 Alcor 同步。',
                 '@alcor/elearning': '复旦 eLearning连接，使用 DSH 原生凭据',
                 '@alcor/mail': '邮件连接，使用 DSH 原生凭据'}
     with fresh_test_home(prefix='alcor-plugin-metadata-') as temporary, sync_playwright() as playwright:

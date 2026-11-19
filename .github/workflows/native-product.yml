@@ -5,7 +5,7 @@ on:
     branches: [develop, main]
     paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   push:
-    branches: [develop, main, fix/shared-business-tools-20261114]
+    branches: [develop, main]
     paths: ['package.json', 'package-lock.json', 'packages/**', 'product/**', 'scripts/product/**', 'Makefile', '.github/workflows/**']
   workflow_dispatch:
 
@@ -74,12 +74,29 @@ jobs:
   linux-native-plugin:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Alcor
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: Alcor
+      - name: Read pinned Apple plugin revision
+        id: apple
+        shell: bash
+        run: |
+          echo "revision=$(cat product/apple-sync-revision.txt)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: starpickerr/dsh-apple-sync
+          ref: ${{ steps.apple.outputs.revision }}
+          path: dsh-apple-sync
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+          cache-dependency-path: Alcor/package-lock.json
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -87,6 +104,7 @@ jobs:
         run: |
           python -m pip install tzdata
           npm ci --force --ignore-scripts
+          npm ci --prefix ../dsh-apple-sync --force --ignore-scripts
       - name: Package the shared secretary plugin
         run: npm run product:pack
       - name: Test portable plugin services and authorization boundaries
@@ -98,12 +116,29 @@ jobs:
     timeout-minutes: 20
     env:
       PYTHONUTF8: '1'
+    defaults:
+      run:
+        working-directory: Alcor
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: Alcor
+      - name: Read pinned Apple plugin revision
+        id: apple
+        shell: bash
+        run: |
+          echo "revision=$(cat product/apple-sync-revision.txt)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: starpickerr/dsh-apple-sync
+          ref: ${{ steps.apple.outputs.revision }}
+          path: dsh-apple-sync
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+          cache-dependency-path: Alcor/package-lock.json
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
@@ -112,6 +147,7 @@ jobs:
           python -m pip install tzdata
           # The monorepo also contains required macOS-only development workspaces.
           npm ci --force --ignore-scripts
+          npm ci --prefix ../dsh-apple-sync --force --ignore-scripts
       - name: Package the shared secretary plugin
         run: npm run product:pack
       - name: Test native Windows plugin services
@@ -122,15 +158,33 @@ jobs:
   native-product:
     runs-on: macos-15
     timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Alcor
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: Alcor
+      - name: Read pinned Apple plugin revision
+        id: apple
+        shell: bash
+        run: |
+          echo "revision=$(cat product/apple-sync-revision.txt)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: starpickerr/dsh-apple-sync
+          ref: ${{ steps.apple.outputs.revision }}
+          path: dsh-apple-sync
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: Alcor/package-lock.json
       - name: Install native product dependencies
-        run: npm ci --ignore-scripts
+        run: |
+          npm ci --ignore-scripts
+          npm ci --prefix ../dsh-apple-sync --ignore-scripts
       - name: Test native services and migration recovery
         run: npm test
       - name: Test package-owned identity and legacy-data compatibility

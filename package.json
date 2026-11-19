@@ -18,7 +18,7 @@
     "product:pack": "npm run product:build && npm pack --workspace @alcor/secretary --pack-destination .local/artifacts",
     "product:privacy:pack": "node scripts/product/build-privacy.mjs && npm pack --workspace @alcor/privacy --pack-destination .local/artifacts",
     "product:privacy:test": "python3 product/tests/keychain_check.py",
-    "product:apple:pack": "node scripts/product/build-apple-sync.mjs && npm pack --workspace @alcor/apple-sync --pack-destination .local/artifacts",
+    "product:apple:pack": "node scripts/product/build-apple-sync.mjs",
     "product:preview:build": "npm run product:build && node scripts/product/sync-client.mjs",
     "product:prepare": "node scripts/product/prepare-upstream.mjs",
     "product:desktop": "node scripts/product/environments.mjs launch",

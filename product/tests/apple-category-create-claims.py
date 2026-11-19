@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT/'packages/alcor-apple-sync/python'))
+sys.path.insert(0,str(ROOT/'../dsh-apple-sync/python'))
 from apple_sync.bridge import BridgeError
 from apple_sync.category_create import CreatePending, create_category, guard_category_ids_in_db, pending_in_db, pending_sources
 

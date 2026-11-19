@@ -3,7 +3,7 @@ import runpy
 import sys
 import threading
 
-sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
+sys.path[:0]=['packages/alcor-secretary','../dsh-apple-sync/python']
 modules=runpy.run_path('product/tests/apple-contracts.py')
 for kind in ('calendar','reminders'):
     case=modules['Contracts']('test_unconfirmed_occurrence_delete_preserves_instances_after_restart');case.setUp()

@@ -18,14 +18,14 @@ import * as Ptc from '@deepseek-ai/dsh-tool-executor-ptc'
 import { createDeletePageHost } from '../../packages/alcor-secretary/src/delete-page-host.js'
 import { apply } from '../../packages/alcor-secretary/src/tools.js'
 import { remote as organizerRemote } from '../../packages/alcor-organizer/src/remote.js'
-import { remote as appleRemote } from '../../packages/alcor-apple-sync/src/remote.js'
+import { remote as appleRemote } from '../../../dsh-apple-sync/src/remote.js'
 
 let Organizer, AppleSync, output
 before(async () => {
   output = await mkdtemp(join(process.cwd(), '.alcor-approved-delete-build-'))
   for (const [name, source] of [['organizer', 'alcor-organizer'], ['apple', 'alcor-apple-sync']]) {
     const outfile = join(output, name + '.mjs')
-    await build({ entryPoints: [`packages/${source}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
+    await build({ entryPoints: [name === 'apple' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/${source}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
     const Klass = (await import(pathToFileURL(outfile))).default
     if (name === 'organizer') Organizer = Klass; else AppleSync = Klass
   }

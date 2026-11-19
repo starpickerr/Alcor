@@ -2,8 +2,8 @@
 import importlib.util,json,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-ROOT=Path(__file__).resolve().parents[2];NATIVE=ROOT/'packages/alcor-apple-sync/python/apple_sync/native'
-spec=importlib.util.spec_from_file_location('delete_bridge',ROOT/'packages/alcor-apple-sync/python/apple_sync/bridge.py');bridge=importlib.util.module_from_spec(spec);spec.loader.exec_module(bridge)
+ROOT=Path(__file__).resolve().parents[2];NATIVE=ROOT/'../dsh-apple-sync/python/apple_sync/native'
+spec=importlib.util.spec_from_file_location('delete_bridge',ROOT/'../dsh-apple-sync/python/apple_sync/bridge.py');bridge=importlib.util.module_from_spec(spec);spec.loader.exec_module(bridge)
 class Process:
     def __init__(self,response):self.response=response
     def communicate(self,request,timeout):return json.dumps(self.response),''

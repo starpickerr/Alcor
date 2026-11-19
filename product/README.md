@@ -18,7 +18,7 @@ Alcor 使用官方插件接口和公开 UI 插槽，不修改或覆盖官方程�
 | 安装标识 | 用途与范围 |
 | --- | --- |
 | `@alcor/secretary` | Alcor 事务、日程、简报、账单、自动化与专用对话；本轮已验 macOS Apple Silicon 和 Windows x64。 |
-| `@alcor/apple-sync` | Apple Calendar／Reminders 同步；当前安装包仅 macOS，权限与限制见[Apple 插件说明](../packages/alcor-apple-sync/README.md)。 |
+| `@alcor/apple-sync` | Apple 日历和提醒事项的 DSH 独立插件，安装 Alcor 后可选双向同步。源码及权限说明见 [dsh-apple-sync](https://github.com/starpickerr/dsh-apple-sync)。 |
 | `@alcor/elearning` | 复旦 eLearning 课程、作业与公告；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
 | `@alcor/mail` | IMAP 邮件只读查询与简报来源；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
 

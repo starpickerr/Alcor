@@ -32,7 +32,7 @@ test('shared consumers use the renamed styles', async () => {
     ['packages/alcor-mail/src/client.jsx', 'alcor-mail-connection'],
     ['packages/alcor-mail/src/style.css', '.alcor-mail-connection'],
     ['packages/alcor-plugin-info/src/source-settings.css', '.alcor-field'],
-    ['packages/alcor-apple-sync/src/style.css', '--alcor-brand'],
+    ['../dsh-apple-sync/src/style.css', '--alcor-brand'],
     ['packages/alcor-plugin-info/src/notice.jsx', 'alcor-notice'],
     ['packages/alcor-plugin-info/src/notice.css', '.alcor-notice'],
   ]) assert.ok((await read(file)).includes(token), `${file}: ${token}`)
@@ -41,7 +41,7 @@ test('shared consumers use the renamed styles', async () => {
 test('affected client entry points bundle', async () => {
   await build({ plugins: [automationUiPlugin()],
     entryPoints: ['alcor-secretary', 'alcor-mail', 'alcor-elearning', 'alcor-apple-sync']
-      .map(name => fileURLToPath(new URL(`packages/${name}/src/client.jsx`, root))),
+      .map(name => fileURLToPath(new URL(name === 'alcor-apple-sync' ? '../dsh-apple-sync/src/client.jsx' : `packages/${name}/src/client.jsx`, root))),
     bundle: true, packages: 'external', format: 'esm', platform: 'browser',
     loader: { '.css': 'text', '.svg': 'dataurl' }, outdir: '/tmp/alcor-css-test-output', write: false, logLevel: 'silent',
   })

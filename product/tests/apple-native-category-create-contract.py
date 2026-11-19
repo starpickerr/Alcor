@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-NATIVE = ROOT / 'packages/alcor-apple-sync/python/apple_sync/native'
+NATIVE = ROOT / '../dsh-apple-sync/python/apple_sync/native'
 WORK = ROOT / '.phase8/native-create-test'
-spec = importlib.util.spec_from_file_location('create_bridge_under_test', ROOT / 'packages/alcor-apple-sync/python/apple_sync/bridge.py')
+spec = importlib.util.spec_from_file_location('create_bridge_under_test', ROOT / '../dsh-apple-sync/python/apple_sync/bridge.py')
 bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
 BINDING = 'a' * 64

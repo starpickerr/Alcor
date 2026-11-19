@@ -3,7 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-source=Path(__file__).resolve().parents[2]/'packages/alcor-apple-sync/python/apple_sync/native'
+source=Path(__file__).resolve().parents[2]/'../dsh-apple-sync/python/apple_sync/native'
 with tempfile.TemporaryDirectory(prefix='stella-native-fields-') as temporary:
     root=Path(temporary)
     main=(source/'CalendarBridge.swift').read_text().split('if let index = CommandLine.arguments.firstIndex')[0]

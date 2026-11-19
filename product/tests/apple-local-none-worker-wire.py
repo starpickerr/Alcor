@@ -3,7 +3,7 @@ import copy,json,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
 M=runpy.run_path(str(Path(__file__).with_name('apple-local-none-manager-cas.py')))
-W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'packages/alcor-apple-sync/python/worker.py'))['AppleWorker']
+W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'../dsh-apple-sync/python/worker.py'))['AppleWorker']
 from business.worker import Business
 from apple_sync.metadata import conflict_summaries
 

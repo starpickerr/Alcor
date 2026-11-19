@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-source = Path(__file__).resolve().parents[2] / 'packages/alcor-apple-sync/python/apple_sync/native/OccurrenceIdentity.swift'
+source = Path(__file__).resolve().parents[2] / '../dsh-apple-sync/python/apple_sync/native/OccurrenceIdentity.swift'
 with tempfile.TemporaryDirectory(prefix='alcor-watch-lease-') as directory:
     main = Path(directory) / 'main.swift'
     main.write_text('''import Foundation

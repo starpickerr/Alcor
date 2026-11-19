@@ -3,7 +3,7 @@ import copy,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
 M=runpy.run_path(str(Path(__file__).with_name('apple-approved-delete-run.py')))
-W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'packages/alcor-apple-sync/python/worker.py'))
+W=runpy.run_path(str(Path(__file__).resolve().parents[2]/'../dsh-apple-sync/python/worker.py'))
 from business.apple_delete_approval import prepare_confirmed
 from apple_sync.bridge import BridgeError
 

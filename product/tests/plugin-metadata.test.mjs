@@ -4,7 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 
 for (const name of ['secretary', 'apple-sync', 'elearning', 'mail']) {
   test(`${name} exposes plugin artwork and a nonempty description to the host`, async () => {
-    const root = new URL(`../../packages/alcor-${name}/`, import.meta.url)
+    const root = new URL(name === 'apple-sync' ? '../../../dsh-apple-sync/' : `../../packages/alcor-${name}/`, import.meta.url)
     const manifest = JSON.parse(await readFile(new URL('package.json', root)))
     assert(manifest.description?.trim())
     assert.equal(manifest.exports['./package.json'], './package.json')

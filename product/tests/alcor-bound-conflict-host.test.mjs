@@ -15,13 +15,13 @@ import Approval from '@deepseek-ai/dsh-user-approval'
 import * as Native from '@deepseek-ai/dsh-tool-executor-native'
 import * as Ptc from '@deepseek-ai/dsh-tool-executor-ptc'
 import { apply } from '../../packages/alcor-secretary/src/tools.js'
-import { remote } from '../../packages/alcor-apple-sync/src/remote.js'
+import { remote } from '../../../dsh-apple-sync/src/remote.js'
 let Apple, Organizer, output
 before(async () => {
   output = await mkdtemp(join(process.cwd(), '.conflict-build-'))
   for (const name of ['apple-sync', 'organizer']) {
     const outfile = join(output, name + '.mjs')
-    await build({ entryPoints: [`packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
+    await build({ entryPoints: [name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
     const klass = (await import(pathToFileURL(outfile))).default
     if (name === 'organizer') Organizer = klass; else Apple = klass
   }

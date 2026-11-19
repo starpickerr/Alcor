@@ -25,18 +25,25 @@ test('workspace, lock, patches, remotes and loader identities agree', async () =
   assert.equal(rootPackage.name, 'alcor-product')
   assert.equal(lock.name, rootPackage.name)
   for (const name of packages) {
-    const directory = `packages/alcor-${name}`
+    const directory = name === 'apple-sync' ? '../dsh-apple-sync' : `packages/alcor-${name}`
     const pkg = JSON.parse(await read(`${directory}/package.json`))
     assert.equal(pkg.name, `@alcor/${name}`)
-    assert.equal(lock.packages[directory].name, pkg.name)
-    assert.equal(lock.packages[directory].version, pkg.version)
-    assert.equal(lock.packages[`node_modules/${pkg.name}`].resolved, directory)
+    if (name === 'apple-sync') {
+      const appleLock = JSON.parse(await read(directory + '/package-lock.json'))
+      assert.equal(appleLock.name, pkg.name)
+      assert.equal(appleLock.version, pkg.version)
+      assert.equal(lock.packages['packages/alcor-apple-sync'], undefined)
+    } else {
+      assert.equal(lock.packages[directory].name, pkg.name)
+      assert.equal(lock.packages[directory].version, pkg.version)
+      assert.equal(lock.packages[`node_modules/${pkg.name}`].resolved, directory)
+    }
     assert.equal(lock.packages[`node_modules/@stella/${name}`], undefined)
     if (name !== 'organizer') assert.match(await read(`${directory}/cordis.patch.yml`), new RegExp(`@alcor/${name}`))
     if (name !== 'privacy') assert.match(await read(`${directory}/src/remote.js`), new RegExp(`@alcor/${name}`))
     if (['secretary', 'apple-sync'].includes(name)) {
       const buildFile = { secretary: 'build-client', 'apple-sync': 'build-apple-sync' }[name]
-      assert.ok((await read(`scripts/product/${buildFile}.mjs`)).includes(`id:"${pkg.name}"`))
+      assert.ok((await read(name === 'apple-sync' ? '../dsh-apple-sync/scripts/build.mjs' : `scripts/product/${buildFile}.mjs`)).includes(`id:"${pkg.name}"`))
     }
   }
   assert.match(await read('scripts/product/build-sources.mjs'), /JSON\.parse\(await readFile\(join\(directory, 'package.json'\), 'utf8'\)\)\.name/)
@@ -92,7 +99,7 @@ test('each new plugin rejects an old selected peer before registration', async t
   for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy']) {
     const extension = name === 'privacy' ? 'js' : 'ts'
     const output = join(directory, `${name}.mjs`)
-    await build({ entryPoints: [join(root, `packages/alcor-${name}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
+    await build({ entryPoints: [join(root, name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
     const plugin = await import(pathToFileURL(output))
     const oldName = name === 'organizer' ? 'secretary' : name
     let sideEffect = false

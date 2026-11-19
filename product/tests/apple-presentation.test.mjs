@@ -1,7 +1,7 @@
 import { python as testPython } from './platform-python.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { connectionStatus, formatSyncTime } from '../../packages/alcor-apple-sync/src/presentation.js'
+import { connectionStatus, formatSyncTime } from '../../../dsh-apple-sync/src/presentation.js'
 
 test('Apple status distinguishes a running operation from enabled background sync, pause and failures', () => {
   const state = { authorization: 'full_access', connected: true, auto_enabled: true }
@@ -26,7 +26,7 @@ test('Apple sync times use Chinese dates and a 24-hour local clock, with a safe 
 })
 
 test('legacy deletion remains visible as needing review without inventing a target', async () => {
-  const { reviewItems } = await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const { reviewItems } = await import('../../../dsh-apple-sync/src/presentation.js')
   const state = { authorization:'full_access', connected:true, auto_enabled:true, legacy_deletions:[{alcor_id:'synthetic',reason:'legacy retained'}] }
   assert.equal(connectionStatus(state,false).label,'部分同步 · 待处理')
   const [item] = reviewItems(state,'calendar')
@@ -36,7 +36,7 @@ test('legacy deletion remains visible as needing review without inventing a targ
 })
 
 test('review rows retain all actionable types and use current category values without duplicating names', async () => {
-  const { reviewItems, resolutionRequest } = await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   assert.deepEqual(reviewItems(null, 'calendar'), [])
   const state = { categories: [{id:'local', name:'工作'}], calendars:[{id:'apple',title:'项目'}], links:[{apple_id:'apple',alcor_id:'local',name_conflict:'changed'}], category_conflicts:[{apple_id:'apple',alcor_id:'local',kind:'name'}], conflicts:[{alcor_id:'event',title:'开会'}], operations:[{id:'op',action:'delete',document:{title:'旧日程'}}] }
   const items = reviewItems(state,'calendar')
@@ -60,12 +60,12 @@ test('conflict titles are local read-only summaries and tolerate missing records
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
   const { fileURLToPath } = await import('node:url')
-  const source=fileURLToPath(new URL('../../packages/alcor-apple-sync/python',import.meta.url))
+  const source=fileURLToPath(new URL('../../../dsh-apple-sync/python',import.meta.url))
   await promisify(execFile)(testPython,['-c',`import sys\nsys.path.insert(0,${JSON.stringify(source)})\nfrom apple_sync.metadata import conflict_summaries\nassert conflict_summaries([],lambda identity:1/0,'alcor_id')==[]\nrows=conflict_summaries([{'todo_id':'a','conflict':'changed'},{'todo_id':'missing','conflict':'deleted'}],lambda identity:{'a':{'id':'a','title':'练习','category_id':'plan'}}[identity],'todo_id')\nassert rows[0]=={'todo_id':'a','reason':'changed','title':'练习','category_id':'plan','local_missing':False,'local_restore_pending':False}\nassert rows[1]['title'] is None and rows[1]['local_missing'] is True and rows[1]['local_restore_pending'] is False\n`])
 })
 
 test('identity candidates and unknown owner commits are visible and cannot dispatch recovery writes', async () => {
-  const { reviewItems, resolutionRequest } = await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   const state={authorization:'full_access',connected:true,auto_enabled:true,
     identity_candidates:[{key:'candidate',state:'pending',native:{title:'保留候选',list_id:'b',source_id:'account2'},reason:'identity differs'}],
     scan_claims:[{attempt_id:'claim',group_id:'a',source_id:'account1',state:'uncertain',stage:'owner_claiming',reason:'lost response'}]}
@@ -78,7 +78,7 @@ test('identity candidates and unknown owner commits are visible and cannot dispa
 })
 
 test('category create unknown and proven pre-send waiting stay visible without retry buttons', async () => {
-  const { reviewItems, resolutionRequest } = await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   for (const state of ['native_unknown', 'owner_claiming', 'owner_committed', 'legacy_unknown', 'waiting']) {
     const status={authorization:'full_access',connected:true,auto_enabled:true,category_creates:[{local_id:'category',title:'Work',source_id:'source',state,reason:'retained'}]}
     assert.equal(connectionStatus(status,false).tone,'warning')
@@ -90,7 +90,7 @@ test('category create unknown and proven pre-send waiting stay visible without r
 
 
 test('known marker rollback is visible without granting recovery or retry', async () => {
-  const { reviewItems, resolutionRequest } = await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   for (const kind of ['calendar','reminders']) {
     const state={authorization:'full_access',connected:true,auto_enabled:true,marker_conflicts:[{local_id:'local',title:'Retained marker',group_id:'a',source_id:'s',state:'marker_conflict',reason:'changed'}]}
     assert.equal(connectionStatus(state,false).tone,'warning')
@@ -101,7 +101,7 @@ test('known marker rollback is visible without granting recovery or retry', asyn
 })
 
 test('bound conflict receipts remain reachable without offering a different write choice',async()=>{
-  const {reviewItems,resolutionRequest,canRestoreLocalItem,boundConflictPending}=await import('../../packages/alcor-apple-sync/src/presentation.js')
+  const {reviewItems,resolutionRequest,canRestoreLocalItem,boundConflictPending}=await import('../../../dsh-apple-sync/src/presentation.js')
   for(const choice of ['keep_apple','keep_alcor'])for(const phase of ['owner_uncertain','native_saved','native_uncertain','finalizing']){
     const [item]=reviewItems({conflicts:[{alcor_id:'exact-id',local_missing:true,bound_conflict_pending:{choice,phase}}]},'calendar')
     assert.equal(item.label,'冲突处理结果待核对');assert.equal(canRestoreLocalItem(item),false)

@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/alcor-apple-sync/python'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '../dsh-apple-sync/python'))
 from apple_sync.runtime import EventKitAutoRunner
 
 class Bridge:

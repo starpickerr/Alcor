@@ -8,12 +8,12 @@ Current delivery (2026-11-12): install Alcor as a standard plugin inside the unc
 
 The isolated Host/Profile client remains an optional design, preserved on origin/archive/isolated-runtimes-20261112-02217cd4 at 02217cd4. Do not delete existing environments or migrate personal databases, credentials or external channels automatically.
 
-隔离版本分支长期保持不变，日常合并及分支清理遵循 [.agents/rules/branch-preservation.md](.agents/rules/branch-preservation.md)。
+新开发任务开始前，依[工作区 Git 规范](../.agents/rules/git.md#分支与历史)检查本地和远端未合并的开发分支，排除[明确保留的隔离分支](.agents/rules/branch-preservation.md)。有未合并分支时，请用户决定先合并还是直接开发。没有时直接进入开发流程。
 
 product/client-shell and @alcor/extension remain compatibility code for the optional isolated design; the current shared implementation installs @alcor/secretary in the official Profile and does not replace official client UI modules.
 
 - 产品：根 `package.json`、`packages/`、`product/`、`scripts/product/`。
-- Apple：`packages/alcor-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。
+- Apple：`../dsh-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。
 - 学校／邮件连接：`packages/alcor-elearning/`、`packages/alcor-mail/`；各自封装独立 MCP 与 DSH 凭据，不将管理接口开放给模型。构建 `npm run product:sources:pack`，只读协议与来源版本见 `product/mcp-connections.md` 及 `product/source-releases.lock.json`。新增 Remote 必须通过真实 DSH Gateway 挂载检查，避免方法名与宿主保留接口重名。
 - 依赖安装 `make setup`，默认开发 `npm run dev` / `make dev`，默认检查 `make check`，默认测试 `npm test` / `make test`。Apple 构建 `npm run product:apple:pack`；安装、版本及限制见 [product/README.md](product/README.md)。
 - `desktop/`、`agent/`、`application/`、`channel/`、`core/` 属于保留的旧运行路径；仅在用户明确要求旧版维护或读取迁移来源时使用。不要把旧版同名组件当作新版入口。

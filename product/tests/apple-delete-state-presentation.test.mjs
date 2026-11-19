@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { reviewItems, resolutionRequest, deletionPhaseLabel } from '../../packages/alcor-apple-sync/src/presentation.js'
+import { reviewItems, resolutionRequest, deletionPhaseLabel } from '../../../dsh-apple-sync/src/presentation.js'
 
 test('delete presentation separates pending, submitting and unknown without blind retry', () => {
   for (const [state,label] of [['pending','等待本次确认'],['sending','正在提交'],['uncertain','结果待核对']]) {
@@ -26,7 +26,7 @@ test('category wording does not ask the user to delete manually or retry unknown
 })
 
 test('operation review distinguishes deletion approval from ordinary completion', () => {
-  const source=readFileSync(new URL('../../packages/alcor-apple-sync/src/client.jsx',import.meta.url),'utf8')
+  const source=readFileSync(new URL('../../../dsh-apple-sync/src/alcor-settings.jsx',import.meta.url),'utf8')
   assert.ok(source.includes('Alcor 将请求 Apple 删除，并在本机操作完成后处理本地记录'))
   assert.ok(source.includes("pendingDelete ? deletionPhaseLabel(item) : '等待同步'"))
   assert.ok(!source.includes('下次同步会重试'))

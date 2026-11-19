@@ -6,7 +6,7 @@ test('verification-only Apple isolation blocks every invoke and touches neither 
   execFileSync(testPython, ['-B', '-c', `
 import os,sys,tempfile,hashlib
 from pathlib import Path
-sys.path.insert(0,'packages/alcor-apple-sync/python')
+sys.path.insert(0,'../dsh-apple-sync/python')
 from worker import AppleWorker
 class Bridge:
  def __init__(self): self.calls=[]
@@ -51,7 +51,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BusinessWorker } from './packages/alcor-organizer/src/business.js'
 const root=await mkdtemp(join(tmpdir(),'alcor-private-no-apple-')), absent=join(root,'must-not-exist')
-const worker=new BusinessWorker(absent,{worker:new URL('./packages/alcor-apple-sync/python/worker.py',import.meta.url),onRequest(){throw Error('unexpected owner request')}})
+const worker=new BusinessWorker(absent,{worker:new URL('./../dsh-apple-sync/python/worker.py',import.meta.url),onRequest(){throw Error('unexpected owner request')}})
 try {
   assert.equal(await worker.call('initialize'),true)
   for(const [action,input] of [

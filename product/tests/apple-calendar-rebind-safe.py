@@ -91,7 +91,7 @@ class Rebind(unittest.TestCase):
    f=pool.submit(self.sync.sync);self.assertTrue(ready.wait(5))
    approved={'operation_id':'a'*64,'approval_fingerprint':'f'*64,'plan':{'items':[{'local_id':self.id,'group_id':'new-group','source_id':'account1','destination_snapshot':{'id':'new-group','source_id':'account1'}}]}}
    code='''import json,sys\nfrom apple_sync.calendar import AppleCalendarSync\nfrom apple_sync.export_reservations import reserve\ns=AppleCalendarSync(bridge=object(),db_path=sys.argv[1],calendar_port=object())\ntry: reserve(s,json.load(sys.stdin)); print("reserved")\nexcept ValueError: print("blocked")\n'''
-   env=os.environ.copy();env['PYTHONPATH']=str(ROOT/'packages/alcor-apple-sync/python')
+   env=os.environ.copy();env['PYTHONPATH']=str(ROOT/'../dsh-apple-sync/python')
    child=subprocess.run([sys.executable,'-B','-c',code,str(self.sync.db_path)],input=json.dumps(approved),capture_output=True,text=True,env=env,check=True)
    self.assertEqual(child.stdout.strip(),'blocked');release.set();self.assertEqual(f.result(timeout=8)['status'],'success')
  def _committed_doc(self):
