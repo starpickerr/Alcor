@@ -8,7 +8,7 @@ Current delivery (2026-11-12): install Alcor as a standard plugin inside the unc
 
 The isolated Host/Profile client remains an optional design, preserved on origin/archive/isolated-runtimes-20261112-02217cd4 at 02217cd4. Do not delete existing environments or migrate personal databases, credentials or external channels automatically.
 
-新开发任务开始前，依[工作区 Git 规范](../.agents/rules/git.md#分支与历史)检查本地和远端未合并的开发分支，排除[明确保留的隔离分支](.agents/rules/branch-preservation.md)。有未合并分支时，请用户决定先合并还是直接开发。没有时直接进入开发流程。
+创建新任务分支前，依[工作区 Git 规范](../.agents/rules/git.md#分支与历史)刷新远端分支信息，核对其他开发任务的本地和远端分支是否已合入 `develop`，排除[明确保留的隔离分支](.agents/rules/branch-preservation.md)。发现未合并分支时先请用户决定先合并还是直接开发。检查完成后，从当前本地 `develop` 创建新任务分支。
 
 product/client-shell and @alcor/extension remain compatibility code for the optional isolated design; the current shared implementation installs @alcor/secretary in the official Profile and does not replace official client UI modules.
 
