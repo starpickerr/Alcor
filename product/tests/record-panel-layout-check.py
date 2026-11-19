@@ -30,13 +30,12 @@ def main():
             def business(domain, method, args=None):
                 return desktop.rpc(page, 'alcorOrganizer/business', {'request': {'domain': domain, 'method': method, 'arguments': args or {}}})
             for index in range(18):
-                business('tasks', 'create_todo', {'payload': {'title': f'面板事务 {index:02d}', 'notes': '这是用于验证面板滚动的说明。'}})
+                business('tasks', 'create_todo', {'payload': {'title': f'面板事务 {index:02d}', 'notes': '' if index == 1 else '这是用于验证面板滚动的说明。'}})
             today = page.evaluate('new Date().toLocaleDateString("sv-SE")')
             event = business('calendar', 'create_event', {'title': '面板日程', 'start_at': f'{today}T09:00:00+08:00', 'end_at': f'{today}T10:00:00+08:00', 'repeat_timezone': 'Asia/Shanghai'})
             open_secretary(page)
             page.get_by_role('tab', name='全部事务', exact=True).click()
             page.get_by_role('button', name='刷新', exact=True).click()
-            page.get_by_role('button', name='面板事务 00', exact=True).click()
 
             def check(name, action):
                 panel = page.get_by_role('region', name=name, exact=True)
@@ -46,7 +45,26 @@ def main():
                 assert panel.evaluate('e=>getComputedStyle(e).overflow') == 'hidden'
                 return panel
 
+            page.get_by_role('button', name='面板事务 01', exact=True).click()
             task = check('事务详情', '编辑详情')
+            body = task.get_by_role('region', name='正文', exact=True)
+            expect(body.get_by_role('heading', name='正文', exact=True)).to_be_visible()
+            expect(body.locator('p')).to_have_text('暂无正文')
+            assert task.get_by_role('button', name='添加子事务', exact=True).bounding_box()['y'] < body.bounding_box()['y']
+            expect(task.get_by_role('heading', name='面板事务 01', exact=True)).to_have_count(1)
+            expect(task.get_by_role('navigation', name='事务路径')).to_have_count(0)
+            page.screenshot(path=str(artifacts / 'task-empty-body.png'), animations='disabled')
+            task.get_by_role('button', name='编辑详情', exact=True).click()
+            editor = page.get_by_role('form', name='编辑事务')
+            editor.get_by_label('事务详情', exact=True).fill('提交实验记录。\n附上测量结果。')
+            editor.get_by_role('button', name='保存事务', exact=True).click()
+            expect(body.locator('p')).to_have_text('提交实验记录。\n附上测量结果。')
+            assert body.locator('p').evaluate('e => getComputedStyle(e).whiteSpace') == 'pre-wrap'
+            task.get_by_role('button', name='关闭详情', exact=True).click()
+
+            page.get_by_role('button', name='面板事务 00', exact=True).click()
+            task = check('事务详情', '编辑详情')
+            expect(task.get_by_role('region', name='正文', exact=True)).to_contain_text('这是用于验证面板滚动的说明。')
             page.screenshot(path=str(artifacts / 'task-initial.png'), animations='disabled')
             desk = page.locator('.alcor-desk')
             desk.evaluate('e=>e.scrollTop=250')
