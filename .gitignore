@@ -97,3 +97,4 @@ packages/alcor-secretary/business/**/__pycache__/
 /packages/alcor-apple-sync/python/apple_sync/Stella Apple Sync.app/
 /packages/alcor-apple-sync/python/apple_sync/Alcor Apple Sync.app/
 /packages/alcor-secretary/native/Alcor Confirm.app/
+/packages/alcor-secretary/native/AlcorConfirm

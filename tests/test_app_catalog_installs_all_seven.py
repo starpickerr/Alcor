@@ -27,7 +27,7 @@ def test_app_catalog_installs_all_defaults(tmp_path, monkeypatch):
     results = {}
     for plugin_id in (
         "stella.bills", "stella.calendar", "stella.tasks", "stella.knowledge",
-        "stella.memory", "stella.briefing", "stella.automation", "stella.agent-hub",
+        "stella.memory", "stella.briefing", "stella.automation",
     ):
         results[plugin_id] = fetch_and_install_from_catalog(
             catalog_path=APP_CATALOG,

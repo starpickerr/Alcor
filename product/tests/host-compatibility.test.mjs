@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-for (const name of ['alcor-extension', 'alcor-launcher', 'alcor-secretary', 'alcor-apple-sync', 'alcor-privacy', 'alcor-organizer', 'alcor-elearning', 'alcor-mail', 'alcor-agent-hub', 'alcor-plugin-info']) {
+for (const name of ['alcor-extension', 'alcor-launcher', 'alcor-secretary', 'alcor-apple-sync', 'alcor-privacy', 'alcor-organizer', 'alcor-elearning', 'alcor-mail', 'alcor-plugin-info']) {
   test(`${name} cannot install or shadow host-owned DSH components`, async () => {
     const manifest = JSON.parse(await readFile(new URL(`../../packages/${name}/package.json`, import.meta.url)))
     for (const dependency of Object.keys(manifest.dependencies || {})) assert(!dependency.startsWith('@deepseek-ai/'), `${dependency} must come from the running host`)
@@ -22,10 +22,10 @@ test('shared secretary and organizer name the verified rc.2 release explicitly',
   }
 })
 
-test('current Alcor packages explicitly support the verified rc.3 host', async () => {
-  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'agent-hub']) {
+test('current Alcor packages explicitly support the verified rc.5 host', async () => {
+  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail']) {
     const manifest = JSON.parse(await readFile(new URL(`../../packages/alcor-${name}/package.json`, import.meta.url)))
-    assert(manifest.engines.dsh.split(' || ').includes('0.2.2-rc.3'), `${name} must run after the official host update`)
+    assert(manifest.engines.dsh.split(' || ').includes('0.2.2-rc.5'), `${name} must run after the official host update`)
     assert(!/[~^*><]/.test(manifest.engines.dsh))
   }
 })

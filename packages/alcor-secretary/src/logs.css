@@ -48,9 +48,6 @@
 .alcor-log-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; min-height:230px; padding:24px; color:var(--dsw-alias-label-secondary); }
 .alcor-log-empty p { margin:0; font-size:12px; }
 .alcor-log-more { display:flex; justify-content:center; padding:16px; border-top:1px solid var(--dsw-alias-border-l3); }
-.alcor-log-coverage { margin-top:20px; color:var(--dsw-alias-label-secondary); font-size:12px; }
-.alcor-log-coverage summary { cursor:pointer; }
-.alcor-log-coverage p { max-width:760px; margin:8px 0; }
 @media(max-width:760px) {
   .alcor-logs { padding:60px 16px 24px; }
   .alcor-log-primary { gap:12px; }

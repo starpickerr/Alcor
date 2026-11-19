@@ -7,9 +7,9 @@ import tarfile
 
 from playwright.sync_api import expect, sync_playwright
 import official_desktop_check as desktop
-from fresh_profile_fixture import fresh_test_home
+from fresh_profile_fixture import fresh_test_home, initialize_fresh
 
-PACKAGES = {'@alcor/' + name for name in ('secretary', 'apple-sync', 'elearning', 'mail', 'agent-hub')}
+PACKAGES = {'@alcor/' + name for name in ('secretary', 'apple-sync', 'elearning', 'mail')}
 
 
 def archives(directory):
@@ -21,14 +21,13 @@ def archives(directory):
         if name in PACKAGES:
             assert name not in result, 'Only one artifact per package is allowed'
             result[name] = archive
-    assert set(result) == PACKAGES, 'Build or provide all five Alcor packages'
+    assert set(result) == PACKAGES, 'Build or provide all four Alcor packages'
     return [str(result[name]) for name in sorted(result)]
 
 
 def check_services(page):
     assert desktop.rpc(page, 'alcorSchool/elearningAccount', {'request': {}})['installed']
     assert desktop.rpc(page, 'alcorMail/state', {'request': {}})['installed']
-    assert desktop.rpc(page, 'agentHub/read', {'request': {}}) == {'jobs': []}
     assert desktop.rpc(page, 'alcorAppleSync/invoke', {'request': {'method': 'status'}})['supported']
     expect(page.get_by_role('button', name=re.compile(r'^切换使用模式，当前 '))).to_be_visible()
 
@@ -38,7 +37,7 @@ def main():
     current = desktop.APP
     releases = desktop.RELEASE
     old_packs = archives(os.environ['ALCOR_PREVIOUS_ARTIFACTS'])
-    new_packs = archives(desktop.ROOT / '.local/artifacts')
+    new_packs = archives(os.environ.get('ALCOR_CURRENT_ARTIFACTS', desktop.ROOT / '.local/artifacts'))
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     identities = []
     for app in (previous, current):
@@ -47,6 +46,9 @@ def main():
         identities.append(desktop.digest(app / 'Contents/Resources/app.asar'))
     with fresh_test_home('alcor-host-upgrade-') as temporary, sync_playwright() as playwright:
         home = Path(temporary)
+        profile = home / 'dsh/profiles/desktop'
+        profile.mkdir(parents=True)
+        initialize_fresh(temporary, home / 'dsh', profile)
         desktop.APP = previous
         with desktop.desktop(playwright, home, 'previous-baseline') as (page, errors):
             assert not errors, errors
@@ -91,7 +93,7 @@ def main():
         desktop.APP, desktop.RELEASE = app, releases
         desktop.verify_release()
         assert desktop.digest(app / 'Contents/Resources/app.asar') == identity
-    print('PASS: five plugins start and restart after host/package upgrade; task, workspace, bundles and owner data retained; unsupported plugins leave native DSH usable; official apps unchanged')
+    print('PASS: four plugins start and restart after host/package upgrade; task, workspace, bundles and owner data retained; unsupported plugins leave native DSH usable; official apps unchanged')
 
 
 if __name__ == '__main__':

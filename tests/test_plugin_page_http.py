@@ -12,7 +12,7 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setenv("STELLA_BILLS_PLUGIN", "1")
     root = Path("stella-plugins-workspace/plugins/bills")
     if not root.is_dir():
-        root = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "bills"
+        root = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "bills"
     monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(root.resolve()))
     monkeypatch.setenv("STELLA_REPO_ROOT", str(Path.cwd()))
     from channel.desktop import desktop_channel as channel

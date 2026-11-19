@@ -26,14 +26,7 @@ _BRIEFING_METHODS = frozenset({
 _EMAIL_METHODS = frozenset({"list_accounts", "get_account", "list_folders", "test_connection"})
 _ELEARNING_METHODS = frozenset({"list_courses", "get_settings", "test_connection"})
 _AUTOMATION_METHODS = frozenset({"list_tasks", "get_task", "enable_task"})
-_AGENT_HUB_METHODS = frozenset({
-    "list_catalog", "status_overview", "list_providers", "get_provider",
-    "probe_provider", "ensure_defaults", "upsert_provider", "delete_provider",
-    "list_external_runs", "get_external_run",
-    "list_tasks", "get_task", "create_task", "update_participant", "post_message", "set_workflow",
-    "start_task", "cancel_task", "task_activity", "refresh_task", "native_participants", "adopt_proposal",
-    "add_participant", "set_coordinator",
-})
+
 
 
 class PluginPageHost:
@@ -102,8 +95,6 @@ class PluginPageHost:
             return self._invoke_elearning(method, params)
         if plugin_id == "stella.automation":
             return self._invoke_automation(method, params)
-        if plugin_id == "stella.agent-hub":
-            return self._invoke_agent_hub(method, params, user_id=channel.user_id)
         raise PermissionError(f"bridge invoke not enabled for {plugin_id}")
 
     def _invoke_bills(self, method: str, params: dict[str, Any]) -> Any:
@@ -256,27 +247,6 @@ class PluginPageHost:
             raise RuntimeError(f"automation plugin returned {status}")
         return result.get("value")
 
-    def _invoke_agent_hub(self, method: str, params: dict[str, Any], *, user_id: str = "desktop") -> Any:
-        if method not in _AGENT_HUB_METHODS:
-            raise PermissionError(f"method not allowed on agent-hub page: {method}")
-        from common.runtime_identity import RuntimeIdentity, use_identity
-        from core.services import agent_hub_gateway
-
-        from core.plugins.caller import caller_origin_scope
-        from core.services import agent_hub_collaboration
-        with use_identity(RuntimeIdentity(user_id=user_id)), caller_origin_scope('desktop'):
-            if method in {'start_task', 'cancel_task', 'task_activity', 'refresh_task', 'native_participants', 'adopt_proposal'}:
-                return getattr(agent_hub_collaboration, method)(**params)
-            result = agent_hub_gateway.invoke_agent_hub(
-                method, params, agent_id="plugin-ui",
-            )
-        status = result.get("status")
-        if status == "failed":
-            raise ValueError((result.get("error") or {}).get("message") or "agent-hub call failed")
-        if status != "succeeded":
-            raise RuntimeError(f"agent-hub plugin returned {status}")
-        return result.get("value")
-
     @staticmethod
     def _package_root(plugin_id: str) -> Path:
         from core.plugins.roots import resolve_plugin_package_root
@@ -291,7 +261,6 @@ class PluginPageHost:
             "stella.email": ("STELLA_EMAIL_PLUGIN_ROOT", "email"),
             "stella.elearning": ("STELLA_ELEARNING_PLUGIN_ROOT", "elearning"),
             "stella.automation": ("STELLA_AUTOMATION_PLUGIN_ROOT", "automation"),
-            "stella.agent-hub": ("STELLA_AGENT_HUB_PLUGIN_ROOT", "agent-hub"),
         }
         if plugin_id in aliases:
             env, folder = aliases[plugin_id]

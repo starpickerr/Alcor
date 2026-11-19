@@ -5,7 +5,7 @@ from core.plugins.authz import PluginAuthorizationStore
 from core.plugins.host import PluginSession
 from core.plugins.registry import PluginRegistry
 
-ROOT = Path(__file__).resolve().parents[2] / 'Stella-Plugins/plugins/knowledge'
+ROOT = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace/plugins/knowledge'
 
 
 def test_knowledge_worker_owns_documents_and_searches_only_knowledge(tmp_path):

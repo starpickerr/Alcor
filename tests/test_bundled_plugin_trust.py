@@ -20,7 +20,7 @@ def core_layout(tmp_path, monkeypatch):
     return core
 
 
-@pytest.mark.parametrize('domain', ['bills', 'calendar', 'tasks', 'briefing', 'automation', 'agent-hub', 'knowledge', 'memory'])
+@pytest.mark.parametrize('domain', ['bills', 'calendar', 'tasks', 'briefing', 'automation', 'knowledge', 'memory'])
 def test_official_desktop_digest_is_trusted_without_matching_source_digest(tmp_path, core_layout, domain):
     from core.plugins.package_ops import _sha256_tree
     from core.security.runtime_trust import verified_first_party

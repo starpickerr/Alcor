@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, IconRefreshOutlineRegular, IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Notice } from './notice.jsx'
-import { logCapacity, logCategory, logCategoryLabels, logDebugCapacity, logFilterCategories, logSources } from './log-contract.js'
+import { logCategory, logCategoryLabels, logFilterCategories, logSources } from './log-contract.js'
 
 const clock = new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 
@@ -106,7 +106,7 @@ export function RuntimeLogsPage({ api }) {
       {page?.entries.length ? <ol aria-label="日志记录">{page.entries.map(row => <li key={row.id}>
         <details><summary><IconChevronRightOutlineRegular className="alcor-log-chevron" size={14} /><time dateTime={row.time} title={row.time}>{clock.format(new Date(row.time))}</time>
           <span className="alcor-log-category" data-category={logCategory(row)}>{logCategoryLabels[logCategory(row)]}</span>
-          <span className="alcor-log-source">{row.source}</span>
+          <span className="alcor-log-source" title={row.source}>{row.source}</span>
           <span className="alcor-log-message">{row.operation ?? (row.message.split('\n')[0] || '空消息')}</span></summary>
           <LogDetail row={row} copy={copy} />
         </details>
@@ -115,10 +115,5 @@ export function RuntimeLogsPage({ api }) {
       {page?.nextBefore && <div className="alcor-log-more"><Button variant="outline" disabled={busy} onClick={() => { setAutomatic(false); void load(page.nextBefore) }}>加载更早日志</Button></div>}
       </div>
     </div>
-    <details className="alcor-log-coverage"><summary>采集范围与保留</summary>
-      <p>按事务、日程、简报、账单、自动化等业务分类记录宿主诊断。最多保留 {page?.capacity ?? logCapacity} 条，优先保留信息及以上的记录，调试记录最多 {logDebugCapacity} 条。重启后可继续查看，部分凭据、邮箱和用户目录会隐藏。</p>
-      <p>不包含采集启动前的输出、桌面崩溃文件、安装日志、聊天内容，以及尚未通过该接口输出的模块记录。</p>
-      {page && <p>本次采集开始于 {clock.format(new Date(page.startedAt))}，共保留 {page.retained} 条。{page.storage === 'saved' ? '记录已保存。' : page.storage === 'pending' ? '记录正在保存。' : '记录未能保存。'}</p>}
-    </details>
   </section>
 }

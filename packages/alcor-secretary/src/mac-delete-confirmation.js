@@ -9,7 +9,7 @@ export function confirmMacDeletion(request, signal) {
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
     const [command,args] = process.platform === 'win32' ? windowsConfirmationCommand() :
-      [fileURLToPath(new URL('../native/Alcor Confirm.app/Contents/MacOS/AlcorConfirm', import.meta.url)), []]
+      [fileURLToPath(new URL('../native/AlcorConfirm', import.meta.url)), []]
     const child = spawn(command,args, {
       windowsHide:true,
       stdio: ['pipe', 'pipe', 'ignore'], signal, timeout: 245000,

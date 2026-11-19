@@ -16,7 +16,7 @@ product/client-shell and @alcor/extension remain compatibility code for the opti
 - Apple：`packages/alcor-apple-sync/`（原生 `@alcor/apple-sync`）；事务与日程 UI：`packages/alcor-secretary/src/`；共享业务：`packages/alcor-organizer/`。
 - 学校／邮件连接：`packages/alcor-elearning/`、`packages/alcor-mail/`；各自封装独立 MCP 与 DSH 凭据，不将管理接口开放给模型。构建 `npm run product:sources:pack`，只读协议与来源版本见 `product/mcp-connections.md` 及 `product/source-releases.lock.json`。新增 Remote 必须通过真实 DSH Gateway 挂载检查，避免方法名与宿主保留接口重名。
 - 依赖安装 `make setup`，默认开发 `npm run dev` / `make dev`，默认检查 `make check`，默认测试 `npm test` / `make test`。Apple 构建 `npm run product:apple:pack`；安装、版本及限制见 [product/README.md](product/README.md)。
-- `desktop/`、`agent/`、`application/`、`channel/`、`core/` 与外仓旧 `dsh-agent-hub/plugins/` 属于保留的旧运行路径；仅在用户明确要求旧版维护或读取迁移来源时使用。不要把旧版同名组件当作新版入口。
+- `desktop/`、`agent/`、`application/`、`channel/`、`core/` 属于保留的旧运行路径；仅在用户明确要求旧版维护或读取迁移来源时使用。不要把旧版同名组件当作新版入口。
 - 修改前核对 Git 分支、原生包清单、实际 UI 注册和已安装包路径。若目标文件仅被旧版引用，重新定位新版 owner；不要通过旧 Python / React 测试证明新版完成。
 - 客户端构建会拒绝从旧 `desktop/`、`agent/`、`application/`、`channel/`、`core/` 引入代码；需要复用时将所需实现迁入原生包。新版 CI 是 `.github/workflows/native-product.yml`；保留的旧版 CI 不能代替它。旧环境安装／检查显式使用 `make setup-legacy` / `make check-legacy`；其余旧维护目标不作为新版验收。
 - 最终验收以已校验的官方运行时、本地打包客户端和原生 Profile 为对象：同窗顶部切换、重启恢复、插件作用域及数据保留分别留证。网页、双窗口、合成账号和真实个人安装不能相互替代；官方专有桌面桥未适配时明确记录，不宣称等价支持。

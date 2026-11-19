@@ -8,7 +8,6 @@ const tasks = '已启动的任务继续执行'
 const connection = '已配置的连接保持可用，按需读取'
 const bundles = new Map(Object.entries({
   '@alcor/secretary': [alcor, '已开启的定时简报和主动交流继续运行'],
-  '@alcor/agent-hub': [bench, '已启动的协作任务继续执行'],
   '@alcor/apple-sync': [alcor, '已开启的自动同步继续运行'],
   '@alcor/elearning': [both, connection],
   '@alcor/mail': [both, connection],

@@ -46,10 +46,6 @@ def resolve_plugin_package_root(
     if managed:
         raise FileNotFoundError(f"installed package selection missing: {plugin_id}")
 
-    sibling = _repo_root().parent / "Stella-Plugins" / "plugins" / folder_name
-    if sibling.is_dir():
-        return sibling
-
     workspace = _repo_root() / "stella-plugins-workspace" / "plugins" / folder_name
     if workspace.is_dir() and not _is_frozen():
         return workspace

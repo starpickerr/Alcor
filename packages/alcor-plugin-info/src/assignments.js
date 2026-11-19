@@ -3,7 +3,6 @@ export const assignments = {
   '@alcor/mail': {entry:'alcor-mail', initial:'both'},
   '@alcor/elearning': {entry:'alcor-elearning', initial:'both'},
   '@alcor/apple-sync': {entry:'alcor-apple-sync', initial:'alcor'},
-  '@alcor/agent-hub': {entry:'agent-hub', initial:'dsh'},
   'dsh-onebot-qq': {entry:'dsh-onebot', initial:'alcor', exclusive:true},
 }
 export const modeNames={alcor:'Alcor',dsh:'DSH 工作台',both:'两边共用'}

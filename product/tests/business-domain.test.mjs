@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
-import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
 import { recordSchema } from '../../packages/alcor-organizer/src/records.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -85,26 +84,19 @@ test('migrated business services share page records, persist hierarchy, dependen
   assert.equal((await worker.call('records')).filter(item => item.id === legacy.id).length, 1)
 })
 
-test('briefing revisions, source deduplication and collaboration configuration survive worker restart', async context => {
+test('briefing revisions and source deduplication survive worker restart', async context => {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-revisions-'))
   const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
   let worker = new BusinessWorker(directory, options)
-  let hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
-  context.after(async () => { await hub.close(); await worker.close(); await rm(directory, { recursive: true, force: true }) })
-  const invoke = (domain, method, args = {}) => (domain==='agent_hub' ? hub : worker).call('invoke', { domain, method, arguments: args })
+  context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
+  const invoke = (domain, method, args = {}) => worker.call('invoke', { domain, method, arguments: args })
   const sources = [{ source: 'local-test', account_id: 'synthetic', items: [{ source_id: 'one', title: 'Source one', occurred_at: '2026-11-05T09:00:00Z', snippet: 'Retained source' }], cursors: { sequence: '1' } }]
   const first = await invoke('briefing', 'run_pipeline', { briefing_date: '2026-11-05', sources, run_at: '2026-11-05T10:00:00Z' })
   const second = await invoke('briefing', 'run_pipeline', { briefing_date: '2026-11-05', sources, run_at: '2026-11-05T11:00:00Z' })
   assert.equal(second.mail.length, 1)
   assert.equal(second.revisions.length, first.revisions.length)
-  const task = await invoke('agent_hub', 'create_task', { payload: { title: 'Task', goal: 'Deliver', participants: [{ nativeAgentId: 'stella' }] }, request_id: randomUUID() })
-  const participant = task.participants[0]
-  const changed = await invoke('agent_hub', 'post_message', { task_id: task.taskId, body: 'Task persona', recipient_ids: [participant.participantId], intent: 'persona', expected_revision: task.revision, request_id: randomUUID() })
-  assert.equal(changed.participants[0].persona, 'Task persona')
-  await hub.close(); await worker.close()
+  await worker.close()
   worker = new BusinessWorker(directory, options)
-  hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
-  assert.equal((await invoke('agent_hub', 'get_task', { task_id: task.taskId })).participants[0].persona, 'Task persona')
   assert.equal((await invoke('briefing', 'get_briefing', { briefing_id: first.briefing.id })).mail.length, 1)
 })
 

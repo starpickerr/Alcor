@@ -14,7 +14,7 @@ from core.services.trusted_account_modules import _TRUSTED_MODULES  # noqa: E402
 def prepare(dist, resources):
     catalog = json.loads((ROOT / 'resources/mcp-providers.json').read_text())
     for domain, modules in _TRUSTED_MODULES.items():
-        repo = ROOT.parent / 'MCP' / ('email-mcp' if domain == 'email' else 'fudan-elearning-mcp')
+        repo = ROOT.parent / ('dsh-email' if domain == 'email' else 'dsh-fudan-elearning')
         snapshot = {}
         row = catalog['providers'][domain]
         if source_digest(repo, snapshot=snapshot) != row['sourceSha256']:

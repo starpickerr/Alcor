@@ -22,16 +22,15 @@ function elements(node,type){
   return [...(node.type===type?[node]:[]),...elements(node.children,type)]
 }
 
-test('an installed app is accessible in an independent environment despite its old mode field',()=>{
+test('removed AgentHub adds no navigation in either environment',()=>{
   const previous=globalThis.__ALCOR_APPLICATION__
   const props={collapsed:false,drawer:false,width:240,navigate(){},startSession(){},toggleSidebar(){},
-    usePanelInfo:fn=>fn({activePanelId:null}),useRemoteAccess:()=>true,renderFactorySlot:()=>null,pluginPanels:source,
-    hubForm:{subscribe:()=>()=>{},getSnapshot:()=>({status:'ready',value:{productScope:'dsh'}})},t:value=>value}
+    usePanelInfo:fn=>fn({activePanelId:null}),useRemoteAccess:()=>true,renderFactorySlot:()=>null,pluginPanels:source,t:value=>value}
   try{
     delete globalThis.__ALCOR_APPLICATION__
     assert(!elements(SecretarySidebar(props),'button').some(button=>button.props['aria-label']==='AgentHub'))
     globalThis.__ALCOR_APPLICATION__='alcor'
-    assert(elements(SecretarySidebar(props),'button').some(button=>button.props['aria-label']==='AgentHub'))
+    assert(!elements(SecretarySidebar(props),'button').some(button=>button.props['aria-label']==='AgentHub'))
   }finally{if(previous===undefined)delete globalThis.__ALCOR_APPLICATION__;else globalThis.__ALCOR_APPLICATION__=previous}
 })
 
@@ -56,12 +55,11 @@ test('collapsed plugin controls retain accessible names and an empty list adds n
 test('shared native extension reuses the original Alcor navigation and does not duplicate native workspace seats',()=>{
   const props={nativeShell:true,collapsed:false,drawer:false,navigate(){},startSession(){},toggleSidebar(){},
     usePanelInfo:fn=>fn({activePanelId:'alcor-tasks'}),useRemoteAccess:()=>true,
-    renderSlot(){throw Error('native child slots must stay with their owner')},pluginPanels:source,
-    hubForm:{subscribe:()=>()=>{},getSnapshot:()=>({status:'ready',value:{productScope:'alcor'}})},t:value=>value}
+    renderSlot(){throw Error('native child slots must stay with their owner')},pluginPanels:source,t:value=>value}
   const tree=SecretarySidebar(props)
   assert.equal(tree.props.className,'alcor-sidebar-actions')
   assert(elements(tree,'button').some(button=>button.props['aria-label']==='事务'))
-  assert(elements(tree,'button').some(button=>button.props['aria-label']==='AgentHub'))
+  assert(!elements(tree,'button').some(button=>button.props['aria-label']==='AgentHub'))
   assert.deepEqual(elements(tree,'div').filter(row=>row.props?.role==='group').map(row=>row.props['aria-label']),['应用','系统'])
   assert.equal(elements(tree,'aside').length,0)
   assert.equal(elements(tree,'footer').length,0)

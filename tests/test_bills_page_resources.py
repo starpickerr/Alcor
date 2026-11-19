@@ -9,7 +9,7 @@ from core.plugins.pages import resolve_page_html
 
 
 WORKSPACE = Path("stella-plugins-workspace/plugins/bills")
-SIBLING = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "bills"
+SIBLING = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "bills"
 
 
 def _package_root() -> Path:
