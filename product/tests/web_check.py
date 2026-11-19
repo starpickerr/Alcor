@@ -98,10 +98,7 @@ def open_secretary(page, brand='Alcor'):
         if mode.get_attribute('aria-label').endswith('DeepSeek Harness'):
             mode.click()
             page.get_by_role('menuitem', name=brand, exact=True).click()
-        page.get_by_role('button', name='事务', exact=True).click()
-    else:
-        settings(page, brand)
-        page.get_by_role('button', name='打开 ' + brand, exact=True).click()
+    page.get_by_role('button', name='事务', exact=True).click()
     page.get_by_role('heading', name='事务', exact=True).wait_for()
 
 
@@ -111,10 +108,9 @@ def wait_secretary(page):
     if page.get_by_role('button', name='Continue', exact=True).count():
         page.get_by_role('button', name='Continue', exact=True).click()
     if mode.count() and mode.get_attribute('aria-label').endswith('Alcor'):
-        page.locator('.alcor-sidebar').wait_for()
-    settings(page)
-    page.get_by_role('heading', name='当前空间的项目', exact=True).wait_for()
-    page.get_by_role('button', name='Close', exact=True).click()
+        page.locator('.alcor-sidebar, .alcor-sidebar-actions').first.wait_for()
+    dialog = settings(page)
+    dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
 
 
 def start_secretary_chat(page):
@@ -122,10 +118,14 @@ def start_secretary_chat(page):
     page.locator('.alcor-sidebar-chat').click()
 
 
-def settings(page, brand='Alcor'):
+def settings(page):
     page.get_by_role("button", name=re.compile(r"^(Account menu|账号菜单|More|更多)$")).last.click()
     page.get_by_role("menuitem", name=re.compile(r"^(Settings|设置)")).click()
-    page.get_by_role("dialog", name=re.compile(r"^(Settings|设置)$")).get_by_role("button", name=brand, exact=True).click()
+    dialog = page.get_by_role("dialog", name=re.compile(r"^(Settings|设置)$"))
+    nav = dialog.get_by_role('navigation')
+    expect(nav.locator('button[aria-current=true]')).to_be_visible()
+    expect(nav.get_by_role('button', name='Alcor', exact=True)).to_have_count(0)
+    return dialog
 
 
 def rpc(page, url, endpoint, args=None):

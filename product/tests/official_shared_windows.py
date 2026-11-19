@@ -13,6 +13,7 @@ from uuid import uuid4
 from official_desktop_check import ROOT, digest, enter_workspace, redact, rpc
 from playwright.sync_api import Error, expect, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from web_check import settings
 from windows_caption_check import check_caption
 from windows_window_interactions import check_window_interactions
 
@@ -100,12 +101,7 @@ def switch(page, source, target):
 
 def check_shared_settings(page, mode, home):
     assert page.evaluate("globalThis[Symbol.for('@alcor/product-mode')].getSnapshot()") == mode
-    page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单)$')).click()
-    page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
-    dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
-    dialog.get_by_role('button', name='Alcor', exact=True).click()
-    expect(dialog.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
-    expect(dialog.get_by_text('shared-workspace', exact=True)).to_be_visible()
+    dialog = settings(page)
     page.screenshot(path=home / f'{mode}-settings.png')
     dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
 
