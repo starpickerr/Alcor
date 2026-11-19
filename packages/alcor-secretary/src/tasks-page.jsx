@@ -2,8 +2,8 @@ import { Notice } from './notice.jsx'
 import { useDeletePreview, DeletePreview } from './delete-preview.jsx'
 import { appleOperationMessage } from './category-manager.jsx'
 import { repeatLabel } from './task-frequency.js'
-import React, { useEffect, useState } from 'react'
-import { Button, Input, Modal, SegmentedControl, IconSearchOutlineRegular, IconCheckOutlineRegular, IconAlarmClockOutlineRegular, IconChevronDownOutlineRegular, IconPlusOutlineRegular, IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import React, { useEffect, useRef, useState } from 'react'
+import { Button, Input, Modal, SegmentedControl, IconSearchOutlineRegular, IconCheckOutlineRegular, IconAlarmClockOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { OrganizerContextMenu, OrganizerDetails, useRecordContextMenu } from './organizer-details.jsx'
 import { priorityLabels, recordId, recordPermissions, recordRepeatLabel, recordRepeats, taskDeleteMessage } from './organizer-actions.js'
 import { focusedTaskRecords } from './task-focus.js'
@@ -31,6 +31,7 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
   const [quickTitle, setQuickTitle] = useState('')
   const [expansion, setExpansion] = useState({ scope: '', values: {} })
   const [addingChild, setAddingChild] = useState(false)
+  const addChildButton = useRef(null)
   const [occurrenceDay, setOccurrenceDay] = useState(localDate())
   const [occurrences, setOccurrences] = useState([])
   const [occurrenceError, setOccurrenceError] = useState('')
@@ -109,19 +110,22 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     setExpanded(values)
     if (target) requestAnimationFrame(() => document.querySelector(`.alcor-task-workspace [data-tree-key="${CSS.escape(target)}"] .alcor-task-open`)?.focus())
   }
-  function row(item, { node, depth = 0, content, section } = {}) {
+  function row(item, { node, depth = 0, content, section, parentLink = false } = {}) {
     const contextOnly = node && !node.matched
+    const actionable = !contextOnly && !parentLink
     const selected = selectedRecord && (selectedRecord.business?.occurrence_id ? taskKey(selectedRecord) === taskKey(item) : recordId(selectedRecord) === recordId(item))
-    return <li key={taskKey(item)} className="alcor-task-node"><div className="alcor-task-card" style={{'--task-indent': `${Math.min(depth, 4) * 16}px`}} {...(!contextOnly ? context.trigger(item) : {})} data-task-id={item.id} data-tree-key={node?.key} data-context-only={contextOnly || undefined} data-depth={depth} data-record-selected={selected || undefined} data-priority={item.business?.priority} data-group={taskGroup(item, now)} data-completed={item.status === 'done' || undefined}>
+    return <li key={taskKey(item)} className="alcor-task-node"><div className="alcor-task-card" style={{'--task-indent': `${Math.min(depth, 4) * 16}px`}} {...(actionable ? context.trigger(item) : {})} data-task-id={item.id} data-tree-key={node?.key} data-context-only={contextOnly || undefined} data-depth={depth} data-record-selected={selected || undefined} data-priority={item.business?.priority} data-group={taskGroup(item, now)} data-completed={item.status === 'done' || undefined}>
       <button type="button" className="alcor-task-open" aria-label={item.title} onClick={() => open(item)} />
       {node && <span className="alcor-task-disclosure">{node.children.length > 0 && <Button variant="ghost" size="sm" aria-label={`${expanded(node, section) ? '收起' : '展开'}子事务：${item.title}`} aria-expanded={expanded(node, section)} onClick={() => setExpanded({ [`${section}:${node.key}`]: !expanded(node, section) })}><IconChevronDownOutlineRegular size={20} /></Button>}</span>}
-      {!contextOnly && <Button className="alcor-task-check" variant="ghost" aria-label={recordRepeats(item) ? item.status === 'done' ? '重新打开本次' : '完成本次' : item.status === 'done' ? '重新打开' : '完成事务'} aria-pressed={item.status === 'done'} disabled={!recordPermissions(item, busy).complete} onClick={() => toggle(item)}>{item.status === 'done' && <IconCheckOutlineRegular size={16} />}</Button>}
+      {parentLink && <IconChecklistOutlineRegular className="alcor-task-parent-icon" size={18} aria-hidden="true" />}
+      {actionable && <Button className="alcor-task-check" variant="ghost" aria-label={recordRepeats(item) ? item.status === 'done' ? '重新打开本次' : '完成本次' : item.status === 'done' ? '重新打开' : '完成事务'} aria-pressed={item.status === 'done'} disabled={!recordPermissions(item, busy).complete} onClick={() => toggle(item)}>{item.status === 'done' && <IconCheckOutlineRegular size={16} />}</Button>}
       <div className="alcor-task-copy"><h3>{item.title}</h3>
         {!contextOnly && <TaskMetadata item={item} now={now} view={view} categories={categories} hideList={list === item.business?.category_id} />}
         {!contextOnly && item.business?.subtask_count > 0 && <small>已完成 {item.business.progress_completed}/{item.business.progress_total}</small>}
         {node && <div className="alcor-task-urgency">{['overdue', 'today'].map(group => node.urgency[group] > 0 && <Button key={group} variant="ghost" size="sm" data-urgency={group} aria-label={`${item.title}：${node.urgency[group]} 项子事务${group === 'overdue' ? '逾期' : '今天'}`} onClick={() => revealUrgent(node, group, section)}>{node.urgency[group]} 项{group === 'overdue' ? '逾期' : '今天'}</Button>)}</div>}
       </div>
-      {!contextOnly && <Button variant="ghost" size="sm" className="alcor-task-more" aria-label={`更多操作：${item.title}`} aria-haspopup="menu" aria-expanded={(context.target?.record.business?.occurrence_id ?? context.target?.record.id) === (item.business?.occurrence_id ?? item.id)} disabled={busy || item.archived} onClick={event => context.open(event,item,true)}><IconChevronDownOutlineRegular size={16} /></Button>}
+      {parentLink && <IconChevronRightOutlineRegular className="alcor-task-parent-arrow" size={16} aria-hidden="true" />}
+      {actionable && <Button variant="ghost" size="sm" className="alcor-task-more" aria-label={`更多操作：${item.title}`} aria-haspopup="menu" aria-expanded={(context.target?.record.business?.occurrence_id ?? context.target?.record.id) === (item.business?.occurrence_id ?? item.id)} disabled={busy || item.archived} onClick={event => context.open(event,item,true)}><IconChevronDownOutlineRegular size={16} /></Button>}
     </div>{content}</li>
   }
   function treeRow(node, section, depth = 0) {
@@ -131,19 +135,44 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
   if (current) {
     const options = focusedTaskRecords([current])
     const currentAction = options.find(item => item.business?.occurrence_id && taskKey(item) === taskKey(selectedRecord ?? current)) ?? options.find(item => item.status !== 'done') ?? options[0]
-    const ancestors = []
-    const seen = new Set([current.id])
-    let parent = records.find(item => item.id === current.business?.parent_id)
-    while (parent && !seen.has(parent.id)) { ancestors.unshift(parent); seen.add(parent.id); parent = records.find(item => item.id === parent.business?.parent_id) }
+    const parent = records.find(item => item.id === current.business?.parent_id && item.id !== current.id)
     const children = records.filter(item => item.business?.parent_id === current.id).sort((left, right) => (left.business?.sort_order ?? 0) - (right.business?.sort_order ?? 0))
+    const repeating = recordRepeats(current)
+    const canAddChild = recordPermissions(current, busy).edit
+    function cancelAddChild() {
+      setChildTitle('')
+      setAddingChild(false)
+      requestAnimationFrame(() => addChildButton.current?.focus())
+    }
+    async function saveChild(event) {
+      event.preventDefault()
+      if (!childTitle.trim() || !canAddChild) return
+      const result = await mutate('add_subtask', { parent_id: current.id, payload: { title: childTitle.trim() } })
+      if (result) setChildTitle('')
+    }
+    const addChild = addingChild ? <form className="alcor-task-add" onSubmit={saveChild}>
+      <Input autoFocus className="alcor-task-add-input" aria-label="子事务标题" placeholder="添加下一步…" value={childTitle} onChange={event => setChildTitle(event.target.value)} disabled={!canAddChild} />
+      <div className="alcor-task-add-actions">
+        <Button type="button" variant="ghost" disabled={busy} onClick={cancelAddChild}>取消</Button>
+        <Button type="submit" variant="primary" disabled={!canAddChild || !childTitle.trim()}>添加子事务</Button>
+      </div>
+    </form> : <Button ref={addChildButton} className="alcor-task-add-entry" variant="ghost" icon={<IconPlusOutlineRegular size={15} />} disabled={!canAddChild} onClick={() => setAddingChild(true)}>添加子事务</Button>
     return <>
       <OrganizerDetails inline closeOnEdit={false} closeOnComplete={false} closeOnDelete={false} value={{record:currentAction ?? current,remove:() => requestDelete(current)}} groups={categories} busy={busy} close={() => open(null)} edit={edit} complete={toggle} error={error}>
       <div className="alcor-task-detail">
-      <nav aria-label="事务路径" className="alcor-task-breadcrumbs"><Button variant="ghost" onClick={() => open(null)}>{views.find(([key]) => key === view)?.[1]}</Button>{ancestors.map(item => <React.Fragment key={item.id}><span aria-hidden="true">›</span><Button variant="ghost" onClick={() => open(item.id)}>{item.title}</Button></React.Fragment>)}<span aria-hidden="true">›</span><span aria-current="page">{current.title}</span></nav>
-      {current.business?.subtask_count > 0 && <div className="alcor-task-progress"><span>子事务进度 {current.business.progress_completed}/{current.business.progress_total}</span><progress aria-label="子事务进度" value={current.business.progress_completed} max={current.business.progress_total || 1} /></div>}
-
       {current.business?.repeat_frequency !== 'none' && current.business?.source_type !== 'apple_reminder' && !current.business?.native_managed && <section className="alcor-task-group"><h2>重复事务</h2><FieldDate value={occurrenceDay} change={setOccurrenceDay} /><Notice>显示所选日期起 31 天，按每次发生分别完成。</Notice>{occurrenceError && <Notice tone="error">{occurrenceError}</Notice>}{occurrences.map(item => <div className="alcor-task-dependency" key={item.id}><span>{item.due_on} · {taskStatuses[item.status]}</span><Button variant="outline" disabled={!recordPermissions(current,busy).complete} onClick={() => void mutate('complete_todo', { todo_id: item.id, completed: item.status !== 'completed' })}>{item.status === 'completed' ? '重新打开本次' : '完成本次'}</Button></div>)}</section>}
-      {(children.length > 0 || addingChild || current.business?.repeat_frequency !== 'none') ? <section className="alcor-task-group"><div className="alcor-calendar-period"><h2>子事务 <small>{children.length}</small></h2></div><div className="alcor-task-children" data-notice-only={current.business?.repeat_frequency !== 'none' && !children.length || undefined}><ul className="alcor-task-list">{children.map(item => row(item))}</ul>{current.business?.repeat_frequency === 'none' && <form className="alcor-task-add" onSubmit={async event => { event.preventDefault(); if (!childTitle.trim() || !recordPermissions(current,busy).edit) return; const result = await mutate('add_subtask', { parent_id: current.id, payload: { title: childTitle.trim() } }); if (result) setChildTitle('') }}><Input autoFocus={addingChild} aria-label="子事务标题" placeholder="添加下一步…" value={childTitle} onChange={event => setChildTitle(event.target.value)} disabled={!recordPermissions(current,busy).edit} /><Button type="submit" variant="primary" disabled={!recordPermissions(current,busy).edit || !childTitle.trim()}>添加子事务</Button></form>}{current.business?.repeat_frequency !== 'none' && <Notice>重复事务按日期完成，不支持子事务。</Notice>}</div></section> : <Button className="alcor-task-add-entry" variant="ghost" icon={<IconPlusOutlineRegular size={15} />} disabled={!recordPermissions(current,busy).edit} onClick={() => setAddingChild(true)}>添加子事务</Button>}
+      {parent && <nav className="alcor-task-group" aria-label="事务路径">
+        <div className="alcor-calendar-period"><h2>父事务</h2></div>
+        <div className="alcor-task-parent"><ul className="alcor-task-list">{row(parent, { parentLink: true })}</ul></div>
+      </nav>}
+      {(children.length > 0 || addingChild || repeating) ? <section className="alcor-task-group">
+        <div className="alcor-calendar-period"><h2>子事务 <small>{children.length}</small></h2></div>
+        {current.business?.subtask_count > 0 && <div className="alcor-task-progress"><span>子事务进度 {current.business.progress_completed}/{current.business.progress_total}</span><progress aria-label="子事务进度" value={current.business.progress_completed} max={current.business.progress_total || 1} /></div>}
+        <div className="alcor-task-children" data-notice-only={repeating && !children.length || undefined}>
+          {children.length > 0 && <ul className="alcor-task-list">{children.map(item => row(item))}</ul>}
+          {repeating ? <Notice>重复事务按日期完成，不支持子事务。</Notice> : addChild}
+        </div>
+      </section> : addChild}
 
       </div>
       </OrganizerDetails>

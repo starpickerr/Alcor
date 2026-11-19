@@ -694,9 +694,11 @@ class Recovery(unittest.TestCase):
 
     def test_briefing_actions_project_retry_and_preserve_local_changes(self):
         service = self.business.briefing
+        original = '提交实验记录。\n附上测量结果。'
         source = {'source': 'elearning', 'account_id': 'test', 'items': [
             {'id': 'source-one', 'source_id': 'assignment', 'title': 'Homework', 'occurred_at': '2026-11-05T01:00:00Z',
-             'payload': {'resource_type': 'assignment', 'course_id': '12', 'due_at': '2026-11-06T15:59:00Z'}}], 'cursors': {'until': '2026-11-05T02:00:00Z'}}
+             'snippet': '作业摘要', 'payload': {'resource_type': 'assignment', 'course_id': '12',
+             'due_at': '2026-11-06T15:59:00Z', 'body': original}}], 'cursors': {'until': '2026-11-05T02:00:00Z'}}
         service.create_action_rule({'source': 'elearning', 'account_id': 'test', 'information_type': 'assignment', 'kind': 'todo', 'mode': 'auto', 'course_id': '12'})
         draft = {'title': 'Homework report', 'body': 'One assignment', 'items': [{'source_item_id': 'source-one', 'section': 'action', 'score': 80}]}
         result = service.run_pipeline(briefing_date='2026-11-05', sources=[source], draft=draft, run_at='2026-11-05T02:00:00Z')
@@ -707,17 +709,43 @@ class Recovery(unittest.TestCase):
         self.assertEqual(len(todos), 1)
         target = todos[0]
         self.assertEqual(first_receipt['target_id'], target['id'])
+        self.assertEqual(target['notes'], original)
+        projected = next(record for record in self.business.records() if record['id'] == target['id'])
+        self.assertEqual(projected['details'], original)
         receipt = service.update_action(item.id, {'operation': 'create', 'kind': 'todo'})
         self.assertEqual(receipt['target_id'], target['id'])
-        self.business.tasks.update_todo(target['id'], {'title': 'My plan', 'due_on': '2026-11-09'})
-        source['items'][0]['payload']['due_at'] = '2026-11-07T15:59:00Z'
+        self.business.tasks.update_todo(target['id'], {'title': 'My plan', 'due_on': '2026-11-09', 'notes': '手动补充记录'})
+        source['items'][0]['payload'].update(due_at='2026-11-07T15:59:00Z', body='来源已更新。')
         service.run_pipeline(briefing_date='2026-11-05', sources=[source], draft=draft, run_at='2026-11-05T03:00:00Z')
         self.business.due_reminders()
         self.assertEqual(len(self.business.tasks.list_todos()), 1)
-        self.assertEqual(self.business.tasks.get_todo(target['id'])['due_on'], '2026-11-09')
+        saved = self.business.tasks.get_todo(target['id'])
+        self.assertEqual(saved['due_on'], '2026-11-09')
+        self.assertEqual(saved['notes'], '手动补充记录')
         windows = self.business.source_windows('2026-11-07', '2026-11-07T12:00:00Z', [{'source': 'elearning', 'accountId': 'test'}], time_zone='Asia/Shanghai')
         self.assertEqual(datetime.fromisoformat(windows[0].replace('Z','+00:00')).astimezone(timezone.utc).isoformat(), '2026-11-05T16:00:00+00:00')
         self.assertEqual(service.store.pending_projection_events(), [])
+
+    def test_briefing_task_notes_use_summary_when_needed_and_fit_task_limit(self):
+        service = self.business.briefing
+        entries = [
+            ('summary', ' \n ', ' 来源摘要 ', '来源摘要'),
+            ('empty', None, '', ''),
+            ('long', '字' * 4100, '较短摘要', '字' * 3999 + '…'),
+        ]
+        source = {'source': 'elearning', 'account_id': 'test', 'items': [
+            {'id': name, 'source_id': name, 'title': name, 'snippet': snippet, 'occurred_at': '2026-11-05T01:00:00Z',
+             'payload': {'resource_type': 'assignment', 'body': body}}
+            for name, body, snippet, _ in entries]}
+        draft = {'title': 'Assignments', 'body': 'Three assignments', 'items': [
+            {'source_item_id': name, 'section': 'action', 'score': 80} for name, _, _, _ in entries]}
+        result = service.run_pipeline(briefing_date='2026-11-05', sources=[source], draft=draft, run_at='2026-11-05T02:00:00Z')
+        expected = {name: notes for name, _, _, notes in entries}
+        for item in result['items']:
+            with self.subTest(item=item.source_id):
+                receipt = service.update_action(item.id, {'operation': 'create', 'kind': 'todo'})
+                self.assertEqual(receipt['state'], 'succeeded')
+                self.assertEqual(receipt['business']['notes'], expected[item.source_id])
 
 
 if __name__ == '__main__':

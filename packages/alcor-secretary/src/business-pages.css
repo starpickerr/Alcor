@@ -80,21 +80,26 @@
 .alcor-task-card[data-completed] .alcor-task-copy h3 { color:var(--dsw-alias-label-secondary); }
 .alcor-task-card .alcor-task-badge[data-status=completed] { color:var(--alcor-brand); font-weight:500; }
 .alcor-task-detail { max-width:960px; margin:0 auto; }
-.alcor-task-breadcrumbs { display:flex; flex-wrap:nowrap; align-items:center; gap:4px; margin-bottom:12px; max-width:100%; overflow-x:auto; scrollbar-width:thin; color:var(--dsw-alias-label-secondary); font-size:12px; }
-.alcor-task-breadcrumbs > button,.alcor-task-breadcrumbs > [aria-current] { display:block; flex:none; max-width:140px; min-height:26px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .alcor-task-detail > .alcor-calendar-period h2 { font-size:26px; line-height:1.4; overflow-wrap:anywhere; }
 .alcor-task-detail-summary { display:grid; gap:20px; padding:24px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
 .alcor-task-detail-toolbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .alcor-task-detail-edit { margin-left:auto; }
-.alcor-task-description { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; color:var(--dsw-alias-label-secondary); font-size:14px; }
+.alcor-task-body > h3 { margin-inline:0; }
+.alcor-task-description { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; color:var(--dsw-alias-label-primary); font-size:14px; }
+.alcor-task-description[data-empty] { color:var(--dsw-alias-label-secondary); }
 .alcor-task-progress { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .alcor-task-delete-confirm { padding:20px; }
 .alcor-task-delete-confirm > p:first-child { margin-top:0; overflow-wrap:anywhere; }
 .alcor-task-detail-summary progress { display:block; width:100%; margin-top:8px; accent-color:var(--alcor-brand); }
-.alcor-task-children { margin-top:12px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
-.alcor-task-children .alcor-task-list:not(:empty) { padding:0 16px; }
+:is(.alcor-task-parent,.alcor-task-children) { margin-top:12px; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; overflow:hidden; background:var(--dsw-alias-bg-layer-1); }
+:is(.alcor-task-parent,.alcor-task-children) .alcor-task-list { padding:0 16px; }
+.alcor-task-parent-icon,.alcor-task-parent-arrow { flex:none; margin-top:3px; color:var(--dsw-alias-label-secondary); pointer-events:none; }
+.alcor-task-children > .alcor-task-add-entry { margin:0 12px 8px; }
 .alcor-task-add { display:flex; flex-wrap:wrap; gap:10px; padding:16px; }
-.alcor-task-add > :first-child { flex:1; min-width:140px; }
+.alcor-task-add-input { flex:1; min-width:140px; }
+.alcor-task-add .alcor-task-add-input:focus-within { border-color:var(--dsw-alias-label-secondary); box-shadow:none; }
+.alcor-desk .alcor-task-add .alcor-task-add-input input:focus { outline:none; box-shadow:none; }
+.alcor-task-add-actions { display:flex; gap:8px; margin-inline-start:auto; }
 .alcor-task-dependency { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:8px 0; }
 .alcor-repeat-days { display:flex; flex-wrap:wrap; gap:10px; border:0; padding:0; }
 .alcor-repeat-days legend { margin-bottom:10px; }
@@ -653,11 +658,8 @@
 .alcor-task-workspace { min-width:0; container-type:inline-size; container-name:alcor-tasks; }
 .alcor-task-workspace [data-record-selected] { background:var(--alcor-brand-soft); box-shadow:inset 3px 0 var(--alcor-brand); }
 .alcor-calendar-record-panel .alcor-task-detail { width:100%; min-width:0; margin:0; }
-.alcor-calendar-record-panel .alcor-task-breadcrumbs { gap:4px; margin-bottom:12px; }
-.alcor-calendar-record-panel .alcor-task-breadcrumbs > button { padding:3px 6px; font-size:12px; }
 .alcor-calendar-record-panel .alcor-task-detail .alcor-task-group { margin-top:18px; }
 .alcor-calendar-record-panel .alcor-task-progress progress { display:block; width:100%; margin-top:8px; accent-color:var(--alcor-brand); }
-.alcor-calendar-record-panel .alcor-task-description { margin:12px 0 0; }
 .alcor-calendar-panel-editor .alcor-editor > h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .alcor-calendar-panel-editor .alcor-task-editor .alcor-calendar-form-card { border:1px solid var(--dsw-alias-border-l3); padding:16px; }
 @container alcor-tasks (max-width:760px) {

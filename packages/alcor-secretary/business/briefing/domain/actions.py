@@ -13,10 +13,12 @@ import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .store import _parse_payload
 
 CATEGORIES = {'needs_action', 'attention', 'status_update', 'other'}
 KINDS = {'todo', 'calendar', 'reminder'}
 OPERATIONS = {'create', 'link', 'unlink', 'ignore', 'defer', 'keep', 'retry', 'confirm_update', 'keep_current', 'remind'}
+TASK_NOTES_LIMIT = 4000
 class PeerOutcomeUnknown(RuntimeError):
     side_effects = 'unknown'
 
@@ -403,13 +405,13 @@ class BriefingActions:
                 if kind == 'reminder' and ((not options.get('remind_at') and not cancellation_retry) or not self._receipt(db,key,'todo') or not self._receipt(db,key,'todo')['business']):
                     raise ValueError('reminder requires a linked task and explicit reminder time')
                 self._write(db, key, kind, options=options, operation='remind' if kind == 'reminder' else 'create', authorization='user_confirmation')
-                self._execute(db, entity, kind, force=operation == 'confirm_update')
+                self._execute(db, entity, kind, force=operation == 'confirm_update', item_id=item_id)
             receipt = self._receipt(db, key, kind)
         if kind != 'todo' and payload.get('remember') is True and receipt['state'] == 'succeeded':
             self.save_rule(dict(source=entity['source'],account_id=entity['account_id'],information_type=entity['information_type'],course_id=entity['course_id'],kind=kind,mode='auto'))
         return receipt
 
-    def _execute(self, db, entity, kind, force=False, propagate=False):
+    def _execute(self, db, entity, kind, force=False, propagate=False, item_id=None):
         key = entity['entity_key']
         action = self._receipt(db, key, kind)
         facts = json.loads(entity['facts'])
@@ -441,6 +443,13 @@ class BriefingActions:
                 if kind == 'todo':
                     data = {'title': options.get('title') or entity['title'], **todo_due({**facts, **({'due_at': options['due_at']} if 'due_at' in options else {})})}
                     data.update({k: options[k] for k in ('parent_id','planned_on','remind_at') if k in options})
+                    snapshot = db.execute('SELECT payload,snippet FROM briefing_items WHERE id=?', (item_id,)).fetchone()
+                    if snapshot is not None:
+                        body = _parse_payload(snapshot['payload']).get('body')
+                        notes = (body.strip() if isinstance(body, str) else '') or snapshot['snippet'].strip()
+                        if len(notes) > TASK_NOTES_LIMIT:
+                            notes = notes[:TASK_NOTES_LIMIT - 1].rstrip() + '…'
+                        data['notes'] = notes
                     business = service.create_todo(data, _briefing_key=stable_key)
                 else:
                     data = {'title':options.get('title') or entity['title'], 'start_at':options.get('start_at') or facts.get('start_at'), 'end_at':options.get('end_at') or facts.get('end_at'), 'all_day':options.get('all_day',False)}
