@@ -157,6 +157,10 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
         <Button type="submit" variant="primary" disabled={!canAddChild || !childTitle.trim()}>添加子事务</Button>
       </div>
     </form> : <Button ref={addChildButton} className="alcor-task-add-entry" variant="ghost" icon={<IconPlusOutlineRegular size={15} />} disabled={!canAddChild} onClick={() => setAddingChild(true)}>添加子事务</Button>
+    const childCard = <div className="alcor-task-children" data-notice-only={repeating && !children.length || undefined}>
+      {children.length > 0 && <ul className="alcor-task-list">{children.map(item => row(item))}</ul>}
+      {repeating ? <Notice>重复事务按日期完成，不支持子事务。</Notice> : addChild}
+    </div>
     return <>
       <OrganizerDetails inline closeOnEdit={false} closeOnComplete={false} closeOnDelete={false} value={{record:currentAction ?? current,remove:() => requestDelete(current)}} groups={categories} busy={busy} close={() => open(null)} edit={edit} complete={toggle} error={error}>
       <div className="alcor-task-detail">
@@ -168,11 +172,8 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
       {(children.length > 0 || addingChild || repeating) ? <section className="alcor-task-group">
         <div className="alcor-calendar-period"><h2>子事务 <small>{children.length}</small></h2></div>
         {current.business?.subtask_count > 0 && <div className="alcor-task-progress"><span>子事务进度 {current.business.progress_completed}/{current.business.progress_total}</span><progress aria-label="子事务进度" value={current.business.progress_completed} max={current.business.progress_total || 1} /></div>}
-        <div className="alcor-task-children" data-notice-only={repeating && !children.length || undefined}>
-          {children.length > 0 && <ul className="alcor-task-list">{children.map(item => row(item))}</ul>}
-          {repeating ? <Notice>重复事务按日期完成，不支持子事务。</Notice> : addChild}
-        </div>
-      </section> : addChild}
+        {childCard}
+      </section> : childCard}
 
       </div>
       </OrganizerDetails>

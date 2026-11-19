@@ -50,7 +50,13 @@ def main():
             body = task.get_by_role('region', name='正文', exact=True)
             expect(body.get_by_role('heading', name='正文', exact=True)).to_be_visible()
             expect(body.locator('p')).to_have_text('暂无正文')
-            assert task.get_by_role('button', name='添加子事务', exact=True).bounding_box()['y'] < body.bounding_box()['y']
+            child_card = task.locator('.alcor-task-children')
+            expect(child_card.get_by_role('button', name='添加子事务', exact=True)).to_be_visible()
+            repeat_card = task.get_by_text('重复', exact=True).locator('xpath=ancestor::dl')
+            border = '(element) => { const style = getComputedStyle(element); return [style.borderTopWidth, style.borderTopStyle, style.borderTopColor, style.borderTopLeftRadius] }'
+            repeat_border = repeat_card.evaluate(border)
+            assert repeat_border[0] != '0px' and body.evaluate(border) == child_card.evaluate(border) == repeat_border
+            assert child_card.bounding_box()['y'] < body.bounding_box()['y']
             expect(task.get_by_role('heading', name='面板事务 01', exact=True)).to_have_count(1)
             expect(task.get_by_role('navigation', name='事务路径')).to_have_count(0)
             page.screenshot(path=str(artifacts / 'task-empty-body.png'), animations='disabled')
