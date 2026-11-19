@@ -11,7 +11,7 @@ import pytest
 from core.services import todos_gateway
 
 WORKSPACE_ROOT = Path("stella-plugins-workspace/plugins/tasks")
-SIBLING_ROOT = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "tasks"
+SIBLING_ROOT = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "tasks"
 
 
 @pytest.fixture(autouse=True)

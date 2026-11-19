@@ -40,7 +40,7 @@ def bills_worker(tmp_path, monkeypatch):
     from core.services.bills_gateway import shutdown_bills_session
 
     shutdown_bills_session()
-    monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(ROOT.parent / "Stella-Plugins/plugins/bills"))
+    monkeypatch.setenv("STELLA_BILLS_PLUGIN_ROOT", str(ROOT / "stella-plugins-workspace/plugins/bills"))
     monkeypatch.setattr("core.services.bills_facade._db_path", lambda: tmp_path / "bills.db")
     yield
     shutdown_bills_session()

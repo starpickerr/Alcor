@@ -30,7 +30,7 @@ with fresh_test_home('alcor-runtime-logs-') as temp, sync_playwright() as pw:
         category = header.get_by_role('combobox', name='类别', exact=True)
         expect(header.get_by_role('combobox')).to_have_count(3)
         expect(header.get_by_text('耗时', exact=True)).to_have_count(0)
-        for source in ['事务', '日程', '简报', '账单', '自动化', 'Apple 同步', 'eLearning', '邮件', 'AgentHub']:
+        for source in ['Alcor：事务', 'Alcor：日程', 'Alcor：简报', 'Alcor：账单', 'Alcor：自动化', 'Apple 同步', 'eLearning', '邮件']:
             expect(source_filter.get_by_role('option', name=source, exact=True)).to_have_count(1)
         d.rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'list_todos', 'arguments': {}}})
         refresh.click()
@@ -62,7 +62,7 @@ with fresh_test_home('alcor-runtime-logs-') as temp, sync_playwright() as pw:
         page.get_by_role('button', name='刷新', exact=True).click()
         category.select_option('failure')
         expect(records.locator('summary').filter(has_text='tasks.get_todo').filter(has_text='失败')).to_be_visible()
-        source_filter.select_option(label='事务')
+        source_filter.select_option(label='Alcor：事务')
         time_filter.select_option('1')
         search = page.get_by_role('searchbox', name='搜索', exact=True)
         search.fill('tasks.get_todo')
@@ -95,8 +95,8 @@ with fresh_test_home('alcor-runtime-logs-') as temp, sync_playwright() as pw:
         refresh.click()
         expect(records).to_be_visible()
         page.screenshot(path=str(d.ARTIFACTS / 'runtime-logs-desktop.png'), scale='css')
-        page.get_by_text('采集范围与保留', exact=True).click()
-        expect(page.get_by_text(re.compile('不包含采集启动前'))).to_be_visible()
+        expect(page.get_by_text('采集范围与保留', exact=True)).to_have_count(0)
+        expect(page.get_by_text(re.compile('不包含采集启动前'))).to_have_count(0)
         for width in (720, 390):
             page.set_viewport_size({'width': width, 'height': 700})
             page.evaluate('''async () => {
@@ -111,7 +111,10 @@ with fresh_test_home('alcor-runtime-logs-') as temp, sync_playwright() as pw:
                 control_box = control.bounding_box()
                 cell_box = records.locator('li').first.locator('summary').first.locator(selector).bounding_box()
                 assert abs(control_box['x'] - cell_box['x']) <= 1, (width, control_box, cell_box)
-                assert control_box['width'] < 75, (width, control_box)
+                if selector == '.alcor-log-source':
+                    assert control_box['width'] <= cell_box['width'] + 1, (width, control_box, cell_box)
+                else:
+                    assert control_box['width'] < 75, (width, control_box)
             assert page.locator('.alcor-logs').evaluate('e => e.scrollWidth <= e.clientWidth'), width
             leading = page.locator('[data-shell-leading]')
             if leading.is_visible():

@@ -182,7 +182,6 @@ export async function apply(ctx) {
             navigate,
             startSession,
             pluginPanels: { list: () => ctx.slots.entriesOfSlot('sidebar.panellist'), subscribe: listener => ctx.slots.subscribe('sidebar.panellist',listener) },
-            hubForm:ctx.configForms.get('agent-hub'),
             toggleSidebar: () => ctx.layout.toggleSidebar(),
           }) }, SecretarySidebar)
         } else if (controller.getSnapshot() !== 'alcor' && releaseSidebar) {
@@ -193,7 +192,7 @@ export async function apply(ctx) {
         sharedOwner=sidebarOwner(ctx.slots,({wide,...props})=> <SecretarySidebar {...props} nativeShell collapsed={!wide} drawer={false}
           navigate={navigate} startSession={startSession} toggleSidebar={()=>ctx.layout.toggleSidebar()}
           pluginPanels={{list:()=>ctx.slots.entriesOfSlot('sidebar.panellist'),subscribe:listener=>ctx.slots.subscribe('sidebar.panellist',listener)}}
-          hubForm={ctx.configForms.get('agent-hub')}/>,()=> <BearLogo size={32}/>)
+          />,()=> <BearLogo size={32}/>)
         ctx.effect(()=>()=>sharedOwner.dispose())
       }
       const activateSidebar=()=>{ownerReady=true;syncSidebar()}

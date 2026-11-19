@@ -8,10 +8,17 @@ import { logCapacity, logCategory, logDebugCapacity, logSchemas, logSources } fr
 const sources = new Map(Object.entries({ secretary: 'Alcor', organizer: 'Alcor', tasks: '事务', calendar: '日程',
   briefing: '简报', bills: '账单', automation: '自动化', apple: 'Apple 同步', 'apple-sync': 'Apple 同步',
   'school-remote': 'eLearning', elearning: 'eLearning', 'mail-remote': '邮件', 'mail-connection': '邮件', mail: '邮件', 'agent-hub': 'AgentHub' }))
+const legacySources = new Map([
+  ['事务与简报', 'Alcor'],
+  ['Alcor：AgentHub', 'AgentHub'],
+  ...logSources.map(source => [source.startsWith('Alcor：') ? source.slice('Alcor：'.length) : `Alcor：${source}`, source]),
+])
 
 export function logSource(message) {
   const name = message.name.replace(/^@alcor\//, '').replace(/^alcor-/, '')
-  return sources.get(name) ?? null
+  const business = sources.get(name)
+  if (business) return legacySources.get(business) ?? business
+  return redactLog(message.name).slice(0, 100) || 'DSH'
 }
 
 export function redactLog(text) {
@@ -77,7 +84,7 @@ export class RuntimeLogs {
       excessDebug--
       return false
     })
-      .map(row => ({ ...row, source: row.source === '事务与简报' ? 'Alcor' : row.source, message: redactLog(row.message) }))
+      .map(row => ({ ...row, source: legacySources.get(row.source) ?? row.source, message: redactLog(row.message) }))
     this.serial = history.at(-1)?.id ?? 0
     this.startedAt = new Date().toISOString()
     this.storage = 'saved'
@@ -127,7 +134,7 @@ export class RuntimeLogs {
       && (!needle || `${row.message} ${row.source}`.toLocaleLowerCase().includes(needle))).reverse()
     const remaining = before ? matches.filter(row => row.id < before) : matches
     const entries = remaining.slice(0, 100)
-    return { entries, sources: [...logSources], matched: matches.length,
+    return { entries, sources: [...new Set([...logSources, ...this.entries.map(row => row.source)])], matched: matches.length,
       nextBefore: remaining.length > 100 ? entries.at(-1).id : null,
       retained: this.entries.length, capacity: logCapacity, startedAt: this.startedAt, storage: this.storage }
   }

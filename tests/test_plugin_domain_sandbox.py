@@ -13,7 +13,7 @@ def test_domain_reads_with_explicit_isolation(tmp_path, monkeypatch, domain, met
     monkeypatch.setattr(state_dir, 'user_root', lambda *args, **kwargs: user)
     monkeypatch.setattr(state_dir, 'shared_root', lambda: tmp_path)
     monkeypatch.setattr(state_dir, 'knowledge_dir', lambda **kwargs: user / 'knowledge')
-    root = Path('../Stella-Plugins/plugins') / domain
+    root = Path('stella-plugins-workspace/plugins') / domain
     monkeypatch.setenv('STELLA_' + domain.upper() + '_PLUGIN', '1')
     monkeypatch.setenv('STELLA_' + domain.upper() + '_PLUGIN_ROOT', str(root.resolve()))
     handle = domain_data_handle('stella.' + domain, 'local-default')

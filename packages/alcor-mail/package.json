@@ -1,7 +1,7 @@
 {
   "name": "@alcor/mail",
-  "version": "0.1.16",
-  "description": "邮件连接，使用 DSH 原生凭据",
+  "version": "0.1.17",
+  "description": "\u90ae\u4ef6\u8fde\u63a5\uff0c\u4f7f\u7528 DSH \u539f\u751f\u51ed\u636e",
   "type": "module",
   "license": "MIT",
   "os": [
@@ -85,7 +85,7 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3"
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3 || 0.2.2-rc.5"
   },
   "repository": {
     "type": "git",

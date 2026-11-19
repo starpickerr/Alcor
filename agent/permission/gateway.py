@@ -72,7 +72,7 @@ class PolicyDecision:
 
 _READ_TOOLS = frozenset({"read", "ls", "search_files", "memory_search", "memory_get", "knowledge_search", "knowledge_get", "web_search", "web_fetch", "vision"})
 _WRITE_TOOLS = frozenset({"write", "edit", "bash", "memory_write", "knowledge_write"})
-_EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent", "agent_hub"})
+_EXTERNAL_TOOLS = frozenset({"browser", "scheduler", "env_config", "briefing", "calendar", "todos", "bills", "apple", "send", "subagent"})
 _ADMIN_TOOLS = frozenset({"evolution_undo", "skill"})
 _LOCAL_ACTIONS = {
     "calendar": {"create", "update", "delete", "create_category", "update_category", "delete_category"},

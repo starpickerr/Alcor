@@ -6,13 +6,12 @@ import { pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { build } from 'esbuild'
 import { Service } from '@deepseek-ai/cordis'
-import { assertLegacySecretaryDetached } from '../../packages/alcor-agent-hub/src/legacy.js'
 import { briefingSourceCards, canonicalPackage, sourceOwner } from '../../packages/alcor-secretary/src/briefing-source-selection.js'
 import { discoverBriefingSources, effectiveBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 
 const root = resolve(import.meta.dirname, '../..')
 const read = path => readFile(join(root, path), 'utf8')
-const packages = ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy', 'agent-hub']
+const packages = ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy']
 async function readyProfile(directory) {
   const home = join(directory, 'home'), dir = join(home, 'profiles', 'fixture')
   await mkdir(join(dir, 'alcor'), { recursive: true })
@@ -35,8 +34,8 @@ test('workspace, lock, patches, remotes and loader identities agree', async () =
     assert.equal(lock.packages[`node_modules/@stella/${name}`], undefined)
     if (name !== 'organizer') assert.match(await read(`${directory}/cordis.patch.yml`), new RegExp(`@alcor/${name}`))
     if (name !== 'privacy') assert.match(await read(`${directory}/src/remote.js`), new RegExp(`@alcor/${name}`))
-    if (['secretary', 'apple-sync', 'agent-hub'].includes(name)) {
-      const buildFile = { secretary: 'build-client', 'apple-sync': 'build-apple-sync', 'agent-hub': 'build-agent-hub' }[name]
+    if (['secretary', 'apple-sync'].includes(name)) {
+      const buildFile = { secretary: 'build-client', 'apple-sync': 'build-apple-sync' }[name]
       assert.ok((await read(`scripts/product/${buildFile}.mjs`)).includes(`id:"${pkg.name}"`))
     }
   }
@@ -52,7 +51,8 @@ test('new services reject a selected old secretary before accessing storage', as
     await build({ entryPoints: [join(root, `packages/alcor-${name}/src/index.ts`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
     const { default: Plugin } = await import(pathToFileURL(output))
     let touched = false
-    const ctx = { get: () => ({ startedBundles: ['@stella/secretary', '@alcor/secretary'] }), storageDomain: { open: () => { touched = true; throw Error('storage touched') } } }
+    const logger = Object.assign(() => ({ info() {} }), { exporter() {} })
+    const ctx = { on() {}, effect() {}, logger, get: () => ({ startedBundles: ['@stella/secretary', '@alcor/secretary'] }), storageDomain: { open: () => { touched = true; throw Error('storage touched') } } }
     await assert.rejects(Plugin.prototype[Service.init].call({ ctx }), /不能同时启用/)
     assert.equal(touched, false)
     ctx.get = () => ({ startedBundles: ['@stella/secretary'] })
@@ -68,26 +68,6 @@ test('new services reject a selected old secretary before accessing storage', as
     ctx.get = () => ({ ...profile, startedBundles: [] })
     await assert.rejects(Plugin.prototype[Service.init].call({ ctx }), /storage touched/)
     assert.equal(touched, true)
-  }
-})
-
-test('AgentHub checks both secretary identities and retains legacy protection', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'alcor-hub-'))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  const anchor = join(directory, 'package.json')
-  await writeFile(anchor, JSON.stringify({ name: 'fixture', private: true }))
-  for (const scope of ['stella', 'alcor']) {
-    const name = `@${scope}/secretary`, target = join(directory, 'node_modules', scope === 'stella' ? '@stella' : '@alcor', 'secretary')
-    await mkdir(target, { recursive: true })
-    const profile = { dir: directory, installAnchor: anchor, startedBundles: [name] }
-    await writeFile(join(target, 'package.json'), JSON.stringify({ name }))
-    await assert.rejects(assertLegacySecretaryDetached(profile), /支持独立 AgentHub/)
-    if (scope === 'alcor') {
-      await writeFile(join(target, 'package.json'), JSON.stringify({ name, stella: { agentHubDetached: true } }))
-      await assert.rejects(assertLegacySecretaryDetached(profile), /支持独立 AgentHub/)
-    }
-    await writeFile(join(target, 'package.json'), JSON.stringify({ name, [scope]: { agentHubDetached: true } }))
-    await assert.doesNotReject(assertLegacySecretaryDetached(profile))
   }
 })
 
@@ -109,7 +89,7 @@ test('each new plugin rejects an old selected peer before registration', async t
   const directory = await mkdtemp(join(root, '.alcor-test-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const profile = await readyProfile(directory)
-  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'agent-hub', 'privacy']) {
+  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy']) {
     const extension = name === 'privacy' ? 'js' : 'ts'
     const output = join(directory, `${name}.mjs`)
     await build({ entryPoints: [join(root, `packages/alcor-${name}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })

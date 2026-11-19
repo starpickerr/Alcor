@@ -1,7 +1,7 @@
 {
   "name": "@alcor/apple-sync",
-  "version": "0.1.26",
-  "description": "Apple 同步：连接系统日历与提醒事项，共用 Alcor 事务和日程。",
+  "version": "0.1.27",
+  "description": "Apple \u540c\u6b65\uff1a\u8fde\u63a5\u7cfb\u7edf\u65e5\u5386\u4e0e\u63d0\u9192\u4e8b\u9879\uff0c\u5171\u7528 Alcor \u4e8b\u52a1\u548c\u65e5\u7a0b\u3002",
   "type": "module",
   "license": "MIT",
   "os": [
@@ -54,7 +54,7 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3"
+    "dsh": "0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.3 || 0.2.2-rc.5"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

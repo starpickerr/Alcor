@@ -25,11 +25,13 @@ test('marker is exact, versioned, and fresh cannot declare migrated data', () =>
 })
 
 test('contract agrees with package manifests, stored names and active callers', async () => {
-  for (const name of MIGRATION_PACKAGE_NAMES) {
+  // Retired identities still identify old Profiles; no current package is installed for them.
+  assert(MIGRATION_PACKAGE_NAMES.includes('agent-hub'))
+  for (const name of MIGRATION_PACKAGE_NAMES.filter(name => name !== 'agent-hub')) {
     const pkg = JSON.parse(await read(`packages/alcor-${name}/package.json`))
     assert.equal(pkg.name, `@alcor/${name}`)
   }
-  for (const pair of MIGRATION_BUNDLES) {
+  for (const pair of MIGRATION_BUNDLES.filter(pair => pair.name !== 'agent-hub')) {
     assert.equal(pair.old, `@stella/${pair.name}`); assert.equal(pair.current, `@alcor/${pair.name}`)
     assert((await read(`packages/alcor-${pair.name}/cordis.patch.yml`)).includes(pair.current))
   }
@@ -48,7 +50,7 @@ test('contract agrees with package manifests, stored names and active callers', 
 
 test('plugin bundles inline the shared contract instead of requiring a runtime workspace path', async () => {
   const { build } = await import('esbuild')
-  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'agent-hub']) {
+  for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail']) {
     const result = await build({ entryPoints: [join(root, `packages/alcor-${name}/src/index.ts`)], bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', write: false })
     const output = result.outputFiles[0].text
     assert(!/from\s*["'][^"']*migration-contract(?:\.js)?["']/.test(output), name)

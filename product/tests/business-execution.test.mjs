@@ -1,14 +1,11 @@
 import { discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
-import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
-import { HubCoordinator } from '../../packages/alcor-agent-hub/src/hub.js'
 import { ReminderDelivery } from '../../packages/alcor-organizer/src/reminders.js'
 import { BriefingGenerator } from '../../packages/alcor-organizer/src/briefing.js'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -44,9 +41,7 @@ class TestBriefingGenerator extends BriefingGenerator {
 async function fixture(context) {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-execution-'))
   const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
-  const business = new BusinessWorker(directory, options)
-  const hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
-  const worker = {call:(action,input={}) => action==='invoke' && input.domain==='agent_hub' ? hub.call(action,input) : business.call(action,input),close:async()=>{await hub.close();await business.close()}}
+  const worker = new BusinessWorker(directory, options)
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (domain, method, args = {}) => worker.call('invoke', { domain, method, arguments: args })
   return { directory, options, worker, invoke }
@@ -69,122 +64,6 @@ test('briefing settings reject stale writes', async context => {
   await assert.rejects(worker.call('source_settings', { sources: previous, expected_sources: previous }), /其他页面变化/)
   assert.deepEqual(await worker.call('source_settings'), [])
 
-})
-
-test('Hub executes dependency joins, captures model/persona, and retries a failed step explicitly', async context => {
-  const { worker, invoke } = await fixture(context)
-  const requests = []
-  let active = 0
-  let maximum = 0
-  let fail = true
-  let releaseInitialPair
-  const initialPairStarted = new Promise(resolve => { releaseInitialPair = resolve })
-  const coordinator = new HubCoordinator({ logger: { warn: assert.fail }, sessionController: { resolveAgent: async () => ({ agent: { model: { current: () => ({ provider: 'synthetic', model: 'default-model' }) } } }) }, subagents: {
-    startActivation: async request => {
-      requests.push(request)
-      active++; maximum = Math.max(maximum, active)
-      const initial = requests.length <= 2
-      if (requests.length === 2) releaseInitialPair()
-      return { childId: 'child-' + requests.length, dispose: async () => {}, result: (initial ? initialPairStarted : Promise.resolve()).then(() => {
-        active--
-        const failed = request.label === 'Fail once' && fail
-        if (failed) fail = false
-        return { stopReason: failed ? 'failed' : 'completed', output: [{ type: 'text', text: 'Formal reply ' + request.label }] }
-      }) }
-    },
-  } }, worker)
-  context.after(() => coordinator.close())
-  const task = await invoke('agent_hub', 'create_task', { payload: { title: 'Join', goal: 'Deliver report', participants: [
-    { nativeAgentId: 'stella', displayName: 'Research', persona: 'Research persona', modelSelection: { mode: 'explicit', providerId: 'synthetic', modelId: 'research-model' } },
-    { nativeAgentId: 'stella', displayName: 'Review' }, { nativeAgentId: 'stella', displayName: 'Fail once' },
-  ] }, request_id: randomUUID() })
-  const steps = [
-    { stepId: 'a', title: 'Research A', participantId: task.participants[0].participantId, dependsOn: [] },
-    { stepId: 'b', title: 'Research B', participantId: task.participants[1].participantId, dependsOn: [] },
-    { stepId: 'c', title: 'Join after both', participantId: task.participants[2].participantId, dependsOn: ['a', 'b'] },
-    { stepId: 'd', title: 'Final summary', participantId: task.participants[1].participantId, dependsOn: ['c'] },
-  ]
-  await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps, expected_revision: task.revision, request_id: randomUUID() })
-  await coordinator.start({ task_id: task.taskId, parentSessionId: 'parent' })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  let result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'failed')
-  assert.equal(maximum, 2)
-  assert.equal(requests[2].request.prompt[0].text.includes('Formal reply Research'), true)
-  assert.equal(requests[0].request.prompt[0].text.includes('Research persona'), true)
-  assert.deepEqual(requests[0].request.agentOptions, { provider: 'synthetic', model: 'research-model' })
-  assert.equal(result.steps[0].attempts[0].actualModel, 'research-model')
-  await coordinator.start({ task_id: task.taskId, parentSessionId: 'parent', step_id: 'c', retry: true })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'succeeded')
-  assert.equal(result.steps[2].attempts.length, 2)
-  assert.equal(result.messages.filter(message => message.kind === 'reply').length, 4)
-  assert.equal(result.steps[2].attempts[1].attemptId, 'child-4')
-  assert.equal(requests.length, 5, 'Retry only the failed step, then continue its pending dependents')
-  assert.ok(requests[4].request.prompt[0].text.includes('Formal reply Fail once'))
-})
-
-test('unreturned Hub attempts become unknown after restart and do not replay', async context => {
-  const { directory, options, worker, invoke } = await fixture(context)
-  let task = await invoke('agent_hub', 'create_task', { payload: { title: 'Interrupted', goal: 'Check once', participants: [{ nativeAgentId: 'stella' }] }, request_id: randomUUID() })
-  task = await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps: [{ stepId: 'one', title: 'One', participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: randomUUID() })
-  await invoke('agent_hub', 'claim_step', { task_id: task.taskId, step_id: 'one' })
-  await worker.close()
-  const restarted = new HubWorker(join(directory,'hub')); await restarted.call('initialize')
-  context.after(() => restarted.close())
-  const result = await restarted.call('invoke', { domain: 'agent_hub', method: 'get_task', arguments: { task_id: task.taskId } })
-  assert.equal(result.steps[0].attempts[0].status, 'outcome_unknown')
-  assert.equal(result.steps[0].attempts.length, 1)
-  assert.equal(result.messages.at(-1).kind, 'status')
-})
-
-test('external CLI runs use the chosen workspace, persist formal output, and support cancellation', async context => {
-  const { directory, worker, invoke } = await fixture(context)
-  const windows = process.platform === 'win32'
-  const binary = join(directory, windows ? 'synthetic-codex.exe' : 'synthetic-codex')
-  if (windows) {
-    const source = join(directory, 'SyntheticCli.cs')
-    await writeFile(source, `using System;
-using System.Text;
-using System.Threading;
-using System.Web.Script.Serialization;
-class SyntheticCli {
-  static void Main(string[] args) {
-    Console.OutputEncoding = new UTF8Encoding(false);
-    if (Array.IndexOf(args,"--version") >= 0) Console.WriteLine("synthetic 1.0");
-    else if (args[args.Length-1].Contains("WAIT")) Thread.Sleep(30000);
-    else Console.WriteLine(new JavaScriptSerializer().Serialize(new { type="item.completed",
-      item=new { type="agent_message",text="合成回复："+Environment.CurrentDirectory } }));
-  }
-}`, 'utf8')
-    execFileSync(join(process.env.SystemRoot, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
-      ['/nologo', '/codepage:65001', '/reference:System.Web.Extensions.dll', '/out:' + binary, source])
-  } else {
-    await writeFile(binary, '#!/usr/bin/env python3\nimport json,os,sys,time\nif "--version" in sys.argv:\n print("synthetic 1.0")\nelif "WAIT" in sys.argv[-1]:\n time.sleep(30)\nelse:\n print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"合成回复："+os.getcwd()}}),flush=True)\n', { mode: 0o700 })
-  }
-  const provider = await invoke('agent_hub', 'upsert_provider', { provider: { providerLocalId: 'codex-cli', binaryPath: binary } })
-  assert.equal((await invoke('agent_hub', 'probe_provider', { provider_config_id: provider.providerConfigId })).status, 'ready')
-  const coordinator = new HubCoordinator({ logger: { warn: assert.fail } }, worker)
-  context.after(() => coordinator.close())
-  async function create(goal) {
-    let task = await invoke('agent_hub', 'create_task', { payload: { title: goal, goal, participants: [{ providerConfigId: provider.providerConfigId }] }, request_id: randomUUID() })
-    return invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps: [{ stepId: 'run', title: goal, participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: randomUUID() })
-  }
-  const task = await create('Deliver')
-  await coordinator.start({ task_id: task.taskId, workspacePath: directory })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  const result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'succeeded')
-  assert.equal(result.messages.find(message => message.kind === 'reply').body, '合成回复：' + await realpath(directory))
-  assert.equal(result.steps[0].attempts[0].artifactRefs.length, 1)
-  const waiting = await create('WAIT')
-  await coordinator.start({ task_id: waiting.taskId, workspacePath: directory })
-  await waitFor(async () => (await invoke('agent_hub', 'list_external_runs')).some(run => run.status === 'running'))
-  await coordinator.cancel(waiting.taskId)
-  await waitFor(() => !coordinator.tasks.has(waiting.taskId))
-  const cancelled = await invoke('agent_hub', 'get_task', { task_id: waiting.taskId })
-  assert.equal(cancelled.steps[0].attempts[0].status, 'cancelled')
 })
 
 test('desktop reminder outbox retries failures, suppresses acknowledged and cancelled deliveries', async context => {

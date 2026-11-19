@@ -6,15 +6,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 import { projectLog } from '../../packages/alcor-secretary/src/log-host.js'
-import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
 import { readBriefingSourcePage, discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import { checkMessage as schoolMessage } from '../../packages/alcor-plugin-info/src/elearning-status.js'
 import { checkMessage as mailMessage } from '../../packages/alcor-mail/src/check-status.js'
 
-test('both worker boundaries retain startup cause after process error and reject with a remedy', async t => {
+test('business worker boundary retain startup cause after process error and reject with a remedy', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-worker-diagnostics-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  for (const Worker of [BusinessWorker, HubWorker]) {
+  for (const Worker of [BusinessWorker]) {
     const worker = new Worker(root, { python: join(root, 'missing-python') })
     await assert.rejects(worker.call('probe'), /worker_start_failed.*Python 不存在/)
     await assert.rejects(worker.call('probe'), /worker_start_failed.*Python 不存在/)
@@ -55,7 +54,7 @@ test('successful worker operations log their identity and duration without input
   assert(!JSON.stringify(messages).includes('private-result'))
 })
 
-test('both worker boundaries explain blank replies, protocol failures and uncertain termination', { skip: process.platform === 'win32' }, async t => {
+test('business worker boundary explain blank replies, protocol failures and uncertain termination', { skip: process.platform === 'win32' }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-worker-replies-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const python = join(root, 'synthetic-python')
@@ -68,7 +67,7 @@ test('both worker boundaries explain blank replies, protocol failures and uncert
   ]) {
     await writeFile(python, `#!/usr/bin/env python3\nimport sys,json\nfor line in sys.stdin:\n request=json.loads(line)\n ${output}\n`)
     await chmod(python, 0o700)
-    for (const Worker of [BusinessWorker, HubWorker]) {
+    for (const Worker of [BusinessWorker]) {
       const worker = new Worker(root, { python })
       try { await assert.rejects(worker.call('probe'), error => expected.test(error.message) && !error.message.includes('private-server-secret')) }
       finally { await worker.close() }

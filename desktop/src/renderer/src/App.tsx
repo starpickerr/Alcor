@@ -245,7 +245,6 @@ const App: React.FC = () => {
             <Route path="/briefing" element={<BriefingPage baseUrl={backend.baseUrl} />} />
             <Route path="/bills" element={<BillsPage baseUrl={backend.baseUrl} />} />
 
-            <Route path="/agent-hub" element={<PluginPageHost baseUrl={backend.baseUrl} pluginId="stella.agent-hub" pageId="agent-hub.main" title={t('menu_agent_hub')} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
             <Route path="/email" element={<Navigate to={'/data/sources/email' + location.search} replace state={location.state} />} />
             <Route path="/elearning" element={<Navigate to={'/data/sources/elearning' + location.search} replace state={location.state} />} />

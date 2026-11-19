@@ -54,8 +54,8 @@ def test_official_catalog_digest_matches_tasks_package():
 
     from core.plugins.distribution import verify_package_digest
 
-    catalog = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "catalog" / "official.json"
-    package = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "tasks"
+    catalog = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "catalog" / "official.json"
+    package = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "tasks"
     if not catalog.is_file() or not package.is_dir():
         import pytest
 

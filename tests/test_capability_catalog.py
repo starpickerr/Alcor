@@ -162,7 +162,7 @@ def test_package_selection_change_cannot_read_docs_under_old_metadata(catalog, t
 
 @pytest.mark.parametrize('plugin_id', [
     'stella.bills', 'stella.calendar', 'stella.tasks', 'stella.briefing',
-    'stella.automation', 'stella.agent-hub', 'stella.knowledge', 'stella.memory',
+    'stella.automation', 'stella.knowledge', 'stella.memory',
 ])
 def test_plugin_description_is_owned_by_the_package_even_for_first_party_ids(catalog, plugin_id):
     service, package = catalog

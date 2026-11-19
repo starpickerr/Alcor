@@ -1,4 +1,4 @@
-import { MessageSquare, BookOpen, Brain, Zap, Radio, Clock, Settings, Sun, ScrollText, ListChecks, CalendarDays, Receipt, Database, Bot, Cpu } from 'lucide-react'
+import { MessageSquare, BookOpen, Brain, Zap, Radio, Clock, Settings, Sun, ScrollText, ListChecks, CalendarDays, Receipt, Database, Cpu } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
@@ -25,7 +25,6 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'apps',
     labelKey: 'nav_work',
     items: [
-      { pluginId: 'stella.agent-hub', pageId: 'agent-hub.main', path: '/agent-hub', labelKey: 'menu_agent_hub', icon: Bot },
       { pluginId: 'stella.tasks', pageId: 'tasks.main', path: '/todos', labelKey: 'menu_todos', icon: ListChecks },
       { pluginId: 'stella.calendar', pageId: 'calendar.main', path: '/calendar', labelKey: 'menu_calendar', icon: CalendarDays },
       { pluginId: 'stella.briefing', pageId: 'briefing.main', path: '/briefing', labelKey: 'menu_briefing', icon: Sun },

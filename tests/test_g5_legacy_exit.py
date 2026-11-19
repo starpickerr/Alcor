@@ -14,7 +14,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO / "stella-plugins-workspace" / "plugins"
-SIBLING = REPO.parent / "Stella-Plugins" / "plugins"
+SIBLING = REPO / "stella-plugins-workspace" / "plugins"
 BACKEND_SPEC = REPO / "desktop" / "build" / "stella-backend.spec"
 RUNNER_SPEC = REPO / "desktop" / "build" / "stella-plugin-runner.spec"
 DEFAULT_PLUGINS = REPO / "resources" / "default-plugins.json"
