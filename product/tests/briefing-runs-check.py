@@ -1,6 +1,7 @@
 """Independent briefing lifecycle on the unchanged official Desktop; synthetic model/data only."""
 import json
 import os
+import re
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 import time
@@ -114,15 +115,26 @@ def main():
                 page.get_by_role('button', name='简报', exact=True).click()
                 page.get_by_role('heading', name='简报', exact=True).wait_for()
                 page.get_by_role('button', name='简报设置', exact=True).click()
-                page.get_by_role('tab', name='时区', exact=True).click()
+                page.get_by_role('tab', name='生成设置', exact=True).click()
                 page.get_by_role('textbox', name='简报时区', exact=True).fill('Asia/Shanghai')
                 page.get_by_role('button',name='保存时区').click()
                 expect(page.get_by_role('button',name='保存时区')).to_be_disabled()
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
                 page.get_by_role('button',name='返回简报').click()
-                page.get_by_role('button', name='生成今日简报', exact=True).click()
-                expect(page.get_by_role('region', name='简报生成进度')).to_be_visible()
-                expect(page.locator('.alcor-briefing-detail')).to_be_empty()
+                gate = reads_file.with_name('hold-fetch')
+                gate.touch()
+                try:
+                    page.get_by_role('button', name='生成今日简报', exact=True).click()
+                    progress = page.get_by_role('region', name='简报生成进度', exact=True)
+                    expect(progress.get_by_text('正在采集 1/1：Synthetic plugin inbox', exact=True)).to_be_visible(timeout=15000)
+                    expect(page.locator('.alcor-briefing-detail').get_by_role('region', name='简报生成进度', exact=True)).to_be_visible()
+                    assert business(page, 'generation_status')['completedSources'] == 0
+                    progress.get_by_role('button', name='查看生成进度', exact=True).click()
+                    expect(progress.get_by_text('已采集 0 个来源', exact=True)).to_be_visible()
+                    expect(progress.get_by_role('button', name='查看执行会话 ↗', exact=True)).to_have_count(0)
+                    page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-first-source.png'))
+                finally:
+                    gate.unlink(missing_ok=True)
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
                 expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
                 deadline = time.monotonic() + 35
@@ -133,9 +145,12 @@ def main():
                 run = business(page, 'generation_status')
                 assert run['phase'] == 'model' and run['completedBatches'] == 0
                 assert run['sessionId'] and 'sources' not in run and 'submissions' not in run
+                expect(progress.get_by_text('已采集 1 个来源', exact=True)).to_be_visible()
+                expect(progress.get_by_text('已完成 0 批处理', exact=True)).to_be_visible()
                 assert len(reads()) == 2
                 history = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})
-                assert history['runs'][0]['conversationSessionId'] != run['sessionId']
+                assert history['runs'][0]['sessionId'] == run['sessionId']
+                assert 'conversationSessionId' not in history['runs'][0]
                 page.get_by_role('button', name='事务', exact=True).click()
                 page.get_by_role('button', name='简报', exact=True).click()
                 expect(page.get_by_role('button', name='取消生成', exact=True)).to_be_visible()
@@ -144,7 +159,7 @@ def main():
                 progress = page.get_by_role('region', name='简报生成进度', exact=True)
                 expect(progress).to_be_visible()
                 expect(page.get_by_role('button', name='正在生成…', exact=True)).to_be_disabled()
-                expect(page.locator('.alcor-briefing-detail')).to_be_empty()
+                expect(page.locator('.alcor-briefing-detail').get_by_role('region', name='简报生成进度', exact=True)).to_be_visible()
                 expect(page.get_by_role('button', name='查看执行会话 ↗', exact=True)).not_to_be_visible()
                 progress.get_by_role('button', name='查看生成进度', exact=True).click()
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
@@ -247,25 +262,32 @@ def main():
                     if latest_run.get('requestId') != after_disable['requestId'] and latest_run['phase'] in ('completed', 'failed'): break
                     page.wait_for_timeout(100)
                 assert latest_run['phase'] == 'completed' and latest_run['requestId'] != after_disable['requestId'], latest_run
-                latest = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs'][0]
+                run_history = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs']
+                latest = run_history[0]
                 assert latest['trigger'] == 'manual' and latest['phase'] == 'completed', latest
-                assert latest['conversationSessionId'] and 'sessionId' not in latest, latest
+                assert latest['requestId'] == latest_run['requestId'] and 'conversationSessionId' not in latest, latest
                 expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-stays-on-page.png'))
                 page.get_by_role('button', name='简报设置', exact=True).click()
                 page.get_by_role('tab', name='运行记录', exact=True).click()
                 history = page.get_by_role('tabpanel', name='运行记录', exact=True)
-                expect(history.get_by_text('手动生成 · 已完成', exact=True).first).to_be_visible()
-                expect(history.get_by_text('定时生成 · 已完成', exact=True).first).to_be_visible()
-                expect(history.get_by_role('button', name='查看会话', exact=True).first).to_be_visible()
+                completed = history.locator('li[data-phase="completed"]')
+                expect(completed.get_by_text('手动生成', exact=True).first).to_be_visible()
+                expect(completed.get_by_text('定时生成', exact=True).first).to_be_visible()
+                rows = history.get_by_role('listitem')
+                expect(rows).to_have_count(len(run_history))
+                resumed = rows.nth(next(index for index, row in enumerate(run_history) if row['requestId'] == run['requestId']))
+                resumed.get_by_role('button', name=re.compile(r'^查看.*运行详情$')).click()
+                session_link = resumed.get_by_role('button', name='查看会话', exact=True)
+                expect(session_link).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-run-history-desktop.png'))
                 page.set_viewport_size({'width': 430, 'height': 900})
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
                 expect(page.get_by_role('heading', name='简报设置', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
-                history.get_by_role('button', name='查看会话', exact=True).first.click()
+                session_link.click()
                 expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
-                expect(page.get_by_text('Stella synthetic tool round trip passed.', exact=True)).to_be_visible(timeout=30000)
+                page.wait_for_function('id => JSON.parse(localStorage.getItem("dsh.sessions.current"))?.sessionId === id', arg=run['sessionId'])
                 assert not errors, errors
             assert not Provider.failure, Provider.failure
         print('PASS: signed official Desktop runs an isolated briefing session with only scoped read/submit tools; navigation/reload preserve work; restart resumes the same session and reuses source checkpoints')

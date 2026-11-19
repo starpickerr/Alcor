@@ -342,7 +342,8 @@
 .alcor-briefing-progress-row > .alcor-actions { margin-left:auto; }
 .alcor-briefing-progress-chevron { transition:transform 150ms; }
 .alcor-briefing-progress-toggle[aria-expanded=true] .alcor-briefing-progress-chevron { transform:rotate(180deg); }
-.alcor-briefing-progress-detail { border-top:1px solid var(--dsw-alias-border-l3); margin-top:8px; padding-top:8px; font-size:12px; overflow-wrap:anywhere; }
+.alcor-briefing-progress-detail { display:grid; justify-items:start; gap:6px; border-top:1px solid var(--dsw-alias-border-l3); margin-top:8px; padding-top:8px; font-size:12px; overflow-wrap:anywhere; }
+.alcor-briefing-progress-detail p { margin:0; }
 .alcor-briefing-progress-spinner { animation:alcor-briefing-spin 1.5s linear infinite; }
 @keyframes alcor-briefing-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .alcor-briefing-progress-spinner { animation:none; } .alcor-briefing-progress-chevron { transition:none; } }

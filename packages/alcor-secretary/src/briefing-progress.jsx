@@ -29,7 +29,8 @@ export function BriefingProgress({ progress, busy, cancel, resume, dismiss, open
       </div>
     </div>
     {expanded && <div id={id} className="alcor-briefing-progress-detail">
-      {(progress.completedSources > 0 || progress.completedBatches > 0) && <p>已采集 {progress.completedSources ?? 0} 个来源{progress.completedBatches > 0 && ` · 已完成 ${progress.completedBatches} 批处理`}</p>}
+      <p>已采集 {progress.completedSources ?? 0} 个来源</p>
+      {(progress.phase === 'model' || progress.completedBatches > 0) && <p>已完成 {progress.completedBatches ?? 0} 批处理</p>}
       {progress.model && <p>模型：{progress.model.model}</p>}
       {progress.sessionId && <Button variant="ghost" size="sm" onClick={() => openSession(progress.sessionId)}>查看执行会话 ↗</Button>}
     </div>}
