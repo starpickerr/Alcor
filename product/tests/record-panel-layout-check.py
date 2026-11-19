@@ -34,6 +34,7 @@ def main():
             today = page.evaluate('new Date().toLocaleDateString("sv-SE")')
             event = business('calendar', 'create_event', {'title': '面板日程', 'start_at': f'{today}T09:00:00+08:00', 'end_at': f'{today}T10:00:00+08:00', 'repeat_timezone': 'Asia/Shanghai'})
             open_secretary(page)
+            page.get_by_role('tab', name='全部事务', exact=True).click()
             page.get_by_role('button', name='刷新', exact=True).click()
             page.get_by_role('button', name='面板事务 00', exact=True).click()
 

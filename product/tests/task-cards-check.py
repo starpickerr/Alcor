@@ -57,6 +57,7 @@ def main():
             assert not errors, errors
         with desktop.desktop(playwright, home, 'task-cards-restart') as (page, errors):
             open_secretary(page)
+            page.get_by_role('tab', name='全部事务', exact=False).click()
             page.get_by_role('button', name='Persistent task', exact=True).click()
             expect(page.locator('.alcor-task-description')).to_have_text('Only task information remains.')
             expect(page.get_by_role('heading', name='检查清单', exact=True)).to_have_count(0)

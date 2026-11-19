@@ -43,6 +43,7 @@ def main():
             process, url = start(home, log)
             try:
                 page, errors = open_page(context, url); open_secretary(page)
+                page.get_by_role('tab', name='全部事务', exact=True).click()
                 card = page.locator('.alcor-task-node').filter(has_text='Synthetic delete parent')
                 try: expect(card).to_be_visible()
                 except Exception:

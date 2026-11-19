@@ -24,14 +24,11 @@
 .alcor-task-main { margin:24px 0; min-width:0; background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l3); border-radius:16px; padding:26px 28px 18px; }
 .alcor-task-list-heading { display:flex; align-items:baseline; gap:12px; margin-bottom:22px; }
 .alcor-task-list-heading h2 { margin:0; font-size:24px; line-height:1.4; font-weight:600; letter-spacing:-.5px; overflow-wrap:anywhere; }
-.alcor-task-list-heading > span { color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
+.alcor-task-list-heading > :is(span,time) { color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
 .alcor-task-tabs { display:flex; width:100%; max-width:100%; gap:18px; padding:0; margin:0; border-radius:0; background:transparent; border-bottom:1px solid var(--dsw-alias-border-l3); overflow-x:auto; }
 .alcor-task-tabs > span { display:none; }
 .alcor-task-tabs [role=tab] { height:38px; padding:0 0 12px; border-radius:0; flex:none; border-bottom:2px solid transparent; font-size:12px; }
 .alcor-task-tabs [aria-selected=true] { color:var(--alcor-brand); border-bottom-color:var(--alcor-brand); background:transparent; }
-.alcor-tab-label { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
-.alcor-tab-count { font-size:10px; font-weight:400; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
-.alcor-task-tabs [aria-selected=true] .alcor-tab-count { color:var(--alcor-brand); }
 
 .alcor-task-filters { display:grid; grid-template-columns:minmax(120px,1fr) auto auto; gap:8px; margin:18px 0; }
 .alcor-task-filters select { font-size:12px; border-color:transparent; background:var(--dsw-alias-bg-layer-2); }
@@ -41,7 +38,7 @@
 .alcor-task-group { margin:24px 0 0; }
 .alcor-task-group > h2 { display:flex; align-items:center; gap:8px; color:var(--dsw-alias-label-secondary); font-size:12px; font-weight:600; margin:0; padding:0 0 8px; border-bottom:1px solid var(--dsw-alias-border-l3); }
 .alcor-task-group[data-group=overdue] > h2 { color:var(--dsw-alias-state-error-primary); }
-.alcor-task-group[data-group=today] > h2 { color:var(--alcor-brand); }
+.alcor-task-group[data-group=today] > h2, #task-view-today-panel .alcor-task-group[data-group=completed] > h2 { color:var(--alcor-brand); }
 .alcor-task-group small, .alcor-briefing-layout h2 small { color:var(--dsw-alias-label-tertiary); margin-left:4px; font-size:11px; font-weight:400; }
 .alcor-task-list { display:grid; gap:0; list-style:none; padding:0; margin:0; }
 .alcor-task-card { display:flex; position:relative; isolation:isolate; gap:12px; align-items:flex-start; padding:14px 2px; border:0; border-bottom:1px solid var(--dsw-alias-border-l3); border-radius:0; background:transparent; box-shadow:none; }
@@ -49,6 +46,7 @@
 .alcor-task-node { min-width:0; }
 .alcor-task-node > .alcor-task-card { gap:8px; padding:12px 2px 12px calc(2px + var(--task-indent,0px)); border-bottom-color:var(--dsw-alias-border-l3); }
 .alcor-task-node:last-child > .alcor-task-card { border-bottom-color:transparent; }
+#task-view-today-panel .alcor-task-group > .alcor-task-list > .alcor-task-node > .alcor-task-card { border-bottom-color:var(--dsw-alias-border-l3); }
 .alcor-task-branch .alcor-task-card { padding-top:8px; padding-bottom:8px; }
 .alcor-task-disclosure { position:relative; z-index:1; display:flex; flex:none; width:40px; height:40px; margin-block:-8px; }
 .alcor-task-disclosure > button { width:40px; min-width:40px; height:40px; padding:0; border-radius:8px; background:var(--dsw-alias-bg-layer-2); }
@@ -79,6 +77,8 @@
 .alcor-task-card[data-group=overdue] .alcor-task-badge[data-kind=due],.alcor-task-badge[data-priority="3"] { color:var(--dsw-alias-state-error-primary); }
 .alcor-task-badge[data-priority="2"] { color:var(--dsw-alias-state-warn-primary); }
 .alcor-task-card[data-completed] .alcor-task-badge { color:var(--dsw-alias-label-tertiary); }
+.alcor-task-card[data-completed] .alcor-task-copy h3 { color:var(--dsw-alias-label-secondary); }
+.alcor-task-card .alcor-task-badge[data-status=completed] { color:var(--alcor-brand); font-weight:500; }
 .alcor-task-detail { max-width:960px; margin:0 auto; }
 .alcor-task-breadcrumbs { display:flex; flex-wrap:nowrap; align-items:center; gap:4px; margin-bottom:12px; max-width:100%; overflow-x:auto; scrollbar-width:thin; color:var(--dsw-alias-label-secondary); font-size:12px; }
 .alcor-task-breadcrumbs > button,.alcor-task-breadcrumbs > [aria-current] { display:block; flex:none; max-width:140px; min-height:26px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
