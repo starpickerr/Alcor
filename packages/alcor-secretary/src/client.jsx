@@ -130,7 +130,6 @@ export async function apply(ctx) {
         ctx.layout.selectPanel('alcor-briefing')
       }}),
     }, BriefingPluginReturn))
-    const preferences = () => <div className="alcor-settings-content"><SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} /></div>
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'alcor-logs', inject: () => ({ api: ctx.remote.alcorSecretary }) }, RuntimeLogsPage))
     const navigate = panel => { briefingNavigation.update(null); modeController?.switchMode('alcor'); ctx.layout.selectPanel(shared ? sharedPanel(panel) : canonicalPanel(panel)) }
     // Keep the previous entry as an alias for saved layouts and unpatched DSH clients.
@@ -167,7 +166,9 @@ export async function apply(ctx) {
         ctx.slots.register({ name: 'main', key: 'schedules', priority: -10, inject: () => automationProps('all', true) }, AutomationPage)
       })
     }
-    ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, preferences))
+    if (!shared) ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'alcor', order: 5, label: () => 'Alcor' }, () => (
+      spaceNavigation && <div className="alcor-settings-content"><SpacePreferences navigation={spaceNavigation} allWorkspaces={ctx.workspaces.list} allSessions={ctx.sessions.list} /></div>
+    )))
     if(applicationEnvironment()!=='alcor')ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'dsh', inject: () => ({ navigation:spaceNavigation, startSession:id => spaceNavigation ? spaceNavigation.startSession(id) : ctx.uiWorkspace.startSession(id), openSession:id => ctx.uiWorkspace.openSession(id) }) }, Workbench))
     ctx.slots.inject(globalThis.__ALCOR_CLIENT_SHELL__ ? 'shell.top' : 'shell.overlay', () => {
       const controller = createModeController(ctx, storage, { shared })

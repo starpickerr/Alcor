@@ -53,9 +53,7 @@ def check(page, home, profile, artifacts):
     assert school()['installed'] and not school()['configured']
     assert mail()['installed'] and not mail()['configured']
     open_secretary(page)
-    settings(page)
-    dialog = page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$'))
-    expect(dialog.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
+    dialog = settings(page)
     expect(dialog.get_by_text('连接', exact=True)).to_have_count(0)
     expect(dialog.get_by_text('权限与安全', exact=True)).to_have_count(0)
     expect(dialog.get_by_text('旧版身份导入', exact=True)).to_have_count(0)
@@ -66,8 +64,7 @@ def check(page, home, profile, artifacts):
     expect(dialog.get_by_label('旧应用数据目录', exact=True)).to_have_count(0)
     page.screenshot(path=str(artifacts / 'stella-settings-desktop.png'), animations='disabled')
     page.set_viewport_size({'width':390,'height':844})
-    expect(dialog.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_in_viewport()
-    assert page.locator('.alcor-settings-content').bounding_box()['width'] >= 250
+    expect(dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$'))).to_be_in_viewport()
     assert dialog.evaluate('element => element.scrollWidth <= element.clientWidth')
     page.screenshot(path=str(artifacts / 'stella-settings-mobile.png'), animations='disabled')
     page.set_viewport_size({'width':1440,'height':1000})
