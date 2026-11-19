@@ -1,10 +1,36 @@
-import { matchesTodoView, todoGroup } from './todo-view.js'
+import { clockInZone, matchesTodoView, todoGroup } from './todo-view.js'
 
 export const localDate = (value = new Date()) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 export const addDays = (day, count) => { const value = new Date(`${day}T12:00`); value.setDate(value.getDate() + count); return localDate(value) }
-const originalTodo = record => ({ status: record.business?.status ?? (record.status === 'done' ? 'completed' : 'todo'), due_on: record.due, due_time: record.business?.due_time ?? null, timezone: record.business?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone })
-export const taskMatches = (record, view, now) => view === 'pending' ? !record.business?.occurrence_unavailable && !['completed', 'cancelled'].includes(originalTodo(record).status) : matchesTodoView(originalTodo(record), view, now)
-export const taskGroup = (record, now) => todoGroup(originalTodo(record), record.due, now)
+export const taskTimezone = record => record.business?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+export const taskToday = (record, now) => clockInZone(now, taskTimezone(record)).day
+export function taskDeadline(record) {
+  const raw = record.business ?? {}
+  const routine = raw.repeat_frequency && raw.repeat_frequency !== 'none' && !raw.due_time && !raw.planned_on && raw.source_type !== 'apple_reminder' && !raw.native_managed
+  return routine || raw.occurrence_unavailable ? null : record.due
+}
+export function taskDate(record) {
+  if (record.business?.occurrence_unavailable) return null
+  if (record.business?.occurrence_id) return record.due
+  const planned = record.business?.planned_on
+  return planned && (!record.due || planned < record.due) ? planned : record.due
+}
+const originalTodo = record => ({ status: record.business?.status ?? (record.status === 'done' ? 'completed' : 'todo'), due_on: taskDeadline(record), due_time: record.business?.due_time ?? null, timezone: taskTimezone(record) })
+export function taskMatches(record, view, now) {
+  const todo = originalTodo(record)
+  const actionable = !record.business?.occurrence_unavailable && !['completed', 'cancelled'].includes(todo.status)
+  if (view === 'pending') return actionable
+  if (view === 'today' || view === 'plan') {
+    if (view === 'today' && todo.status === 'completed') {
+      const completed = new Date(record.business?.completed_at ?? '')
+      return Number.isFinite(completed.getTime()) && taskToday(record, completed) === taskToday(record, now)
+    }
+    const day = taskDate(record)
+    return !!day && actionable && (view === 'today' ? day <= taskToday(record, now) : day > taskToday(record, now))
+  }
+  return matchesTodoView(todo, view, now)
+}
+export const taskGroup = (record, now) => todoGroup(originalTodo(record), taskDate(record), now)
 
 export function monthDays(day) {
   const selected = new Date(`${day}T12:00`)

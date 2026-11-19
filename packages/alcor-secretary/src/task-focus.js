@@ -5,7 +5,8 @@ export function focusedTaskRecords(records) {
     if (!occurrences.length) return [{ ...record, business: { ...record.business, occurrence_unavailable: true } }]
     return occurrences.map(occurrence => ({
       ...record, due: occurrence.due_on, status: occurrence.status === 'completed' ? 'done' : 'open',
-      business: { ...record.business, apple_history: !!occurrence.apple_history, status: occurrence.status, occurrence_id: occurrence.id, completed_at: occurrence.completed_at },
+      business: { ...record.business, due_time: Object.hasOwn(occurrence, 'due_time') ? occurrence.due_time : record.business.due_time,
+        planned_on: occurrence.planned_on, apple_history: !!occurrence.apple_history, status: occurrence.status, occurrence_id: occurrence.id, completed_at: occurrence.completed_at },
     }))
   })
 }

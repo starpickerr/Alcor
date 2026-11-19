@@ -178,9 +178,10 @@ def main():
 
 def check_tasks(page, business, artifacts):
     open_secretary(page)
+    page.get_by_role('tab', name=re.compile(r'^全部事务')).click()
     page.get_by_role('button', name='新建事务', exact=True).click()
     form = page.get_by_role('form', name='新增事务', exact=True)
-    assert form.locator('.alcor-field > span:first-child').all_text_contents()[:8] == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
+    assert form.locator('.alcor-field > span:first-child').all_text_contents()[:9] == ['标题', '事务详情', '安排日期', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
     for label in ['事务时区', '计划日期', '提醒时间', '清单', '重复频率', '标记为重要']:
         expect(form.get_by_label(label, exact=True)).to_have_count(0)
     expect(form.get_by_text('提醒时间使用本机时区', exact=False)).to_have_count(0)
@@ -321,7 +322,7 @@ def check_tasks(page, business, artifacts):
     daily_card = page.locator(f'[data-task-id="{daily_id}"]:visible').filter(has=page.get_by_role('button', name='完成本次', exact=True))
     daily_card.get_by_role('button', name='完成本次', exact=True).click()
     expect(daily_card.get_by_role('button', name='完成本次', exact=True)).to_be_visible()
-    expect(daily_card.locator('time')).to_have_text(tomorrow)
+    expect(daily_card.locator('time')).to_have_attribute('datetime', tomorrow)
     assert next(row for row in business('tasks', 'list_todos', {'start': today, 'end': tomorrow}) if row.get('series_id') == daily['id'])['status'] == 'completed'
     expect(page.get_by_role('button', name='Daily study', exact=True)).to_have_count(4)
     expect(page.get_by_role('tab', name=re.compile(r'^全部事务'))).to_have_attribute('aria-selected', 'true')

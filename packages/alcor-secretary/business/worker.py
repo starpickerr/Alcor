@@ -143,10 +143,10 @@ class Business:
         for item in self.tasks.list_todos_focus():
             if item.get('series_id'):
                 field = 'last_completed_occurrence' if item['status'] == 'completed' else 'current_occurrence'
-                focus.setdefault(item['series_id'], {})[field] = {**{key: item[key] for key in ('id', 'due_on', 'status', 'completed_at')},'apple_history':bool(item.get('apple_history'))}
+                focus.setdefault(item['series_id'], {})[field] = {**{key: item[key] for key in ('id', 'due_on', 'due_time', 'planned_on', 'status', 'completed_at')},'apple_history':bool(item.get('apple_history'))}
         for row in self.tasks.list_todos():
             if row['repeat_frequency'] != 'none' and (row['source_type'] != 'apple_reminder' or row.get('native_managed')):
-                row = {**row, 'current_occurrence': ({key:row[key] for key in ('id','due_on','status','completed_at')} if row.get('native_managed') else None), **focus.get(row['id'], {})}
+                row = {**row, 'current_occurrence': ({key:row[key] for key in ('id','due_on','due_time','planned_on','status','completed_at')} if row.get('native_managed') else None), **focus.get(row['id'], {})}
             records.append(self._metadata({'kind': 'task', 'id': row['id'], 'title': row['title'], 'details': row['notes'],
                                           'due': row['due_on'], 'status': 'done' if row['status'] in ('completed', 'cancelled') else 'open'}, row))
         for row in self.calendar.list_events():

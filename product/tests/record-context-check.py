@@ -61,6 +61,7 @@ def main():
         with desktop.desktop(playwright,home,'context-menus') as (page,errors):
             business=lambda domain,method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
             open_secretary(page);page.set_viewport_size({'width':1440,'height':1000})
+            page.get_by_role('tab', name='全部事务', exact=True).click()
             page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__stellaCopied=text}}})")
             task=page.locator(f'[data-task-id="{data["task"]["id"]}"]')
             task.click(button='right')
@@ -115,7 +116,7 @@ def main():
             page.set_viewport_size({'width':1440,'height':1000})
             repeating.click(button='right');menu.get_by_role('menuitem',name='编辑详情',exact=True).click()
             edit=page.get_by_role('form',name='编辑事务',exact=True)
-            expect(edit.get_by_label('截止日期',exact=True)).to_have_value(data['anchor'])
+            expect(edit.get_by_label('开始日期',exact=True)).to_have_value(data['anchor'])
             edit.get_by_role('button',name='取消编辑').click()
             for title,status in [('只读事务','Apple 来源内容只读'),('待确认事务','等待 Apple 确认')]:
                 page.get_by_role('button',name=title,exact=True).click()
