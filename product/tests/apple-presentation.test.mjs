@@ -77,6 +77,25 @@ test('identity candidates and unknown owner commits are visible and cannot dispa
   assert.equal(reviewItems({scan_claims:[{attempt_id:'active',state:'scanning',stage:'claimed'}]},'calendar')[0].label,'同步操作仍占用此来源')
 })
 
+test('partial sync names the affected source and combines its related status rows', async () => {
+  const { reviewItems } = await import('../../../dsh-apple-sync/src/presentation.js')
+  const state={authorization:'full_access',connected:true,auto_enabled:true,
+    error:'Apple container is held by another unfinished operation',
+    sync_result:{status:'partial',checked_group_ids:['b']},
+    calendars:[{id:'a',title:'课程',source:'iCloud'}],
+    scan_claims:[{attempt_id:'old',group_id:'a',source_id:'account1',state:'uncertain'},
+      {attempt_id:'active',group_id:'a',source_id:'account1',state:'scanning'}],
+    category_conflicts:[{apple_id:'a',kind:'category_waiting',reason:'source held'}]}
+  assert.equal(connectionStatus(state,false).tone,'warning')
+  assert.equal(connectionStatus({...state,listing_error:'读取来源失败'},false).tone,'error')
+  const [item,...rest]=reviewItems(state,'calendar')
+  assert.equal(rest.length,0)
+  assert.equal(item.title,'课程')
+  assert.equal(item.source,'iCloud')
+  assert.equal(item.label,'同步结果待核对')
+  assert.deepEqual(item.claims.map(row => row.attempt_id),['old','active'])
+})
+
 test('category create unknown and proven pre-send waiting stay visible without retry buttons', async () => {
   const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   for (const state of ['native_unknown', 'owner_claiming', 'owner_committed', 'legacy_unknown', 'waiting']) {

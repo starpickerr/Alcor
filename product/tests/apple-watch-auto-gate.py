@@ -10,11 +10,11 @@ for kind in ('calendar','reminders'):
     try:
         manager=case.calendar(modules['NativeBridge'](kind)) if kind=='calendar' else case.reminder(modules['NativeBridge'](kind))
         manager._set('connected',True);manager._set('auto_enabled',True)
-        calls=[];manager.sync=lambda:calls.append('sync')
-        stop=threading.Event();manager._run_auto_sync(stop);assert calls==['sync']
+        calls=[];manager.sync=lambda *, background:calls.append(background)
+        stop=threading.Event();manager._run_auto_sync(stop);assert calls==[True]
         # An auto callback already waiting for the manager lock must recheck after disable.
         with manager._lock:
             thread=threading.Thread(target=manager._run_auto_sync,args=(stop,));thread.start()
             manager._set('auto_enabled',False);stop.set()
-        thread.join(2);assert not thread.is_alive() and calls==['sync']
+        thread.join(2);assert not thread.is_alive() and calls==[True]
     finally:case.tearDown()
