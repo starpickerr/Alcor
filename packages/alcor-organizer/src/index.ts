@@ -14,6 +14,7 @@ import { BusinessWorker, resolveBusinessPython } from './business.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { setTimeout as wait } from 'node:timers/promises'
 import { ReminderDelivery } from './reminders.js'
 import { BriefingGenerator } from './briefing.js'
 import { discoverBriefingSources, briefingSourceOptions, effectiveBriefingSources, localBriefingSources } from './briefing-sources.js'
@@ -236,7 +237,7 @@ export default class Organizer extends TypertRemoteService {
     if (!['tasks', 'calendar'].includes(domain)) throw new Error('未知的删除范围。')
     const task = domain === 'tasks', category = method === 'delete_category', external = method === 'delete_external_todo'
     const id = category && task ? args.category_id : external ? args.source_key : task ? args.todo_id : method === 'exclude_occurrence' ? args.series_id : args.id
-    const prepared = await this.serialize(async () => {
+    const prepare = () => this.serialize(async () => {
       if (authorize() !== true) throw new Error('删除授权已失效。')
       const receipt = await this.businessWorker.call('prepare_delete_receipt', request)
       if (receipt) return { kind: 'receipt', request, plan: receipt }
@@ -250,6 +251,11 @@ export default class Organizer extends TypertRemoteService {
         const plan = await this.businessWorker.call('prepare_apple_delete', request)
         return { kind: plan.replayed ? 'receipt' : 'apple', request, plan }
       }
+      if (task && !category && !row?.apple && row?.category_id && ['', 'briefing'].includes(row.source_type ?? '')) {
+        const list = await this.businessWorker.call('invoke', { domain, method: 'get_category', arguments: { category_id: row.category_id } })
+        if (authorize() !== true) throw new Error('删除授权已失效。')
+        if (list?.apple && !list.apple.planned && list.apple.can_modify) return { kind: 'awaiting-task-binding', request }
+      }
       if (!task && !category && args.occurrence_on) {
         const plan = await this.businessWorker.call('prepare_local_occurrence_delete', {
           event_id: id, occurrence_on: args.occurrence_on, scope: method === 'exclude_occurrence' ? 'this' : args.scope ?? 'this', operation_id,
@@ -261,6 +267,16 @@ export default class Organizer extends TypertRemoteService {
       })
       return { kind: plan.replay ? 'receipt' : 'local', request, plan }
     })
+    let prepared = await prepare()
+    if (prepared.kind === 'awaiting-task-binding') {
+      const deadline = performance.now() + 6000
+      // Release the owner queue so the ordinary reminder sync can finalize its binding.
+      while (prepared.kind === 'awaiting-task-binding' && performance.now() < deadline) {
+        await wait(250)
+        prepared = await prepare()
+      }
+      if (prepared.kind === 'awaiting-task-binding') throw new Error('这条事务尚未建立 Apple 关联。请等待提醒事项同步完成后重试「删除事务」。')
+    }
     if (authorize() !== true) throw new Error('删除授权已失效。')
     if (!['apple', 'apple-category'].includes(prepared.kind)) return prepared
     const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
