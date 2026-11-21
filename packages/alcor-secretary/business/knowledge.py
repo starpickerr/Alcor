@@ -7,6 +7,7 @@ import re
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from business.knowledge_graph import graph, neighbors, index_references, inline_links, resolve
 from business.knowledge_index import connect, install, index_source, chunk_text, retrieve, SemanticIndex
 
 
@@ -63,6 +64,16 @@ class Knowledge:
             return self.save(args, key, method == "store_file")
         if method == "search":
             return self.search(args)
+        if method == "graph":
+            collection = args.get("collection")
+            if collection is not None:
+                collection = string(collection, 100, "资料集")
+            return graph(
+                self.db,
+                collection,
+                string(args.get("query", ""), 240, "搜索词"),
+                integer(args.get("limit", 240), 1, 240),
+            )
         if method == "collections":
             return [
                 r[0]
@@ -81,6 +92,13 @@ class Knowledge:
             ]
             return {"pages": pages, "index_notice": row["index_notice"]}
         source = self.header(args.get("id"))
+        if method == "links":
+            return neighbors(
+                self.db,
+                source["id"],
+                integer(args.get("offset", 0), 0, 2**31 - 1),
+                integer(args.get("limit", 25), 1, 50),
+            )
         if method == "read":
             expected = args.get("revision", source["revision"])
             historical = expected != source["revision"]
@@ -96,11 +114,27 @@ class Knowledge:
             row = self.db.execute(
                 "SELECT body FROM library_pages WHERE source_id=? AND page=?", (source["id"], page)
             ).fetchone()
+            text = source["note"] if historical and not source["filename"] else row[0]
+            links = {}
+            if args.get("include_links") is True:
+                if not source["filename"] or source["kind"] == "text":
+                    links["body_links"] = inline_links(
+                        self.db,
+                        source["id"],
+                        text,
+                        page if source["kind"] == "text" and source["page_count"] > 1 else None,
+                        historical=historical,
+                    )
+                if source["filename"] and source["note"]:
+                    links["note_links"] = inline_links(
+                        self.db, source["id"], source["note"], historical=historical
+                    )
             return {
                 **source,
+                **links,
                 "page": page,
                 "historical": historical,
-                "text": source["note"] if historical and not source["filename"] else row[0],
+                "text": text,
             }
         if method == "original" and source["filename"]:
             raw = self.db.execute(
@@ -117,6 +151,7 @@ class Knowledge:
         if method == "reindex":
             with self.db:
                 index_source(self.db, source["id"])
+                index_references(self.db, source["id"])
             self.semantic.wake.set()
             return self.header(source["id"])
         if method not in ("edit", "archive", "restore"):
@@ -156,6 +191,7 @@ class Knowledge:
                 (source["id"], revision, json.dumps(source, ensure_ascii=False)),
             )
             if method == "edit":
+                index_references(self.db, source["id"], source["title"])
                 index_source(
                     self.db, source["id"], metadata_only=bool(source["filename"]) or note == source["note"]
                 )
@@ -171,7 +207,7 @@ class Knowledge:
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
             source = self.db.execute(
-                "SELECT asset_hash FROM sources WHERE id=? AND archived=1 AND revision=?",
+                "SELECT asset_hash,title,filename FROM sources WHERE id=? AND archived=1 AND revision=?",
                 (source_id, revision),
             ).fetchone()
             if source is None:
@@ -182,7 +218,10 @@ class Knowledge:
             )
             self.db.execute("DELETE FROM chunks WHERE source_id=?", (source_id,))
             self.db.execute("DELETE FROM history WHERE source_id=?", (source_id,))
+            # An erased target must never silently redirect an existing citation to a namesake.
+            self.db.execute("UPDATE document_refs SET retired=1 WHERE target_id=?", (source_id,))
             self.db.execute("DELETE FROM sources WHERE id=?", (source_id,))
+            resolve(self.db, {k for k in (source["title"], source["filename"]) if k})
             if (
                 source["asset_hash"]
                 and not self.db.execute(
@@ -289,6 +328,7 @@ class Knowledge:
             if key:
                 self.db.execute("INSERT INTO save_receipts VALUES(?,?,?)", (key, source_id, fingerprint))
             index_source(self.db, source_id)
+            index_references(self.db, source_id)
         self.semantic.wake.set()
         return self.header(source_id)
 

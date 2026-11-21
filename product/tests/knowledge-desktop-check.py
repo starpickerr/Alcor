@@ -30,9 +30,15 @@ class Provider(BaseHTTPRequestHandler):
         if "alcor_knowledge" in tools:
             if last["role"] == "tool":
                 result = json.loads(last["content"])
-                assert any(row["title"] == "期末通知.png" for row in result["items"]), result
-                delta = {"content": "已找到考试范围原图。"}
+                if "edges" in result:
+                    names = {r["id"]: r["title"] for r in result["nodes"]}
+                    assert any(names[e["source"]] == "复习提纲" and names[e["target"]] == "期末通知.png" for e in result["edges"]), result
+                    delta = {"content": "复习提纲引用了期末通知。"}
+                else:
+                    assert any(row["title"] == "期末通知.png" for row in result["items"]), result
+                    delta = {"content": "已找到考试范围原图。"}
             else:
+                action = {"action": "graph"} if "查图谱" in str(last["content"]) else {"action": "search", "query": "Chapter five"}
                 delta = {
                     "tool_calls": [
                         {
@@ -41,7 +47,7 @@ class Provider(BaseHTTPRequestHandler):
                             "type": "function",
                             "function": {
                                 "name": "alcor_knowledge",
-                                "arguments": json.dumps({"action": "search", "query": "Chapter five"}),
+                                "arguments": json.dumps(action),
                             },
                         }
                     ]
@@ -112,6 +118,63 @@ def check(page, docs):
     expect(dialog.locator("mark")).to_contain_text("CS204X")
     expect(dialog.locator("object")).to_have_attribute("data", re.compile("#page=2$"))
     dialog.get_by_role("button", name="关闭", exact=True).click()
+    for title, body in [
+        ("复习计划", "先阅读 [[复习提纲]] 和 [[教学大纲]]，再完成 [[自测题]]。"),
+        ("课程笔记", "整理 [[课程讲义.pdf]] 的例题和 [[概念清单]]。"),
+        ("例题集", "参考 [[课程笔记]] 和 [[自测题]]。"),
+        ("概念清单", "重点来自 [[教学大纲]]。"),
+        ("自测题", "结合 [[课程讲义.pdf]] 与 [[概念清单]]。"),
+    ]:
+        desktop.rpc(page, "alcorOrganizer/business", {"request": {"domain": "knowledge", "method": "save", "arguments": {"title": title, "text": body}}})
+    page.get_by_role("button", name="收藏资料", exact=True).click()
+    dialog.get_by_label("标题", exact=True).fill("复习提纲")
+    dialog.get_by_label("笔记", exact=True).fill("参考 [[教学大纲]] 与 ")
+    dialog.get_by_role("button", name="插入资料引用").click()
+    dialog.get_by_label("查找要引用的资料").fill("期末通知")
+    dialog.locator(".alcor-reference-picker").get_by_role("button", name=re.compile("期末通知")).click()
+    dialog.get_by_role("button", name="保存", exact=True).click()
+    page.get_by_role("button", name="图谱", exact=True).click()
+    network = page.get_by_role("region", name="知识图谱")
+    node = network.get_by_role("button", name="打开资料：复习提纲", exact=True)
+    expect(node).to_be_visible()
+    expect(network.locator("line")).to_have_count(12)
+    transform = network.locator("svg > g")
+    initial = transform.get_attribute("transform")
+    network.get_by_role("button", name="放大图谱").click()
+    expect(transform).not_to_have_attribute("transform", initial)
+    network.get_by_role("button", name="适应窗口").click()
+    expect(transform).to_have_attribute("transform", initial)
+    network.screenshot(path=str(desktop.ARTIFACTS / "graph-desktop.png"))
+    page.emulate_media(color_scheme="dark")
+    page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
+    network.screenshot(path=str(desktop.ARTIFACTS / "graph-dark.png"), animations="disabled")
+    page.emulate_media(color_scheme="light")
+    page.wait_for_function('!document.body.hasAttribute("data-ds-dark-theme")')
+    node.focus()
+    node.press("Enter")
+    expect(dialog.get_by_role("region", name="引用了")).to_contain_text("期末通知.png")
+    dialog.locator(".alcor-knowledge-text").get_by_role("button", name="教学大纲").click()
+    expect(dialog.get_by_role("region", name="被引用")).to_contain_text("复习提纲")
+    dialog.get_by_role("button", name="返回上一份资料").click()
+    expect(dialog.get_by_role("region", name="引用了")).to_be_visible()
+    dialog.get_by_role("button", name="关闭", exact=True).click()
+    page.set_viewport_size({"width": 540, "height": 740})
+    expect(network.get_by_role("button", name="适应窗口")).to_be_in_viewport()
+    page.mouse.move(500, 70)
+    page.keyboard.press("Escape")
+    expect(page.locator("[data-sidebar-drawer]")).to_have_attribute("data-sidebar-collapsed", "true")
+    page.wait_for_function("""() => {
+        const el = document.querySelector('.alcor-library-graph'), box = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(box.left + 15, box.top + 15))
+    }""")
+    network.screenshot(path=str(desktop.ARTIFACTS / "graph-narrow.png"), animations="disabled")
+    page.get_by_label("筛选图谱标题").fill("复习提纲")
+    expect(network.locator("line")).to_have_count(4)
+    expect(network.get_by_role("button", name="打开资料：期末通知.png")).to_be_visible()
+    page.get_by_label("筛选图谱标题").fill("不存在的资料")
+    expect(page.get_by_text("当前范围没有资料")).to_be_visible()
+    page.set_viewport_size({"width": 1280, "height": 850})
+    page.get_by_role("button", name="文档", exact=True).click()
     page.get_by_label("搜索知识库").fill("教学大纲")
     page.get_by_role("button", name="网页 教学大纲").click()
     dialog.get_by_role("button", name="归档", exact=True).click()
@@ -149,6 +212,10 @@ def check(page, docs):
     citation = page.get_by_role("button", name="期末通知.png", exact=True)
     citation.click()
     expect(dialog.get_by_role("img", name="期末通知.png")).to_be_visible()
+    dialog.get_by_role("button", name="关闭", exact=True).click()
+    composer.fill("查图谱，复习提纲引用了哪张通知？")
+    composer.press("Enter")
+    expect(page.get_by_text("复习提纲引用了期末通知。", exact=True)).to_be_visible(timeout=60000)
 
 
 if __name__ == "__main__":
@@ -169,7 +236,7 @@ if __name__ == "__main__":
                 check(page, docs)
                 assert not errors, errors
             print(
-                "PASS: collection, archive, restore, image OCR, original download, narrow layout, chat citations"
+                "PASS: collection, archive, restore, image OCR, original download, graph navigation, backlinks, narrow layout, chat search and graph tools"
             )
     finally:
         server.shutdown()

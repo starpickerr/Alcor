@@ -114,6 +114,12 @@ test('knowledge import reads bounded bytes through the active filesystem, and se
   })
   assert.match(cacheKey, /^[0-9a-f]{64}$/)
   assert.deepEqual(cached.pages, ['cached extraction'])
+  for (const action of ['graph', 'links']) {
+    assert.equal(classifyCapability('alcor_knowledge', { action }).kind, 'read')
+    await assert.rejects(execute({ session: { id: 'child', header: { parentSession: 'p' } } }, { action }), /主对话/)
+  }
+  await execute(main, { action: 'links', id: 'id', offset: 25 })
+  assert.equal(saved.arguments.offset, 25)
   const body = await execute(main, { action: 'read', id: 'id' })
   assert.equal(body.next_offset, 10000)
   assert.equal((await execute(main, { action: 'read', id: 'id', offset: 10000 })).text, 'a'.repeat(10))
@@ -152,5 +158,12 @@ test('hybrid retrieval preserves source versions, storage deduplication and coll
     process.env.ALCOR_BUSINESS_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
     ['-B', fileURLToPath(new URL('./knowledge-retrieval.py', import.meta.url))],
     { timeout: 45000 }
+  )
+})
+
+test('a v1 library acquires durable, navigable cross-references on upgrade', async () => {
+  await promisify(execFile)(
+    process.env.ALCOR_BUSINESS_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
+    ['-B', fileURLToPath(new URL('./knowledge-graph.py', import.meta.url))],
   )
 })

@@ -14,6 +14,8 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from business.knowledge_graph import install_references
+
 CJK = r"[\u3400-\u9fff\uf900-\ufaff]"
 EMBED = Path(__file__).resolve().parent.parent / "native" / "knowledge-embedding.js"
 
@@ -91,15 +93,17 @@ def install(db):
     with db:
         db.execute("BEGIN IMMEDIATE")
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version == 1:
+        if version == 2:
             return
-        if version != 0:
+        if version not in (0, 1):
             raise ValueError("请升级 Alcor 后打开此知识库。")
-        schema = Path(__file__).with_name("knowledge_schema.sql").read_text(encoding="utf-8")
-        for statement in schema.split(";"):
-            if statement.strip():
-                db.execute(statement)
-        db.execute("PRAGMA user_version=1")
+        if version == 0:
+            schema = Path(__file__).with_name("knowledge_schema.sql").read_text(encoding="utf-8")
+            for statement in schema.split(";"):
+                if statement.strip():
+                    db.execute(statement)
+        install_references(db)
+        db.execute("PRAGMA user_version=2")
 
 
 def chunk_text(db, chunk):
