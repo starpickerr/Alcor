@@ -142,7 +142,7 @@ test('scheduled briefings use saved sources, deny delegated/unknown turns and re
   ctx.provide('alcorOrganizer', {
     business: async () => [{ source: 'alcor_tasks', accountId: 'local' }, { source: 'elearning', accountId: 'school' }],
     localBriefingSources: async () => assert.fail('Scheduled briefings must use the shared saved-source selection'),
-    generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing' } },
+    generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing', business: { snapshot: { briefing: { error_message: '邮件未覆盖' } } } } },
     startBriefing: async input => ({ requestId: input.requestId, phase: 'starting', sessionId: 'independent-root' }),
     taskReview: async () => ({ open: [{ title: 'Synthetic task' }], completed: 0 }),
   })
@@ -174,6 +174,7 @@ test('scheduled briefings use saved sources, deny delegated/unknown turns and re
   const started = await call(agent, 'alcor_generate_briefing')
   assert.equal(started.isError, false)
   assert(JSON.stringify(started).includes('Synthetic saved briefing'))
+  assert.equal(started.value.coverageWarning, '邮件未覆盖')
   assert(JSON.stringify(started).includes('\"saved\":true'))
   assert.equal(saved.length, 4, 'Manual and scheduled chats both wait for the saved briefing')
   assert.equal(Object.hasOwn(saved[3], 'trigger'), false)

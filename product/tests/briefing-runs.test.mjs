@@ -76,6 +76,55 @@ const input = () => { const now = new Date().toISOString(); return { requestId: 
 const state = (worker, id) => worker.call('briefing_run', { method: 'get', request_id: id })
 async function until(check) { for (let i = 0; i < 400; i++) { const value = await check(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 10)) } throw new Error('Run did not settle') }
 
+for (const trigger of ['manual', 'scheduled']) test(trigger + ' briefing saves schoolwork when mail times out and catches up missed mail', async t => {
+  const { worker } = await fixture(t), native = nativeContext()
+  const generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
+  const email = { source: 'email', accountId: 'inbox', tool: 'mcp__email__fetch_messages', method: 'fetch_messages', arguments: { account_id: 'inbox' } }
+  const school = native.ctx.tools.execute
+  const reads = []
+  let offline = true
+  const occurred = new Date(Date.now() - 3000).toISOString()
+  native.ctx.tools.execute = async request => {
+    if (request.calls[0].name !== email.tool) return school(request)
+    reads.push(JSON.parse(request.calls[0].arguments))
+    if (offline) throw new Error('Mail read timed out')
+    return { results: [{ result: { value: { items: [{ source_id: 'missed', title: 'Missed mail', occurred_at: occurred, snippet: 'Mail body' }], cursors: { imap_uid: '10' } } } }] }
+  }
+  const generate = () => generator.generate({ ...input(), sources: [email, source], trigger })
+  const partial = await generate()
+  const snapshot = partial.business.snapshot
+  assert.equal(snapshot.briefing.status, 'partial')
+  assert.equal(snapshot.briefing.error_message, '邮件未覆盖')
+  assert.deepEqual(snapshot.items.map(row => row.source), ['elearning'])
+  assert.deepEqual(snapshot.briefing.updated_sources, ['elearning:school'])
+  assert.equal(snapshot.revisions[0].trigger, trigger)
+  const cursors = config => worker.call('source_cursors', { source: config.source, account_id: config.accountId, configuration: config })
+  assert.deepEqual(await cursors(email), {})
+  assert.equal((await cursors(source)).checkpoint, 'source-state')
+  assert.equal((await generator.status()).completedSources, 1)
+  offline = false
+  const recovered = await generate()
+  assert.equal(reads[1].since, reads[0].since)
+  assert.deepEqual(recovered.business.snapshot.items.map(row => row.source).sort(), ['elearning', 'email'])
+  assert.equal(recovered.business.snapshot.briefing.status, 'completed')
+  assert.equal(recovered.business.snapshot.briefing.error_message, '')
+  assert.equal((await cursors(email)).imap_uid, '10')
+  assert.equal((await generator.generate({ ...input(), sources: [email], trigger })).business.snapshot.items.length, 1)
+})
+
+test('all failed sources leave no report and an explicit resume re-reads them', async t => {
+  const { worker } = await fixture(t), native = nativeContext(), request = input()
+  const generator = new BriefingGenerator(native.ctx, worker); t.after(() => generator.close())
+  const school = native.ctx.tools.execute
+  native.ctx.tools.execute = async () => { throw new Error('offline') }
+  await assert.rejects(generator.generate(request), /offline/)
+  assert.equal((await state(worker, request.requestId)).phase, 'failed')
+  assert.deepEqual(await worker.call('invoke', { domain: 'briefing', method: 'list_briefings' }), [])
+  native.ctx.tools.execute = school
+  await generator.resume(request.requestId)
+  assert.equal((await generator.wait(request.requestId)).business.snapshot.briefing.status, 'completed')
+})
+
 test('public run output is lossless JSON across optional fields and phases', () => {
   const generator = new BriefingGenerator({}, {})
   const common = { requestId: randomUUID(), date: '2026-11-07', message: '状态', createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z', collected: [], submissions: [] }

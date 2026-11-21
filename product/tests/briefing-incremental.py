@@ -142,6 +142,38 @@ class Incremental(unittest.TestCase):
         self.assertEqual(receipt["revision"], 1)
         self.assertEqual(result["business"]["snapshot"]["items"][0]["title"], "新条目")
 
+    def test_partial_refresh_keeps_previous_mail_and_retries_after_an_unrelated_collection(self):
+        service = self.business.briefing
+        def run(hour, *sources):
+            return service.run_pipeline(run_at=f"2026-11-11T{hour}:00:00+08:00", sources=list(sources))
+
+        def mail(*rows, **kwargs):
+            return dict(source="email", account_id="a", items=list(rows), **kwargs)
+
+        school = dict(source="elearning", account_id="school", items=[])
+        old = self.row("已收邮件", "2026-11-11T07:00:00+08:00")
+        missed = self.row("待补邮件", "2026-11-11T08:30:00+08:00")
+        run("08", mail(old, cursors={"imap_uid": "10"}))
+        before = self.business.source_cursors("email", "a", self.scope)
+        broken = mail(missed, errors=["second page timed out"], cursors={"imap_uid": "11"})
+        partial = run("09", broken, school)
+        self.assertEqual(partial["briefing"].status, "partial")
+        self.assertEqual([row["title"] for row in partial["mail"]], ["已收邮件"])
+        self.assertEqual(self.business.source_cursors("email", "a", self.scope), before)
+        with self.assertRaisesRegex(ValueError, "timed out"):
+            run("10", broken)
+        self.assertEqual(service.store.checkpoint(), partial["briefing"].window_end)
+        run("11", school)
+        self.business.meta.close()
+        self.business = Business(self.tmp.name)
+        service = self.business.briefing
+        restored = run("12", mail(missed, cursors={"imap_uid": "11"}))
+        self.assertEqual(instant(restored["briefing"].source_windows["email:a"]["start"]), instant(before["until"]))
+        self.assertEqual({row["title"] for row in restored["mail"]}, {"已收邮件", "待补邮件"})
+        self.assertEqual(restored["briefing"].status, "completed")
+        archived = service.store.get_revision(partial["briefing"].id, 2)
+        self.assertEqual(archived["briefing"]["error_message"], "邮件未覆盖")
+
     def test_merge_thread_and_preserve_unrelated_report(self):
         one = self.row(
             "初次通知",

@@ -86,9 +86,8 @@ test('native pagination rechecks authorization and handles disabled providers as
   let pages = 0
   const ctx = { tools: { execute: async () => { pages++; return output({ source_id: 'inbox', account_id: 'account-1', items: [], next_offset: 1 }) } } }
   const generator = new BriefingGenerator(ctx, { call: async () => ({}) })
-  const result = await generator.collect(source, options.since, options.until, options.signal, async () => { if (pages) throw new Error('revoked') })
+  await assert.rejects(generator.collect(source, options.since, options.until, options.signal, async () => { if (pages) throw new Error('revoked') }), /revoked/)
   assert.equal(pages, 1)
-  assert.deepEqual(result.errors, ['revoked'])
   ctx.tools.execute = async () => { throw new Error('plugin disabled') }
   assert.deepEqual((await generator.collect(source, options.since, options.until, options.signal)).errors, ['plugin disabled'])
 })

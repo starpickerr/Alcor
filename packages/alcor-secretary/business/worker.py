@@ -206,7 +206,8 @@ class Business:
         window = self.collection_window(stamp)
         record = {**record, 'date':window['day']}
         configs = [row for row in self.source_settings() if row['source'] in ('calendar_agenda','alcor_tasks','alcor_bills')]
-        sources = [self.calendar_agenda(stamp, window['start']) if row['source']=='calendar_agenda' else self.local_source(row['source'], stamp, window['start']) for row in configs]
+        starts = self.source_windows(record['date'], stamp, configs)
+        sources = [self.calendar_agenda(stamp, start) if row['source']=='calendar_agenda' else self.local_source(row['source'], stamp, start) for row, start in zip(configs, starts)]
         return self.generated_briefing(record, request_id, sources, run_at=stamp, configurations=configs, local_only=True)['record']
 
     def collection_window(self, stamp, time_zone=None):
@@ -226,7 +227,7 @@ class Business:
         scoped['actions'] = self.briefing.actions.view(scoped['items'])
         scoped['preferences'] = self.briefing.get_preferences()
         scoped['revisions'] = [row for row in self.briefing.store.list_revisions(receipt['briefingId']) if row['number']<=receipt['revision']]
-        scoped['briefing'] = {**saved['briefing'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'], 'source_windows':{k:v for k,v in saved['briefing']['source_windows'].items() if k in keys}}
+        scoped['briefing'] = {**saved['briefing'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'], 'source_windows':{k:v for k,v in saved['briefing']['source_windows'].items() if k in keys or k in receipt.get('uncovered', [])}}
         return {**record, 'id':receipt['id'], 'date':window['day'], 'title':saved['briefing']['title'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'],
                 'revision':receipt['revision'], 'archived':False, 'createdAt':saved['briefing']['created_at'], 'updatedAt':saved['briefing']['updated_at'],
                 'business':{'briefingId':receipt['briefingId'], 'revision':receipt['revision'], **({'snapshot':scoped} if snapshot else {})}}
@@ -452,8 +453,10 @@ class Business:
         return current
 
     def source_windows(self, date, run_at, sources, time_zone=None):
-        start = self.collection_window(run_at, time_zone)['start']
-        return [start for _ in sources]
+        from business.briefing.domain.incremental import source_window
+        window = self.collection_window(run_at, time_zone)
+        pending = self.briefing.store.pending_source_windows()
+        return [source_window(window, pending, source)['start'] for source in sources]
 
     def source_cursors(self, source, account_id, configuration=None):
         from business.briefing.domain.incremental import source_cursors

@@ -252,7 +252,8 @@ export function apply(ctx) {
         const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`
         const input = { date, notes: '', requestId, parentSessionId: execution.agent.session.id, ...(scheduled ? { trigger:'scheduled' } : {}) }
         const record = await ctx.alcorOrganizer.generateBriefing(input)
-        return { id: record.id, date: record.date, body: record.body, saved: true }
+        const warning = record.business?.snapshot?.briefing.error_message
+        return { id: record.id, date: record.date, body: record.body, saved: true, ...(warning ? { coverageWarning: warning } : {}) }
       }],
       ['alcor_review_tasks', 'Review local tasks in a personal request. Does not modify tasks.', (_args, execution) => {
         if (!personalTurn(execution.agent)) throw Error('事务回顾仅供用户在当前主对话中主动查询。')

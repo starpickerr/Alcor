@@ -10,10 +10,14 @@ def stamp():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+def completed_sources(run):
+    return run.get('completedSources', sum(not row.get('errors') for row in run['collected']))
+
+
 def public_run(run):
     keys = ('requestId', 'date', 'phase', 'message', 'sessionId', 'model', 'createdAt', 'updatedAt', 'briefingId')
     return {**{key: run[key] for key in keys if key in run},
-            'completedSources': run.get('completedSources', len(run['collected'])), 'completedBatches': run.get('completedBatches', len(run['submissions']))}
+            'completedSources': completed_sources(run), 'completedBatches': run.get('completedBatches', len(run['submissions']))}
 
 
 class BriefingRuns:
@@ -43,7 +47,7 @@ class BriefingRuns:
     def save(self, run, patch):
         run = {**run, **patch, 'updatedAt': stamp()}
         if run['phase'] == 'completed':
-            run.update(completedSources=run.get('completedSources', len(run['collected'])), completedBatches=run.get('completedBatches', len(run['submissions'])))
+            run.update(completedSources=completed_sources(run), completedBatches=run.get('completedBatches', len(run['submissions'])))
             run.update(collected=[], submissions=[], baseline={}, rules=[], sourceStates=[])
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO briefing_runs VALUES (?,?,?)', (run['requestId'], run['phase'], json.dumps(run, ensure_ascii=False)))
@@ -140,5 +144,7 @@ class BriefingRuns:
                 raise ValueError('同一操作标识不能用于不同简报。')
             return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
         run['sourceStates'] = [self.business.source_cursors(source['source'], source['accountId'], source) for source in sources]
-        run['windows'] = [window['start']] * len(sources)
+        from .domain.incremental import source_window
+        pending = self.business.briefing.store.pending_source_windows()
+        run['windows'] = [source_window(window, pending, source) for source in sources]
         return self.save(run, {})

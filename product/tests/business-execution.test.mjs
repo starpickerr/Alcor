@@ -84,7 +84,7 @@ test('desktop reminder outbox retries failures, suppresses acknowledged and canc
   await delivery.close()
 })
 
-test('model briefings collect MCP pages, validate complete decisions, retry a failed source and commit one revision', async context => {
+test('model briefings collect MCP pages, validate complete decisions, save available sources and recover missing coverage on update', async context => {
   const { worker, invoke } = await fixture(context)
   const date = new Date().toISOString().slice(0, 10)
   const stamp = new Date(Date.now() - 1000).toISOString()
@@ -118,12 +118,13 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
   ]
   await worker.call('source_settings', { sources })
   assert.deepEqual(await worker.call('source_settings'), sources)
-  await assert.rejects(generator.generate({record,requestId,parent:{},sources}),/Synthetic source unavailable/)
-  assert.equal((await invoke('briefing','list_briefings')).length,0)
-  assert.equal(await invoke('briefing','get_cursor',{source:'elearning',account_id:'synthetic',cursor_key:'until'}),null)
+  const first = await generator.generate({ record, requestId, parent: {}, sources })
+  assert.equal(first.business.snapshot.briefing.status, 'partial')
+  assert.equal(first.business.snapshot.briefing.error_message, '邮件未覆盖')
+  assert.equal((await invoke('briefing','get_cursor',{source:'elearning',account_id:'synthetic',cursor_key:'until'})).cursor_value, pages[0].until)
+  assert.equal(await invoke('briefing','get_cursor',{source:'email',account_id:'mail-test',cursor_key:'until'}),null)
   mailOffline = false
-  await generator.resume(requestId,async()=>{})
-  const result = await generator.wait(requestId)
+  const result = await generator.generate({ record, requestId: randomUUID(), parent: {}, sources })
   assert.match(result.body, /Candidate 0\nDue tomorrow/)
   assert.match(result.body, /Candidate 1\nDue tomorrow/)
   assert.equal(modelCalls, 1)
@@ -139,16 +140,17 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
   } } }, worker)
   await incremental.collect({ ...sources[0], method: 'fetch_source', tool: 'mcp__elearning__fetch_source' }, pages[0].since, pages[0].until, new AbortController().signal)
   assert.deepEqual(receivedCursors, {}, 'A different source method has a different cursor scope')
-  assert.deepEqual(pages.filter(page => 'offset' in page).map(page => page.offset), [0, 1])
+  assert.deepEqual(pages.filter(page => 'offset' in page).map(page => page.offset), [0, 1, 0, 1])
   const saved = await invoke('briefing', 'get_briefing', { briefing_id: result.business.briefingId })
   assert.equal(saved.briefing.status, 'completed')
   assert.equal(saved.mail.length, 2)
   assert.equal(saved.items.length, 2)
   assert.equal(saved.briefing.error_message, '')
-  assert.equal((await invoke('briefing', 'get_cursor', { source: 'elearning', account_id: 'synthetic', cursor_key: 'until' })).cursor_value, pages[0].until)
-  assert.equal((await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' })).cursor_value, pages[0].until)
+  assert.equal((await invoke('briefing', 'get_cursor', { source: 'elearning', account_id: 'synthetic', cursor_key: 'until' })).cursor_value, pages.at(-1).until)
+  assert.equal((await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' })).cursor_value, pages.at(-1).until)
   const same = await generator.generate({ record, requestId, parent: {}, sources })
-  assert.equal(same.id, result.id)
+  assert.equal(same.id, first.id)
+  assert.equal(same.business.snapshot.briefing.status, 'partial')
   assert.equal(modelCalls, 1)
   const inputStamp = new Date().toISOString()
   const invalid = await worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: inputStamp }], cursors: {} }], submissions: [] })
@@ -188,9 +190,7 @@ test('briefing rejects changed source accounts and stops after authorization rev
   const { worker, invoke } = await fixture(context)
   const generator = new TestBriefingGenerator({ tools: { execute: async () => ({ results: [{ result: { value: { structuredContent: { value: { items: [{ source: 'email', account_id: 'different-account' }] } } } } }] }) }, subagents: { startActivation: async () => { throw new Error('must not reach model') } } }, worker)
   context.after(() => generator.close())
-  const collected = await generator.collect({ source: 'email', accountId: 'selected', method: 'fetch_messages', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal)
-  assert.deepEqual(collected.items, [])
-  assert.match(collected.errors[0], /账号已变化/)
+  await assert.rejects(generator.collect({ source: 'email', accountId: 'selected', method: 'fetch_messages', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal), /账号已变化/)
   const record = buildBriefing([], '2026-11-05', 'Synthetic note', new Date().toISOString())
   await assert.rejects(generator.generate({ record, requestId: randomUUID(), parent: {}, sources: [], authorize: async () => { throw new Error('授权已撤销') } }), /授权已撤销/)
   assert.equal((await invoke('briefing', 'list_briefings')).length, 0)
@@ -213,10 +213,9 @@ test('briefing source discovery only enumerates supported metadata and revocatio
     pages++
     return { results: [{ result: { value: { structuredContent: { value: { items: [], next_offset: 1 } } } } }] }
   } } }, worker)
-  const result = await generator.collect({ source: 'elearning', accountId: 'test', method: 'fetch', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal,
-    async () => { if (pages) throw new Error('Source authorization revoked') })
+  await assert.rejects(generator.collect({ source: 'elearning', accountId: 'test', method: 'fetch', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal,
+    async () => { if (pages) throw new Error('Source authorization revoked') }), /Source authorization revoked/)
   assert.equal(pages, 1)
-  assert.deepEqual(result.errors, ['Source authorization revoked'])
 })
 
 test('legacy briefing body batches expose only their own thread members and constrain output ids', async context => {
