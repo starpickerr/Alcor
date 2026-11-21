@@ -82,6 +82,7 @@ class Recovery(unittest.TestCase):
             claims.claim_items(sync, token, [sync._maps()[0]['alcor_id']])
             claims.uncertain(sync, token)
             original = sync._maps()
+            bridge.rows[0]['title'] = 'Native content changed'
             bridge.calls.clear()
             result = check_scan(sync, 'calendar', token)
             self.assertEqual(result['status'], 'needs_evidence')
@@ -91,6 +92,32 @@ class Recovery(unittest.TestCase):
             self.assertEqual([method for method, _ in bridge.calls], ['status', 'calendars', 'events'])
             bridge.sources[0]['source_id'] = 'different'
             self.assertEqual(check_scan(sync, 'calendar', token)['status'], 'source_unavailable')
+
+    def test_verified_legacy_calendar_restores_only_the_original_claim(self):
+        from apple_sync import group_scan_claims as claims
+        from apple_sync.sync_recovery import check_scan
+        with CASE('calendar') as (sync, owner, bridge):
+            sync.start_sync()
+            original = sync._maps()
+            window = ['2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z']
+            token = claims.acquire(sync, 'account1', 'a', window)
+            claims.claim_items(sync, token, [original[0]['alcor_id']])
+            claims.uncertain(sync, token)
+            preview = check_scan(sync, 'calendar', token)
+            self.assertEqual(preview['status'], 'verified')
+            self.assertEqual(len(claims.status(sync)), 1)
+            title = bridge.rows[0]['title']
+            bridge.rows[0]['title'] = 'changed after preview'
+            with self.assertRaisesRegex(ValueError, '重新核对'):
+                check_scan(sync, 'calendar', token, revision=preview['revision'])
+            self.assertEqual(len(claims.status(sync)), 1)
+            bridge.rows[0]['title'] = title
+            result = check_scan(sync, 'calendar', token, revision=preview['revision'])
+            self.assertEqual(result['status'], 'baseline_restored')
+            self.assertFalse(claims.status(sync))
+            self.assertEqual(sync._maps(), original)
+            self.assertEqual(sync._local(original[0]['alcor_id'])['title'], title)
+            self.assertEqual(sync.sync()['status'], 'success')
 
     def test_keep_legacy_does_not_delete_or_requeue_after_restart(self):
         from apple_sync.sync_recovery import keep_legacy, preview_legacy
