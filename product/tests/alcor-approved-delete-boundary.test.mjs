@@ -208,6 +208,20 @@ test('completed or pending replay is read-only, never a fresh dispatch grant', a
   const result = await f.call(); assert.equal(result.isError, false); assert.equal(f.state.asks.length, 0); assert.equal(f.state.ownerWrites, 0); assert.equal(f.state.nativeSends, 0)
 })
 
+test('reassigning Apple to DSH during deletion approval prevents both writes', async t => {
+  const { owner, state, call } = await fixture(t, 'native', 'apple')
+  let productScope = 'alcor'
+  const get = owner.ctx.get
+  owner.ctx.get = name => name === 'configEditor'
+    ? { entries: () => [{ options: { id: 'alcor-apple-sync', config: { productScope } } }] }
+    : get(name)
+  state.beforeAnswer = () => { productScope = 'dsh' }
+  assert.equal((await call()).isError, true)
+  assert.equal(state.asks.length, 1)
+  assert.equal(state.ownerWrites, 0)
+  assert.equal(state.nativeSends, 0)
+})
+
 test('private methods are absent from Remote descriptors; public direct deletion and page ticket remain non-authorizing', async t => {
   assert.doesNotMatch(JSON.stringify([organizerRemote.descriptors, appleRemote.descriptors]), /prepareApprovedDelete|commitApprovedDelete|approvedDeletePeer|approvedDeleteOwner|approvedDeletePrepare|authorizeDeleteDispatch|prepareConfirmedDelete|verifyConfirmedDeleteFinish|continueDelete/)
   const f = await fixture(t)
