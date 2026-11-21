@@ -1,8 +1,8 @@
 import { reportHostFailure } from './worker-diagnostic.js'
-import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
+import { permits, selectedScope } from '../../alcor-plugin-info/src/assignments.js'
 import { Service } from '@deepseek-ai/cordis'
 import { createDeletePageHost } from '../../alcor-secretary/src/delete-page-host.js'
-import { billDeleteTitle } from '../../alcor-secretary/src/security-local-delete-gate.js'
+import { billDeleteTitle, deleteTargetKey } from '../../alcor-secretary/src/security-local-delete-gate.js'
 import { z } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -29,6 +29,10 @@ function assertCompatibleProfile(ctx) {
   const selected = ctx.get('profileContext')?.startedBundles
   if (!Array.isArray(selected)) throw new Error('无法确认当前 Profile 的插件，已停止 Alcor 启动。')
   if (selected.includes('@stella/secretary')) throw new Error('旧版 Stella 插件与 Alcor 不能同时启用，请先迁移 Profile。')
+}
+
+function appleSyncForAlcor(ctx) {
+  return permits(selectedScope(ctx, '@alcor/apple-sync'), 'alcor') ? ctx.get('alcorAppleSync') : undefined
 }
 
 export default class Organizer extends TypertRemoteService {
@@ -103,7 +107,7 @@ export default class Organizer extends TypertRemoteService {
     }
     if (input.domain === 'automation') return callAutomation(this, input.method, input.arguments)
     if (input.domain === 'apple') {
-      const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+      const apple = appleSyncForAlcor(this.ctx)
       if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
       return apple.invoke({ method: input.method, arguments: input.arguments })
     }
@@ -156,7 +160,7 @@ export default class Organizer extends TypertRemoteService {
   }
 
   private async refreshCalendarRange(start, end) {
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple) return
     try { return await apple.invoke({ method: 'sync_range', arguments: { kind: 'calendar', start, end } }) }
     catch (error) { return { status: 'error', reason: error instanceof Error ? error.message : 'Apple 日程加载失败' } }
@@ -236,14 +240,15 @@ export default class Organizer extends TypertRemoteService {
     })
     if (!['tasks', 'calendar'].includes(domain)) throw new Error('未知的删除范围。')
     const task = domain === 'tasks', category = method === 'delete_category', external = method === 'delete_external_todo'
-    const id = category && task ? args.category_id : external ? args.source_key : task ? args.todo_id : method === 'exclude_occurrence' ? args.series_id : args.id
+    const targetKey = deleteTargetKey(domain, method)
+    const id = args[targetKey]
     const prepare = () => this.serialize(async () => {
       if (authorize() !== true) throw new Error('删除授权已失效。')
       const receipt = await this.businessWorker.call('prepare_delete_receipt', request)
       if (receipt) return { kind: 'receipt', request, plan: receipt }
       const row = external ? null : await this.businessWorker.call('invoke', { domain,
         method: category ? 'get_category' : task ? 'get_todo' : 'get_event',
-        arguments: { [task ? category ? 'category_id' : 'todo_id' : 'id']: id } })
+        arguments: { [task ? targetKey : 'id']: id } })
       if (authorize() !== true) throw new Error('删除授权已失效。')
       if (external || (row?.apple && !row.apple.planned)) {
         // The manager must distinguish import unlink from native category deletion first.
@@ -279,7 +284,7 @@ export default class Organizer extends TypertRemoteService {
     }
     if (authorize() !== true) throw new Error('删除授权已失效。')
     if (!['apple', 'apple-category'].includes(prepared.kind)) return prepared
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
     let live = this.deleteAuthorizers.get(authorize)
     if (!live) { live = () => this.active && authorize() === true; this.deleteAuthorizers.set(authorize, live) }
@@ -302,7 +307,8 @@ export default class Organizer extends TypertRemoteService {
         scope: plan.scope, operation_id, snapshot: plan.snapshot })
     })
     if (prepared.kind !== 'apple') throw new Error('未知的已批准删除。')
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined), live = this.deleteAuthorizers.get(authorize)
+    const apple = appleSyncForAlcor(this.ctx)
+    const live = this.deleteAuthorizers.get(authorize)
     this.deleteAuthorizers.delete(authorize)
     if (!apple || !live || live() !== true) throw new Error('Apple 删除授权已失效。')
     if (prepared.applePlan.mode === 'local-import-unlink') return apple.commitApprovedDelete(prepared.applePlan, live)
@@ -351,7 +357,7 @@ export default class Organizer extends TypertRemoteService {
 
   async prepareApprovedExport(request, authorize) {
     this.assertActive()
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple || this.ctx.invocation) throw new Error('Apple 导出审批入口不可用。')
     let live = this.exportAuthorizers.get(authorize)
     if (!live) { live = () => this.active && authorize() === true; this.exportAuthorizers.set(authorize, live) }
@@ -360,7 +366,7 @@ export default class Organizer extends TypertRemoteService {
 
   async commitApprovedExport(plan, authorize) {
     this.assertActive()
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple || this.ctx.invocation) throw new Error('Apple 导出审批入口不可用。')
     const live = this.exportAuthorizers.get(authorize)
     this.exportAuthorizers.delete(authorize)
@@ -393,7 +399,7 @@ export default class Organizer extends TypertRemoteService {
 
   // Only the live explicit restore call may access these conditional owner methods.
   restoreAppleItem(request, authorize) {
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (this.ctx.invocation || !this.active || !apple || typeof authorize !== 'function') throw new Error('本地恢复入口不可用。')
     return apple.restoreItem(request, () => this.active && authorize() === true)
   }

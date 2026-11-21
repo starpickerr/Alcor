@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { frozenDeletion, deletionDetail } from './security-local-delete-gate.js'
+import { frozenDeletion, deletionDetail, deleteTargetKey } from './security-local-delete-gate.js'
 import { confirmMacDeletion } from './mac-delete-confirmation.js'
 
 // A page ticket only retains a preview. The separate local prompt grants this commit.
@@ -19,8 +19,9 @@ export function createDeletePageHost({ prepare, commit, confirm = confirmMacDele
       if ((bill && (category || input.scope || input.occurrenceOn || input.excludeOccurrence || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1)) || (!bill && input.expectedRevision !== undefined)) throw new Error('请明确本次删除范围。')
       if (((task || category) && (input.scope || input.occurrenceOn || input.excludeOccurrence))
           || (input.excludeOccurrence && (!input.occurrenceOn || input.scope === 'future'))) throw new Error('请明确本次删除范围。')
-      const request = { domain: input.domain, method: bill ? 'delete_ledger' : category ? 'delete_category' : task ? 'delete_todo' : input.excludeOccurrence ? 'exclude_occurrence' : 'delete_event',
-        arguments: { [task ? category ? 'category_id' : 'todo_id' : input.excludeOccurrence ? 'series_id' : 'id']: input.id,
+      const method = bill ? 'delete_ledger' : category ? 'delete_category' : task ? 'delete_todo' : input.excludeOccurrence ? 'exclude_occurrence' : 'delete_event'
+      const request = { domain: input.domain, method,
+        arguments: { [deleteTargetKey(input.domain, method)]: input.id,
           ...(bill && input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
           ...(!task && !category && input.occurrenceOn ? { occurrence_on: input.occurrenceOn } : {}),
           ...(!task && !category && !input.excludeOccurrence && input.scope ? { scope: input.scope } : {}) }, operation_id: randomBytes(32).toString('hex') }

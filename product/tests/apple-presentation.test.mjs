@@ -96,6 +96,17 @@ test('partial sync names the affected source and combines its related status row
   assert.deepEqual(item.claims.map(row => row.attempt_id),['old','active'])
 })
 
+test('background category checks never request a user decision or mask independent conflicts', async () => {
+  const { reviewItems, needsDecision } = await import('../../../dsh-apple-sync/src/presentation.js')
+  const pending = { group_id:'a', state:'uncertain', stage:'claimed', background_check:true }
+  const state = { authorization:'full_access', connected:true, auto_enabled:true, scan_claims:[pending],
+    category_conflicts:[{apple_id:'a',kind:'category_waiting'}] }
+  assert.deepEqual(reviewItems(state, 'calendar'), [])
+  state.category_conflicts.push({apple_id:'a', kind:'name'})
+  assert.deepEqual(reviewItems(state, 'calendar').filter(needsDecision).map(row => row.kind), ['name'])
+  assert.equal(connectionStatus({...state, category_conflicts:[], scan_claims:[{...pending,state:'scanning'}]}, false).tone, 'success')
+})
+
 test('category create unknown and proven pre-send waiting stay visible without retry buttons', async () => {
   const { reviewItems, resolutionRequest } = await import('../../../dsh-apple-sync/src/presentation.js')
   for (const state of ['native_unknown', 'owner_claiming', 'owner_committed', 'legacy_unknown', 'waiting']) {

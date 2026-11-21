@@ -35,6 +35,60 @@ def merge_fixture(kind, sync, owner, bridge, stop=None):
 
 
 class Recovery(unittest.TestCase):
+    def test_interrupted_category_check_recovers_without_resending(self):
+        from apple_sync import group_scan_claims as claims
+        from apple_sync.categories import _category_claim
+        from apple_sync.sync_recovery import check_scan, recover_receipts
+        for kind in ('calendar', 'reminders'):
+            with self.subTest(kind=kind), CASE(kind) as (sync, owner, bridge):
+                sync.start_sync()
+                link = sync._stored_links()[0]
+                mappings = sync._maps()
+                with self.assertRaisesRegex(ValueError, 'interrupted'):
+                    with patch.object(claims.WorkClaim, '_check', side_effect=ValueError('interrupted')):
+                        with _category_claim(sync, owner, kind, link, bridge.sources[0]) as (claim, _, _):
+                            token = claim.tokens[0]
+                self.assertEqual(claims.status(sync)[0]['state'], 'uncertain')
+                bridge.calls.clear()
+                if kind == 'calendar':
+                    self.assertEqual(check_scan(sync, kind, token)['status'], 'released')
+                else:
+                    recover_receipts(sync, kind)
+                self.assertFalse(claims.status(sync))
+                self.assertEqual(sync._maps(), mappings)
+                self.assertEqual(sync._stored_links(), [link])
+                self.assertTrue(all(op in ('status', 'reminder_status', 'calendars', 'reminder_lists') for op, _ in bridge.calls))
+                self.assertEqual(sync.sync()['status'], 'success')
+
+    def test_category_recovery_requires_an_inactive_exact_presend_claim(self):
+        from apple_sync import group_scan_claims as claims
+        from apple_sync.categories import _category_claim
+        from apple_sync.sync_recovery import check_scan
+        for scenario in ('active', 'sending', 'owner_claiming', 'source_changed', 'missing_item'):
+            with self.subTest(scenario=scenario), CASE('calendar') as (sync, owner, bridge):
+                sync.start_sync()
+                link = sync._stored_links()[0]
+                context = _category_claim(sync, owner, 'calendar', link, bridge.sources[0])
+                claim, _, _ = context.__enter__()
+                token = claim.tokens[0]
+                if scenario in ('sending', 'owner_claiming'):
+                    claim.started(scenario)
+                if scenario != 'active':
+                    claims.uncertain(sync, token)
+                if scenario == 'source_changed':
+                    bridge.sources[0]['source_id'] = 'different-account'
+                if scenario == 'missing_item':
+                    with sync._connect() as db:
+                        db.execute('DELETE FROM calendar_scan_items WHERE attempt_id=?', (token,))
+                expected = 'source_unavailable' if scenario == 'source_changed' else 'needs_evidence'
+                self.assertEqual(check_scan(sync, 'calendar', token)['status'], expected)
+                self.assertEqual([row['attempt_id'] for row in claims.status(sync)], [token])
+                if scenario == 'active':
+                    context.__exit__(None, None, None)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'claim or evidence changed'):
+                        context.__exit__(None, None, None)
+
     def test_background_read_failures_back_off_per_source_and_manual_check_can_retry(self):
         for kind in ('calendar', 'reminders'):
             with self.subTest(kind=kind), CASE(kind) as (sync, owner, bridge):
@@ -118,6 +172,26 @@ class Recovery(unittest.TestCase):
             self.assertEqual(sync._maps(), original)
             self.assertEqual(sync._local(original[0]['alcor_id'])['title'], title)
             self.assertEqual(sync.sync()['status'], 'success')
+
+    def test_changed_external_id_or_duplicate_occurrence_keeps_the_scan_held(self):
+        from apple_sync import group_scan_claims as claims
+        from apple_sync.sync_recovery import check_scan
+        with CASE('calendar') as (sync, owner, bridge):
+            sync.start_sync()
+            window = ['2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z']
+            token = claims.acquire(sync, 'account1', 'a', window)
+            claims.claim_items(sync, token, [sync._maps()[0]['alcor_id']])
+            claims.uncertain(sync, token)
+            preview = check_scan(sync, 'calendar', token)
+            event = bridge.rows[0]
+            for candidates in ([{**event, 'external_id': 'replacement'}], [event, dict(event)]):
+                with self.subTest(candidates=len(candidates)):
+                    bridge.rows[:] = candidates
+                    result = check_scan(sync, 'calendar', token)
+                    self.assertEqual((result['status'], result['matched']), ('needs_evidence', 0))
+                    with self.assertRaisesRegex(ValueError, '重新核对'):
+                        check_scan(sync, 'calendar', token, revision=preview['revision'])
+                    self.assertEqual([row['attempt_id'] for row in claims.status(sync)], [token])
 
     def test_keep_legacy_does_not_delete_or_requeue_after_restart(self):
         from apple_sync.sync_recovery import keep_legacy, preview_legacy
