@@ -1,3 +1,4 @@
+import { indexKnowledgeFile } from './knowledge-files.js'
 import { reportHostFailure } from './worker-diagnostic.js'
 import { permits, selectedScope } from '../../alcor-plugin-info/src/assignments.js'
 import { Service } from '@deepseek-ai/cordis'
@@ -40,6 +41,8 @@ export default class Organizer extends TypertRemoteService {
   static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools', 'workspaceRegistry']
   private domain
   private businessWorker
+  private knowledgeWorker?: BusinessWorker
+  private createKnowledgeWorker: () => BusinessWorker
   private briefingGenerator
   private active = true
   private queue = Promise.resolve()
@@ -58,7 +61,14 @@ export default class Organizer extends TypertRemoteService {
     await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(spec)
     const profile = this.ctx.get('profileContext')
-    this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business'), { python: await resolveBusinessPython(), diagnostic: (message, level = 'warn', domain) => this.ctx.logger(domain ? `alcor-${domain}` : 'alcor-organizer')[level](message) })
+    const directory = join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business')
+    const options = {
+      python: await resolveBusinessPython(),
+      diagnostic: (message, level = 'warn', domain?) =>
+        this.ctx.logger(domain ? `alcor-${domain}` : 'alcor-organizer')[level](message),
+    }
+    this.businessWorker = new BusinessWorker(directory, options)
+    this.createKnowledgeWorker = () => new BusinessWorker(directory, {...options, worker:new URL('../business/knowledge_worker.py',import.meta.url)})
     try { await this.businessWorker.call('migrate', { records: [...this.domain.table('records').entries()].map(([, value]) => value) }) }
     catch (error) { await this.businessWorker.close(); await this.domain.close(); throw error }
     this.ctx.inject(['agentHub'], ctx => { void ctx.agentHub.importLegacyJobs([...this.domain.table('jobs').entries()].map(([,value])=>value)).catch(error=>this.ctx.logger.warn('旧协作记录导入失败：'+error.message)) })
@@ -83,6 +93,7 @@ export default class Organizer extends TypertRemoteService {
       }
       await this.domain.close()
       await this.businessWorker.close()
+      await this.knowledgeWorker?.close()
     })
   }
 
@@ -104,6 +115,17 @@ export default class Organizer extends TypertRemoteService {
         || (input.domain === 'calendar' && (['delete_category', 'exclude_occurrence'].includes(input.method)
           || (input.method === 'delete_event' && !(input.arguments.scope === 'future' && typeof input.arguments.occurrence_on === 'string'))))) {
       throw new Error('缺少可验证的本次人工确认通道，不可恢复删除暂不可用。')
+    }
+    if (input.domain === 'knowledge') {
+      this.assertActive()
+      if (['store_file','parsed_asset'].includes(input.method)) throw new Error('请通过文件导入入口收藏原件。')
+      if (!this.knowledgeWorker || this.knowledgeWorker.closed) this.knowledgeWorker = this.createKnowledgeWorker()
+      const worker = this.knowledgeWorker
+      const invoke = (method, args) => worker.call('invoke',{domain:'knowledge',method,arguments:args,request_id:input.requestId})
+      if (input.method !== 'import') return invoke(input.method,input.arguments)
+      const args = await indexKnowledgeFile(input.arguments, digest => invoke('parsed_asset',{digest}))
+      this.assertActive()
+      return invoke('store_file',args)
     }
     if (input.domain === 'automation') return callAutomation(this, input.method, input.arguments)
     if (input.domain === 'apple') {

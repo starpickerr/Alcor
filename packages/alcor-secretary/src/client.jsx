@@ -1,3 +1,5 @@
+import { KnowledgeCitations } from './knowledge.jsx'
+import knowledgeStyle from './knowledge.css'
 import {sidebarOwner} from './sidebar-owner.js'
 import {withModeView} from '../../alcor-plugin-info/src/mode-view.jsx'
 import {applicationEnvironment} from '../../alcor-plugin-info/src/assignments.js'
@@ -23,7 +25,7 @@ import businessStyle from './business-pages.css'
 import billStyle from './bills.css'
 import connectionStyle from '../../alcor-plugin-info/src/connection-settings.css'
 import themeStyle from './theme.css'
-const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle + sharedSidebarStyle + logStyle
+const deskStyle = deskBaseStyle + businessStyle + billStyle + connectionStyle + themeStyle + noticeStyle + automationAnchorStyle + sharedSidebarStyle + logStyle + knowledgeStyle
 import { remote as organizerRemote } from '../../alcor-organizer/src/remote.js'
 import { Button, Menu, MenuItemButton, FishLogo, IconPanelLeftOutlineRegular, IconFolderOpenRegular, IconNewChatOutlineRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -98,6 +100,13 @@ export async function apply(ctx) {
   await ctx.remote.$mount(organizerRemote)
   ctx.inject(['remote.alcorSecretary', 'remote.alcorOrganizer', 'remote.settings', 'remote.agentPresets', 'remote.schedule', 'remote.session'], ctx => {
   let modeController, spaceNavigation
+    ctx.inject(['uiConversation'], ctx => ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+      name:'conversation.chat.turnTail', id:'alcor-knowledge-sources',
+      inject:sessionId => {
+        const chat = ctx.uiConversation.binding(ctx.sessions.binding(sessionId)).target('chat')
+        return {api:ctx.remote.alcorOrganizer, keyedHooks:{knowledgeCalls:turn=>chat.getSnapshot().nodes.turnDataSource(Number(turn),'tool-call')}}
+      },
+    }, KnowledgeCitations)))
     let briefingVisit = null
     const visitListeners = new Set()
     const briefingNavigation = {

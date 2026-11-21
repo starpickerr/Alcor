@@ -1,3 +1,4 @@
+import { registerKnowledgeTool, knowledgeToolAllowed } from './knowledge-tool.js'
 import { businessList } from './list-results.js'
 import { registerBundledSkills } from '../../alcor-organizer/src/skills.js'
 import { secretaryPersona } from './persona.js'
@@ -59,6 +60,7 @@ export function apply(ctx) {
       const header = execution.agent?.session?.header
       if (!header || header.origin === 'subagent' || header.parentSession || !personalTurn(execution.agent)) return '本机业务数据仅供用户当前主会话使用；已配置的本机简报请使用专用入口。'
     }
+    if (execution.name === 'alcor_knowledge' && !knowledgeToolAllowed(execution.agent, personalTurn)) return '知识库仅供本人主动发起的主对话使用。'
     if (execution.name === 'alcor_read_logs') {
       const header = execution.agent?.session?.header
       if (!header || header.origin === 'subagent' || header.parentSession || !personalTurn(execution.agent)) return '运行日志仅供用户主动发起的 Alcor 主对话查询。'
@@ -109,6 +111,7 @@ export function apply(ctx) {
     async execute() { return ctx.alcorSecretary.overview() },
   }))
   ctx.inject(['alcorOrganizer'], ctx => {
+    registerKnowledgeTool(ctx, personalTurn)
     const automationGate = createAutomationDeleteGate()
     ctx.on('tools/pre-execute', (execution, next) => automationGate.preExecute(execution, next), { prepend: true })
     ctx.on('tools/result', execution => automationGate.release(execution))

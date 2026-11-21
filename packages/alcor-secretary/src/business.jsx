@@ -4,7 +4,7 @@ import { OrganizerDetails } from './organizer-details.jsx'
 import { recordClipboardText, recordEditTarget, recordId, recordRepeats } from './organizer-actions.js'
 import { taskCompletion } from './task-focus.js'
 import React, { useEffect, useRef, useState } from 'react'
-import { Button, Modal, IconUsersOutlineRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, Menu, MenuItemButton, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, IconUsersOutlineRegular, IconFolderOpenRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, Menu, MenuItemButton, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import { localDate, taskMatches } from './presentation.js'
 import { BillsPage, BillEditor } from './bills.jsx'
 import { TasksPage } from './tasks-page.jsx'
@@ -23,6 +23,7 @@ export const applicationViews = [
   { id: 'alcor-calendar', label: '日程', icon: CalendarIcon },
   { id: 'alcor-briefing', label: '简报', icon: IconDeliverDocRegular },
   { id: 'alcor-bills', label: '账单', icon: BillIcon },
+  { id: 'alcor-knowledge', label: '知识库', icon: IconFolderOpenRegular },
   { id: 'alcor-schedules', label: '自动化', icon: IconAlarmClockOutlineRegular },
 ].map(item => ({ ...item, group: '应用' }))
 
