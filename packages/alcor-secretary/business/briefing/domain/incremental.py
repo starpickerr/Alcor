@@ -69,6 +69,15 @@ def source_scope(configuration):
     )
 
 
+def source_window(window, pending, configuration):
+    gap = pending.get(configuration["source"] + ":" + configuration["accountId"])
+    if gap and gap["scope"] == source_scope(configuration):
+        if instant(gap["start"]) < instant(window["floor"]):
+            return {"start": window["floor"], "include_start": True}
+        return {"start": gap["start"], "include_start": gap["include_start"]}
+    return {"start": window["start"], "include_start": window["include_start"]}
+
+
 def source_cursors(store, source, account, configuration=None):
     with store._conn() as db:
         cursors = dict(
@@ -89,6 +98,7 @@ class DailyCandidates:
     rows: dict
     changed_sources: dict
     sources: list
+    pending_windows: dict
     unchanged: set
     decisions: dict
     reports: dict
@@ -96,15 +106,17 @@ class DailyCandidates:
 
 
 def daily_candidates(service, selected, configurations, detail, window, stats, *, supplied_ids=False):
-    stamp, start = window["end"], window["start"]
+    stamp = window["end"]
+    configured = [row for row in selected if row["source"] != "local"]
+    if configured and all(row.get("errors") for row in configured):
+        raise ValueError("来源采集失败：" + "；".join(str(row["errors"][0]) for row in configured))
+    pending = service.store.pending_source_windows()
     preserved, unchanged = {}, set()
     rows = {}
     normalized = []
     prior_ids = set()
     catalog = {}
     for index, source in enumerate(selected):
-        if source.get("errors"):
-            raise ValueError("来源采集失败：" + str(source["errors"][0]))
         collected_at = source.get("collected_at")
         before = dict(stats)
         account = source.get("account_id") or "default"
@@ -115,6 +127,16 @@ def daily_candidates(service, selected, configurations, detail, window, stats, *
         )
         scope = source_scope(configuration)
         key = source["source"] + ":" + account
+        interval = source_window(window, pending, configuration)
+        start = interval["start"]
+        entry_window = {**window, **interval}
+        coverage = dict(source=source["source"], account_id=account, scope=scope,
+                        name=configuration.get("label") or source.get("name") or source["source"], start=start, end=stamp)
+        if source.get("errors"):
+            pending[key] = {"scope": scope, **interval}
+            normalized.append({**coverage, "uncovered": True})
+            continue
+        pending.pop(key, None)
         previous_window = (detail.get("briefing", {}).get("source_windows") or {}).get(key, {})
         prior = (
             {
@@ -208,7 +230,7 @@ def daily_candidates(service, selected, configurations, detail, window, stats, *
                 continue
             # A changed, already known resource with no new server timestamp is an
             # observed correction. A newly delivered IMAP UID is evidence of late arrival.
-            if not in_window(changed, window):
+            if not in_window(changed, entry_window):
                 if instant(changed) < instant(window["floor"]) or not (old or late_mail):
                     stats["outside"] += 1
                     continue
@@ -237,10 +259,7 @@ def daily_candidates(service, selected, configurations, detail, window, stats, *
             cursors = previous_cursors
         normalized.append(
             {
-                "source": source["source"],
-                "account_id": account,
-                "name": configuration.get("label") or source.get("name"),
-                "scope": scope,
+                **coverage,
                 "cursors": {**cursors, "until": stamp, "_briefing_scope": scope},
             }
         )
@@ -256,7 +275,7 @@ def daily_candidates(service, selected, configurations, detail, window, stats, *
             }
         )
     prior_reports, reports = reusable_reports(detail, rows, prior_ids, preserved)
-    return DailyCandidates(rows, catalog, normalized, unchanged, preserved, reports, prior_reports)
+    return DailyCandidates(rows, catalog, normalized, pending, unchanged, preserved, reports, prior_reports)
 
 
 def bounded_view(detail):
@@ -311,8 +330,21 @@ def bounded_view(detail):
 def commit_daily(service, record, request_id, window, current, detail, draft, candidates, stats, trigger):
     normalized = candidates.sources
     start, stamp = window["start"], window["end"]
-    keys = {row["source"] + ":" + (row.get("account_id") or "default") for row in normalized}
+    windows = {row["source"] + ":" + row["account_id"]: row for row in normalized}
+    failed = {key for key, row in windows.items() if row.get("uncovered")}
+    keys = windows.keys() - failed
     old_windows = detail.get("briefing", {}).get("source_windows", {})
+    status = "partial" if failed else "completed"
+    names = {"email": "邮件", "elearning": "eLearning"}
+    warnings = []
+    for key in sorted(failed):
+        row = windows[key]
+        label = names.get(row["source"], row["name"]) + "未覆盖"
+        if sum(other["source"] == row["source"] for other in normalized) > 1:
+            account = row["name"] if row["name"] != row["source"] else row["account_id"]
+            label += "（" + account + "）"
+        warnings.append(label)
+    warning = "、".join(dict.fromkeys(warnings))
     same_scopes = all(
         old_windows.get(row["source"] + ":" + (row.get("account_id") or "default"), {}).get("scope")
         == row["scope"]
@@ -321,7 +353,9 @@ def commit_daily(service, record, request_id, window, current, detail, draft, ca
     old_visible = {row["id"] for row in detail.get("mail", []) if row["source"] + ":" + row["account_id"] in keys}
     unchanged_day = bool(
         current
-        and current.status == "completed"
+        and current.status == status
+        and current.error_message == warning
+        and all(bool(old_windows.get(k, {}).get("uncovered")) == (k in failed) for k in windows)
         and current.rule_text == draft["rule_text"]
         and same_scopes
         and old_visible == candidates.rows.keys() == candidates.unchanged
@@ -330,7 +364,9 @@ def commit_daily(service, record, request_id, window, current, detail, draft, ca
 
     # Keep unsampled sources on the day without passing their text to this Agent.
     def carried(row):
-        return row["source"] + ":" + row["account_id"] not in keys and activity(row) >= instant(window["floor"])
+        key = row["source"] + ":" + row["account_id"]
+        same_scope = key not in failed or old_windows.get(key, {}).get("scope") == windows[key]["scope"]
+        return key not in keys and same_scope and activity(row) >= instant(window["floor"])
 
     safe_detail = bounded_view(detail)
     carry_mail = [row for row in safe_detail.get("mail", []) if carried(row)]
@@ -356,32 +392,26 @@ def commit_daily(service, record, request_id, window, current, detail, draft, ca
         body = report_body(cards)
     else:
         body = scoped_body
-    windows = dict(old_windows)
+    source_windows = dict(old_windows)
     updates = []
-    for src in normalized:
-        name, account = src["source"], src.get("account_id") or "default"
-        windows[name + ":" + account] = dict(
-            source=name,
-            account_id=account,
-            name=src.get("name") or name,
-            scope=src["scope"],
-            start=start,
-            end=stamp,
-        )
-        updates.extend((name, account, k, str(v)) for k, v in src["cursors"].items())
+    for key, row in windows.items():
+        source_windows[key] = {k: v for k, v in row.items() if k != "cursors"}
+        updates.extend((row["source"], row["account_id"], k, str(v)) for k, v in row.get("cursors", {}).items())
     receipt = dict(
         id=request_id,
         record=record,
         window=window,
         stats=stats,
         sources=sorted(keys),
+        uncovered=sorted(failed),
+        pending_windows=candidates.pending_windows,
         body=scoped_body if scoped_body != body else None,
     )
     service.complete_briefing(
         current.id if current else "brf-" + record["date"],
         {
             "trigger": trigger,
-            "status": "completed",
+            "status": status,
             "run_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "title": draft["title"],
             "body": body,
@@ -393,9 +423,9 @@ def commit_daily(service, record, request_id, window, current, detail, draft, ca
             "rule_text": draft["rule_text"],
             "window_start": start,
             "window_end": stamp,
-            "source_windows": windows,
+            "source_windows": source_windows,
             "updated_sources": sorted(keys),
-            "error_message": "",
+            "error_message": warning,
             "cursor_updates": updates,
         },
         collection=receipt,

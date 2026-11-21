@@ -16,7 +16,7 @@ const settingsTabs = [['sources', '信息来源'], ['rules', '内容偏好'], ['
 
 async function unwrap(promise) { const result = await promise; if (!result.ok) throw new Error(result.error?.message || '操作未完成，请重试。'); return result.value }
 const call = (api, method, args = {}, write = false) => unwrap(api.business({ domain: 'briefing', method, arguments: args, ...(write ? { requestId: crypto.randomUUID() } : {}) }))
-const statusNames = { completed: '已生成', partial: '部分来源失败', failed: '生成失败', running: '生成中' }
+const statusNames = { completed: '已生成', partial: '部分已生成', failed: '生成失败', running: '生成中' }
 
 function BriefingRules({ api }) {
   const [rules, setRules] = useState([])
@@ -241,7 +241,7 @@ export function BriefingWorkspace({ api, openSession, openPlugins, initialView, 
     <div className="alcor-briefing-layout"><aside className="alcor-briefing-history"><h2>历史简报</h2>{history.map(row => <button type="button" key={row.id} aria-current={row.id === selected ? 'true' : undefined} onClick={() => { setSelected(row.id); setRevision(0) }}><strong>{row.title}</strong><small>{statusNames[row.status]} · {row.id === selected && !revision && detail?.briefing.id === row.id ? detail.briefing.kept_count : row.kept_count} 条精选信息 · {row.id.slice(4)}</small></button>)}</aside>
       <article className="alcor-briefing-detail">
         {firstGeneration && showProgress && <><h2>今日简报</h2>{progressPanel}</>}
-        {report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div><p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">生成于 {new Date(report.generated_at).toLocaleString('zh-CN',{timeZone:zone || undefined})}</p>{!firstGeneration && progressPanel}{report.error_message && <Notice role="status">{report.error_message}</Notice>}
+        {report ? <><div className="alcor-briefing-title"><h2>{report.title}</h2><span>{statusNames[report.status]}</span></div>{report.error_message && <Notice tone={report.status === 'partial' ? 'warning' : 'info'} role="status">{report.error_message}</Notice>}<p className="alcor-muted">简报条目：{detail.items.length}{revision ? ` · 历史版本 ${revision}` : ''}</p><p className="alcor-muted">生成于 {new Date(report.generated_at).toLocaleString('zh-CN',{timeZone:zone || undefined})}</p>{!firstGeneration && progressPanel}
         <BriefingReport timeZone={zone || undefined} sources={sources} detail={detail} revision={revision} busy={running} createTask={async item => {
           const receipt = detail.actions?.[item.id]?.todo
           if (['detached', 'deleted'].includes(receipt?.state) || receipt?.result?.operation === 'matching_required') throw new Error('请打开条目，选择并关联已有事务。')
