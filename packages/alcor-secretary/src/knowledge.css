@@ -115,3 +115,178 @@
   color: var(--dsw-alias-label-primary);
   text-decoration: underline;
 }
+
+.alcor-library-views,
+.alcor-graph-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.alcor-library-views {
+  padding: 3px;
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: var(--dsw-radius-md);
+  border: 1px solid var(--dsw-alias-border-l3);
+}
+.alcor-library-views button {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.alcor-library-views button[aria-pressed='true'] {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 1px 3px #0002;
+}
+.alcor-library-graph {
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.alcor-graph-bar,
+.alcor-graph-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 14px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.alcor-graph-bar {
+  justify-content: space-between;
+}
+.alcor-graph-canvas {
+  display: block;
+  width: 100%;
+  height: clamp(310px, 54vh, 630px);
+  touch-action: none;
+  cursor: grab;
+  background: radial-gradient(var(--dsw-alias-border-l3) 1px, transparent 1px) 0 0 / 18px 18px;
+}
+.alcor-graph-canvas:active {
+  cursor: grabbing;
+}
+.alcor-graph-edge {
+  stroke: var(--dsw-alias-label-secondary);
+  stroke-opacity: 0.37;
+  stroke-width: 1.4;
+}
+.alcor-graph-edge[data-lit='true'] {
+  stroke: var(--dsw-alias-label-primary);
+  stroke-opacity: 0.95;
+  stroke-width: 2;
+}
+.alcor-graph-node {
+  cursor: pointer;
+}
+.alcor-graph-node[data-dim='true'] {
+  opacity: 0.4;
+}
+.alcor-library-graph [data-kind='note'] {
+  --node-color: var(--dsw-alias-state-business-primary, #507cb5);
+}
+.alcor-library-graph [data-kind='web'] {
+  --node-color: var(--dsw-alias-state-success-primary, #338772);
+}
+.alcor-library-graph [data-kind='pdf'] {
+  --node-color: var(--dsw-alias-state-error-primary, #c56861);
+}
+.alcor-library-graph [data-kind='text'] {
+  --node-color: var(--dsw-alias-state-warn-primary, #b68038);
+}
+.alcor-library-graph [data-kind='image'] {
+  --node-color: #9278bb;
+}
+.alcor-graph-node circle {
+  fill: var(--node-color);
+  stroke: var(--dsw-alias-bg-layer-1);
+  stroke-width: 2;
+}
+.alcor-graph-node:focus-visible circle {
+  stroke: var(--dsw-alias-label-primary);
+  stroke-width: 4;
+}
+.alcor-graph-node text {
+  fill: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  paint-order: stroke;
+  stroke-width: 3px;
+  stroke: var(--dsw-alias-bg-layer-1);
+}
+.alcor-graph-legend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.alcor-graph-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--node-color);
+}
+.alcor-graph-empty,
+.alcor-graph-hint {
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  padding: 8px;
+}
+.alcor-graph-empty {
+  padding: 64px 8px;
+}
+.alcor-document-links section,
+.alcor-reference-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.alcor-document-links h3 {
+  margin: 0 8px 0 0;
+  font-size: 13px;
+}
+.alcor-document-links section + section {
+  margin-top: 8px;
+}
+.alcor-document-links:empty {
+  display: none;
+}
+.alcor-knowledge-inline-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--dsw-alias-label-primary-bluish);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.alcor-reference-picker {
+  align-items: stretch;
+  flex-direction: column;
+  margin-block: 8px;
+}
+.alcor-reference-picker button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
+  text-align: left;
+  color: inherit;
+  background: var(--dsw-alias-bg-layer-2);
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.alcor-reference-picker small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

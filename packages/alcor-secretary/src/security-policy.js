@@ -51,7 +51,7 @@ export function classifyActor(header, sources) {
 export function classifyCapability(name, args = {}) {
   if (typeof name !== 'string' || !name.startsWith('alcor_')) return { kind: 'not-alcor' }
   if (name === 'alcor_knowledge') {
-    if (['collections','search','read'].includes(args?.action)) return { kind:'read' }
+    if (['collections','search','read','links','graph'].includes(args?.action)) return { kind:'read' }
     if (['save', 'edit', 'archive', 'restore'].includes(args?.action)) return { kind:'local' }
     return { kind:args?.action === 'import' ? 'file' : 'unclassified' }
   }

@@ -5,6 +5,7 @@ import {
   IconDeliverDocRegular,
   IconPlusOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { KnowledgeGraph } from './knowledge-graph.jsx'
 import { Notice } from './notice.jsx'
 import { Empty } from './business-pages.jsx'
 
@@ -31,6 +32,177 @@ function readFile(file) {
   })
 }
 
+function ReferencePicker({ api, onPick, exclude }) {
+  const [query, setQuery] = useState(''),
+    [items, setItems] = useState(null)
+  const [error, setError] = useState(''),
+    [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let active = true
+    setItems(null)
+    setError('')
+    const timer = setTimeout(
+      () =>
+        call(api, 'search', { query, grouped: true, limit: 8 })
+          .then((data) => {
+            if (active) setItems(data.items.filter((row) => row.id !== exclude))
+          })
+          .catch((reason) => {
+            if (active) setError(message(reason))
+          }),
+      120
+    )
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [api, query, exclude, retry])
+  return (
+    <div className="alcor-reference-picker">
+      <input
+        aria-label="查找要引用的资料"
+        placeholder="查找要引用的资料"
+        type="search"
+        autoFocus
+        maxLength={240}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {error ? (
+        <Notice tone="error">
+          {error}{' '}
+          <Button type="button" onClick={() => setRetry((n) => n + 1)}>
+            重试
+          </Button>
+        </Notice>
+      ) : !items ? (
+        <small role="status">正在查找…</small>
+      ) : items.length ? (
+        items.map((row) => (
+          <button type="button" key={row.id} onClick={() => onPick(row)}>
+            <strong>{row.title}</strong>{' '}
+            <small>
+              {labels[row.kind]} · {row.snippet}
+            </small>
+          </button>
+        ))
+      ) : (
+        <small>没有可引用的资料</small>
+      )}
+    </div>
+  )
+}
+
+function DocumentText({ text, links, open, target, source, page }) {
+  const mark =
+    target?.snippet &&
+    target.page === page &&
+    target.revision === source.revision &&
+    target.section === 'page'
+  if (!mark && !links?.length) return text
+  const letters = Array.from(text)
+  let spans = links || []
+  if (mark) {
+    const end = target.start + Array.from(target.snippet).length
+    // Reproduce a versioned citation exactly, even when its excerpt intersects a link.
+    spans = spans.filter((span) => span.start >= end || span.end <= target.start)
+    spans.push({ start: target.start, end })
+    spans.sort((a, b) => a.start - b.start)
+  }
+  const parts = []
+  let from = 0
+  for (const span of spans) {
+    parts.push(letters.slice(from, span.start).join(''))
+    parts.push(
+      span.id ? (
+        <button
+          type="button"
+          className="alcor-knowledge-inline-link"
+          key={span.start}
+          onClick={() => open(span)}
+        >
+          {span.label}
+        </button>
+      ) : span.label ? (
+        <span key={span.start} title={source?.historical ? '历史版本中的引用' : '此引用当前无法打开'}>
+          {span.label}
+        </span>
+      ) : (
+        <mark
+          key={span.start}
+          ref={(el) => {
+            if (el && ['note', 'text', 'web'].includes(source.kind)) el.scrollIntoView({ block: 'nearest' })
+          }}
+        >
+          {letters.slice(span.start, span.end).join('')}
+        </mark>
+      )
+    )
+    from = span.end
+  }
+  parts.push(letters.slice(from).join(''))
+  return parts
+}
+
+function DocumentLinks({ api, id, open }) {
+  const [offset, setOffset] = useState(0),
+    [data, setData] = useState(null)
+  const [error, setError] = useState(''),
+    [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let active = true
+    setError('')
+    setData(null)
+    call(api, 'links', { id, offset })
+      .then((rows) => {
+        if (active) setData(rows)
+      })
+      .catch((reason) => {
+        if (active) setError(message(reason))
+      })
+    return () => {
+      active = false
+    }
+  }, [api, id, offset, retry])
+  if (error)
+    return (
+      <Notice tone="error">
+        {error} <Button onClick={() => setRetry((n) => n + 1)}>重试</Button>
+      </Notice>
+    )
+  if (!data) return null
+  return (
+    <div className="alcor-document-links">
+      {[
+        ['outgoing', '引用了'],
+        ['incoming', '被引用'],
+      ].map(
+        ([key, label]) =>
+          data[key].length > 0 && (
+            <section aria-label={label} key={key}>
+              <h3>{label}</h3>
+              {data[key].map((row) => (
+                <Button size="sm" variant="outline" key={row.id} onClick={() => open(row)}>
+                  {row.title}
+                </Button>
+              ))}
+            </section>
+          )
+      )}
+      {(offset > 0 || data.next_offset != null) && (
+        <div className="alcor-knowledge-actions">
+          <Button disabled={!offset} onClick={() => setOffset((n) => n - 25)}>
+            上一组引用
+          </Button>
+          <Button disabled={data.next_offset == null} onClick={() => setOffset(data.next_offset)}>
+            下一组引用
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Editor({ api, source, file, collections = [], initialCollection = '', onClose, onSaved }) {
   const [title, setTitle] = useState(source?.title ?? file?.name ?? '')
   const [text, setText] = useState(source?.note ?? '')
@@ -38,7 +210,10 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
   const [url, setUrl] = useState(source?.url ?? '')
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
-  const attempt = useRef(null)
+  const attempt = useRef(null),
+    body = useRef(null)
+  const [picking, setPicking] = useState(false)
+  const insertion = useRef([0, 0])
   async function save(event) {
     event.preventDefault()
     if (busy) return
@@ -107,8 +282,51 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
         )}
         <label>
           {file || source?.filename || url ? '文字摘录' : '笔记'}
-          <textarea rows={6} maxLength={64000} value={text} onChange={(e) => setText(e.target.value)} />
+          <textarea
+            ref={body}
+            placeholder="输入正文，可用 [[资料标题]] 引用收藏"
+            rows={6}
+            maxLength={64000}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
         </label>
+        <div className="alcor-reference-editor">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={picking}
+            onClick={() => {
+              insertion.current = [body.current.selectionStart, body.current.selectionEnd]
+              setPicking(!picking)
+            }}
+          >
+            {picking ? '取消选择' : '插入资料引用'}
+          </Button>
+          {picking && (
+            <ReferencePicker
+              api={api}
+              exclude={source?.id}
+              onPick={(row) => {
+                const [start, end] = insertion.current
+                const label = row.title.replace(/[[\]\r\n]/g, ' ').trim() || '资料'
+                const token = '[[id:' + row.id + '|' + label + ']]'
+                const next = text.slice(0, start) + token + text.slice(end)
+                if (next.length > 64000) {
+                  setError('正文过长，请缩短后再插入引用。')
+                  return
+                }
+                setText(next)
+                setPicking(false)
+                requestAnimationFrame(() => {
+                  body.current?.focus()
+                  body.current?.setSelectionRange(start + token.length, start + token.length)
+                })
+              }}
+            />
+          )}
+        </div>
         {file && (
           <small>
             {file.name} · {(file.size / 1024).toFixed(0)} KB
@@ -190,7 +408,21 @@ function Original({ api, source }) {
   )
 }
 
-function SourceReader({ api, target, close, onChange, collections }) {
+function SourceReader({ target, ...props }) {
+  const [trail, setTrail] = useState([])
+  const current = trail.at(-1) || target
+  return (
+    <Reader
+      key={current.id}
+      {...props}
+      target={current}
+      onOpen={(row) => setTrail((items) => [...items, row])}
+      back={trail.length ? () => setTrail((items) => items.slice(0, -1)) : null}
+    />
+  )
+}
+
+function Reader({ api, target, close, onChange, collections, onOpen, back }) {
   const [version, setVersion] = useState(target.revision)
   const [confirmErase, setConfirmErase] = useState(false)
   const [page, setPage] = useState(target.page || 1),
@@ -203,7 +435,7 @@ function SourceReader({ api, target, close, onChange, collections }) {
     let active = true
     setError('')
     setSource(null)
-    call(api, 'read', { id: target.id, page, ...(version ? { revision: version } : {}) })
+    call(api, 'read', { id: target.id, page, include_links: true, ...(version ? { revision: version } : {}) })
       .then((row) => {
         if (active) setSource(row)
       })
@@ -288,6 +520,11 @@ function SourceReader({ api, target, close, onChange, collections }) {
       {source && (
         <div className="alcor-knowledge-reader">
           <div className="alcor-knowledge-meta">
+            {back && (
+              <Button size="sm" variant="ghost" onClick={back}>
+                ← 返回上一份资料
+              </Button>
+            )}
             <span>{labels[source.kind]}</span>
             {source.collection && <span>{source.collection}</span>}
             {source.url && (
@@ -318,30 +555,24 @@ function SourceReader({ api, target, close, onChange, collections }) {
           {source.filename && <Original api={api} source={source} />}
           {source.text && (
             <div className="alcor-knowledge-text">
-              {target.snippet &&
-              target.page === page &&
-              target.revision === source.revision &&
-              target.section === 'page' ? (
-                <>
-                  {Array.from(source.text).slice(0, target.start).join('')}
-                  <mark
-                    ref={(el) => {
-                      if (el && ['note', 'text', 'web'].includes(source.kind))
-                        el.scrollIntoView({ block: 'nearest' })
-                    }}
-                  >
-                    {target.snippet}
-                  </mark>
-                  {Array.from(source.text)
-                    .slice(target.start + Array.from(target.snippet).length)
-                    .join('')}
-                </>
-              ) : (
-                source.text
-              )}
+              <DocumentText
+                text={source.text}
+                links={source.body_links}
+                open={onOpen}
+                target={target}
+                source={source}
+                page={page}
+              />
             </div>
           )}
-          {source.filename && source.note && <blockquote>{source.note}</blockquote>}
+          {source.filename && source.note && (
+            <blockquote>
+              <DocumentText text={source.note} links={source.note_links} open={onOpen} />
+            </blockquote>
+          )}
+          {!source.historical && (
+            <DocumentLinks key={source.revision} api={api} id={source.id} open={onOpen} />
+          )}
           {source.index_notice && <Notice>{source.index_notice}</Notice>}
           {!source.historical && (
             <div className="alcor-knowledge-actions">
@@ -420,6 +651,8 @@ export function KnowledgePage({ api }) {
   const [target, setTarget] = useState(null),
     [editor, setEditor] = useState(null)
   const picker = useRef(null)
+  const [graph, setGraph] = useState(false),
+    [graphQuery, setGraphQuery] = useState('')
   useEffect(() => {
     let active = true
     call(api, 'collections', {})
@@ -439,20 +672,26 @@ export function KnowledgePage({ api }) {
     setError('')
     const timer = setTimeout(
       () =>
-        call(api, 'search', { query, archived, offset, grouped: true, ...(collection ? { collection } : {}) })
+        call(api, graph ? 'graph' : 'search', {
+          query: graph ? graphQuery : query,
+          archived,
+          offset,
+          grouped: true,
+          ...(collection ? { collection } : {}),
+        })
           .then((data) => {
             if (active) setResult(data)
           })
           .catch((e) => {
             if (active) setError(message(e))
           }),
-      query ? 150 : 0
+      (graph ? graphQuery : query) ? 150 : 0
     )
     return () => {
       active = false
       clearTimeout(timer)
     }
-  }, [api, query, archived, offset, revision, collection])
+  }, [api, query, archived, offset, revision, collection, graph, graphQuery])
   function refresh() {
     setOffset(0)
     setRevision((n) => n + 1)
@@ -462,6 +701,26 @@ export function KnowledgePage({ api }) {
       <header className="alcor-app-header">
         <h1>知识库</h1>
         <div className="alcor-knowledge-actions">
+          <div className="alcor-library-views" role="group" aria-label="知识库视图">
+            {[
+              [false, '文档'],
+              [true, '图谱'],
+            ].map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={graph === value}
+                onClick={() => {
+                  if (value !== graph) {
+                    setResult(null)
+                    setGraph(value)
+                  }
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <Button variant="outline" onClick={() => picker.current.click()}>
             导入文件
           </Button>
@@ -486,12 +745,13 @@ export function KnowledgePage({ api }) {
         <div className="alcor-knowledge-toolbar">
           <input
             type="search"
-            aria-label="搜索知识库"
-            placeholder="搜索标题、正文或摘录"
+            aria-label={graph ? '筛选图谱标题' : '搜索知识库'}
+            placeholder={graph ? '查找资料及其相邻引用' : '搜索标题、正文或摘录'}
             maxLength={240}
-            value={query}
+            value={graph ? graphQuery : query}
             onChange={(e) => {
-              setQuery(e.target.value)
+              if (graph) setGraphQuery(e.target.value)
+              else setQuery(e.target.value)
               setOffset(0)
             }}
           />
@@ -510,17 +770,19 @@ export function KnowledgePage({ api }) {
               ))}
             </select>
           )}
-          <select
-            aria-label="收藏范围"
-            value={archived ? 'archived' : 'active'}
-            onChange={(e) => {
-              setArchived(e.target.value === 'archived')
-              setOffset(0)
-            }}
-          >
-            <option value="active">我的收藏</option>
-            <option value="archived">已归档</option>
-          </select>
+          {!graph && (
+            <select
+              aria-label="收藏范围"
+              value={archived ? 'archived' : 'active'}
+              onChange={(e) => {
+                setArchived(e.target.value === 'archived')
+                setOffset(0)
+              }}
+            >
+              <option value="active">我的收藏</option>
+              <option value="archived">已归档</option>
+            </select>
+          )}
         </div>
         {error ? (
           <Notice tone="error" role="alert">
@@ -528,6 +790,8 @@ export function KnowledgePage({ api }) {
           </Notice>
         ) : !result ? (
           <p role="status">正在读取资料…</p>
+        ) : graph ? (
+          <KnowledgeGraph data={result} onOpen={setTarget} />
         ) : !result.items.length ? (
           <Empty
             title={query ? '没有找到匹配资料' : archived ? '还没有归档资料' : '还没有收藏资料'}
@@ -549,7 +813,7 @@ export function KnowledgePage({ api }) {
             ))}
           </ul>
         )}
-        {(offset > 0 || result?.next_offset != null) && (
+        {!graph && (offset > 0 || result?.next_offset != null) && (
           <div className="alcor-knowledge-actions">
             <Button disabled={!offset} onClick={() => setOffset((n) => Math.max(0, n - 25))}>
               上一批
