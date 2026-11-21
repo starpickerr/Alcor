@@ -29,7 +29,8 @@
     "product:sources:pack": "node scripts/product/build-sources.mjs",
     "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
     "product:extension:pack": "node scripts/product/build-extension.mjs && npm pack --workspace @alcor/extension --pack-destination .local/artifacts",
-    "product:client:pack": "npm run product:pack && npm run product:extension:pack && node scripts/product/build-client-shell.mjs"
+    "product:client:pack": "npm run product:pack && npm run product:extension:pack && node scripts/product/build-client-shell.mjs",
+    "product:chatgpt:pack": "node scripts/product/build-chatgpt.mjs && npm pack --workspace @alcor/chatgpt --pack-destination .local/artifacts"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-alpha.3",
