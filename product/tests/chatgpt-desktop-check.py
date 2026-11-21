@@ -57,13 +57,26 @@ def login(page, home):
 
 
 def model_catalog(page):
-    return json.dumps(desktop.rpc(page, 'session/modelCatalog'))
+    catalog = desktop.rpc(page, 'session/modelCatalog')
+    return json.dumps([group for group in catalog['groups'] if group['id'] == 'alcor-chatgpt'], ensure_ascii=False)
 
 
 def check_login_control(page):
     dialog = settings(page)
     dialog.get_by_role('navigation').get_by_role('button', name=re.compile('^(Models?|模型)$')).click()
-    expect(dialog.get_by_role('button', name=re.compile('使用 ChatGPT 订阅登录'))).to_be_visible()
+    button = dialog.get_by_role('button', name='Continue with ChatGPT')
+    expect(button).to_be_visible()
+    # Capture the clicked launch URL without opening a real OpenAI authorization tab.
+    page.evaluate("() => {window.savedOpen = window.open; window.open = url => {window.planLaunch = url; return null}}")
+    try:
+        button.click()
+        expect(dialog.get_by_role('button', name='取消登录')).to_be_visible()
+        assert urlsplit(page.evaluate('window.planLaunch')).hostname == '127.0.0.1'
+        dialog.get_by_role('button', name='取消登录').click()
+        expect(button).to_be_visible()
+        assert not request(page, 'alcorChatgpt/accountState')['pending']
+    finally:
+        page.evaluate("() => {window.open = window.savedOpen; delete window.savedOpen; delete window.planLaunch}")
     page.keyboard.press('Escape')
 
 
@@ -75,7 +88,8 @@ def conversations(page, home, sessions):
             if path.exists() and event in path.read_text().splitlines():
                 return
             page.wait_for_timeout(100)
-        raise AssertionError('Native chat did not reach ' + event)
+        result = request(page, 'session/projections', sessionId=session)
+        raise AssertionError('Native chat did not reach ' + event + ' ' + json.dumps(result, ensure_ascii=False)[-3500:])
 
     for preset, session in sessions.items():
         opts = {'sessionId': session}
@@ -96,6 +110,14 @@ def conversations(page, home, sessions):
         logged('STOP-' + preset)
         request(page, 'session/cancel', **opts)
         logged('aborted-STOP-' + preset)
+        if preset == 'standard':
+            prompt('LIMIT')
+            logged('quota')
+            request(page, 'session/wait', **opts, timeoutMs=10000)
+            history = request(page, 'session/events', address={'kind':'session', **opts})
+            assert '用量上限' in json.dumps(history, ensure_ascii=False), 'Native chat must surface the subscription limit'
+            route = request(page, 'session/projections', **opts)['values']['modelSelection']
+            assert route['next']['provider'] == 'alcor-chatgpt' and route['lastUsed']['provider'] == 'alcor-chatgpt'
         print('PASS', preset, 'existing chat, tool result, streamed reply and cancellation', flush=True)
 
 
@@ -125,7 +147,8 @@ def main():
             state = request(page, 'alcorChatgpt/accountState')
             assert state['activeId'] and 'plan-test' in model_catalog(page)
             assert not request(page, 'alcorChatgpt/signOut', accountId=state['activeId'])['activeId']
-            assert 'plan-test' not in model_catalog(page)
+            remaining = model_catalog(page)
+            assert 'plan-test' not in remaining, remaining
             assert not errors, errors
         print('PASS signed Desktop login, account model catalog, restart and logout', flush=True)
 

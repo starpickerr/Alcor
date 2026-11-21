@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { BlockAssembler } from '@deepseek-ai/dsh-llm'
-import { registerProvider } from '../../packages/alcor-chatgpt/src/provider.js'
+import { registerProvider } from '../../packages/dsh-chatgpt/src/provider.js'
 
 const provider = 'alcor-chatgpt'
 const model = 'test-plan-model'

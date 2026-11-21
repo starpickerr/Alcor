@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 
-const directory = 'packages/alcor-chatgpt'
+const directory = 'packages/dsh-chatgpt'
 await mkdir(directory + '/lib/licenses', { recursive: true })
 await mkdir('.local/artifacts', { recursive: true })
 await build({

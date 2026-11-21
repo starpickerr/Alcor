@@ -39,15 +39,19 @@ globalThis.fetch = async (url, init) => {
   assert.equal(pathname, '/v1/responses')
   const body = JSON.parse(init.body)
   assert.ok(body.stream && body.store === false && body.model === 'plan-test')
-  const latest = body.input.filter(i => i.role === 'user').at(-1)
-  const prompt = JSON.stringify(latest || '')
-  if (/STOP-(standard|alcor)/.test(prompt)) {
+  const prompt = body.input.filter(i => i.role === 'user').map(i => JSON.stringify(i.content))
+    .findLast(text => /(?:TOOL|STOP|LIMIT)-(?:alcor|standard)/.test(text)) || ''
+  if (body.tools?.length && /STOP-(standard|alcor)/.test(prompt)) {
     const label = prompt.match(/STOP-(standard|alcor)/)[0]
     log(label)
     return new Promise((_, reject) => init.signal.addEventListener('abort', () => {
       log('aborted-' + label)
       reject(init.signal.reason)
     }, {once:true}))
+  }
+  if (body.tools?.length && prompt.includes('LIMIT-')) {
+    log('quota')
+    return Response.json({error:{code:'subscription_sharing_usage_limit_exceeded'}}, {status:429})
   }
   let text = 'Synthetic title', output
   const label = prompt.match(/TOOL-(standard|alcor)/)?.[0]
