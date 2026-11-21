@@ -1,0 +1,3 @@
+- insert:
+    - id: alcor-chatgpt
+      name: '@alcor/chatgpt'
