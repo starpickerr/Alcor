@@ -25,7 +25,7 @@ export const schemas = {
   syncCalendarRange: [calendarRange, z.json().nullable()],
   briefingSources,
   sourceGroups: z.record(z.string().regex(/^(email|elearning|calendar_agenda|alcor_tasks|alcor_bills|plugin:[A-Za-z0-9_-]{1,64})$/), z.boolean()).refine(value => Object.keys(value).length <= 200),
-  business: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills', 'briefing', 'apple', 'automation']), method: z.string().min(1).max(80), arguments: z.record(z.string(), z.json()).default({}), requestId: z.string().min(1).max(200).optional() }).strict(), z.json()],
+  business: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills', 'briefing', 'apple', 'automation', 'knowledge']), method: z.string().min(1).max(80), arguments: z.record(z.string(), z.json()).default({}), requestId: z.string().min(1).max(200).optional() }).strict(), z.json()],
   preparePageDelete: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills']), kind: z.enum(['item', 'category']), id: z.string().min(1).max(200), expectedRevision: z.number().int().positive().optional(), scope: z.enum(['this', 'future']).optional(), occurrenceOn: z.string().optional(), excludeOccurrence: z.boolean().optional() }).strict(), z.json()],
   commitPageDelete: [z.object({ ticket: z.string().uuid() }).strict(), z.json()],
   cancelPageDelete: [z.object({ ticket: z.string().uuid() }).strict(), z.boolean()],

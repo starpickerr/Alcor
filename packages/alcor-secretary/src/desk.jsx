@@ -1,3 +1,4 @@
+import { KnowledgePage } from './knowledge.jsx'
 import {sharedWorkspaceContext} from './shared-workspace.js'
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
@@ -26,7 +27,8 @@ export function SecretaryDesk({ startSession, openSession, hasModeSwitch, modeNo
     {startError && <Notice tone="error" role="alert" className="alcor-error">{startError}</Notice>}
     {globalThis.__ALCOR_CLIENT_SHELL__ && modeNotice?.() && <Notice role="status" tone="warning">{modeNotice()}</Notice>}
     {view === 'alcor-briefing' && <BriefingWorkspace api={business} openSession={openSession} openPlugins={openPlugins} initialView={briefingView?.()} startBriefing={startBriefing} workspaces={workspaces} currentSession={currentSession} />}
-    {application && view !== 'alcor-briefing' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} />}
+    {view === 'alcor-knowledge' && <KnowledgePage api={business} />}
+    {application && view !== 'alcor-briefing' && view !== 'alcor-knowledge' && <BusinessDesk key={view} view={view} api={business} currentSession={currentSession} startSession={begin} openSession={openSession} />}
     {!hasModeSwitch && <Notice role="status" className="alcor-muted">当前版本暂不支持模式切换。</Notice>}
   </section>
 }
