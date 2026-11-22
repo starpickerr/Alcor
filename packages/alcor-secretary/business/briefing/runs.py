@@ -61,7 +61,31 @@ class BriefingRuns:
         if generated_at != baseline_at or states != run['sourceStates'] or run['window']['previous'] != self.business.briefing.store.checkpoint():
             raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
 
+    def workspace_repairs(self, handled):
+        key = 'briefing_workspace_repair_v1'
+        with self.db:
+            row = self.db.execute('SELECT document FROM settings WHERE key=?', (key,)).fetchone()
+            if row is None:
+                # Snapshot the old executions once so a later user ungrouping stays intentional.
+                pending = [dict(item) for item in self.db.execute("""
+                    SELECT id AS requestId, json_extract(document, '$.sessionId') AS sessionId,
+                        json_extract(document, '$.context.parentSessionId') AS parentSessionId,
+                        json_extract(document, '$.context.cwd') AS cwd
+                    FROM briefing_runs WHERE phase='completed' AND json_extract(document, '$.context.trigger')='scheduled'
+                        AND json_extract(document, '$.context.workspaceId') IS NULL
+                        AND sessionId IS NOT NULL AND parentSessionId IS NOT NULL AND cwd IS NOT NULL
+                    ORDER BY rowid""")]
+            else:
+                pending = json.loads(row[0])
+            if row is None or handled:
+                done = set(handled)
+                pending = [item for item in pending if item['requestId'] not in done]
+                self.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, json.dumps(pending)))
+            return pending
+
     def invoke(self, method, request_id=None, **args):
+        if method == 'workspace_repairs':
+            return self.workspace_repairs(args.get('handled', []))
         if method == 'session':
             if 'binding' in args:
                 with self.db:

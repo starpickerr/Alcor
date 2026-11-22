@@ -26,6 +26,7 @@ function nativeContext() {
   let readCount = 0
   let respond = async request => structured(request)
   const ctx = {
+    workspaceRegistry: { list: () => [], get(id) { return this.list().find(workspace => workspace.id === id) } },
     sessionController: {
       create: async request => {
         creations.push(request)
@@ -75,6 +76,68 @@ function structured(request) {
 const input = () => { const now = new Date().toISOString(); return { requestId: randomUUID(), record: buildBriefing([], now.slice(0, 10), '', now), sources: [source], parent: { session: { id: 'chat-owner', header: { cwd: '/tmp' } }, model: { current: () => route } } } }
 const state = (worker, id) => worker.call('briefing_run', { method: 'get', request_id: id })
 async function until(check) { for (let i = 0; i < 400; i++) { const value = await check(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 10)) } throw new Error('Run did not settle') }
+
+test('briefing execution sessions join the selected workspace or inherit the parent membership', async t => {
+  for (const [target, savedId, trigger, explicitId, expectedId] of [
+    ['new', 'reports', 'scheduled', undefined, 'reports'],
+    ['new_once', 'reports', 'scheduled', undefined, 'reports'],
+    ['new', '', 'scheduled', undefined, 'home'],
+    ['current', 'reports', 'scheduled', undefined, 'home'],
+    ['new', 'reports', 'manual', undefined, 'home'],
+    ['new', 'reports', 'scheduled', 'home', 'home'],
+  ]) {
+    const { worker } = await fixture(t), native = nativeContext()
+    native.ctx.workspaceRegistry.list = () => [{ id: 'home', sessionIds: ['chat-owner'] }, { id: 'reports', sessionIds: [] }]
+    const generator = new BriefingGenerator(native.ctx, worker)
+    t.after(() => generator.close())
+    await worker.call('invoke', { domain: 'briefing', method: 'update_preferences', arguments: { payload: { task_target: target, task_workspace_id: savedId } } })
+    await generator.generate({ ...input(), trigger, workspaceId: explicitId })
+    assert.deepEqual(native.creations, [{ agentPreset: 'alcor-briefing', workspaceId: expectedId }])
+  }
+})
+
+test('an unavailable scheduled briefing workspace reports the setting to fix and creates no loose session', async t => {
+  const { worker } = await fixture(t), native = nativeContext()
+  const generator = new BriefingGenerator(native.ctx, worker)
+  t.after(() => generator.close())
+  await worker.call('invoke', { domain: 'briefing', method: 'update_preferences', arguments: { payload: { task_workspace_id: 'removed' } } })
+  await assert.rejects(generator.generate({ ...input(), trigger: 'scheduled' }), /简报设置中重新选择/)
+  assert.equal(native.creations.length, 0)
+})
+
+test('upgrading attaches only loose completed scheduled sessions to their original workspace, once', async t => {
+  const { worker } = await fixture(t), native = nativeContext()
+  const registry = native.ctx.workspaceRegistry
+  const attached = [], members = ['chat-owner', 'already-grouped']
+  registry.archivedSessionIds = ['archived']
+  registry.list = () => [{ id: 'home', path: '/tmp', sessionIds: members, attachSession: async id => {
+    attached.push(id)
+    if (id === 'retry' && attached.filter(item => item === id).length === 1) throw new Error('temporary failure')
+    members.push(id)
+  } }]
+  async function seed(id, trigger = 'scheduled', phase = 'completed', context = {}) {
+    const request = input()
+    const call = (method, args) => worker.call('briefing_run', { method, request_id: request.requestId, ...args })
+    await call('prepare', { record: request.record, sources: [source], context: { trigger, parentSessionId: 'chat-owner', cwd: '/tmp', ...context } })
+    await call('save', { patch: { phase, sessionId: id } })
+  }
+  await seed('loose')
+  await seed('retry')
+  await seed('already-grouped')
+  await seed('archived')
+  await seed('manual', 'manual')
+  await seed('failed', 'scheduled', 'failed')
+  await seed('different-path', 'scheduled', 'completed', { cwd: '/another' })
+  await seed('explicit', 'scheduled', 'completed', { workspaceId: 'home' })
+  const repair = () => new BriefingGenerator(native.ctx, worker).repairLegacyWorkspaces()
+  await repair()
+  assert.deepEqual(attached, ['loose', 'retry'])
+  members.splice(members.indexOf('loose'), 1)
+  await seed('created-after-upgrade')
+  await repair()
+  await repair()
+  assert.deepEqual(attached, ['loose', 'retry', 'retry'])
+})
 
 for (const trigger of ['manual', 'scheduled']) test(trigger + ' briefing saves schoolwork when mail times out and catches up missed mail', async t => {
   const { worker } = await fixture(t), native = nativeContext()

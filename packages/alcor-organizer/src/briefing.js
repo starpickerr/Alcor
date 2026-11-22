@@ -116,13 +116,49 @@ export class BriefingGenerator {
     return this.wait(input.requestId)
   }
 
+  async repairLegacyWorkspaces() {
+    const repairs = await this.worker.call('briefing_run', { method: 'workspace_repairs' })
+    const registry = this.ctx.workspaceRegistry
+    const handled = []
+    for (const { requestId, sessionId, parentSessionId, cwd } of repairs) {
+      try {
+        const workspaces = registry.list()
+        if (!registry.archivedSessionIds.includes(sessionId) && !workspaces.some(workspace => workspace.sessionIds.includes(sessionId))) {
+          const original = workspaces.find(workspace => workspace.path === cwd && workspace.sessionIds.includes(parentSessionId))
+          // DSH validates the stored session header before it records membership.
+          if (original) await original.attachSession(sessionId)
+        }
+        handled.push(requestId)
+      } catch (error) {
+        reportHostFailure(this.ctx, 'briefing', 'briefing.repairWorkspace', error, '恢复历史简报会话的工作区失败，下次启动时重试。', requestId)
+      }
+    }
+    if (handled.length) await this.worker.call('briefing_run', { method: 'workspace_repairs', handled })
+  }
+
+  async sessionPlacement({ trigger, workspaceId, parentSessionId, cwd }) {
+    if (workspaceId) return { workspaceId }
+    if (trigger === 'scheduled') {
+      const preferences = await this.worker.call('invoke', { domain: 'briefing', method: 'get_preferences', arguments: {} })
+      if (preferences.task_target !== 'current' && preferences.task_workspace_id) {
+        const selected = this.ctx.workspaceRegistry.get(preferences.task_workspace_id)
+        if (!selected) throw new Error('简报关联的工作区已不可用，请在简报设置中重新选择。')
+        return { workspaceId: selected.id }
+      }
+    }
+    const parentWorkspace = parentSessionId && this.ctx.workspaceRegistry.list().find(workspace => workspace.sessionIds.includes(parentSessionId))
+    if (parentWorkspace) return { workspaceId: parentWorkspace.id }
+    return cwd ? { cwd } : {}
+  }
+
   async prepareSession(state, authorize) {
     let run = state.run
     await authorize()
     state.controller.signal.throwIfAborted()
     if (!run.sessionId) {
-      const { workspaceId, cwd } = run.context
-      const created = await this.ctx.sessionController.create({ agentPreset: 'alcor-briefing', ...(workspaceId ? { workspaceId } : cwd ? { cwd } : {}) })
+      const placement = await this.sessionPlacement(run.context)
+      state.controller.signal.throwIfAborted()
+      const created = await this.ctx.sessionController.create({ agentPreset: 'alcor-briefing', ...placement })
       run = await this.checkpoint(state, { sessionId: created.sessionId })
       await this.ctx.sessionController.rename({ sessionId: run.sessionId, title: `简报 · ${run.date}` })
     }

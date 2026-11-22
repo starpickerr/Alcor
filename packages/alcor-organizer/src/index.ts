@@ -73,6 +73,8 @@ export default class Organizer extends TypertRemoteService {
     catch (error) { await this.businessWorker.close(); await this.domain.close(); throw error }
     this.ctx.inject(['agentHub'], ctx => { void ctx.agentHub.importLegacyJobs([...this.domain.table('jobs').entries()].map(([,value])=>value)).catch(error=>this.ctx.logger.warn('旧协作记录导入失败：'+error.message)) })
     this.briefingGenerator = new BriefingGenerator(this.ctx, this.businessWorker)
+    try { await this.briefingGenerator.repairLegacyWorkspaces() }
+    catch (error) { reportHostFailure(this.ctx, 'briefing', 'briefing.repairWorkspace', error, '读取或保存历史简报工作区修复进度失败，下次启动时重试。') }
     const reminders = new ReminderDelivery(this.businessWorker, { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
     const reminderTimer = setInterval(() => { void reminders.tick() }, 30000)
     void reminders.tick()
