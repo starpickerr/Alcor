@@ -17,7 +17,7 @@ for (const mode of ['native','ptc']) test(`${mode}: generic business requires a 
   ctx.provide('alcorSecretary',{logs:async args=>{logQueries++;logInput=args;return {entries:[]}}});ctx.provide('alcorOrganizer',{business:async()=>{forwarded++;return []},localBriefingSources:async()=>[{source:'alcor_tasks',enabled:true},{source:'calendar_agenda',enabled:true}],taskReview:async()=>{reviewCount++;return {}},generateBriefing:async request=>{briefingInput=request;return {id:'synthetic',date:'2026-01-01',body:''}}})
   const preset={},agent={ctx,session:{id:'synthetic',header:{},append:()=>1}};bindScopeParent(agent,preset)
   await ctx.plugin(Object.assign(inner=>apply(createScope(inner,preset).ctx),{inject:['tools','systemPrompt','alcorSecretary','alcorOrganizer']}))
-  const step=kind=>ctx.waterfall(scopeTarget(agent,agent),'agent/pre-step',{agent,messages:kind?[{source:{kind}}]:[]},async()=>{})
+  const step=(...kinds)=>ctx.waterfall(scopeTarget(agent,agent),'agent/pre-step',{agent,messages:kinds.map(kind=>({source:{kind}}))},async()=>{})
   const call=async(tool,args)=>{name=tool;input=args;const block=mode==='ptc'?{type:'tool-call',id:'synthetic',name:'run_code',arguments:JSON.stringify({code:'synthetic',description:'Test source'})}:{type:'tool-call',id:'synthetic',name:tool,arguments:JSON.stringify(args)};return (await ctx.tools.execute({agent,signal:AbortSignal.timeout(5000),calls:[block]})).results[0].result}
   const cases=[{domain:'tasks',method:'list_todos'},{domain:'calendar',method:'list_events'},{domain:'bills',method:'list_statements'},{domain:'briefing',method:'list_briefings'},{domain:'apple',method:'status'},{domain:'automation',method:'catalog'}]
   await step('schedule');for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)
@@ -31,7 +31,16 @@ for (const mode of ['native','ptc']) test(`${mode}: generic business requires a 
   const before=forwarded;agent.session.header={origin:'subagent',parentSession:'parent'};for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)
   assert.equal((await call('alcor_read_logs',{})).isError,true);assert.equal(logQueries,1)
   assert.equal((await call('alcor_review_tasks',{})).isError,true);assert.equal((await call('alcor_generate_briefing',{})).isError,true);assert.equal(reviewCount,1)
-  agent.session.header={};turn++;await step(null);for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)
+  agent.session.header={};turn++;await step();for(const args of cases)assert.equal((await call('alcor_business',args)).isError,true)
   assert.equal((await call('alcor_read_logs',{})).isError,true);assert.equal(logQueries,1)
+  assert.equal(forwarded,before)
+  for (const kinds of [['user-approval'], ['user-approval','schedule'], ['user-approval','user','schedule'],
+    ['user','agent-message','user-approval'], ['user-approval','user','unknown']]) {
+    turn++
+    await step(...kinds)
+    assert.equal((await call('alcor_business',cases[0])).isError, true, kinds.join(','))
+    await step('user')
+    assert.equal((await call('alcor_business',cases[0])).isError, true, 'a mixed turn stays blocked')
+  }
   assert.equal(forwarded,before)
 })

@@ -27,7 +27,8 @@ for (const mode of ['native', 'ptc']) test(`${mode}: secretary registered tool u
   const Organizer = (await import(pathToFileURL(file).href)).default, organizer = Object.create(Organizer.prototype)
   organizer.active = true; organizer.queue = Promise.resolve(); organizer.businessWorker = worker
   organizer.ctx = { get: () => undefined }; organizer.deleteAuthorizers = new WeakMap()
-  for (const plugin of [Sessions, Projections, Agents, SystemPrompt, Tools, Approval]) await ctx.plugin(plugin, {})
+  for (const plugin of [Sessions, Projections, Agents, SystemPrompt, Tools]) await ctx.plugin(plugin, {})
+  await ctx.plugin(Approval, { policy: 'never' })
   let ptcInput
   if (mode === 'ptc') {
     ctx.provide('ptcRuntime', { language: 'typescript', programFormat: 'function-body', isolation: 'synthetic', executionInstructions: '', resolve: value => value,
@@ -36,10 +37,11 @@ for (const mode of ['native', 'ptc']) test(`${mode}: secretary registered tool u
   } else await ctx.plugin(Native)
   ctx.provide('alcorSecretary', {}); ctx.provide('alcorOrganizer', organizer)
   const session = ctx.sessions.create('synthetic-runtime'); session.append('turn/start', { turn: 1 })
-  const agent = { ctx, options: { subagentDepth: 0 }, session }, preset = {}
+  const inbox = []
+  const agent = { ctx, options: { subagentDepth: 0 }, session, inject: message => inbox.push(message) }, preset = {}
   bindScopeParent(agent, preset)
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt', 'alcorSecretary', 'alcorOrganizer'] }))
-  const turn = kind => ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [{ source: { kind } }] }, async () => {})
+  const turn = kind => ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [...inbox.splice(0), { source: { kind } }] }, async () => {})
   let answer = 'rejected', asks = 0
   ctx.on('approval/request', async () => { asks++; return answer })
   const row = await worker.call('invoke', { domain: 'tasks', method: 'create_todo', arguments: { payload: { title: 'Synthetic runtime' } } })
@@ -50,7 +52,10 @@ for (const mode of ['native', 'ptc']) test(`${mode}: secretary registered tool u
     return (await ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [block] })).results[0].result
   }
   await turn('schedule'); assert.equal((await call('schedule')).isError, true); assert.equal(asks, 0)
-  session.append('turn/end', { turn: 1, reason: 'completed' }); session.append('turn/start', { turn: 2 })
+  session.append('turn/end', { turn: 1, reason: 'completed' })
+  ctx.approval.setPolicy(agent, 'ask')
+  assert.deepEqual(inbox.map(message => message.source.kind), ['user-approval'])
+  session.append('turn/start', { turn: 2 })
   await turn('user'); assert.equal((await call('deny')).isError, true); assert.equal(asks, 1)
   answer = 'allowed-once'; const allowed = await call('allow'); assert.equal(allowed.isError, false, JSON.stringify(allowed)); assert.equal(asks, 2)
   await assert.rejects(() => worker.call('invoke', { domain: 'tasks', method: 'get_todo', arguments: { todo_id: row.id } }), /not found/)
