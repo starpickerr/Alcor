@@ -8,7 +8,7 @@ const output=await build({entryPoints:[fileURLToPath(new URL('../../packages/alc
 const module={exports:{}}, require=createRequire(import.meta.url)
 const primitive=new Proxy(()=>null,{get:()=>()=>null})
 const React={createElement:(type,props,...children)=>({type,props,children}),useState:init=>[typeof init==='function'?init():init,()=>{}],useEffect(){},useRef:()=>({}),useSyncExternalStore:(_subscribe,snapshot)=>snapshot()}
-new Function('module','exports','require',output.outputFiles[0].text)(module,module.exports,name=>name==='react'?React:name.startsWith('@deepseek-ai/')?primitive:require(name))
+new Function('module','exports','require',output.outputFiles[0].text)(module,module.exports,name=>name==='react'?React:name==='react-dom'?{createPortal:node=>node}:name.startsWith('@deepseek-ai/')?primitive:require(name))
 const {PluginPanels,SecretarySidebar}=module.exports
 const source={list:()=>[
   {options:{id:'plugins',label:()=> 'Plugins'}},
