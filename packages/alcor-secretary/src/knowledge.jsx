@@ -212,6 +212,19 @@ function DocumentLinks({ api, id, open }) {
   )
 }
 
+function FolderLocationSelect({ folders, value, onChange }) {
+  const locations = value && !folders.includes(value) ? [...folders, value] : folders
+  return (
+    <label>
+      保存位置
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">顶层</option>
+        {locations.map((path) => <option key={path} value={path}>{displayLocation(path)}</option>)}
+      </select>
+    </label>
+  )
+}
+
 function Editor({ api, source, file, collections = [], initialCollection = '', onClose, onSaved }) {
   const [title, setTitle] = useState(source?.title ?? file?.name ?? '')
   const [text, setText] = useState(source?.note ?? '')
@@ -223,7 +236,6 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
     body = useRef(null)
   const [picking, setPicking] = useState(false)
   const insertion = useRef([0, 0])
-  const locations = collection && !collections.includes(collection) ? [...collections, collection] : collections
   async function save(event) {
     event.preventDefault()
     if (busy) return
@@ -263,13 +275,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
-        <label>
-          保存位置
-          <select value={collection} onChange={(e) => setCollection(e.target.value)}>
-            <option value="">知识库首页</option>
-            {locations.map((name) => <option key={name} value={name}>{name.replaceAll('/', ' / ')}</option>)}
-          </select>
-        </label>
+        <FolderLocationSelect folders={collections} value={collection} onChange={setCollection} />
         {!file && !source?.filename && (
           <label>
             来源网址
@@ -655,7 +661,7 @@ export function KnowledgeCitations({ turn, useKnowledgeCalls, api }) {
 
 const parentFolder = (path) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
 const folderName = (path) => path.slice(path.lastIndexOf('/') + 1) || path
-const displayLocation = (path) => path ? path.replaceAll('/', ' / ') : '知识库首页'
+const displayLocation = (path) => path ? path.replaceAll('/', ' / ') : '顶层'
 
 function MoveDialog({ source, folders, close, submit, busy }) {
   const [query, setQuery] = useState('')
@@ -717,8 +723,9 @@ function FolderDocuments({ api, path, revision, renderDocument, onRetry }) {
   </>
 }
 
-function NewFolder({ api, parent, onClose, onCreated }) {
+function NewFolder({ api, initialParent, folders, onClose, onCreated }) {
   const [name, setName] = useState('')
+  const [parent, setParent] = useState(initialParent)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function save(event) {
@@ -738,6 +745,7 @@ function NewFolder({ api, parent, onClose, onCreated }) {
     <Modal open title="新建文件夹" closeLabel="关闭" className="alcor-editor-dialog" onClose={() => !busy && onClose()}>
       <form className="alcor-knowledge-form" onSubmit={save}>
         <label>文件夹名称<input required autoFocus maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <FolderLocationSelect folders={folders} value={parent} onChange={setParent} />
         {error && <Notice role="alert" tone="error">{error}</Notice>}
         <div className="alcor-knowledge-actions">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
@@ -767,6 +775,7 @@ export function KnowledgePage({ api }) {
   const [movedLocations, setMovedLocations] = useState({})
   const [context, setContext] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
+  const [showTopDrop, setShowTopDrop] = useState(false)
   const dragging = useRef(null)
   const moveInFlight = useRef(false)
   const detail = useRef(null)
@@ -870,6 +879,11 @@ export function KnowledgePage({ api }) {
       refresh()
     })
   }
+  function finishDrag() {
+    dragging.current = null
+    setShowTopDrop(false)
+    setDropTarget(null)
+  }
   function folderDrop(path) {
     return {
       'data-drop-target': dropTarget === path || undefined,
@@ -884,8 +898,7 @@ export function KnowledgePage({ api }) {
         const source = dragging.current
         if (!source) return
         event.preventDefault()
-        dragging.current = null
-        setDropTarget(null)
+        finishDrag()
         moveFromBrowser(source, path)
       },
     }
@@ -916,10 +929,11 @@ export function KnowledgePage({ api }) {
           }}
           onDragStart={(event) => {
             dragging.current = row
+            setShowTopDrop(!!row.collection)
             event.dataTransfer.effectAllowed = 'move'
             event.dataTransfer.setData('application/x-alcor-knowledge-document', row.id)
           }}
-          onDragEnd={() => { dragging.current = null; setDropTarget(null) }}>
+          onDragEnd={finishDrag}>
           <IconDeliverDocRegular size={17} aria-hidden="true" />
           <span><strong>{row.title}</strong>{searching && <small>{displayLocation(row.collection)}{row.kind === 'pdf' ? ' · 第 ' + row.page + ' 页' : ''}</small>}</span>
         </button>
@@ -1046,6 +1060,7 @@ export function KnowledgePage({ api }) {
             <div className="alcor-knowledge-toolbar">
               <input type="search" aria-label="搜索知识库" placeholder="搜索知识库" maxLength={240} value={query}
                 onChange={(event) => { setQuery(event.target.value); setResult(null); setOffset(0) }} />
+              {showTopDrop && <div className="alcor-library-top-drop" {...folderDrop('')}>移到顶层</div>}
             </div>
             <div className="alcor-library-scroll">
               {searching ? <>
@@ -1057,16 +1072,12 @@ export function KnowledgePage({ api }) {
                   <Button size="sm" disabled={!offset} onClick={() => setOffset((n) => Math.max(0, n - 25))}>上一批</Button>
                   <Button size="sm" disabled={result?.next_offset == null} onClick={() => setOffset(result.next_offset)}>下一批</Button>
                 </div>}
-              </> : <>
-                <button type="button" className="alcor-library-entry" aria-current={!target && !collection ? 'location' : undefined}
-                  onClick={() => openFolder('')} {...folderDrop('')}>
-                  <IconFolderOpenRegular size={17} aria-hidden="true" /><span>知识库首页</span>
-                </button>
+              </> : (
                 <ul className="alcor-library-tree">
                   {(foldersByParent.get('') ?? []).map(renderFolder)}
                   <FolderDocuments api={api} path="" revision={revision} renderDocument={documentRow} onRetry={refresh} />
                 </ul>
-              </>}
+              )}
             </div>
           </nav>
           <section className="alcor-library-detail" aria-label="知识库阅读区" ref={detail}>
@@ -1086,7 +1097,7 @@ export function KnowledgePage({ api }) {
         onSelect={() => { setMoving(context.row); setContext(null) }} />
       {moving && <MoveDialog source={moving} folders={folders} busy={movePending}
         close={() => setMoving(null)} submit={moveSource} />}
-      {creatingFolder && <NewFolder api={api} parent={graph ? '' : collection}
+      {creatingFolder && <NewFolder api={api} initialParent={graph ? '' : collection} folders={folders}
         onClose={() => setCreatingFolder(false)} onCreated={(path) => {
           setCreatingFolder(false)
           openFolder(path)

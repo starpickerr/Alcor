@@ -55,7 +55,18 @@
   background: var(--alcor-surface-soft, var(--dsw-alias-bg-layer-2));
 }
 .alcor-library-sidebar .alcor-knowledge-toolbar {
+  position: relative;
   margin: 0 2px 10px;
+}
+.alcor-library-top-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--alcor-brand);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--alcor-brand);
 }
 .alcor-library-sidebar .alcor-knowledge-toolbar input {
   width: 100%;
@@ -125,7 +136,7 @@
   background: var(--alcor-brand-soft);
   color: var(--alcor-brand);
 }
-.alcor-library-entry[data-drop-target] {
+:is(.alcor-library-entry, .alcor-library-top-drop)[data-drop-target] {
   background: var(--alcor-brand-soft);
   outline: 2px solid var(--alcor-brand);
   outline-offset: -2px;
