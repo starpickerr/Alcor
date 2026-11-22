@@ -72,7 +72,11 @@ def check(page, docs):
     open_secretary(page)
     page.get_by_role("group", name="应用", exact=True).get_by_role("button", name="知识库").click()
     expect(page.get_by_role("heading", name="还没有收藏资料")).to_be_visible()
-    page.get_by_role("button", name="收藏资料", exact=True).click()
+    add = page.get_by_role("button", name="添加资料", exact=True)
+    expect(page.get_by_role("button", name=re.compile("^(导入文件|收藏资料)$"))).to_have_count(0)
+    add.press("Enter")
+    expect(page.get_by_role("menuitem", name="导入文件", exact=True)).to_be_visible()
+    page.get_by_role("menuitem", name="收藏资料", exact=True).click()
     dialog = page.get_by_role("dialog")
     dialog.get_by_label("标题", exact=True).fill("教学大纲")
     dialog.get_by_label("资料集", exact=True).fill("课程")
@@ -95,7 +99,10 @@ def check(page, docs):
     ImageDraw.Draw(image).text((20, 20), "Chapter five is optional", font=font, fill="black")
     original = docs / "期末通知.png"
     image.save(original)
-    page.locator('input[type=file][accept*=".pdf"]').set_input_files(original)
+    add.click()
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("menuitem", name="导入文件", exact=True).click()
+    chooser.value.set_files(original)
     dialog.get_by_role("button", name="保存", exact=True).click()
     page.get_by_label("搜索知识库").fill("Chapter five")
     page.get_by_role("button", name="图片 期末通知.png").click(timeout=60000)
@@ -126,7 +133,8 @@ def check(page, docs):
         ("自测题", "结合 [[课程讲义.pdf]] 与 [[概念清单]]。"),
     ]:
         desktop.rpc(page, "alcorOrganizer/business", {"request": {"domain": "knowledge", "method": "save", "arguments": {"title": title, "text": body}}})
-    page.get_by_role("button", name="收藏资料", exact=True).click()
+    add.click()
+    page.get_by_role("menuitem", name="收藏资料", exact=True).click()
     dialog.get_by_label("标题", exact=True).fill("复习提纲")
     dialog.get_by_label("笔记", exact=True).fill("参考 [[教学大纲]] 与 ")
     dialog.get_by_role("button", name="插入资料引用").click()
@@ -202,7 +210,7 @@ def check(page, docs):
     dialog.get_by_role("button", name="关闭", exact=True).click()
     page.set_viewport_size({"width": 540, "height": 740})
     expect(page.get_by_label("搜索知识库")).to_be_in_viewport()
-    expect(page.get_by_role("button", name="收藏资料", exact=True)).to_be_in_viewport()
+    expect(add).to_be_in_viewport()
     page.set_viewport_size({"width": 1280, "height": 850})
     page.locator(".alcor-sidebar-chat").click()
     composer = page.locator('[data-composer-input][contenteditable="true"]')
