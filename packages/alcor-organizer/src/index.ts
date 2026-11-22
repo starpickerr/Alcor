@@ -340,7 +340,28 @@ export default class Organizer extends TypertRemoteService {
         confirmed_intent: { version: 1, plan_fingerprint: prepared.applePlan.plan_fingerprint } })
     })
     if (live() !== true) return { status: 'pending', operation_id, pending: true, message: '删除已排队，但会话授权已失效，尚未继续发送到 Apple。' }
-    return apple.commitApprovedDelete(prepared.applePlan, live)
+    try {
+      return await apple.commitApprovedDelete(prepared.applePlan, live)
+    } catch (error) {
+      // A short-lived Apple preview may expire while the confirmation is open.
+      // The durable outbox already owns this exact approved intent. Only read its state.
+      if (!(error instanceof Error) || error.message !== '删除审批无效或已消费。') throw error
+      const receipt = await this.serialize(() => this.businessWorker.call('prepare_delete_receipt', {
+        ...request, confirmed_fingerprint: prepared.applePlan.plan_fingerprint,
+      })).catch(() => null)
+      if (receipt?.replayed !== true || receipt.operation_id !== operation_id ||
+          receipt.confirmed_fingerprint !== prepared.applePlan.plan_fingerprint) throw error
+      if (receipt.state === 'cancelled') throw new Error('此次删除已取消。')
+      let status = receipt.state, message
+      if (receipt.targetConflict || receipt.state === 'uncertain' || (receipt.has_error && receipt.state !== 'done')) {
+        status = 'needs_review'; message = '已保留删除确认，目标或同步结果需要核对。请在 Apple 同步中查看。'
+      } else if (receipt.state === 'pending') message = '删除已确认，等待同步。'
+      else if (receipt.state === 'sending') message = '删除已确认，正在同步。'
+      else if (receipt.state === 'done') message = '删除已完成。'
+      else throw error
+      this.ctx.logger?.('alcor-organizer').info('本次 Apple 删除未获执行许可，已核实原确认回执 · %s · 操作 %s', status, operation_id)
+      return { status, operation_id, pending: receipt.pending, message }
+    }
   }
 
   approvedDeletePeer(request, authorize) {
