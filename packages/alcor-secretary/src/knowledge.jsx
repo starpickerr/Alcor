@@ -1029,15 +1029,17 @@ export function KnowledgePage({ api }) {
       ) : (
         <div className="alcor-library-split" data-reading={target ? '' : undefined}>
           <nav aria-label="知识库目录" className="alcor-library-sidebar">
-            <div className="alcor-knowledge-toolbar">
-              <input type="search" aria-label="搜索知识库" placeholder="搜索知识库" maxLength={240} value={query}
-                onChange={(event) => { setQuery(event.target.value); setResult(null); setOffset(0) }} />
+            <div className="alcor-library-directory-bar">
+              <div className="alcor-knowledge-toolbar">
+                <input type="search" aria-label="搜索知识库" placeholder="搜索资料" maxLength={240} value={query}
+                  onChange={(event) => { setQuery(event.target.value); setResult(null); setOffset(0) }} />
+              </div>
+              <LibraryActions className="alcor-library-directory-tools"
+                onCreateFile={() => setEditor({ initialCollection: collection })}
+                onCreateFolder={() => setCreatingFolder(collection)}
+                onDelete={target || collection ? () => setDeleting(target ?? { path: collection }) : undefined} />
               {showTopDrop && <div className="alcor-library-top-drop" {...folderDrop('')}>移到顶层</div>}
             </div>
-            <LibraryActions className="alcor-library-directory-tools"
-              onCreateFile={() => setEditor({ initialCollection: collection })}
-              onCreateFolder={() => setCreatingFolder(collection)}
-              onDelete={target || collection ? () => setDeleting(target ?? { path: collection }) : undefined} />
             <div className="alcor-library-scroll">
               {searching ? <>
                 {error ? <Notice tone="error" role="alert">{error} <Button onClick={refresh}>重试</Button></Notice>

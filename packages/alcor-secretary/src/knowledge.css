@@ -54,9 +54,28 @@
   border-inline-end: 1px solid var(--dsw-alias-border-l3);
   background: var(--alcor-surface-soft, var(--dsw-alias-bg-layer-2));
 }
-.alcor-library-sidebar .alcor-knowledge-toolbar {
+.alcor-library-directory-bar {
   position: relative;
-  margin: 0 2px 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px 10px;
+  padding: 3px 4px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.alcor-library-directory-bar .alcor-knowledge-toolbar {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.alcor-library-directory-bar input {
+  min-width: 0;
+  width: 100%;
+  padding-inline: 7px;
+  border: 0;
+  background: transparent;
 }
 .alcor-library-directory-tools,
 .alcor-library-row-tools {
@@ -66,8 +85,9 @@
   gap: 2px;
 }
 .alcor-library-directory-tools {
-  padding-inline: 4px;
-  margin-bottom: 4px;
+  flex: none;
+  padding-inline-start: 4px;
+  border-inline-start: 1px solid var(--dsw-alias-border-l3);
 }
 :is(.alcor-library-directory-tools, .alcor-library-row-tools) button {
   width: 28px;
@@ -112,10 +132,6 @@
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-1);
   color: var(--alcor-brand);
-}
-.alcor-library-sidebar .alcor-knowledge-toolbar input {
-  width: 100%;
-  min-width: 0;
 }
 .alcor-library-scroll,
 .alcor-library-detail {
