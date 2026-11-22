@@ -2,6 +2,8 @@
 
 Alcor 作为原生插件运行在官方 DSH Desktop 中。宿主版本与产物身份以[客户端版本清单](desktop-release.lock.json)为准，插件各自发布版本。[DSH 0.2.2-rc.5 兼容验证](compatibility/dsh-0.2.2-rc.5.md) · [插件版本与发布](releases.md)。
 
+ChatGPT 订阅模型由独立的 DSH 插件提供，可在同一 Profile 的 Alcor 和 DSH 对话中使用。[dsh-chatgpt](https://github.com/starpickerr/dsh-chatgpt)
+
 Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.118`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏的应用／系统分组和业务页面；切回 DSH 恢复官方侧栏。
 
 两个界面共用同一个 Host、Profile、运行环境、模型、配置、会话、工作区和插件目录。切换只改变界面，不启动第二个 Host，后台继续运行。第三方插件原样安装，Alcor 的「系统」分组仍打开它们自己的页面。
