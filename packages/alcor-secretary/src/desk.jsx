@@ -2,6 +2,7 @@ import { KnowledgePage } from './knowledge.jsx'
 import {sharedWorkspaceContext} from './shared-workspace.js'
 import { Notice } from './notice.jsx'
 import { BearLogo } from './bear-logo.jsx'
+import { SectionToggle, WorkspaceToggle, useSidebarSection } from './sidebar-sections.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { Button, useModalLayer, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, IconPluginPinwheelOutlineRegular, IconChecklistOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BusinessDesk, applicationViews } from './business.jsx'
@@ -41,12 +42,28 @@ export function SecretarySidebar({ collapsed, drawer, width, navigate, startSess
   if (canManagePlugins) system.push({ id:'plugins', label:'插件', icon:IconPluginPinwheelOutlineRegular })
   const [error, setError] = useState('')
   const sidebar = useRef()
+  const nav = useRef(null)
+  const appsSection = useSidebarSection('applications')
+  const systemSection = useSidebarSection('system')
   const wide = drawer || !collapsed
   useModalLayer(sidebar, drawer && !collapsed, toggleSidebar)
   const actions=<>
     <button type="button" className="alcor-sidebar-chat" title={t('session.new.label')} aria-label={t('session.new.label')} onClick={async () => { setError(''); try { await startSession() } catch (reason) { setError(reason.message) } }}><IconNewChatOutlineRegular size={17} />{wide && <span>新对话</span>}</button>
     {error && <Notice tone="error" role="alert">{error}</Notice>}
-    <nav aria-label="秘书功能">{[['应用', applications], ['系统', system]].map(([group, items]) => <div className="alcor-nav-group" role="group" aria-label={group} key={group}>{wide && <p>{group}</p>}{items.map(item => { const Icon = item.icon; return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={18} />{wide && <span>{item.label}</span>}</button> })}{group==='系统' && <PluginPanels source={pluginPanels} wide={wide} panel={panel} navigate={navigate} />}</div>)}</nav>
+    <nav aria-label="秘书功能" ref={nav}>{[['应用', applications, appsSection], ['系统', system, systemSection]].map(([label, items, section]) =>
+      <div className="alcor-nav-group" role="group" aria-label={label} key={label}>
+        {wide && <SectionToggle label={label} section={section} />}
+        {(!wide || section.expanded) && <>
+          {items.map(item => {
+            const Icon = item.icon
+            return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-current={canonicalPanel(panel) === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>
+              <Icon size={18} />{wide && <span>{item.label}</span>}
+            </button>
+          })}
+          {label === '系统' && <PluginPanels source={pluginPanels} wide={wide} panel={panel} navigate={navigate} />}
+        </>}
+      </div>)}</nav>
+    {wide && <WorkspaceToggle nav={nav} />}
   </>
   if(nativeShell)return <div className="alcor-sidebar-actions" data-wide={wide || undefined}>{actions}</div>
   return <aside className="alcor-sidebar" data-native-shared={nativeShared || undefined} ref={sidebar} style={{ width: wide ? width : 56 }} data-collapsed={!wide || undefined} data-shortcut-modal={drawer ? 'sidebar' : undefined} role={drawer && !collapsed ? 'dialog' : undefined} aria-modal={drawer && !collapsed ? true : undefined} tabIndex={-1} aria-label="Alcor 秘书导航">

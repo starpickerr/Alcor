@@ -11,13 +11,33 @@ div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-si
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_brandName'] { font-size:20px; font-weight:600; letter-spacing:-.5px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [data-sidebar-toggle] { position:absolute; right:20px; top:22px; left:auto; width:28px; height:28px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_newSessionRow'], .alcor-sidebar-actions { display:contents; }
-.alcor-sidebar-actions > nav { gap:20px; }
 .alcor-sidebar-actions .alcor-sidebar-chat { margin:0 3px 10px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [class$='_panelList'] { display:none; }
-div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_scrollRegion'] { min-height:100px; margin-top:24px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); }
+div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_scrollRegion'] { min-height:var(--alcor-workspace-min-height,clamp(110px,28vh,240px)); margin-top:12px; padding-top:8px; border-top:1px solid var(--dsw-alias-border-l3); }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) > [class$='_footArea'] { padding-top:12px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) { padding:18px 10px 6px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) > [class$='_logoRow'] { margin:0 0 12px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) > [class$='_scrollRegion'] { min-height:0; margin-top:12px; }
 div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions:not([data-wide])) [data-sidebar-toggle] { position:static; }
 [data-windows-titlebar] div[class]:has(> [class$='_newSessionRow'] .alcor-sidebar-actions):has(.alcor-sidebar-actions) [data-sidebar-toggle] { position:fixed; left:12px; right:auto; top:calc((var(--dsh-windows-titlebar-height) - 28px) / 2); -webkit-app-region:no-drag; }
+
+/* Alcor navigation sits outside the native scrollport. Give the remaining height to the list itself. */
+:is([class$='_scrollRegion'],.alcor-sidebar-workspaces):has(.alcor-section-toggle[aria-expanded='false']):not(:has(input[tabindex='0'])) { --alcor-workspace-min-height:44px; }
+[class$='_scrollRegion']:has(.alcor-section-toggle) > :is([data-sidebar-scrollport],[class$='_scrollArea']) {
+  display:flex; flex-direction:column; overflow:hidden; container-type:normal;
+}
+[class$='_scrollRegion']:has(.alcor-section-toggle) > [class$='_scrollArea']::before,
+[class$='_scrollRegion']:has(.alcor-section-toggle) > [class$='_scrollArea']::after { display:none; }
+[class$='_regionArea']:has(.alcor-section-toggle),
+[data-slot='sidebar.workspaces']:has(.alcor-section-toggle),
+div:has(> :is([data-sidebar-workspace-header],[class*='_sectionHeader']) > .alcor-section-toggle) {
+  display:flex; flex-direction:column; flex:1 1 0; min-height:0; max-height:none;
+}
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']):has(> .alcor-section-toggle) { padding-inline-start:0; }
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']):has(> .alcor-section-toggle) > [class*='_sectionLabel'] { display:none; }
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']) > .alcor-section-toggle { order:-1; flex:1 1 auto; }
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']):has(input[tabindex='0']) > .alcor-section-toggle { display:none; }
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']):has(> .alcor-section-toggle) ~ :is([data-sidebar-list-area],[class$='_listArea']) {
+  min-height:0; flex:1 1 0; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-width:thin;
+}
+:is([data-sidebar-workspace-header],[class*='_sectionHeader']):has(> .alcor-section-toggle[aria-expanded='false']):not(:has(input[tabindex='0'])) ~ :is([data-sidebar-list-area],[class$='_listArea']) { display:none; }
