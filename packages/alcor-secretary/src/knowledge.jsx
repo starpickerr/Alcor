@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Button,
+  Menu,
+  MenuItemButton,
   Modal,
+  IconChevronDownOutlineRegular,
   IconDeliverDocRegular,
   IconPlusOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -650,6 +653,7 @@ export function KnowledgePage({ api }) {
     [error, setError] = useState('')
   const [target, setTarget] = useState(null),
     [editor, setEditor] = useState(null)
+  const [addOpen, setAddOpen] = useState(false)
   const picker = useRef(null)
   const [graph, setGraph] = useState(false),
     [graphQuery, setGraphQuery] = useState('')
@@ -721,13 +725,30 @@ export function KnowledgePage({ api }) {
               </button>
             ))}
           </div>
-          <Button variant="outline" onClick={() => picker.current.click()}>
-            导入文件
-          </Button>
-          <Button variant="primary" onClick={() => setEditor({})}>
-            <IconPlusOutlineRegular size={16} />
-            收藏资料
-          </Button>
+          <Menu
+            open={addOpen}
+            onClose={() => setAddOpen(false)}
+            portal
+            autoFocus
+            align="end"
+            anchor={
+              <Button type="button" variant="primary" aria-haspopup="menu" aria-expanded={addOpen}
+                onClick={() => setAddOpen(!addOpen)}>
+                <IconPlusOutlineRegular size={16} />
+                添加资料
+                <IconChevronDownOutlineRegular size={14} />
+              </Button>
+            }
+          >
+            <MenuItemButton onSelect={() => {
+              setAddOpen(false)
+              picker.current.click()
+            }}>导入文件</MenuItemButton>
+            <MenuItemButton onSelect={() => {
+              setAddOpen(false)
+              setEditor({})
+            }}>收藏资料</MenuItemButton>
+          </Menu>
         </div>
       </header>
       <input
