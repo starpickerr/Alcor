@@ -159,6 +159,30 @@ class Knowledge:
             return self.erase(source["id"], args.get("revision"), archived_only=True)
         if method == "delete":
             return self.erase(source["id"], args.get("revision"))
+        if method == "move":
+            revision = integer(args.get("revision"), 1, 2**53 - 1)
+            previous = string(args.get("from"), 100, "原位置")
+            destination = string(args.get("collection"), 100, "目标文件夹")
+            with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                if destination and not self.db.execute(
+                    """SELECT 1 FROM library_folders WHERE path=?
+                       OR substr(path,1,length(?)+1)=?||'/' LIMIT 1""",
+                    (destination, destination, destination),
+                ).fetchone():
+                    raise ValueError("目标文件夹已不可用，请重新选择。")
+                cursor = self.db.execute(
+                    """UPDATE sources SET collection=?,revision=revision+1
+                       WHERE id=? AND revision=? AND collection=? AND archived=0""",
+                    (destination, source["id"], revision, previous),
+                )
+                if not cursor.rowcount:
+                    raise ValueError("资料或保存位置已变化，请刷新后重试。")
+                self.db.execute(
+                    "INSERT INTO history VALUES(?,?,?)",
+                    (source["id"], revision, json.dumps(source, ensure_ascii=False)),
+                )
+            return self.header(source["id"])
         if method == "reindex":
             with self.db:
                 index_source(self.db, source["id"])
@@ -360,7 +384,7 @@ class Knowledge:
         select_collection = "" if collection is None else " AND s.collection=?"
         if not query:
             rows = self.db.execute(
-                """SELECT s.id,s.title,s.kind,s.updated,s.archived,s.collection,1 AS page,
+                """SELECT s.id,s.title,s.kind,s.updated,s.revision,s.archived,s.collection,1 AS page,
                 substr(coalesce(nullif(s.note,''),p.body),1,220) AS snippet FROM sources s
                 JOIN library_pages p ON p.source_id=s.id AND p.page=1 WHERE archived=?"""
                 + select_collection

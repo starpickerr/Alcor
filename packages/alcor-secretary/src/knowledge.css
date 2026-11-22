@@ -31,69 +31,171 @@
   min-width: 120px;
   flex: 1;
 }
-.alcor-knowledge-list {
-  padding: 0;
-  list-style: none;
-  border-block-start: 1px solid var(--dsw-alias-border-l3);
+.alcor-knowledge {
+  container-type: inline-size;
 }
-.alcor-knowledge-list li {
-  border-block-end: 1px solid var(--dsw-alias-border-l3);
-}
-.alcor-knowledge-list button {
-  width: 100%;
+.alcor-knowledge:has(> .alcor-library-split) {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 6px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
+  flex-direction: column;
+  height: 100%;
 }
-.alcor-knowledge-list button:hover {
-  background: var(--dsw-alias-bg-layer-2);
-}
-.alcor-knowledge-list button > span:nth-child(2) {
+.alcor-library-split {
+  display: grid;
   flex: 1;
+  min-height: 0;
+  grid-template-columns: clamp(204px, 27cqw, 300px) minmax(0, 1fr);
+}
+.alcor-library-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 10px 8px;
+  border-inline-end: 1px solid var(--dsw-alias-border-l3);
+  background: var(--alcor-surface-soft, var(--dsw-alias-bg-layer-2));
+}
+.alcor-library-sidebar .alcor-knowledge-toolbar {
+  margin: 0 2px 10px;
+}
+.alcor-library-sidebar .alcor-knowledge-toolbar input {
+  width: 100%;
   min-width: 0;
 }
-.alcor-knowledge-list :is(strong, span > small) {
+.alcor-library-scroll,
+.alcor-library-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior-y: contain;
+}
+.alcor-library-scroll {
+  scrollbar-width: thin;
+}
+.alcor-library-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.alcor-library-tree .alcor-library-tree {
+  margin-inline-start: 9px;
+  padding-inline-start: 5px;
+  border-inline-start: 1px solid var(--dsw-alias-border-l3);
+}
+.alcor-library-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 33px;
+  margin: 1px 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.alcor-library-entry svg {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+.alcor-library-entry :is(span, strong, small) {
   display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.alcor-knowledge-list small,
+.alcor-library-entry strong {
+  font-weight: inherit;
+}
+.alcor-library-entry small,
+.alcor-library-status,
 .alcor-knowledge-meta,
 .alcor-knowledge-form small {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
-.alcor-knowledge-type {
-  display: grid;
-  place-items: center;
-  min-width: 42px;
-  height: 38px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-2);
-  font-size: 12px;
+.alcor-library-entry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
-.alcor-knowledge-folder {
+.alcor-library-entry[aria-current] {
+  background: var(--alcor-brand-soft);
   color: var(--alcor-brand);
 }
-.alcor-library-breadcrumb {
+.alcor-library-entry[data-drop-target] {
+  background: var(--alcor-brand-soft);
+  outline: 2px solid var(--alcor-brand);
+  outline-offset: -2px;
+}
+.alcor-library-pagination {
   display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.alcor-library-status {
+  padding-inline: 8px;
+}
+.alcor-library-detail {
+  padding: clamp(16px, 3cqw, 34px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.alcor-library-document {
+  max-width: 76ch;
+  margin-inline: auto;
+}
+.alcor-library-document > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.alcor-library-document > header h2 {
+  font-size: 22px;
+  line-height: 30px;
   overflow-wrap: anywhere;
 }
-.alcor-library-breadcrumb [aria-current] {
-  color: var(--dsw-alias-label-primary);
-  font-weight: 600;
+.alcor-library-detail .alcor-library-back {
+  display: none;
+}
+.alcor-business > .alcor-library-feedback {
+  align-items: center;
+  flex: none;
+  margin: 8px 12px;
+  padding: 4px 10px;
+}
+.alcor-library-feedback .alcor-notice-content {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px 8px;
+}
+.alcor-library-feedback .alcor-notice-content > span {
+  margin-inline-end: auto;
+}
+.alcor-knowledge-form .alcor-library-destinations {
+  height: auto;
+  max-height: 220px;
+}
+.alcor-library-destinations option {
+  padding: 4px;
+}
+@container (max-width: 640px) {
+  .alcor-library-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .alcor-library-split:not([data-reading]) .alcor-library-detail,
+  .alcor-library-split[data-reading] .alcor-library-sidebar {
+    display: none;
+  }
+  .alcor-library-detail .alcor-library-back {
+    display: inline-flex;
+    margin-bottom: 12px;
+  }
 }
 .alcor-knowledge-dialog {
   width: min(740px, 94vw);

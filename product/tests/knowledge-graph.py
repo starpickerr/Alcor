@@ -39,6 +39,19 @@ def check(path, version):
         syllabus = call("save", title="课程大纲", text="第三章")
         sid = syllabus["id"]
         assert call("links", id=sid)["incoming"][0]["id"] == "old"
+        moved = call("move", id="old", revision=1, **{"from": "课程", "collection": "课程/数据结构"})
+        assert (moved["id"], moved["revision"], moved["collection"]) == ("old", 2, "课程/数据结构")
+        assert call("search", collection="课程/数据结构")["items"][0]["id"] == "old"
+        assert call("links", id=sid)["incoming"][0]["id"] == "old"
+        assert call("read", id="old", revision=1)["text"] == migrated["text"]
+        for previous, destination in [("课程", ""), ("课程/数据结构", "不存在")]:
+            try:
+                call("move", id="old", revision=2, **{"from": previous, "collection": destination})
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("stale source or missing destination accepted")
+        call("move", id="old", revision=2, **{"from": "课程/数据结构", "collection": "课程"})
         other = call("save", title="课程大纲", text="同名")
         note = call("save", title="笔记", text="[[课程大纲]] 和 `[[提纲]]`")
         assert not call("links", id=note["id"])["outgoing"]
@@ -84,7 +97,7 @@ def check(path, version):
         assert not call("links", id="old")["outgoing"]
         call("restore", id=sid, revision=3)
         assert call("links", id="old")["outgoing"][0]["id"] == sid
-        moved = call("edit", id="old", revision=1, title="提纲", text="独立资料", collection="课程/数据结构")
+        moved = call("edit", id="old", revision=3, title="提纲", text="独立资料", collection="课程/数据结构")
         assert "old" not in [x["id"] for x in call("links", id=sid)["incoming"]]
         assert moved["id"] == "old" and not call("search", collection="课程")["items"]
         assert call("search", collection="课程/数据结构")["items"][0]["id"] == "old"
