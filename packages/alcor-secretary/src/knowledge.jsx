@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Button,
-  Menu,
-  MenuItemButton,
   Modal,
   IconChevronDownOutlineRegular,
   IconChevronRightOutlineRegular,
@@ -12,6 +10,7 @@ import {
   IconEditOutlineRegular,
   IconFolderOpenRegular,
   IconPlusOutlineRegular,
+  IconProjectAddOutlineRegular,
   IconTrashOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { KnowledgeGraph } from './knowledge-graph.jsx'
@@ -19,6 +18,11 @@ import { Notice } from './notice.jsx'
 import { Empty } from './business-pages.jsx'
 
 const labels = { note: '笔记', web: '网页', pdf: 'PDF', image: '图片', text: '文档' }
+const parentFolder = (path) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+const folderName = (path) => path.slice(path.lastIndexOf('/') + 1) || path
+const displayLocation = (path) => path ? path.replaceAll('/', ' / ') : '顶层'
+const inFolder = (path, folder) => path === folder || path.startsWith(folder + '/')
+
 async function call(api, method, args, requestId) {
   const result = await api.business({
     domain: 'knowledge',
@@ -247,8 +251,8 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
       if (file) Object.assign(args, { filename: file.name, content: await readFile(file) })
       const draft = JSON.stringify([title, text, url, collection])
       if (attempt.current?.draft !== draft) attempt.current = { draft, key: crypto.randomUUID() }
-      await call(api, source ? 'edit' : file ? 'import' : 'save', args, attempt.current.key)
-      onSaved(collection)
+      const saved = await call(api, source ? 'edit' : file ? 'import' : 'create_note', args, attempt.current.key)
+      onSaved(collection, saved)
     } catch (reason) {
       setError(message(reason))
       setBusy(false)
@@ -257,7 +261,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
   return (
     <Modal
       open
-      title={source ? '编辑资料' : file ? '导入文件' : '收藏资料'}
+      title={source ? '编辑资料' : file ? '导入文件' : '新建文件'}
       closeLabel="关闭"
       className="alcor-editor-dialog"
       onClose={() => {
@@ -352,7 +356,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || !title.trim() || !(file || source?.filename || text.trim() || url.trim())}
+            disabled={busy || !title.trim()}
           >
             {busy ? '保存中…' : '保存'}
           </Button>
@@ -434,6 +438,52 @@ function SourceReader({ target, ...props }) {
   )
 }
 
+function DeleteLibraryEntry({ api, entry, onClose, onDeleted }) {
+  const [plan, setPlan] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const path = entry.path
+  useEffect(() => {
+    if (!path) return
+    let active = true
+    call(api, 'plan_folder_delete', { path }).then((result) => {
+      if (active) setPlan(result)
+    }).catch((reason) => {
+      if (active) setError(message(reason))
+    })
+    return () => { active = false }
+  }, [api, path])
+  async function erase() {
+    if (busy || error || (path && !plan)) return
+    setBusy(true)
+    try {
+      if (path) await call(api, 'delete_folder', { path, fingerprint: plan.fingerprint })
+      else await call(api, 'delete', { id: entry.id, revision: entry.revision })
+      onDeleted()
+    } catch (reason) {
+      setError(message(reason))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal open title={path ? '永久删除文件夹' : '永久删除资料'}
+      closeLabel="取消删除" className="alcor-editor-dialog" onClose={() => !busy && onClose()}>
+      {path ? <>
+        <p>删除「{displayLocation(path)}」？</p>
+        {plan ? <p>其中 {plan.documents} 份资料和 {plan.folders} 个子文件夹也会一并删除。</p>
+          : !error && <p role="status">正在检查文件夹内容…</p>}
+      </> : <p>删除「{entry.title}」及其历史版本？旧对话中的此条引用也将无法打开。</p>}
+      {error && <Notice tone="error" role="alert">{error}</Notice>}
+      <div className="alcor-knowledge-actions">
+        <Button variant="outline" disabled={busy} onClick={onClose}>取消</Button>
+        <Button variant="primary" disabled={busy || !!error || (!!path && !plan)} onClick={erase}>
+          {busy ? '删除中…' : '永久删除'}
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 function Reader({ api, target, close, onChange, collections, onOpen, back, inline, movedLocations }) {
   const [version, setVersion] = useState(inline ? undefined : target.revision)
   const [confirmErase, setConfirmErase] = useState(false)
@@ -441,7 +491,6 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
     [source, setSource] = useState(null)
   const [error, setError] = useState(''),
     [retry, setRetry] = useState(0),
-    [busy, setBusy] = useState(false),
     [editing, setEditing] = useState(false)
   const moved = movedLocations?.[target.id]
   const current = source && !source.historical && moved?.revision > source.revision ? { ...source, ...moved } : source
@@ -461,46 +510,11 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
       active = false
     }
   }, [api, target.id, page, retry, version])
-  async function changeStatus(action) {
-    setBusy(true)
-    setError('')
-    try {
-      await call(api, action, { id: current.id, revision: current.revision })
+  if (confirmErase)
+    return <DeleteLibraryEntry api={api} entry={current} onClose={() => setConfirmErase(false)} onDeleted={() => {
       onChange?.()
       close()
-    } catch (e) {
-      setError(message(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-  if (confirmErase)
-    return (
-      <Modal
-        open
-        title="永久删除资料"
-        closeLabel="取消删除"
-        className="alcor-editor-dialog"
-        onClose={() => {
-          if (!busy) setConfirmErase(false)
-        }}
-      >
-        <p>删除「{source.title}」及其历史版本？旧对话中的此条引用也将无法打开。</p>
-        {error && (
-          <Notice tone="error" role="alert">
-            {error}
-          </Notice>
-        )}
-        <div className="alcor-knowledge-actions">
-          <Button disabled={busy} onClick={() => setConfirmErase(false)}>
-            取消
-          </Button>
-          <Button variant="primary" disabled={busy} onClick={() => changeStatus('delete')}>
-            永久删除
-          </Button>
-        </div>
-      </Modal>
-    )
+    }} />
   if (editing)
     return (
       <Editor
@@ -508,11 +522,11 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
         source={current}
         collections={collections}
         onClose={() => setEditing(false)}
-        onSaved={() => {
+        onSaved={(_, saved) => {
           setEditing(false)
           setVersion(undefined)
           setRetry((n) => n + 1)
-          onChange?.()
+          onChange?.(saved)
         }}
       />
     )
@@ -531,7 +545,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
         <Button type="button" size="sm" variant="ghost" aria-label="编辑" title="编辑" onClick={() => setEditing(true)}>
           <IconEditOutlineRegular size={18} aria-hidden="true" />
         </Button>
-        <Button type="button" size="sm" variant="ghost" aria-label="删除资料" title="删除资料" disabled={busy} onClick={() => setConfirmErase(true)}>
+        <Button type="button" size="sm" variant="ghost" aria-label="删除资料" title="删除资料" onClick={() => setConfirmErase(true)}>
           <IconTrashOutlineRegular size={18} aria-hidden="true" />
         </Button>
       </>}
@@ -617,7 +631,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
   )
   return (
     <Modal open title={title} closeLabel="关闭" className="alcor-editor-dialog alcor-knowledge-dialog"
-      onClose={() => { if (!busy) close() }}>{content}</Modal>
+      onClose={close}>{content}</Modal>
   )
 }
 
@@ -659,43 +673,22 @@ export function KnowledgeCitations({ turn, useKnowledgeCalls, api }) {
   )
 }
 
-const parentFolder = (path) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
-const folderName = (path) => path.slice(path.lastIndexOf('/') + 1) || path
-const displayLocation = (path) => path ? path.replaceAll('/', ' / ') : '顶层'
+function LibraryIconButton({ icon: Icon, label, title = label, onClick }) {
+  return <Button type="button" size="sm" variant="ghost" aria-label={label} title={title}
+    disabled={!onClick} onClick={onClick}>
+    <Icon size={16} aria-hidden="true" />
+  </Button>
+}
 
-function MoveDialog({ source, folders, close, submit, busy }) {
-  const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState(null)
-  const [error, setError] = useState('')
-  const options = ['', ...folders].filter((path) =>
-    displayLocation(path).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
-    path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
-  )
-  async function move(event) {
-    event.preventDefault()
-    if (busy || selected === null || selected === source.collection) return
-    setError('')
-    try { await submit(source, selected) } catch (e) { setError(message(e)) }
-  }
-  return (
-    <Modal open title="移动资料" closeLabel="关闭" className="alcor-editor-dialog" onClose={() => !busy && close()}>
-      <form className="alcor-knowledge-form" onSubmit={move}>
-        <p>{source.title}</p>
-        <input type="search" aria-label="搜索目标文件夹" placeholder="搜索目标文件夹" autoFocus value={query}
-          onChange={(event) => { setQuery(event.target.value); setSelected(null) }} />
-        <select size={Math.min(7, Math.max(2, options.length))} aria-label="目标文件夹" className="alcor-library-destinations"
-          value={selected ?? source.collection} onChange={(event) => setSelected(event.target.value)}>
-          {options.map((path) => <option key={path} value={path} disabled={path === source.collection}>{displayLocation(path)}{path === source.collection ? '（当前位置）' : ''}</option>)}
-        </select>
-        {!options.length && <p role="status">没有匹配的文件夹</p>}
-        {error && <Notice tone="error" role="alert">{error}</Notice>}
-        <div className="alcor-knowledge-actions">
-          <Button type="button" variant="outline" disabled={busy} onClick={close}>取消</Button>
-          <Button type="submit" variant="primary" disabled={busy || selected === null || selected === source.collection}>移动</Button>
-        </div>
-      </form>
-    </Modal>
-  )
+function LibraryActions({ className, name, onCreateFile, onCreateFolder, onDelete }) {
+  return <div className={className} role="group" aria-label={name ? name + '的操作' : '目录操作'}>
+    <LibraryIconButton icon={IconPlusOutlineRegular} label={name ? '在' + name + '中新建文件' : '新建文件'}
+      title="新建文件" onClick={onCreateFile} />
+    <LibraryIconButton icon={IconProjectAddOutlineRegular} label={name ? '在' + name + '中新建文件夹' : '新建文件夹'}
+      title="新建文件夹" onClick={onCreateFolder} />
+    <LibraryIconButton icon={IconTrashOutlineRegular} label={name ? '删除文件夹：' + name : '删除所选项'}
+      title={name ? '删除文件夹' : '删除所选项'} onClick={onDelete} />
+  </div>
 }
 
 function FolderDocuments({ api, path, revision, renderDocument, onRetry }) {
@@ -766,14 +759,12 @@ export function KnowledgePage({ api }) {
     [error, setError] = useState('')
   const [target, setTarget] = useState(null),
     [editor, setEditor] = useState(null)
-  const [addOpen, setAddOpen] = useState(false)
-  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(null)
+  const [deleting, setDeleting] = useState(null)
   const [expanded, setExpanded] = useState(new Set())
-  const [moving, setMoving] = useState(null)
   const [movePending, setMovePending] = useState(false)
   const [moveMessage, setMoveMessage] = useState(null)
   const [movedLocations, setMovedLocations] = useState({})
-  const [context, setContext] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
   const [showTopDrop, setShowTopDrop] = useState(false)
   const dragging = useRef(null)
@@ -839,6 +830,15 @@ export function KnowledgePage({ api }) {
     setOffset(0)
     setRevision((n) => n + 1)
   }
+  function documentChanged(saved) {
+    if (saved && target?.id === saved.id) {
+      setTarget((row) => row?.id === saved.id ? {
+        ...row, revision: saved.revision, title: saved.title, collection: saved.collection,
+      } : row)
+      if (saved.collection !== collection) revealFolder(saved.collection)
+    }
+    refresh()
+  }
   function openFolder(path) {
     revealFolder(path)
     setTarget(null)
@@ -864,10 +864,9 @@ export function KnowledgePage({ api }) {
       })
       const { id, revision, collection } = saved
       setMovedLocations((value) => ({ ...value, [id]: { revision, collection } }))
-      setMoving(null)
-      revealFolder(destination)
+      documentChanged(saved)
+      if (target?.id !== id) revealFolder(destination)
       setMoveMessage({ text: undo ? '已撤销移动' : '已移到 ' + displayLocation(destination), undo: undo ? null : { source: saved, path: source.collection } })
-      refresh()
     } finally {
       moveInFlight.current = false
       setMovePending(false)
@@ -907,26 +906,13 @@ export function KnowledgePage({ api }) {
     setCollection(row.collection ?? '')
     setTarget(row)
   }
-  function openContext(event, row) {
-    event.preventDefault()
-    const element = event.currentTarget
-    const rect = element.getBoundingClientRect()
-    setContext({ row, element,
-      x: event.type === 'keydown' ? rect.left : event.clientX,
-      y: event.type === 'keydown' ? rect.bottom : event.clientY,
-    })
-  }
   function documentRow(row) {
     return (
-      <li key={row.id}>
+      <li key={row.id} className="alcor-library-row alcor-library-file-row">
         <button type="button" className="alcor-library-entry" draggable={!movePending}
           aria-current={target?.id === row.id ? 'page' : undefined}
           aria-label={labels[row.kind] + ' ' + row.title} title={row.title}
           onClick={() => selectDocument(row)}
-          onContextMenu={(event) => openContext(event, row)}
-          onKeyDown={(event) => {
-            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openContext(event, row)
-          }}
           onDragStart={(event) => {
             dragging.current = row
             setShowTopDrop(!!row.collection)
@@ -937,6 +923,10 @@ export function KnowledgePage({ api }) {
           <IconDeliverDocRegular size={17} aria-hidden="true" />
           <span><strong>{row.title}</strong>{searching && <small>{displayLocation(row.collection)}{row.kind === 'pdf' ? ' · 第 ' + row.page + ' 页' : ''}</small>}</span>
         </button>
+        <div className="alcor-library-row-tools">
+          <LibraryIconButton icon={IconTrashOutlineRegular} label={`删除文件：${row.title}`}
+            title="删除文件" onClick={() => setDeleting(row)} />
+        </div>
       </li>
     )
   }
@@ -945,22 +935,28 @@ export function KnowledgePage({ api }) {
     const name = folderName(path)
     return (
       <li key={path}>
-        <button type="button" className="alcor-library-entry alcor-library-folder-row" title={displayLocation(path)}
-          aria-expanded={isOpen} aria-current={!target && collection === path ? 'location' : undefined}
-          onClick={() => {
-            setCollection(path)
-            setTarget(null)
-            setExpanded((value) => {
-              const next = new Set(value)
-              if (next.has(path)) next.delete(path)
-              else next.add(path)
-              return next
-            })
-          }} {...folderDrop(path)}>
-          {isOpen ? <IconChevronDownOutlineRegular size={12} aria-hidden="true" /> : <IconChevronRightOutlineRegular size={12} aria-hidden="true" />}
-          <IconFolderOpenRegular size={17} aria-hidden="true" />
-          <span>{name}</span>
-        </button>
+        <div className="alcor-library-row alcor-library-folder-row" {...folderDrop(path)}>
+          <button type="button" className="alcor-library-entry" title={displayLocation(path)}
+            aria-expanded={isOpen} aria-current={!target && collection === path ? 'location' : undefined}
+            onClick={() => {
+              setCollection(path)
+              setTarget(null)
+              setExpanded((value) => {
+                const next = new Set(value)
+                if (next.has(path)) next.delete(path)
+                else next.add(path)
+                return next
+              })
+            }}>
+            {isOpen ? <IconChevronDownOutlineRegular size={12} aria-hidden="true" /> : <IconChevronRightOutlineRegular size={12} aria-hidden="true" />}
+            <IconFolderOpenRegular size={17} aria-hidden="true" />
+            <span>{name}</span>
+          </button>
+          <LibraryActions className="alcor-library-row-tools" name={name}
+            onCreateFile={() => setEditor({ initialCollection: path })}
+            onCreateFolder={() => setCreatingFolder(path)}
+            onDelete={() => setDeleting({ path })} />
+        </div>
         {isOpen && <ul className="alcor-library-tree">
           {(foldersByParent.get(path) ?? []).map(renderFolder)}
           <FolderDocuments api={api} path={path} revision={revision} renderDocument={documentRow} onRetry={refresh} />
@@ -994,34 +990,10 @@ export function KnowledgePage({ api }) {
               </button>
             ))}
           </div>
-          <Menu
-            open={addOpen}
-            onClose={() => setAddOpen(false)}
-            portal
-            autoFocus
-            align="end"
-            anchor={
-              <Button type="button" variant="primary" aria-haspopup="menu" aria-expanded={addOpen}
-                onClick={() => setAddOpen(!addOpen)}>
-                <IconPlusOutlineRegular size={16} />
-                添加资料
-                <IconChevronDownOutlineRegular size={14} />
-              </Button>
-            }
-          >
-            <MenuItemButton onSelect={() => {
-              setAddOpen(false)
-              picker.current.click()
-            }}>导入文件</MenuItemButton>
-            <MenuItemButton onSelect={() => {
-              setAddOpen(false)
-              setEditor({})
-            }}>收藏资料</MenuItemButton>
-            <MenuItemButton onSelect={() => {
-              setAddOpen(false)
-              setCreatingFolder(true)
-            }}>新建文件夹</MenuItemButton>
-          </Menu>
+          <Button type="button" variant="primary" onClick={() => picker.current.click()}>
+            <IconPlusOutlineRegular size={16} aria-hidden="true" />
+            导入文件
+          </Button>
         </div>
       </header>
       <input
@@ -1062,6 +1034,10 @@ export function KnowledgePage({ api }) {
                 onChange={(event) => { setQuery(event.target.value); setResult(null); setOffset(0) }} />
               {showTopDrop && <div className="alcor-library-top-drop" {...folderDrop('')}>移到顶层</div>}
             </div>
+            <LibraryActions className="alcor-library-directory-tools"
+              onCreateFile={() => setEditor({ initialCollection: collection })}
+              onCreateFolder={() => setCreatingFolder(collection)}
+              onDelete={target || collection ? () => setDeleting(target ?? { path: collection }) : undefined} />
             <div className="alcor-library-scroll">
               {searching ? <>
                 {error ? <Notice tone="error" role="alert">{error} <Button onClick={refresh}>重试</Button></Notice>
@@ -1084,29 +1060,34 @@ export function KnowledgePage({ api }) {
             {target ? <>
               <Button className="alcor-library-back" size="sm" variant="ghost" onClick={() => setTarget(null)}>返回目录</Button>
               <SourceReader key={target.id + ':' + (target.page ?? 1)} target={target} api={api} inline
-                collections={folders} close={() => setTarget(null)} onChange={refresh}
+                collections={folders} close={() => setTarget(null)} onChange={documentChanged}
                 movedLocations={movedLocations} />
             </> : <Empty title={collection ? folderName(collection) : '选择资料'} icon={<IconDeliverDocRegular size={28} />} />}
           </section>
         </div>
       )}
-      <Menu open={!!context} onClose={() => setContext(null)} anchor={null} contextual portal autoFocus
-        getAnchorRect={() => context ? new DOMRect(context.x, context.y, 0, 0) : null}
-        returnFocus={() => context?.element ?? null}
-        items={[{ id: 'move', label: '移动到…' }]}
-        onSelect={() => { setMoving(context.row); setContext(null) }} />
-      {moving && <MoveDialog source={moving} folders={folders} busy={movePending}
-        close={() => setMoving(null)} submit={moveSource} />}
-      {creatingFolder && <NewFolder api={api} initialParent={graph ? '' : collection} folders={folders}
-        onClose={() => setCreatingFolder(false)} onCreated={(path) => {
-          setCreatingFolder(false)
+      {deleting && <DeleteLibraryEntry api={api} entry={deleting} onClose={() => setDeleting(null)}
+        onDeleted={() => {
+          setDeleting(null)
+          if (deleting.path) {
+            if (inFolder(collection, deleting.path)) setCollection(parentFolder(deleting.path))
+            if (target && inFolder(target.collection ?? '', deleting.path)) setTarget(null)
+            setExpanded((value) => new Set([...value].filter((path) => !inFolder(path, deleting.path))))
+          } else if (deleting.id === target?.id) {
+            setTarget(null)
+          }
+          refresh()
+        }} />}
+      {creatingFolder !== null && <NewFolder api={api} initialParent={creatingFolder} folders={folders}
+        onClose={() => setCreatingFolder(null)} onCreated={(path) => {
+          setCreatingFolder(null)
           openFolder(path)
           refresh()
         }} />}
       {editor && (
         <Editor
           {...editor}
-          initialCollection={graph ? '' : collection}
+          initialCollection={editor.initialCollection ?? (graph ? '' : collection)}
           collections={folders}
           api={api}
           onClose={() => setEditor(null)}

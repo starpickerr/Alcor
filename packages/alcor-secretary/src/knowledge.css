@@ -56,7 +56,52 @@
 }
 .alcor-library-sidebar .alcor-knowledge-toolbar {
   position: relative;
-  margin: 0 2px 10px;
+  margin: 0 2px 4px;
+}
+.alcor-library-directory-tools,
+.alcor-library-row-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.alcor-library-directory-tools {
+  padding-inline: 4px;
+  margin-bottom: 4px;
+}
+:is(.alcor-library-directory-tools, .alcor-library-row-tools) button {
+  width: 28px;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+.alcor-library-row {
+  position: relative;
+  --alcor-library-row-tools-width: 36px;
+}
+.alcor-library-folder-row {
+  --alcor-library-row-tools-width: 96px;
+}
+.alcor-library-row-tools {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+@media (hover: hover) {
+  .alcor-library-row:not(:hover, :focus-within, :has(> .alcor-library-entry[aria-current])) > .alcor-library-row-tools {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .alcor-library-row:is(:hover, :focus-within, :has(> .alcor-library-entry[aria-current])) > .alcor-library-entry {
+    padding-inline-end: var(--alcor-library-row-tools-width);
+  }
+}
+@media (hover: none) {
+  .alcor-library-row > .alcor-library-entry {
+    padding-inline-end: var(--alcor-library-row-tools-width);
+  }
 }
 .alcor-library-top-drop {
   position: absolute;
@@ -129,14 +174,15 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
-.alcor-library-entry:hover {
+.alcor-library-row:hover > .alcor-library-entry {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .alcor-library-entry[aria-current] {
   background: var(--alcor-brand-soft);
   color: var(--alcor-brand);
 }
-:is(.alcor-library-entry, .alcor-library-top-drop)[data-drop-target] {
+.alcor-library-row[data-drop-target] > .alcor-library-entry,
+.alcor-library-top-drop[data-drop-target] {
   background: var(--alcor-brand-soft);
   outline: 2px solid var(--alcor-brand);
   outline-offset: -2px;
@@ -231,13 +277,6 @@
 }
 .alcor-library-feedback .alcor-notice-content > span {
   margin-inline-end: auto;
-}
-.alcor-knowledge-form .alcor-library-destinations {
-  height: auto;
-  max-height: 220px;
-}
-.alcor-library-destinations option {
-  padding: 4px;
 }
 @container (max-width: 640px) {
   .alcor-library-split {

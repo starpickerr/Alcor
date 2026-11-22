@@ -65,6 +65,45 @@ import {
 } from '../../packages/alcor-secretary/src/knowledge-tool.js'
 import { classifyCapability } from '../../packages/alcor-secretary/src/security-policy.js'
 
+test('folder deletion checks its confirmed scope and preserves shared originals', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'alcor-knowledge-folder-'))
+  const worker = new BusinessWorker(dir, {
+    worker: new URL('../../packages/alcor-secretary/business/knowledge_worker.py', import.meta.url),
+  })
+  t.after(async () => {
+    await worker.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+  const call = (method, args, key) =>
+    worker.call('invoke', { domain: 'knowledge', method, arguments: args, request_id: key })
+  const path = '课程'
+  await call('create_folder', { name: path })
+  await call('create_folder', { parent: path, name: '讲义' })
+  const sibling = '课程表'
+  await call('create_folder', { name: sibling })
+  const args = {
+    filename: '手册.txt', title: '手册', kind: 'text',
+    content: Buffer.from('binary trees').toString('base64'), pages: ['binary trees'],
+  }
+  const file = await call('store_file', { ...args, collection: path + '/讲义' })
+  const shared = await call('store_file', { ...args, collection: sibling })
+  const plan = await call('plan_folder_delete', { path })
+  assert.deepEqual([plan.documents, plan.folders], [1, 1])
+  const draft = { title: '空白文件', collection: path }
+  const note = await call('create_note', draft, 'empty-note')
+  assert.equal((await call('create_note', draft, 'empty-note')).id, note.id)
+  assert.equal((await call('read', { id: note.id })).text, '')
+  await assert.rejects(call('delete_folder', { path, fingerprint: plan.fingerprint }), /内容已变化/)
+  assert.equal((await call('read', { id: file.id })).text, 'binary trees')
+  const updated = await call('plan_folder_delete', { path })
+  assert.deepEqual([updated.documents, updated.folders], [2, 1])
+  await call('delete_folder', { path, fingerprint: updated.fingerprint })
+  assert.deepEqual(await call('collections', {}), [sibling])
+  assert.equal((await call('original', { id: shared.id })).content, args.content)
+  await assert.rejects(call('read', { id: file.id }), /找不到/)
+  await assert.rejects(call('create_note', draft, 'new-empty-note'), /文件夹已不可用/)
+})
+
 test('knowledge import reads bounded bytes through the active filesystem, and search never exposes the file payload', async () => {
   let tool, saved
   const ctx = {
