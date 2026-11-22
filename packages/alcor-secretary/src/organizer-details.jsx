@@ -7,14 +7,14 @@ import { groupName, priorityLabels, recordAlarms, recordMenuEntries, recordPermi
 
 export function useRecordContextMenu() {
   const [target, setTarget] = useState(null)
-  const open = (event, record, anchored = false) => {
+  const open = (event, record) => {
     event.preventDefault(); event.stopPropagation()
     const element = event.target.closest('button, [tabindex]') ?? event.currentTarget
     const rect = element.getBoundingClientRect()
-    const keyboard = anchored || event.type === 'keydown' || (!event.clientX && !event.clientY)
+    const keyboard = event.type === 'keydown' || (!event.clientX && !event.clientY)
     setTarget({ record, element, x: keyboard ? rect.left : event.clientX, y: keyboard ? rect.bottom : event.clientY })
   }
-  return { target, open, showGroups: () => setTarget(value => ({...value,groups:true})), back: () => setTarget(value => ({...value,groups:false})), close: () => setTarget(null), trigger: record => ({
+  return { target, showGroups: () => setTarget(value => ({...value,groups:true})), back: () => setTarget(value => ({...value,groups:false})), close: () => setTarget(null), trigger: record => ({
     onContextMenu: event => open(event, record),
     onKeyDown: event => { if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) open(event, record) },
   }) }

@@ -227,7 +227,7 @@ def main():
             assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')
             expect(page.get_by_role('button',name='添加事务',exact=True)).to_be_in_viewport()
             page.screenshot(path=str(artifacts/'05-tasks-narrow.png'),animations='disabled')
-            card.get_by_role('button',name='更多操作：完成 Python 练习',exact=True).click()
+            card.get_by_role('button',name='完成 Python 练习',exact=True).press('Shift+F10')
             expect(page.get_by_role('menuitem',name='删除事务',exact=True)).to_be_visible();page.keyboard.press('Escape')
             page.get_by_role('tab',name='已完成',exact=False).click()
             expect(page.get_by_role('button',name='整理桌面文件',exact=True)).to_be_visible()
