@@ -18,7 +18,7 @@
   margin-bottom: 20px;
 }
 .alcor-knowledge-toolbar input,
-.alcor-knowledge-form :is(input, textarea) {
+.alcor-knowledge-form :is(input, select, textarea) {
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l3);
   border-radius: var(--dsw-radius-md);
@@ -78,6 +78,22 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
   font-size: 12px;
+}
+.alcor-knowledge-folder {
+  color: var(--alcor-brand);
+}
+.alcor-library-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.alcor-library-breadcrumb [aria-current] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
 }
 .alcor-knowledge-dialog {
   width: min(740px, 94vw);

@@ -8,18 +8,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packages/alcor-secretary"))
 from business.knowledge import Knowledge
 from business.knowledge_index import connect
+from business.knowledge_graph import install_references
 
 
-def check(path):
+def check(path, version):
     with connect(path) as db:
         db.executescript(
             (
                 Path(__file__).resolve().parents[2] / "packages/alcor-secretary/business/knowledge_schema.sql"
             ).read_text()
         )
-        db.execute("PRAGMA user_version=1")
-        db.execute("""INSERT INTO sources(id,title,kind,note,url,filename,page_count,index_notice,collection)
-                      VALUES('old','提纲','note','参考 [[课程大纲]]','','',1,'','课程')""")
+        db.execute("""INSERT INTO sources(id,title,kind,note,url,filename,page_count,index_notice,collection,archived)
+                      VALUES('old','提纲','note','参考 [[课程大纲]]','','',1,'','课程',1)""")
+        if version == 2:
+            install_references(db)
+        db.execute(f"PRAGMA user_version={version}")
     db.close()
     library = Knowledge(path)
 
@@ -27,6 +30,11 @@ def check(path):
         return library.invoke(method, args, None)
 
     try:
+        assert call("collections") == ["课程"]
+        migrated = call("read", id="old")
+        assert migrated["revision"] == 1 and migrated["archived"] == 0 and migrated["text"] == "参考 [[课程大纲]]"
+        assert call("create_folder", parent="课程", name="数据结构") == {"path": "课程/数据结构"}
+        assert call("search", collection="课程/数据结构")["items"] == []
         assert call("graph")["nodes"][0]["id"] == "old"
         syllabus = call("save", title="课程大纲", text="第三章")
         sid = syllabus["id"]
@@ -76,10 +84,12 @@ def check(path):
         assert not call("links", id="old")["outgoing"]
         call("restore", id=sid, revision=3)
         assert call("links", id="old")["outgoing"][0]["id"] == sid
-        call("edit", id="old", revision=1, title="提纲", text="独立资料")
+        moved = call("edit", id="old", revision=1, title="提纲", text="独立资料", collection="课程/数据结构")
         assert "old" not in [x["id"] for x in call("links", id=sid)["incoming"]]
-        archived = call("archive", id=md["id"], revision=1)
-        call("erase_archived", id=md["id"], revision=archived["revision"])
+        assert moved["id"] == "old" and not call("search", collection="课程")["items"]
+        assert call("search", collection="课程/数据结构")["items"][0]["id"] == "old"
+        assert call("search", query="独立资料")["items"][0]["collection"] == "课程/数据结构"
+        call("delete", id=md["id"], revision=1)
         assert not call("links", id=referencing["id"])["outgoing"]
         call("save", title="讲义.md", text="另一份同名资料")
         assert not call("links", id=referencing["id"])["outgoing"]
@@ -91,4 +101,5 @@ def check(path):
 
 
 with tempfile.TemporaryDirectory() as temp:
-    check(Path(temp) / "library.sqlite3")
+    for version in (1, 2):
+        check(Path(temp) / f"library-v{version}.sqlite3", version)
