@@ -59,6 +59,47 @@ test('disk failures stay visible, recover on retry and never interrupt a host lo
   assert.equal(logs.list({}).entries.length, 1)
 })
 
+test('errors raised by the agent before model dispatch are searchable without copying the conversation', async t => {
+  const { ctx, logs } = await fixture(t)
+  const sessionId = 'session-03fe779c-28d4-45a3-85cc-ad068954e30d'
+  const error = Object.assign(new Error('private prompt secret'), { code: 'NO_ADAPTER' })
+  ctx.emit('agent/error', { agent: { session: { id: sessionId } }, turn: 4, step: 1, error })
+  const [row] = logs.list({ source: 'DSH 对话', outcome: 'failure', query: sessionId }).entries
+  assert.ok(row)
+  assert.match(row.message, /NO_ADAPTER/)
+  assert.match(row.message, /第 4 轮/)
+  assert.match(row.message, /模型提供商/)
+  assert.doesNotMatch(row.message, /private prompt secret/)
+})
+
+test('ordinary traffic and warning storms retain recent errors across restart', async t => {
+  const { ctx, logs, saved } = await fixture(t)
+  ctx.logger('diagnostic').error('important failure')
+  for (let i = 0; i < 1200; i++) ctx.logger('probe').warn('warning %s', i)
+  for (let i = 0; i < 1200; i++) ctx.logger('probe').info('request %s', i)
+  await logs.flush()
+  const restored = await fixture(t, saved)
+  assert.equal(restored.logs.list({ level: 'error', query: 'important failure' }).matched, 1)
+  assert.equal(restored.logs.list({ level: 'warn', query: 'warning 1199' }).matched, 1)
+  assert.equal(restored.logs.list({}).retained, 1000)
+  assert.equal(restored.logs.list({}).entries[0].message, 'request 1199')
+})
+
+test('failed generic tools have a safe diagnosis and intentional cancellations stay quiet', async t => {
+  const { ctx, logs } = await fixture(t)
+  const execution = { name: 'private-tool-input', callId: '03fe779c-28d4-45a3-85cc-ad068954e30d' }
+  for (const code of ['UNKNOWN_TOOL', 'ABORTED_BEFORE_DISPATCH']) {
+    ctx.emit('tools/result', execution, { isError: true, error: { info: { code }, message: 'private tool output' } })
+  }
+  ctx.emit('tools/result', execution, { isError: false })
+  const { entries } = logs.list({ source: 'DSH 工具', outcome: 'failure' })
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].requestId, execution.callId)
+  assert.equal(entries[0].diagnostic.code, 'UNKNOWN_TOOL')
+  assert.match(entries[0].diagnostic.reason, /插件已启用/)
+  assert.doesNotMatch(entries[0].message, /private/)
+})
+
 test('debug bursts cannot displace normal records in storage or after restart', async t => {
   const loggerName = 'alcor-organizer'
   const history = Array.from({ length: 300 }, (_, index) => ({
