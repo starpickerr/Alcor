@@ -66,15 +66,18 @@ class Knowledge:
             return self.folder_delete(args, method == "delete_folder")
         if method == "search":
             return self.search(args)
-        if method == "graph":
+        if method in ("graph", "graph_view"):
             collection = args.get("collection")
             if collection is not None:
                 collection = string(collection, 100, "资料集")
+            viewer = method == "graph_view"
             return graph(
                 self.db,
                 collection,
                 string(args.get("query", ""), 240, "搜索词"),
                 integer(args.get("limit", 240), 1, 240),
+                viewer=viewer,
+                focus=string(args.get("focus_id", ""), 80, "资料编号") if viewer else "",
             )
         if method == "collections":
             return [
