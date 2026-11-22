@@ -150,14 +150,58 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
 }
 .alcor-library-document > header h2 {
+  flex: 1;
+  min-width: 0;
   font-size: 22px;
   line-height: 30px;
   overflow-wrap: anywhere;
+}
+.alcor-library-tools,
+.alcor-library-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alcor-library-tools {
+  flex: none;
+  justify-content: flex-end;
+}
+.alcor-library-tools :is(button, .alcor-library-icon-link) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-secondary);
+  text-decoration: none;
+}
+.alcor-library-icon-link:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.alcor-library-icon-link:focus-visible {
+  outline: 2px solid var(--alcor-brand, var(--dsw-focus-ring-color));
+  outline-offset: -2px;
+}
+.alcor-library-web-link {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+.alcor-library-location {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.alcor-library-pages {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  margin-inline-start: auto;
 }
 .alcor-library-detail .alcor-library-back {
   display: none;
@@ -228,12 +272,6 @@
   width: 100%;
   height: 48vh;
 }
-.alcor-knowledge-original a,
-.alcor-knowledge-meta a {
-  color: var(--dsw-alias-label-primary);
-  text-decoration: underline;
-}
-
 .alcor-library-views,
 .alcor-graph-controls {
   display: inline-flex;

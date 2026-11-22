@@ -8,8 +8,11 @@ import {
   IconChevronRightOutlineRegular,
   IconCloseOutlineRegular,
   IconDeliverDocRegular,
+  IconDownloadOutlineRegular,
+  IconEditOutlineRegular,
   IconFolderOpenRegular,
   IconPlusOutlineRegular,
+  IconTrashOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { KnowledgeGraph } from './knowledge-graph.jsx'
 import { Notice } from './notice.jsx'
@@ -353,7 +356,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
   )
 }
 
-function Original({ api, source }) {
+function useOriginal(api, id) {
   const [url, setUrl] = useState(''),
     [error, setError] = useState(''),
     [retry, setRetry] = useState(0)
@@ -362,7 +365,8 @@ function Original({ api, source }) {
       objectUrl
     setUrl('')
     setError('')
-    call(api, 'original', { id: source.id })
+    if (!id) return
+    call(api, 'original', { id })
       .then((row) => {
         if (!active) return
         const type =
@@ -384,14 +388,20 @@ function Original({ api, source }) {
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [api, source.id, retry])
+  }, [api, id, retry])
+  return { url, error, retry: () => setRetry((n) => n + 1) }
+}
+
+function Original({ source, original }) {
+  const { url, error, retry } = original
   if (error)
     return (
       <Notice tone="error">
-        {error} <Button onClick={() => setRetry((n) => n + 1)}>重试</Button>
+        {error} <Button onClick={retry}>重试</Button>
       </Notice>
     )
   if (!url) return <p role="status">正在读取原件…</p>
+  if (source.kind === 'text') return null
   return (
     <div className="alcor-knowledge-original">
       {source.kind === 'image' && <img src={url} alt={source.title} />}
@@ -400,9 +410,6 @@ function Original({ api, source }) {
           <p>请下载原件查看 PDF。</p>
         </object>
       )}
-      <a href={url} download={source.filename}>
-        下载原件
-      </a>
     </div>
   )
 }
@@ -421,7 +428,7 @@ function SourceReader({ target, ...props }) {
   )
 }
 
-function Reader({ api, target, close, onChange, collections, onOpen, back, inline, onMove, movedLocations }) {
+function Reader({ api, target, close, onChange, collections, onOpen, back, inline, movedLocations }) {
   const [version, setVersion] = useState(inline ? undefined : target.revision)
   const [confirmErase, setConfirmErase] = useState(false)
   const [page, setPage] = useState(target.page || 1),
@@ -432,6 +439,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
     [editing, setEditing] = useState(false)
   const moved = movedLocations?.[target.id]
   const current = source && !source.historical && moved?.revision > source.revision ? { ...source, ...moved } : source
+  const original = useOriginal(api, source?.filename ? source.id : undefined)
   useEffect(() => {
     let active = true
     setError('')
@@ -503,15 +511,29 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
       />
     )
   const title = source?.title || target.title || '查看资料'
-  const actions = source && !source.historical && (
-    <div className="alcor-knowledge-actions">
-      <Button variant="outline" onClick={() => setEditing(true)}>编辑</Button>
-      {onMove && <Button variant="outline" onClick={() => onMove(current)}>移动到…</Button>}
-      <Button variant="ghost" disabled={busy} onClick={() => setConfirmErase(true)}>删除资料</Button>
+  const actions = source && (source.filename || source.url || !source.historical) && (
+    <div className="alcor-library-tools" role="group" aria-label="资料操作">
+      {source.filename && (original.url ? (
+        <a className="alcor-library-icon-link" href={original.url} download={source.filename} aria-label="下载原件" title="下载原件">
+          <IconDownloadOutlineRegular size={18} aria-hidden="true" />
+        </a>
+      ) : <Button size="sm" variant="ghost" disabled aria-label="下载原件" title="下载原件">
+        <IconDownloadOutlineRegular size={18} aria-hidden="true" />
+      </Button>)}
+      {source.url && <a className="alcor-library-web-link" href={source.url} target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>}
+      {!source.historical && <>
+        <Button type="button" size="sm" variant="ghost" aria-label="编辑" title="编辑" onClick={() => setEditing(true)}>
+          <IconEditOutlineRegular size={18} aria-hidden="true" />
+        </Button>
+        <Button type="button" size="sm" variant="ghost" aria-label="删除资料" title="删除资料" disabled={busy} onClick={() => setConfirmErase(true)}>
+          <IconTrashOutlineRegular size={18} aria-hidden="true" />
+        </Button>
+      </>}
     </div>
   )
   const content = (
     <>
+      {!inline && actions}
       {error && (
         <Notice tone="error" role="alert">
           {error} <Button onClick={() => setRetry((n) => n + 1)}>重新读取</Button>
@@ -526,15 +548,17 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
                 ← 返回上一份资料
               </Button>
             )}
-            <span>{labels[source.kind]}</span>
-            {current.collection && <span>{displayLocation(current.collection)}</span>}
-            {source.url && (
-              <a href={source.url} target="_blank" rel="noopener noreferrer">
-                打开原网页 ↗
-              </a>
-            )}
+            <span className="alcor-library-location">
+              <span>{labels[source.kind]}</span>
+              {current.collection.split('/').filter(Boolean).map((folder, index) => (
+                <React.Fragment key={index}>
+                  <IconChevronRightOutlineRegular size={12} aria-hidden="true" />
+                  <span>{folder}</span>
+                </React.Fragment>
+              ))}
+            </span>
             {source.page_count > 1 && (
-              <div>
+              <div className="alcor-library-pages" role="group" aria-label="文档分页">
                 <Button size="sm" disabled={page === 1} onClick={() => setPage((n) => n - 1)}>
                   上一页
                 </Button>{' '}
@@ -553,7 +577,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
               </Button>
             </Notice>
           )}
-          {source.filename && <Original api={api} source={source} />}
+          {source.filename && <Original source={source} original={original} />}
           {source.text && (
             <div className="alcor-knowledge-text">
               <DocumentText
@@ -575,7 +599,6 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
             <DocumentLinks key={source.revision} api={api} id={source.id} open={onOpen} />
           )}
           {source.index_notice && <Notice>{source.index_notice}</Notice>}
-          {!inline && actions}
         </div>
       )}
     </>
@@ -1051,7 +1074,7 @@ export function KnowledgePage({ api }) {
               <Button className="alcor-library-back" size="sm" variant="ghost" onClick={() => setTarget(null)}>返回目录</Button>
               <SourceReader key={target.id + ':' + (target.page ?? 1)} target={target} api={api} inline
                 collections={folders} close={() => setTarget(null)} onChange={refresh}
-                onMove={setMoving} movedLocations={movedLocations} />
+                movedLocations={movedLocations} />
             </> : <Empty title={collection ? folderName(collection) : '选择资料'} icon={<IconDeliverDocRegular size={28} />} />}
           </section>
         </div>

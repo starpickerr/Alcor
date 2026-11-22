@@ -76,6 +76,8 @@ def check(page, docs):
     add = page.get_by_role("button", name="添加资料", exact=True)
     dialog = page.get_by_role("dialog")
     reader = page.get_by_role("article", name="资料详情")
+    tools = reader.get_by_role("group", name="资料操作")
+    location = reader.locator(".alcor-library-location")
     directory = page.get_by_role("navigation", name="知识库目录")
     for name in ("课程", "数据结构"):
         add.click()
@@ -96,7 +98,9 @@ def check(page, docs):
     expect(reader.get_by_role("link", name="打开原网页")).to_have_attribute(
         "href", "https://example.org/syllabus"
     )
-    expect(reader.get_by_role("button", name="删除资料", exact=True)).to_be_visible()
+    expect(tools.get_by_role("button", name="编辑", exact=True)).to_be_visible()
+    expect(tools.get_by_role("button", name="删除资料", exact=True)).to_be_visible()
+    expect(tools.get_by_role("button", name="移动到…", exact=True)).to_have_count(0)
     entry = directory.get_by_role("button", name="网页 教学大纲", exact=True)
     root = directory.get_by_role("button", name="知识库首页", exact=True)
     entry.drag_to(root)
@@ -104,17 +108,19 @@ def check(page, docs):
     expect(reader).to_contain_text("第八章为选读")
     page.get_by_role("button", name="撤销", exact=True).click()
     expect(page.get_by_role("status").filter(has_text="已撤销移动")).to_be_visible()
-    expect(reader).to_contain_text("课程 / 数据结构")
+    expect(location.get_by_text("数据结构", exact=True)).to_be_visible()
+    expect(location.locator("svg")).to_have_count(2)
     entry.press("Shift+F10")
     page.get_by_role("menuitem", name="移动到…", exact=True).click()
     dialog.get_by_label("搜索目标文件夹").fill("课程")
     dialog.get_by_label("目标文件夹", exact=True).select_option("课程")
     dialog.get_by_role("button", name="移动", exact=True).click()
-    expect(reader.locator(".alcor-knowledge-meta")).to_contain_text("课程")
-    expect(reader.locator(".alcor-knowledge-meta")).not_to_contain_text("数据结构")
+    expect(location.get_by_text("课程", exact=True)).to_be_visible()
+    expect(location.get_by_text("数据结构", exact=True)).to_have_count(0)
+    expect(location.locator("svg")).to_have_count(1)
     entry.drag_to(directory.get_by_role("button", name="数据结构", exact=True))
     expect(page.get_by_role("status").filter(has_text="已移到 课程 / 数据结构")).to_be_visible()
-    expect(reader.locator(".alcor-knowledge-meta")).to_contain_text("课程 / 数据结构")
+    expect(location.get_by_text("数据结构", exact=True)).to_be_visible()
     assert directory.bounding_box()["x"] < reader.bounding_box()["x"]
     page.screenshot(path=str(desktop.ARTIFACTS / "knowledge-split.png"))
     root.click()
@@ -131,8 +137,11 @@ def check(page, docs):
     page.get_by_label("搜索知识库").fill("Chapter five")
     page.get_by_role("button", name="图片 期末通知.png").click(timeout=60000)
     expect(reader.get_by_role("img", name="期末通知.png")).to_be_visible()
+    expect(tools.locator("svg")).to_have_count(3)
+    assert tools.bounding_box()["x"] > reader.get_by_role("heading", name="期末通知.png").bounding_box()["x"]
+    page.screenshot(path=str(desktop.ARTIFACTS / "knowledge-toolbar.png"))
     with page.expect_download() as download:
-        reader.get_by_role("link", name="下载原件").click()
+        tools.get_by_role("link", name="下载原件").click()
     assert Path(download.value.path()).read_bytes() == original.read_bytes()
     page.get_by_label("搜索知识库").clear()
     # Two scanned pages exercise page numbering, preview, and the exact download.
@@ -227,7 +236,7 @@ def check(page, docs):
     page.get_by_role("button", name="文档 学期记录.txt").click()
     expect(reader.locator("mark")).to_contain_text(marker.decode())
     with page.expect_download() as downloaded:
-        reader.get_by_role("link", name="下载原件").click()
+        tools.get_by_role("link", name="下载原件").click()
     assert Path(downloaded.value.path()).read_bytes() == long_text.read_bytes()
     page.set_viewport_size({"width": 540, "height": 740})
     expect(directory).not_to_be_visible()
@@ -239,8 +248,8 @@ def check(page, docs):
         const el = document.querySelector('.alcor-library-detail'), box = el.getBoundingClientRect();
         return el.contains(document.elementFromPoint(box.left + 12, box.top + 16));
     }""")
-    reader.get_by_role("button", name="移动到…", exact=True).click()
-    expect(dialog.get_by_label("搜索目标文件夹")).to_be_visible()
+    tools.get_by_role("button", name="编辑", exact=True).click()
+    expect(dialog.get_by_label("标题", exact=True)).to_have_value("学期记录.txt")
     dialog.get_by_role("button", name="取消", exact=True).click()
     page.screenshot(path=str(desktop.ARTIFACTS / "knowledge-reading-narrow.png"))
     page.get_by_role("button", name="返回目录", exact=True).click()
