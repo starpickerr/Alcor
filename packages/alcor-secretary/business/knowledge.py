@@ -60,8 +60,10 @@ class Knowledge:
         return dict(row)
 
     def invoke(self, method, args, key):
-        if method in ("save", "store_file"):
-            return self.save(args, key, method == "store_file")
+        if method in ("save", "store_file", "create_note"):
+            return self.save(args, key, method == "store_file", allow_empty=method == "create_note")
+        if method in ("plan_folder_delete", "delete_folder"):
+            return self.folder_delete(args, method == "delete_folder")
         if method == "search":
             return self.search(args)
         if method == "graph":
@@ -88,6 +90,8 @@ class Knowledge:
                 raise ValueError("文件夹名称不能含有斜线，也不能是 . 或 ..。")
             path = string(f"{parent}/{name}" if parent else name, 100, "文件夹路径", True)
             with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                self.require_folder(parent)
                 self.db.execute("INSERT OR IGNORE INTO library_folders(path) VALUES(?)", (path,))
             return {"path": path}
         if method == "parsed_asset":
@@ -165,12 +169,7 @@ class Knowledge:
             destination = string(args.get("collection"), 100, "目标文件夹")
             with self.db:
                 self.db.execute("BEGIN IMMEDIATE")
-                if destination and not self.db.execute(
-                    """SELECT 1 FROM library_folders WHERE path=?
-                       OR substr(path,1,length(?)+1)=?||'/' LIMIT 1""",
-                    (destination, destination, destination),
-                ).fetchone():
-                    raise ValueError("目标文件夹已不可用，请重新选择。")
+                self.require_folder(destination)
                 cursor = self.db.execute(
                     """UPDATE sources SET collection=?,revision=revision+1
                        WHERE id=? AND revision=? AND collection=? AND archived=0""",
@@ -198,7 +197,7 @@ class Knowledge:
             title = string(args.get("title"), 240, "标题", True)
             note = string(args.get("text", ""), 64000, "正文")
             url = source_url(args.get("url", source["url"]))
-            if not (source["filename"] or note or url):
+            if source["kind"] == "web" and not (note or url):
                 raise ValueError("请填写笔记或网页地址。")
         collection = string(args.get("collection", source["collection"]), 100, "资料集")
         with self.db:
@@ -249,30 +248,69 @@ class Knowledge:
             ).fetchone()
             if source is None:
                 raise ValueError("资料已变化，请重新打开后操作。")
-            self.db.execute(
-                "DELETE FROM library_fts WHERE rowid IN (SELECT id FROM chunks WHERE source_id=?)",
-                (source_id,),
-            )
-            self.db.execute("DELETE FROM chunks WHERE source_id=?", (source_id,))
-            self.db.execute("DELETE FROM history WHERE source_id=?", (source_id,))
-            # An erased target must never silently redirect an existing citation to a namesake.
-            self.db.execute("UPDATE document_refs SET retired=1 WHERE target_id=?", (source_id,))
-            self.db.execute("DELETE FROM sources WHERE id=?", (source_id,))
-            resolve(self.db, {k for k in (source["title"], source["filename"]) if k})
-            if (
-                source["asset_hash"]
-                and not self.db.execute(
-                    "SELECT 1 FROM sources WHERE asset_hash=? LIMIT 1", (source["asset_hash"],)
-                ).fetchone()
-            ):
-                self.db.execute("DELETE FROM asset_pages WHERE hash=?", (source["asset_hash"],))
-                self.db.execute("DELETE FROM assets WHERE hash=?", (source["asset_hash"],))
+            self.erase_source(source_id, source)
+            resolve(self.db, {source[key] for key in ("title", "filename") if source[key]})
             self.db.execute(
                 "DELETE FROM embeddings WHERE NOT EXISTS(SELECT 1 FROM chunks WHERE chunks.digest=embeddings.digest)"
             )
         return {"removed": True}
 
-    def save(self, args, key, file):
+    def require_folder(self, path):
+        if path and not self.db.execute(
+            """SELECT 1 FROM library_folders WHERE path=?
+               OR substr(path,1,length(?)+1)=?||'/' LIMIT 1""", (path, path, path)
+        ).fetchone():
+            raise ValueError("目标文件夹已不可用，请重新选择。")
+
+    def erase_source(self, source_id, source):
+        self.db.execute(
+            "DELETE FROM library_fts WHERE rowid IN (SELECT id FROM chunks WHERE source_id=?)",
+            (source_id,),
+        )
+        self.db.execute("DELETE FROM chunks WHERE source_id=?", (source_id,))
+        self.db.execute("DELETE FROM history WHERE source_id=?", (source_id,))
+        # Keep existing citations from redirecting to a document with the same name.
+        self.db.execute("UPDATE document_refs SET retired=1 WHERE target_id=?", (source_id,))
+        self.db.execute("DELETE FROM sources WHERE id=?", (source_id,))
+        asset = source["asset_hash"]
+        if asset and not self.db.execute("SELECT 1 FROM sources WHERE asset_hash=?", (asset,)).fetchone():
+            self.db.execute("DELETE FROM asset_pages WHERE hash=?", (asset,))
+            self.db.execute("DELETE FROM assets WHERE hash=?", (asset,))
+
+    def folder_delete(self, args, commit):
+        path = string(args.get("path"), 100, "文件夹路径", True)
+        params = (path, path, path)
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE" if commit else "BEGIN")
+            folders = [r[0] for r in self.db.execute(
+                "SELECT path FROM library_folders WHERE path=? OR substr(path,1,length(?)+1)=?||'/' ORDER BY path",
+                params,
+            )]
+            if not folders:
+                raise ValueError("文件夹已不存在。")
+            sources = self.db.execute(
+                """SELECT id,revision,asset_hash,title,filename FROM sources WHERE collection=?
+                   OR substr(collection,1,length(?)+1)=?||'/' ORDER BY id""", params
+            ).fetchall()
+            revisions = [(source["id"], source["revision"]) for source in sources]
+            fingerprint = hashlib.sha256(json.dumps([folders, revisions]).encode()).hexdigest()
+            if not commit:
+                subfolders = set()
+                for folder in folders:
+                    while folder != path:
+                        subfolders.add(folder)
+                        folder = folder.rpartition("/")[0]
+                return {"fingerprint": fingerprint, "documents": len(sources), "folders": len(subfolders)}
+            if args.get("fingerprint") != fingerprint:
+                raise ValueError("文件夹内容已变化，请重新确认删除范围。")
+            for source in sources:
+                self.erase_source(source["id"], source)
+            resolve(self.db, {source[key] for source in sources for key in ("title", "filename") if source[key]})
+            self.db.execute("DELETE FROM library_folders WHERE path=? OR substr(path,1,length(?)+1)=?||'/'", params)
+            self.db.execute("DELETE FROM embeddings WHERE NOT EXISTS(SELECT 1 FROM chunks WHERE chunks.digest=embeddings.digest)")
+        return {"removed": True}
+
+    def save(self, args, key, file, allow_empty=False):
         title = string(args.get("title"), 240, "标题", True)
         note = string(args.get("text", ""), 64000, "正文")
         url = source_url(args.get("url", ""))
@@ -297,7 +335,7 @@ class Knowledge:
                 raise ValueError("文档超出可索引范围。")
             notice = string(args.get("index_notice", ""), 240, "索引状态")
         else:
-            if not note and not url:
+            if not allow_empty and not note and not url:
                 raise ValueError("请填写笔记或网页地址。")
             kind, pages = ("web" if url else "note"), [note]
         # Extraction can vary across OS updates. Retry identity depends on the original input.
@@ -322,6 +360,8 @@ class Knowledge:
                     if receipt["source_id"] is None:
                         raise ValueError("这条收藏已经删除。")
                     return self.header(receipt["source_id"])
+            if allow_empty:
+                self.require_folder(collection)
             if asset_hash:
                 same = self.db.execute(
                     """SELECT id FROM sources WHERE asset_hash=? AND collection=?
