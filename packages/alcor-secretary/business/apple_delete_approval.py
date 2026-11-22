@@ -156,15 +156,25 @@ def prepare(svc, domain, method, arguments, operation_id):
         return result
 
 
-def _replay(db, svc, entity, identity, operation_id, snapshot=None, native_snapshot=None):
+def _replay(db, svc, entity, identity, operation_id, snapshot=None, native_snapshot=None, confirmed_fingerprint=None):
     row = db.execute('SELECT * FROM apple_operations WHERE id=?', (operation_id,)).fetchone()
     if not row: raise ValueError('approved operation receipt is incomplete')
     document = json.loads(row['document'])
+    if confirmed_fingerprint is not None:
+        validate_operation_id(confirmed_fingerprint)
+        intent = document.get('_confirmed_intent')
+        if (not isinstance(intent, dict) or type(intent.get('version')) is not int
+                or intent != {'version': 1, 'plan_fingerprint': confirmed_fingerprint}
+                or row['entity'] != entity or row['local_id'] != identity or row['action'] not in ('delete', 'truncate', 'exclude')):
+            raise ValueError('confirmed deletion fingerprint or target changed')
     if snapshot is not None and document.get('_approval') != {'snapshot': snapshot, 'native': native_snapshot}:
         raise ValueError('idempotency conflict: different approved Apple snapshot')
     current = db.execute(f'SELECT 1 FROM {svc.APPLE_CATEGORIES if entity == "category" else svc.APPLE_ITEMS} WHERE id=?', (identity,)).fetchone()
     conflict = bool(current and generations_for(db, entity, [identity])[0][1] != document.get('_approved_generation'))
-    return {'replayed': True, 'operation_id': operation_id, 'state': row['state'], 'pending': row['state'] in ('pending', 'sending', 'uncertain'), 'targetConflict': conflict}
+    result = {'replayed': True, 'operation_id': operation_id, 'state': row['state'], 'pending': row['state'] in ('pending', 'sending', 'uncertain'), 'targetConflict': conflict}
+    if confirmed_fingerprint is not None:
+        result.update(confirmed_fingerprint=confirmed_fingerprint, has_error=bool(row['error']))
+    return result
 
 
 def commit(svc, domain, method, arguments, operation_id, snapshot, native_snapshot, confirmed_intent=None):

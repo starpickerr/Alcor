@@ -20,7 +20,7 @@ import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 // Real SDK/tools, both real Host classes and separate real owner/AppleWorker processes.
 // Only the native EventKit dependency and approval answerer are synthetic.
 for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'category', 'category-import', 'item-finish-recovery', 'item-not-sent',
-  ...(kind === 'reminders' ? ['item-being-exported'] : [])])
+  ...(kind === 'reminders' ? ['item-being-exported', 'item-late-approval'] : [])])
  test(`${kind} ${entity}: real worker/peer roundtrip consumes concrete SDK approval once`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-delete-wire-')), output = await mkdtemp(join(process.cwd(), '.delete-wire-build-'))
   const ctx = new Context(), ownerWorker = new BusinessWorker(join(root, 'owner'), { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
@@ -64,7 +64,17 @@ for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'cat
   const agent = { ctx, options: { subagentDepth: 0 }, session }, preset = {}; bindScopeParent(agent, preset)
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt', 'alcorSecretary', 'alcorOrganizer'] }))
   const asks = []; let answer = 'rejected'
-  ctx.on('approval/request', request => { asks.push(request); return answer })
+  const late = entity === 'item-late-approval'
+  let delayedPlan
+  ctx.on('approval/request', request => {
+    asks.push(request)
+    if (late && answer === 'allowed-once') {
+      const ticket = [...apple.preparedDeletes.values()].at(-1)
+      delayedPlan = JSON.parse(ticket.serialized)
+      ticket.expires = Date.now() - 1
+    }
+    return answer
+  })
   await ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [{ source: { kind: 'user' } }] }, async () => {})
   const input = { domain, method: category ? 'delete_category' : kind === 'reminders' ? 'delete_todo' : 'delete_event', arguments: { [domain === 'calendar' ? 'id' : category ? 'category_id' : 'todo_id']: row.id } }
   const call = async id => (await ctx.tools.execute({ agent, signal: AbortSignal.timeout(10000), calls: [{ type: 'tool-call', id, name: 'alcor_business', arguments: JSON.stringify(input) }] })).results[0].result
@@ -89,6 +99,17 @@ for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'cat
   const result = await call('confirm'); assert.equal(result.isError, false, JSON.stringify(result)); assert.equal(asks.length, 2)
   assert.match(asks[1].reason, /account1/)
   const writeCount = async () => { try { return (await readFile(join(root, 'apple', 'synthetic-native-writes.jsonl'), 'utf8')).trim().split('\n').length } catch (error) { if (error.code === 'ENOENT') return 0; throw error } }
+  if (late) {
+    assert.match(JSON.stringify(result), /等待同步/)
+    assert.equal(await writeCount(), 0)
+    const receiptRequest = { ...input, operation_id: delayedPlan.operation_id, confirmed_fingerprint: delayedPlan.plan_fingerprint }
+    assert.equal((await ownerWorker.call('prepare_delete_receipt', receiptRequest)).state, 'pending')
+    await assert.rejects(() => ownerWorker.call('prepare_delete_receipt', { ...receiptRequest, confirmed_fingerprint: 'a'.repeat(64) }), /fingerprint/)
+    await apple.invoke({ method: 'sync', arguments: { kind } })
+    assert.equal((await ownerWorker.call('prepare_delete_receipt', receiptRequest)).state, 'done')
+    await apple.invoke({ method: 'sync', arguments: { kind } })
+    assert.equal(asks.length, 2)
+  }
   assert.equal(await writeCount(), unlink || entity === 'item-not-sent' ? 0 : 1)
   if (unlink) assert.match(asks[1].reason, /Apple 不变/)
   assert(peers.includes('approved_delete')); assert(peers.includes('approved_delete_owner'))

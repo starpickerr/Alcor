@@ -472,10 +472,10 @@ class Business:
             raise ValueError('Invalid recovery request')
         return getattr(self, domain).restore_apple_inbound_recovery(recovery_id)
 
-    def prepare_delete_receipt(self, domain, method, arguments, operation_id):
+    def prepare_delete_receipt(self, domain, method, arguments, operation_id, confirmed_fingerprint=None):
         from business.delete_receipt import prepare
         if domain not in ('tasks', 'calendar'): raise ValueError('Unknown deletion domain')
-        return prepare(getattr(self, domain), domain, method, arguments, operation_id)
+        return prepare(getattr(self, domain), domain, method, arguments, operation_id, confirmed_fingerprint)
 
     def prepare_import_category_delete(self, domain, category_id, operation_id):
         from business.import_category_delete import prepare

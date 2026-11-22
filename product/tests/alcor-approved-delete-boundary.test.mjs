@@ -184,6 +184,30 @@ test('plan is frozen; changed parameters, policy, turn, provider or owner versio
   assert.equal((await frozen.call()).isError, false); assert.match(frozen.state.asks[0].reason, /Synthetic target/)
 })
 
+test('only a known Apple ticket failure with a matching durable receipt can report a queued delete', async t => {
+  const ticketError = '删除审批无效或已消费。'
+  for (const [message, match] of [['Other Apple error', true], [ticketError, false]]) {
+    const f = await fixture(t, 'native', 'apple')
+    const read = f.owner.businessWorker.call.bind(f.owner.businessWorker)
+    let reads = 0
+    f.owner.businessWorker.call = async (action, input) => {
+      if (action === 'prepare_delete_receipt' && input.confirmed_fingerprint) {
+        reads++
+        return { replayed: true, operation_id: input.operation_id, state: 'pending',
+          confirmed_fingerprint: match ? input.confirmed_fingerprint : 'different' }
+      }
+      return read(action, input)
+    }
+    f.apple.commitApprovedDelete = async () => { throw new Error(message) }
+    const result = await f.call()
+    assert.equal(result.isError, true)
+    assert.ok(JSON.stringify(result).includes(message))
+    assert.equal(reads, message === ticketError ? 1 : 0)
+    assert.equal(f.state.ownerWrites, 1)
+    assert.equal(f.state.nativeSends, 0)
+  }
+})
+
 test('Host retains one grant for worker retry requests; unknown response is not retried (unsent proof belongs to Python)', async t => {
   const retry = await fixture(t, 'native', 'apple'); retry.state.safeRetry = true
   assert.equal((await retry.call()).isError, false); assert.equal(retry.state.asks.length, 1); assert.equal(retry.state.attempts, 2); assert.equal(retry.state.nativeSends, 1)
