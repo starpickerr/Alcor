@@ -71,16 +71,18 @@ class Provider(BaseHTTPRequestHandler):
 def check(page, docs):
     open_secretary(page)
     page.get_by_role("group", name="应用", exact=True).get_by_role("button", name="知识库").click()
-    expect(page.get_by_role("heading", name="还没有资料")).to_be_visible()
+    expect(page.get_by_role("heading", name="选择资料")).to_be_visible()
     expect(page.get_by_label("收藏范围")).to_have_count(0)
     add = page.get_by_role("button", name="添加资料", exact=True)
     dialog = page.get_by_role("dialog")
+    reader = page.get_by_role("article", name="资料详情")
+    directory = page.get_by_role("navigation", name="知识库目录")
     for name in ("课程", "数据结构"):
         add.click()
         page.get_by_role("menuitem", name="新建文件夹", exact=True).click()
         dialog.get_by_label("文件夹名称").fill(name)
         dialog.get_by_role("button", name="新建", exact=True).click()
-        expect(page.get_by_role("navigation", name="文件夹路径").locator("[aria-current]")).to_have_text(name)
+        expect(directory.get_by_role("button", name=name, exact=True)).to_have_attribute("aria-expanded", "true")
     expect(page.get_by_role("button", name=re.compile("^(导入文件|收藏资料)$"))).to_have_count(0)
     add.press("Enter")
     expect(page.get_by_role("menuitem", name="导入文件", exact=True)).to_be_visible()
@@ -91,17 +93,31 @@ def check(page, docs):
     dialog.get_by_label("文字摘录").fill("第八章为选读")
     dialog.get_by_role("button", name="保存", exact=True).click()
     page.get_by_role("button", name="网页 教学大纲").click()
-    expect(dialog.get_by_role("link", name="打开原网页")).to_have_attribute(
+    expect(reader.get_by_role("link", name="打开原网页")).to_have_attribute(
         "href", "https://example.org/syllabus"
     )
-    expect(dialog.get_by_role("button", name="删除资料", exact=True)).to_be_visible()
-    dialog.get_by_role("button", name="关闭", exact=True).click()
-    page.get_by_role("button", name="知识库首页", exact=True).click()
-    expect(page.get_by_role("button", name="网页 教学大纲")).to_have_count(0)
-    page.get_by_role("button", name="课程", exact=True).click()
-    page.get_by_role("button", name="数据结构", exact=True).click()
-    expect(page.get_by_role("button", name="网页 教学大纲")).to_be_visible()
-    page.get_by_role("button", name="知识库首页", exact=True).click()
+    expect(reader.get_by_role("button", name="删除资料", exact=True)).to_be_visible()
+    entry = directory.get_by_role("button", name="网页 教学大纲", exact=True)
+    root = directory.get_by_role("button", name="知识库首页", exact=True)
+    entry.drag_to(root)
+    expect(page.get_by_role("status").filter(has_text="已移到 知识库首页")).to_be_visible()
+    expect(reader).to_contain_text("第八章为选读")
+    page.get_by_role("button", name="撤销", exact=True).click()
+    expect(page.get_by_role("status").filter(has_text="已撤销移动")).to_be_visible()
+    expect(reader).to_contain_text("课程 / 数据结构")
+    entry.press("Shift+F10")
+    page.get_by_role("menuitem", name="移动到…", exact=True).click()
+    dialog.get_by_label("搜索目标文件夹").fill("课程")
+    dialog.get_by_label("目标文件夹", exact=True).select_option("课程")
+    dialog.get_by_role("button", name="移动", exact=True).click()
+    expect(reader.locator(".alcor-knowledge-meta")).to_contain_text("课程")
+    expect(reader.locator(".alcor-knowledge-meta")).not_to_contain_text("数据结构")
+    entry.drag_to(directory.get_by_role("button", name="数据结构", exact=True))
+    expect(page.get_by_role("status").filter(has_text="已移到 课程 / 数据结构")).to_be_visible()
+    expect(reader.locator(".alcor-knowledge-meta")).to_contain_text("课程 / 数据结构")
+    assert directory.bounding_box()["x"] < reader.bounding_box()["x"]
+    page.screenshot(path=str(desktop.ARTIFACTS / "knowledge-split.png"))
+    root.click()
     image = Image.new("RGB", (900, 120), "white")
     font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 48)
     ImageDraw.Draw(image).text((20, 20), "Chapter five is optional", font=font, fill="black")
@@ -114,11 +130,11 @@ def check(page, docs):
     dialog.get_by_role("button", name="保存", exact=True).click()
     page.get_by_label("搜索知识库").fill("Chapter five")
     page.get_by_role("button", name="图片 期末通知.png").click(timeout=60000)
-    expect(dialog.get_by_role("img", name="期末通知.png")).to_be_visible()
+    expect(reader.get_by_role("img", name="期末通知.png")).to_be_visible()
     with page.expect_download() as download:
-        dialog.get_by_role("link", name="下载原件").click()
+        reader.get_by_role("link", name="下载原件").click()
     assert Path(download.value.path()).read_bytes() == original.read_bytes()
-    dialog.get_by_role("button", name="关闭", exact=True).click()
+    page.get_by_label("搜索知识库").clear()
     # Two scanned pages exercise page numbering, preview, and the exact download.
     pdf = docs / "课程讲义.pdf"
     second = Image.new("RGB", (900, 120), "white")
@@ -129,10 +145,10 @@ def check(page, docs):
     expect(dialog).not_to_be_visible(timeout=60000)
     page.get_by_label("搜索知识库").fill("CS204X")
     page.get_by_role("button", name="PDF 课程讲义.pdf").click(timeout=60000)
-    expect(dialog).to_contain_text("第 2 / 2 页")
-    expect(dialog.locator("mark")).to_contain_text("CS204X")
-    expect(dialog.locator("object")).to_have_attribute("data", re.compile("#page=2$"))
-    dialog.get_by_role("button", name="关闭", exact=True).click()
+    expect(reader).to_contain_text("第 2 / 2 页")
+    expect(reader.locator("mark")).to_contain_text("CS204X")
+    expect(reader.locator("object")).to_have_attribute("data", re.compile("#page=2$"))
+    page.get_by_label("搜索知识库").clear()
     for title, body in [
         ("复习计划", "先阅读 [[复习提纲]] 和 [[教学大纲]]，再完成 [[自测题]]。"),
         ("课程笔记", "整理 [[课程讲义.pdf]] 的例题和 [[概念清单]]。"),
@@ -193,10 +209,10 @@ def check(page, docs):
     page.get_by_role("button", name="文档", exact=True).click()
     page.get_by_label("搜索知识库").fill("教学大纲")
     page.get_by_role("button", name="网页 教学大纲").click()
-    dialog.get_by_role("button", name="删除资料", exact=True).click()
+    reader.get_by_role("button", name="删除资料", exact=True).click()
     dialog.get_by_role("button", name="取消", exact=True).click()
-    expect(dialog).to_contain_text("第八章为选读")
-    dialog.get_by_role("button", name="删除资料", exact=True).click()
+    expect(reader).to_contain_text("第八章为选读")
+    reader.get_by_role("button", name="删除资料", exact=True).click()
     dialog.get_by_role("button", name="永久删除", exact=True).click()
     expect(dialog).not_to_be_visible()
     expect(page.get_by_role("button", name="网页 教学大纲")).to_have_count(0)
@@ -209,12 +225,25 @@ def check(page, docs):
     expect(dialog).not_to_be_visible(timeout=60000)
     page.get_by_label("搜索知识库").fill(marker.decode())
     page.get_by_role("button", name="文档 学期记录.txt").click()
-    expect(dialog.locator("mark")).to_contain_text(marker.decode())
+    expect(reader.locator("mark")).to_contain_text(marker.decode())
     with page.expect_download() as downloaded:
-        dialog.get_by_role("link", name="下载原件").click()
+        reader.get_by_role("link", name="下载原件").click()
     assert Path(downloaded.value.path()).read_bytes() == long_text.read_bytes()
-    dialog.get_by_role("button", name="关闭", exact=True).click()
     page.set_viewport_size({"width": 540, "height": 740})
+    expect(directory).not_to_be_visible()
+    expect(page.locator("[data-sidebar-drawer]")).to_have_attribute("data-sidebar-collapsed", "true")
+    expect(reader).to_be_visible()
+    expect(reader.get_by_role("heading", name="学期记录.txt")).to_be_in_viewport()
+    page.get_by_role("button", name="返回目录", exact=True).click(trial=True)
+    page.wait_for_function("""() => {
+        const el = document.querySelector('.alcor-library-detail'), box = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(box.left + 12, box.top + 16));
+    }""")
+    reader.get_by_role("button", name="移动到…", exact=True).click()
+    expect(dialog.get_by_label("搜索目标文件夹")).to_be_visible()
+    dialog.get_by_role("button", name="取消", exact=True).click()
+    page.screenshot(path=str(desktop.ARTIFACTS / "knowledge-reading-narrow.png"))
+    page.get_by_role("button", name="返回目录", exact=True).click()
     expect(page.get_by_label("搜索知识库")).to_be_in_viewport()
     expect(add).to_be_in_viewport()
     page.set_viewport_size({"width": 1280, "height": 850})
@@ -250,7 +279,7 @@ if __name__ == "__main__":
                 check(page, docs)
                 assert not errors, errors
             print(
-                "PASS: nested folders, direct deletion, image OCR, original download, graph navigation, backlinks, narrow layout, chat search and graph tools"
+                "PASS: split reader, drag and move menu, undo, nested folders, deletion, OCR, original download, graph, references and narrow layout"
             )
     finally:
         server.shutdown()
