@@ -1,6 +1,7 @@
 import { checkMessages as mailErrors } from '../../../../dsh-email/plugin/src/check-status.js'
 import { checkMessages as schoolErrors } from '../../alcor-plugin-info/src/elearning-status.js'
 import { reportHostFailure } from '../../alcor-organizer/src/worker-diagnostic.js'
+import { recordAgentFailure, recordGenericToolFailure } from './chat-diagnostics.js'
 import { Logger } from '@deepseek-ai/cordis'
 import { logCapacity, logCategory, logDebugCapacity, logSchemas, logSources } from './log-contract.js'
 
@@ -35,7 +36,7 @@ export function redactLog(text) {
 // MCP errors may contain mail bodies, credentials or server responses. Resolve only known codes.
 export function recordSourceFailure(ctx, execution, result) {
   const match = /^mcp__(email|elearning)__([a-z_]{1,80})$/.exec(execution.name)
-  if (!match) return
+  if (!match) return recordGenericToolFailure(ctx, execution, result)
   const value = result.value?.structuredContent?.value
   const mailCheck = execution.name === 'mcp__email__test_connection'
   if (!result.isError && !(mailCheck && (value?.connected === false || value?.folder_accessible === false))) return
@@ -48,6 +49,18 @@ export function recordSourceFailure(ctx, execution, result) {
   if (typeof code !== 'string' || !Object.hasOwn(messages, code)) code = 'query_failed'
   reportHostFailure(ctx, match[1] === 'email' ? 'mail' : 'elearning', match[1] + '.' + match[2],
     { code }, messages[code], execution.callId)
+}
+
+const reservedPerIncidentLevel = 100
+
+// Keep recent incidents findable among routine requests without increasing stored history.
+function evictionIndex(entries) {
+  const debug = entries.findIndex(row => row.level === 'debug')
+  if (debug >= 0) return debug
+  if (entries[0].level === 'info') return 0
+  const totals = { error: 0, warn: 0 }
+  for (const { level } of entries) if (Object.hasOwn(totals, level)) totals[level]++
+  return entries.findIndex(({ level }) => level === 'info' || totals[level] > reservedPerIncidentLevel)
 }
 
 // Only explicit native worker events attest an operation outcome; severity alone does not.
@@ -91,7 +104,12 @@ export class RuntimeLogs {
     this.revision = 0
     this.queue = Promise.resolve()
     this.active = true
-    ctx.on('tools/result', (execution, result) => { recordSourceFailure(ctx, execution, result) })
+    ctx.on('tools/result', (execution, result) => {
+      try { if (this.active) recordSourceFailure(ctx, execution, result) } catch { /* Keep the original tool result intact. */ }
+    })
+    ctx.on('agent/error', event => {
+      try { if (this.active) recordAgentFailure(ctx, this.entries, event) } catch { /* Keep the original agent failure intact. */ }
+    })
     ctx.logger.exporter({ colors: false, levels: { default: 3 }, export: message => {
       // A broken diagnostic sink must never interrupt a business operation.
       try {
@@ -102,8 +120,7 @@ export class RuntimeLogs {
           level: message.type, source, message: redactLog(formatted).slice(0, 4000) })
         const debugOverflow = message.type === 'debug' && this.entries.filter(row => row.level === 'debug').length > logDebugCapacity
         if (debugOverflow || this.entries.length > logCapacity) {
-          const oldestDebug = this.entries.findIndex(row => row.level === 'debug')
-          this.entries.splice(Math.max(0, oldestDebug), 1)
+          this.entries.splice(evictionIndex(this.entries), 1)
         }
         this.revision++
         this.storage = 'pending'
