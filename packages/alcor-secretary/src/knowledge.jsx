@@ -675,7 +675,7 @@ export function KnowledgeCitations({ turn, useKnowledgeCalls, api }) {
 
 function LibraryIconButton({ icon: Icon, label, title = label, onClick }) {
   return <Button type="button" size="sm" variant="ghost" aria-label={label} title={title}
-    disabled={!onClick} onClick={onClick}>
+    onClick={onClick}>
     <Icon size={16} aria-hidden="true" />
   </Button>
 }
@@ -686,8 +686,8 @@ function LibraryActions({ className, name, onCreateFile, onCreateFolder, onDelet
       title="新建文件" onClick={onCreateFile} />
     <LibraryIconButton icon={IconProjectAddOutlineRegular} label={name ? '在' + name + '中新建文件夹' : '新建文件夹'}
       title="新建文件夹" onClick={onCreateFolder} />
-    <LibraryIconButton icon={IconTrashOutlineRegular} label={name ? '删除文件夹：' + name : '删除所选项'}
-      title={name ? '删除文件夹' : '删除所选项'} onClick={onDelete} />
+    {onDelete && <LibraryIconButton icon={IconTrashOutlineRegular} label={'删除文件夹：' + name}
+      title="删除文件夹" onClick={onDelete} />}
   </div>
 }
 
@@ -1036,8 +1036,7 @@ export function KnowledgePage({ api }) {
               </div>
               <LibraryActions className="alcor-library-directory-tools"
                 onCreateFile={() => setEditor({ initialCollection: collection })}
-                onCreateFolder={() => setCreatingFolder(collection)}
-                onDelete={target || collection ? () => setDeleting(target ?? { path: collection }) : undefined} />
+                onCreateFolder={() => setCreatingFolder(collection)} />
               {showTopDrop && <div className="alcor-library-top-drop" {...folderDrop('')}>移到顶层</div>}
             </div>
             <div className="alcor-library-scroll">

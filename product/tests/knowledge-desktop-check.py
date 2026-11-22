@@ -80,7 +80,7 @@ def check(page, docs):
     location = reader.locator(".alcor-library-location")
     directory = page.get_by_role("navigation", name="知识库目录")
     folder_tools = directory.get_by_role("group", name="目录操作", exact=True)
-    expect(folder_tools.get_by_role("button", name="删除所选项")).to_be_disabled()
+    expect(folder_tools.get_by_role("button")).to_have_count(2)
     for name, button in (
         ("课程", folder_tools.get_by_role("button", name="新建文件夹", exact=True)),
         ("数据结构", directory.get_by_role("button", name="在课程中新建文件夹", exact=True)),
@@ -97,6 +97,7 @@ def check(page, docs):
     dialog.get_by_label("文字摘录").fill("第八章为选读")
     dialog.get_by_role("button", name="保存", exact=True).click()
     page.get_by_role("button", name="网页 教学大纲").click()
+    expect(folder_tools.get_by_role("button")).to_have_count(2)
     expect(reader.get_by_role("link", name="打开原网页")).to_have_attribute(
         "href", "https://example.org/syllabus"
     )
