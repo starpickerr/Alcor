@@ -33,7 +33,10 @@ export function apply(ctx) {
   ctx.on('agent/pre-step', ({ agent, messages }, next) => {
     if (messages.length) {
       const boundary = agent?.session && ctx.get('agents')?.turnBoundaryOf(agent.session)
-      const user = messages.every(message => message.source.kind === 'user')
+      // DSH queues its policy-change notice alongside the next prompt. The notice
+      // can accompany a user message but cannot authorize a turn on its own.
+      const user = messages.some(message => message.source.kind === 'user')
+        && messages.every(message => message.source.kind === 'user' || message.source.kind === 'user-approval')
       const schedule = messages.every(message => message.source.kind === 'schedule')
       if (boundary?.openTurnStartSeq != null && Number.isSafeInteger(boundary.lastTurn) && boundary.lastTurn > 0) {
         const previous = turnSource(agent)

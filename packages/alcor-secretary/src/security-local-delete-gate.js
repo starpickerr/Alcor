@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { createHash } from 'node:crypto'
 import { symbols } from '@deepseek-ai/cordis'
 import { billOperationId } from './security-bill-delete.js'
+import { denyDeleteApproval } from './delete-approval-feedback.js'
 
 const providerIdentity = provider => provider?.[symbols.original] ?? provider
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -166,20 +167,25 @@ export function createLocalDeleteGate({ prepare, commit, getApproval, actorStill
       if (!['allow', 'ask'].includes(host.kind) || !authorize()) throw new Error('当前会话无权删除。')
       const request = deletionRequest(execution, turn)
       const result = frozenDeletion(await prepare(request, authorize), request)
-      if (!authorize()) throw new Error('删除授权已失效。')
+      if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
       // A previous receipt is read-only. It never grants another dispatch, even if pending.
       if (result.kind !== 'receipt') {
         approval = getApproval()
-        if (!approval || typeof approval.request !== 'function' || typeof approval.overrideOf !== 'function' || !authorize()) throw new Error('当前会话没有可用的删除审批，请核对 DSH 审批设置。')
+        if (typeof approval?.request !== 'function' || typeof approval.overrideOf !== 'function') return denyDeleteApproval('DELETE_APPROVAL_UNAVAILABLE')
+        if (policyOf(approval, session) === 'never') return denyDeleteApproval('DELETE_APPROVAL_DISABLED')
+        if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
         const detail = deletionDetail(result)
         const reason = [host.kind === 'ask' ? host.reason : undefined, detail].filter(Boolean).join('\n')
         const displayReason = host.kind === 'ask' && host.displayReason
           ? Object.fromEntries(Object.entries(host.displayReason).map(([locale, text]) => [locale, [text, detail].filter(Boolean).join('\n')])) : undefined
         if (reason.length > 120000 || Object.values(displayReason ?? {}).some(text => text.length > 120000)) throw new Error('删除预览过大，请缩小范围。')
         const outcome = await approval.request({ agent, toolName: name, callId, reason, ...(displayReason ? { displayReason } : {}), signal })
-        if (outcome !== 'allowed-once') throw new Error('删除未获单次批准，未执行。')
+        if (signal.aborted) return { kind: 'cancel' }
+        if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
+        if (outcome === 'rejected') return denyDeleteApproval('DELETE_APPROVAL_REJECTED')
+        if (outcome === 'cancelled') return denyDeleteApproval('DELETE_APPROVAL_CANCELLED')
+        if (outcome !== 'allowed-once') return denyDeleteApproval('DELETE_APPROVAL_UNAVAILABLE')
       }
-      if (!authorize()) throw new Error('删除授权已失效。')
       deadline = Date.now() + 4 * 60 * 1000
       prepared.set(execution, { result, authorize }); retained = true
       return { kind: 'allow' }

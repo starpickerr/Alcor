@@ -12,6 +12,7 @@ import Approval from '@deepseek-ai/dsh-user-approval'
 import * as Native from '@deepseek-ai/dsh-tool-executor-native'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 import { createLocalDeleteGate } from '../../packages/alcor-secretary/src/security-local-delete-gate.js'
+import { RuntimeLogs } from '../../packages/alcor-secretary/src/log-host.js'
 
 async function fixture(t) {
   const output = await mkdtemp(join(process.cwd(), '.alcor-delete-test-'))
@@ -24,9 +25,9 @@ async function fixture(t) {
   const Organizer = (await import(pathToFileURL(file).href)).default
   const organizer = Object.create(Organizer.prototype)
   organizer.active = true; organizer.queue = Promise.resolve(); organizer.businessWorker = worker
-  ctx.provide('sessionProjections', { register: async () => ({ stateOf: () => ({ turnOpen: true, policy: null }) }) })
+  const state = { actor: true, turn: 1, policy: null, outcome: 'allowed-once', asks: [], host: 'allow', beforeAnswer: async () => {} }
+  ctx.provide('sessionProjections', { register: async () => ({ stateOf: () => ({ turnOpen: true, policy: state.policy }) }) })
   await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(Approval, {}); await ctx.plugin(Native)
-  const state = { actor: true, turn: 1, outcome: 'allowed-once', asks: [], host: 'allow', beforeAnswer: async () => {} }
   organizer.ctx = { get: name => name === 'alcorAppleSync' ? state.apple : undefined }
   const agent = { ctx, session: { id: 'synthetic-session', header: {}, append() {} } }
   const gate = createLocalDeleteGate({ prepare: (request, authorize) => organizer.prepareApprovedDelete(request, authorize),
@@ -40,8 +41,50 @@ async function fixture(t) {
   ctx.on('tools/result', execution => gate.release(execution))
   ctx.on('approval/request', async request => { state.asks.push(request.reason); await state.beforeAnswer(); return state.outcome })
   const call = async (domain, method, args, callId = 'synthetic-call') => (await ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: callId, name: 'alcor_business', arguments: JSON.stringify({ domain, method, arguments: args }) }] })).results[0].result
-  return { state, worker, call, organizer }
+  return { ctx, state, worker, call, organizer }
 }
+
+test('disabled approval explains the current-session control, logs a safe code and resumes with one approval', async t => {
+  const { ctx, state, worker, call } = await fixture(t)
+  const logs = new RuntimeLogs(ctx, { get() {}, async put() {} })
+  t.after(() => logs.close())
+  const invoke = (method, args) => worker.call('invoke', { domain: 'tasks', method, arguments: args })
+  const row = await invoke('create_todo', { payload: { title: 'Private synthetic exam' } })
+  const args = { todo_id: row.id }
+  state.policy = 'never'
+  const callId = '03fe779c-28d4-45a3-85cc-ad068954e30d'
+  const blocked = await call('tasks', 'delete_todo', args, callId)
+  assert.equal(blocked.error?.info?.code, 'DELETE_APPROVAL_DISABLED')
+  assert.match(blocked.error.message, /完全权限.*工作区内修改/)
+  assert.match(blocked.error.message, /\/permission workspace-write/)
+  assert.match(blocked.error.message, /允许一次/)
+  assert.equal(state.asks.length, 0)
+  assert.equal((await invoke('get_todo', args)).id, row.id)
+  const [entry] = logs.list({ category: 'failure', source: 'DSH 工具', query: callId }).entries
+  assert.equal(entry.diagnostic.code, 'DELETE_APPROVAL_DISABLED')
+  assert.match(entry.message, /工作区内修改/)
+  assert(!entry.message.includes(row.id))
+  assert(!entry.message.includes('Private synthetic exam'))
+  state.policy = 'ask'
+  for (const [outcome, code] of [['rejected', 'DELETE_APPROVAL_REJECTED'], ['unavailable', 'DELETE_APPROVAL_UNAVAILABLE']]) {
+    state.outcome = outcome
+    const denied = await call('tasks', 'delete_todo', args)
+    assert.equal(denied.error.info.code, code)
+    assert.doesNotMatch(denied.error.message, /工作区内修改/)
+    assert.equal((await invoke('get_todo', args)).id, row.id)
+  }
+  state.outcome = 'allowed-once'
+  state.beforeAnswer = async () => { state.policy = 'never' }
+  const expired = await call('tasks', 'delete_todo', args)
+  assert.equal(expired.error.info.code, 'DELETE_APPROVAL_EXPIRED')
+  assert.doesNotMatch(expired.error.message, /工作区内修改/)
+  assert.equal((await invoke('get_todo', args)).id, row.id)
+  state.policy = 'ask'
+  state.beforeAnswer = async () => {}
+  assert.equal((await call('tasks', 'delete_todo', args)).isError, false)
+  assert.equal(state.asks.length, 4)
+  await assert.rejects(() => invoke('get_todo', args), /not found/)
+})
 
 test('local gate requests the exact local plan, but rejection, cancellation and host denial preserve it', async t => {
   for (const outcome of ['rejected', 'cancelled', 'unavailable', 'allowed', 'host-deny']) {

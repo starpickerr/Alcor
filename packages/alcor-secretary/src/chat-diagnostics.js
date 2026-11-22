@@ -1,3 +1,5 @@
+import { deleteApprovalReasons } from './delete-approval-feedback.js'
+
 const agentRemedies = new Map([
   ...['NO_ADAPTER', 'UNKNOWN_MODEL', 'REGISTRATION_DISPOSED', 'INVALID_MODEL_INFO'].map(code =>
     [code, '检查模型提供商是否已启用，并在当前对话重新选择可用模型。']),
@@ -25,12 +27,13 @@ export function recordGenericToolFailure(ctx, execution, result) {
   const code = result.error?.info?.code
   if (code === 'ABORTED' || code === 'ABORTED_BEFORE_DISPATCH') return
   const id = execution.callId
-  const header = '[business_operation_failed] tools.execute · ' + (toolRemedies.has(code) ? code : 'TOOL_FAILED')
+  const remedy = toolRemedies.get(code) ?? (execution.name === 'alcor_business' ? deleteApprovalReasons.get(code) : undefined)
+  const header = '[business_operation_failed] tools.execute · ' + (remedy ? code : 'TOOL_FAILED')
     + (typeof id === 'string' && uuid.test(id) ? ' · 请求 ' + id : '')
   // Unregistered names and native tool result text can contain arbitrary model or user input.
   const name = code !== 'UNKNOWN_TOOL' && ctx.tools?.get(execution.name)?.name
   const label = typeof name === 'string' && /^[\w.-]{1,80}$/.test(name) ? '工具 ' + name : '工具调用'
-  const hint = toolRemedies.get(code) ?? '在原对话中查看该次工具反馈，并检查插件连接和权限。'
+  const hint = remedy ?? '在原对话中查看该次工具反馈，并检查插件连接和权限。'
   ctx.logger('DSH 工具').error(header + '\n原因：' + label + '失败。' + hint)
 }
 
