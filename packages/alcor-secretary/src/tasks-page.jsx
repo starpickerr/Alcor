@@ -125,7 +125,6 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
         {node && <div className="alcor-task-urgency">{['overdue', 'today'].map(group => node.urgency[group] > 0 && <Button key={group} variant="ghost" size="sm" data-urgency={group} aria-label={`${item.title}：${node.urgency[group]} 项子事务${group === 'overdue' ? '逾期' : '今天'}`} onClick={() => revealUrgent(node, group, section)}>{node.urgency[group]} 项{group === 'overdue' ? '逾期' : '今天'}</Button>)}</div>}
       </div>
       {parentLink && <IconChevronRightOutlineRegular className="alcor-task-parent-arrow" size={16} aria-hidden="true" />}
-      {actionable && <Button variant="ghost" size="sm" className="alcor-task-more" aria-label={`更多操作：${item.title}`} aria-haspopup="menu" aria-expanded={(context.target?.record.business?.occurrence_id ?? context.target?.record.id) === (item.business?.occurrence_id ?? item.id)} disabled={busy || item.archived} onClick={event => context.open(event,item,true)}><IconChevronDownOutlineRegular size={16} /></Button>}
     </div>{content}</li>
   }
   function treeRow(node, section, depth = 0) {

@@ -49,7 +49,7 @@ def main():
                 except Exception:
                     print('VISIBLE TEXT:',page.locator('body').inner_text()); page.screenshot(path='/tmp/alcor-delete-ui-failure.png', full_page=True); raise
                 def open_delete():
-                    card.get_by_role('button', name='更多操作：Synthetic delete parent', exact=True).click()
+                    card.get_by_role('button', name='Synthetic delete parent', exact=True).click(button='right')
                     page.get_by_role('menuitem', name='删除事务', exact=True).click()
                     dialog = page.get_by_role('dialog', name='删除事务', exact=True)
                     expect(dialog).to_contain_text('Synthetic delete child')

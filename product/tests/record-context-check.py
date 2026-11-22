@@ -91,7 +91,7 @@ def main():
             task.click(button='right');menu.get_by_role('menuitem',name='清单',exact=True).click()
             page.get_by_role('menuitem',name='学习',exact=True).click()
             assert business('tasks','get_todo',{'todo_id':data['task']['id']})['category_id']==data['task_target']['id']
-            task.get_by_role('button',name='更多操作：'+data['task']['title'],exact=True).click()
+            task.get_by_role('button',name=data['task']['title'],exact=True).press('Shift+F10')
             expect(menu.get_by_role('menuitem',name='标为已完成',exact=True)).to_be_visible()
             menu.get_by_role('menuitem',name='标为已完成',exact=True).click()
             expect(task).to_have_attribute('data-completed','true')
