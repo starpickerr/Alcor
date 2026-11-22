@@ -59,6 +59,28 @@ test('disk failures stay visible, recover on retry and never interrupt a host lo
   assert.equal(logs.list({}).entries.length, 1)
 })
 
+test('collects early Cordis messages once across a logger restart and redacts buffered failures', async t => {
+  const ctx = new Context()
+  const history = new Map()
+  const table = { get: key => history.get(key), put: async (key, value) => { history.set(key, value) } }
+  t.after(() => ctx.fiber.dispose())
+  ctx.logger('ChatGPT').info('ChatGPT 模型提供商已就绪')
+  ctx.logger('ChatGPT').error('early failure: Bearer synthetic-secret')
+  ctx.logger('ChatGPT').error('early failure: Bearer synthetic-secret')
+  const first = new RuntimeLogs(ctx, table)
+  const rows = first.list({ source: 'ChatGPT' }).entries
+  assert.equal(rows.length, 3)
+  assert(!JSON.stringify(rows).includes('synthetic-secret'))
+  await first.close()
+  ctx.logger('ChatGPT').warn('failure while exporter was offline')
+  const second = new RuntimeLogs(ctx, table)
+  t.after(() => second.close())
+  assert.deepEqual(second.list({ source: 'ChatGPT' }).entries.slice(1), rows)
+  assert.equal(second.list({ query: 'exporter was offline' }).matched, 1)
+  ctx.logger('ChatGPT').info('live after recovery')
+  assert.equal(second.list({ source: 'ChatGPT' }).matched, 5)
+})
+
 test('errors raised by the agent before model dispatch are searchable without copying the conversation', async t => {
   const { ctx, logs } = await fixture(t)
   const sessionId = 'session-03fe779c-28d4-45a3-85cc-ad068954e30d'

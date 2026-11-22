@@ -110,24 +110,37 @@ export class RuntimeLogs {
     ctx.on('agent/error', event => {
       try { if (this.active) recordAgentFailure(ctx, this.entries, event) } catch { /* Keep the original agent failure intact. */ }
     })
-    ctx.logger.exporter({ colors: false, levels: { default: 3 }, export: message => {
-      // A broken diagnostic sink must never interrupt a business operation.
-      try {
-        const source = logSource(message)
-        if (!this.active || !source) return
-        const formatted = Logger.format({ colors: false, maxLength: 4000 }, message)
-        this.entries.push({ id: ++this.serial, time: new Date(message.ts).toISOString(),
-          level: message.type, source, message: redactLog(formatted).slice(0, 4000) })
-        const debugOverflow = message.type === 'debug' && this.entries.filter(row => row.level === 'debug').length > logDebugCapacity
-        if (debugOverflow || this.entries.length > logCapacity) {
-          this.entries.splice(evictionIndex(this.entries), 1)
-        }
-        this.revision++
-        this.storage = 'pending'
-        this.timer ??= setTimeout(() => { this.timer = undefined; void this.flush() }, 1000)
-        this.timer.unref?.()
-      } catch { /* Formatting an unsupported log value is best effort. */ }
-    } })
+    // Cordis can start providers before the storage domain opens. On hot reload its
+    // buffer also contains live records that the previous collector already saved.
+    const lastTime = this.entries.at(-1)?.time
+    const lastTimestamp = lastTime ? Date.parse(lastTime) : -Infinity
+    const boundary = this.entries.filter(row => row.time === lastTime)
+    for (const message of ctx.logger.buffer ?? []) {
+      if (message.ts >= lastTimestamp) this.capture(message, boundary)
+    }
+    ctx.logger.exporter({ colors: false, levels: { default: 3 }, export: message => this.capture(message) })
+  }
+
+  capture(message, boundary) {
+    if (!this.active) return
+    try {
+      const source = logSource(message)
+      const time = new Date(message.ts).toISOString()
+      const text = redactLog(Logger.format({ colors: false, maxLength: 4000 }, message)).slice(0, 4000)
+      const duplicate = boundary?.findIndex(row => row.time === time && row.level === message.type
+        && row.source === source && row.message === text) ?? -1
+      if (duplicate >= 0) {
+        boundary.splice(duplicate, 1)
+        return
+      }
+      this.entries.push({ id: ++this.serial, time, level: message.type, source, message: text })
+      const debugOverflow = message.type === 'debug' && this.entries.filter(row => row.level === 'debug').length > logDebugCapacity
+      if (debugOverflow || this.entries.length > logCapacity) this.entries.splice(evictionIndex(this.entries), 1)
+      this.revision++
+      this.storage = 'pending'
+      this.timer ??= setTimeout(() => { this.timer = undefined; void this.flush() }, 1000)
+      this.timer.unref?.()
+    } catch { /* A broken diagnostic sink must never interrupt a business operation. */ }
   }
 
   flush() {
