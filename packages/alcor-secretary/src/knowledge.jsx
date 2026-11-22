@@ -6,6 +6,7 @@ import {
   Modal,
   IconChevronDownOutlineRegular,
   IconDeliverDocRegular,
+  IconFolderOpenRegular,
   IconPlusOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { KnowledgeGraph } from './knowledge-graph.jsx'
@@ -217,6 +218,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
     body = useRef(null)
   const [picking, setPicking] = useState(false)
   const insertion = useRef([0, 0])
+  const locations = collection && !collections.includes(collection) ? [...collections, collection] : collections
   async function save(event) {
     event.preventDefault()
     if (busy) return
@@ -229,7 +231,7 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
       const draft = JSON.stringify([title, text, url, collection])
       if (attempt.current?.draft !== draft) attempt.current = { draft, key: crypto.randomUUID() }
       await call(api, source ? 'edit' : file ? 'import' : 'save', args, attempt.current.key)
-      onSaved()
+      onSaved(collection)
     } catch (reason) {
       setError(message(reason))
       setBusy(false)
@@ -257,20 +259,12 @@ function Editor({ api, source, file, collections = [], initialCollection = '', o
           />
         </label>
         <label>
-          资料集
-          <input
-            list="alcor-library-collections"
-            maxLength={100}
-            placeholder="可选"
-            value={collection}
-            onChange={(e) => setCollection(e.target.value)}
-          />
+          保存位置
+          <select value={collection} onChange={(e) => setCollection(e.target.value)}>
+            <option value="">知识库首页</option>
+            {locations.map((name) => <option key={name} value={name}>{name.replaceAll('/', ' / ')}</option>)}
+          </select>
         </label>
-        <datalist id="alcor-library-collections">
-          {collections.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
         {!file && !source?.filename && (
           <label>
             来源网址
@@ -483,7 +477,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back }) {
           <Button disabled={busy} onClick={() => setConfirmErase(false)}>
             取消
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => changeStatus('erase_archived')}>
+          <Button variant="primary" disabled={busy} onClick={() => changeStatus('delete')}>
             永久删除
           </Button>
         </div>
@@ -579,23 +573,12 @@ function Reader({ api, target, close, onChange, collections, onOpen, back }) {
           {source.index_notice && <Notice>{source.index_notice}</Notice>}
           {!source.historical && (
             <div className="alcor-knowledge-actions">
-              {!source.archived && (
-                <Button variant="outline" onClick={() => setEditing(true)}>
-                  编辑
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => changeStatus(source.archived ? 'restore' : 'archive')}
-              >
-                {source.archived ? '恢复收藏' : '归档'}
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                编辑
               </Button>
-              {!!source.archived && (
-                <Button variant="outline" disabled={busy} onClick={() => setConfirmErase(true)}>
-                  永久删除
-                </Button>
-              )}
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirmErase(true)}>
+                删除资料
+              </Button>
             </div>
           )}
         </div>
@@ -642,9 +625,42 @@ export function KnowledgeCitations({ turn, useKnowledgeCalls, api }) {
   )
 }
 
+const parentFolder = (path) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+const folderName = (path) => path.slice(path.lastIndexOf('/') + 1) || path
+
+function NewFolder({ api, parent, onClose, onCreated }) {
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function save(event) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await call(api, 'create_folder', { parent, name })
+      onCreated(result.path)
+    } catch (reason) {
+      setError(message(reason))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal open title="新建文件夹" closeLabel="关闭" className="alcor-editor-dialog" onClose={() => !busy && onClose()}>
+      <form className="alcor-knowledge-form" onSubmit={save}>
+        <label>文件夹名称<input required autoFocus maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        {error && <Notice role="alert" tone="error">{error}</Notice>}
+        <div className="alcor-knowledge-actions">
+          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
+          <Button type="submit" variant="primary" disabled={busy || !name.trim()}>新建</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 export function KnowledgePage({ api }) {
   const [query, setQuery] = useState(''),
-    [archived, setArchived] = useState(false),
     [offset, setOffset] = useState(0)
   const [collections, setCollections] = useState([]),
     [collection, setCollection] = useState('')
@@ -654,9 +670,19 @@ export function KnowledgePage({ api }) {
   const [target, setTarget] = useState(null),
     [editor, setEditor] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(false)
   const picker = useRef(null)
   const [graph, setGraph] = useState(false),
     [graphQuery, setGraphQuery] = useState('')
+  const paths = new Set()
+  for (const path of collections) {
+    for (let part = path; part; part = parentFolder(part)) paths.add(part)
+  }
+  const folders = [...paths].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  const children = folders.filter((path) => parentFolder(path) === collection)
+  const trail = []
+  for (let part = collection; part; part = parentFolder(part)) trail.unshift(part)
+  const searching = !!query.trim()
   useEffect(() => {
     let active = true
     call(api, 'collections', {})
@@ -678,10 +704,9 @@ export function KnowledgePage({ api }) {
       () =>
         call(api, graph ? 'graph' : 'search', {
           query: graph ? graphQuery : query,
-          archived,
           offset,
           grouped: true,
-          ...(collection ? { collection } : {}),
+          ...(!graph && !searching ? { collection } : {}),
         })
           .then((data) => {
             if (active) setResult(data)
@@ -695,10 +720,17 @@ export function KnowledgePage({ api }) {
       active = false
       clearTimeout(timer)
     }
-  }, [api, query, archived, offset, revision, collection, graph, graphQuery])
+  }, [api, query, offset, revision, collection, graph, graphQuery, searching])
   function refresh() {
     setOffset(0)
     setRevision((n) => n + 1)
+  }
+  function openFolder(path) {
+    if (path !== collection || searching || graph) setResult(null)
+    setCollection(path)
+    setQuery('')
+    setOffset(0)
+    setGraph(false)
   }
   return (
     <main className="alcor-knowledge alcor-business">
@@ -748,6 +780,10 @@ export function KnowledgePage({ api }) {
               setAddOpen(false)
               setEditor({})
             }}>收藏资料</MenuItemButton>
+            <MenuItemButton onSelect={() => {
+              setAddOpen(false)
+              setCreatingFolder(true)
+            }}>新建文件夹</MenuItemButton>
           </Menu>
         </div>
       </header>
@@ -776,35 +812,19 @@ export function KnowledgePage({ api }) {
               setOffset(0)
             }}
           />
-          {collections.length > 0 && (
-            <select
-              aria-label="筛选资料集"
-              value={collection}
-              onChange={(e) => {
-                setCollection(e.target.value)
-                setOffset(0)
-              }}
-            >
-              <option value="">全部资料集</option>
-              {collections.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
-          )}
-          {!graph && (
-            <select
-              aria-label="收藏范围"
-              value={archived ? 'archived' : 'active'}
-              onChange={(e) => {
-                setArchived(e.target.value === 'archived')
-                setOffset(0)
-              }}
-            >
-              <option value="active">我的收藏</option>
-              <option value="archived">已归档</option>
-            </select>
-          )}
         </div>
+        {!graph && !searching && trail.length > 0 && (
+          <nav className="alcor-library-breadcrumb" aria-label="文件夹路径">
+            <Button size="sm" variant="ghost" onClick={() => openFolder('')}>知识库首页</Button>
+            {trail.map((path) => (
+              <React.Fragment key={path}>
+                <span aria-hidden="true">/</span>
+                {path === collection ? <span aria-current="location">{folderName(path)}</span>
+                  : <Button size="sm" variant="ghost" onClick={() => openFolder(path)}>{folderName(path)}</Button>}
+              </React.Fragment>
+            ))}
+          </nav>
+        )}
         {error ? (
           <Notice tone="error" role="alert">
             {error} <Button onClick={refresh}>重试</Button>
@@ -813,13 +833,21 @@ export function KnowledgePage({ api }) {
           <p role="status">正在读取资料…</p>
         ) : graph ? (
           <KnowledgeGraph data={result} onOpen={setTarget} />
-        ) : !result.items.length ? (
+        ) : !result.items.length && (searching || !children.length) ? (
           <Empty
-            title={query ? '没有找到匹配资料' : archived ? '还没有归档资料' : '还没有收藏资料'}
+            title={searching ? '没有找到匹配资料' : collection ? '文件夹为空' : '还没有资料'}
             icon={<IconDeliverDocRegular size={28} />}
           />
         ) : (
           <ul className="alcor-knowledge-list">
+            {!searching && children.map((path) => (
+              <li key={path}>
+                <button type="button" onClick={() => openFolder(path)}>
+                  <span className="alcor-knowledge-type alcor-knowledge-folder"><IconFolderOpenRegular size={20} aria-hidden="true" /></span>
+                  <span><strong>{folderName(path)}</strong></span>
+                </button>
+              </li>
+            ))}
             {result.items.map((row) => (
               <li key={row.passage ?? row.id}>
                 <button type="button" onClick={() => setTarget(row)}>
@@ -827,6 +855,7 @@ export function KnowledgePage({ api }) {
                   <span>
                     <strong>{row.title}</strong>
                     {row.snippet && <small>{row.snippet}</small>}
+                    {searching && <small>{row.collection ? row.collection.replaceAll('/', ' / ') : '知识库首页'}</small>}
                   </span>
                   {row.kind === 'pdf' && <small>第 {row.page} 页</small>}
                 </button>
@@ -845,18 +874,22 @@ export function KnowledgePage({ api }) {
           </div>
         )}
       </div>
+      {creatingFolder && <NewFolder api={api} parent={graph ? '' : collection}
+        onClose={() => setCreatingFolder(false)} onCreated={(path) => {
+          setCreatingFolder(false)
+          openFolder(path)
+          refresh()
+        }} />}
       {editor && (
         <Editor
           {...editor}
-          initialCollection={collection}
-          collections={collections}
+          initialCollection={graph ? '' : collection}
+          collections={folders}
           api={api}
           onClose={() => setEditor(null)}
-          onSaved={() => {
+          onSaved={(path) => {
             setEditor(null)
-            setQuery('')
-            setCollection('')
-            setArchived(false)
+            openFolder(path)
             refresh()
           }}
         />
@@ -865,7 +898,7 @@ export function KnowledgePage({ api }) {
         <SourceReader
           target={target}
           api={api}
-          collections={collections}
+          collections={folders}
           close={() => setTarget(null)}
           onChange={refresh}
         />

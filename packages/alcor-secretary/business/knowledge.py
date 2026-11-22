@@ -78,9 +78,18 @@ class Knowledge:
             return [
                 r[0]
                 for r in self.db.execute(
-                    "SELECT DISTINCT collection FROM sources WHERE collection<>'' ORDER BY collection"
+                    "SELECT path FROM library_folders UNION SELECT collection FROM sources WHERE collection<>'' ORDER BY 1"
                 )
             ]
+        if method == "create_folder":
+            parent = string(args.get("parent", ""), 100, "上级文件夹")
+            name = string(args.get("name"), 100, "文件夹名称", True)
+            if name in (".", "..") or any(c in name for c in "/\\"):
+                raise ValueError("文件夹名称不能含有斜线，也不能是 . 或 ..。")
+            path = string(f"{parent}/{name}" if parent else name, 100, "文件夹路径", True)
+            with self.db:
+                self.db.execute("INSERT OR IGNORE INTO library_folders(path) VALUES(?)", (path,))
+            return {"path": path}
         if method == "parsed_asset":
             digest = string(args.get("digest"), 64, "文件指纹", True)
             row = self.db.execute("SELECT index_notice FROM assets WHERE hash=?", (digest,)).fetchone()
@@ -147,6 +156,8 @@ class Knowledge:
                 "content": base64.b64encode(raw).decode("ascii"),
             }
         if method == "erase_archived":
+            return self.erase(source["id"], args.get("revision"), archived_only=True)
+        if method == "delete":
             return self.erase(source["id"], args.get("revision"))
         if method == "reindex":
             with self.db:
@@ -186,6 +197,8 @@ class Knowledge:
             )
             if not cursor.rowcount:
                 raise ValueError("资料已变化，请重新打开后操作。")
+            if collection:
+                self.db.execute("INSERT OR IGNORE INTO library_folders VALUES(?)", (collection,))
             self.db.execute(
                 "INSERT INTO history VALUES(?,?,?)",
                 (source["id"], revision, json.dumps(source, ensure_ascii=False)),
@@ -202,16 +215,16 @@ class Knowledge:
             self.semantic.wake.set()
         return self.header(source["id"])
 
-    def erase(self, source_id, revision):
+    def erase(self, source_id, revision, archived_only=False):
         revision = integer(revision, 1, 2**53 - 1)
         with self.db:
             self.db.execute("BEGIN IMMEDIATE")
             source = self.db.execute(
-                "SELECT asset_hash,title,filename FROM sources WHERE id=? AND archived=1 AND revision=?",
-                (source_id, revision),
+                "SELECT asset_hash,title,filename FROM sources WHERE id=? AND revision=? AND (NOT ? OR archived=1)",
+                (source_id, revision, archived_only),
             ).fetchone()
             if source is None:
-                raise ValueError("只能删除已归档且版本一致的资料。")
+                raise ValueError("资料已变化，请重新打开后操作。")
             self.db.execute(
                 "DELETE FROM library_fts WHERE rowid IN (SELECT id FROM chunks WHERE source_id=?)",
                 (source_id,),
@@ -325,6 +338,8 @@ class Knowledge:
                     collection,
                 ),
             )
+            if collection:
+                self.db.execute("INSERT OR IGNORE INTO library_folders VALUES(?)", (collection,))
             if key:
                 self.db.execute("INSERT INTO save_receipts VALUES(?,?,?)", (key, source_id, fingerprint))
             index_source(self.db, source_id)
@@ -345,7 +360,7 @@ class Knowledge:
         select_collection = "" if collection is None else " AND s.collection=?"
         if not query:
             rows = self.db.execute(
-                """SELECT s.id,s.title,s.kind,s.updated,s.archived,1 AS page,
+                """SELECT s.id,s.title,s.kind,s.updated,s.archived,s.collection,1 AS page,
                 substr(coalesce(nullif(s.note,''),p.body),1,220) AS snippet FROM sources s
                 JOIN library_pages p ON p.source_id=s.id AND p.page=1 WHERE archived=?"""
                 + select_collection
@@ -369,7 +384,7 @@ class Knowledge:
         items = []
         for id in ids[offset : offset + limit]:
             row = self.db.execute(
-                """SELECT c.*,s.title,s.kind,s.updated,s.revision,s.archived FROM chunks c
+                """SELECT c.*,s.title,s.kind,s.updated,s.revision,s.archived,s.collection FROM chunks c
                 JOIN sources s ON s.id=c.source_id WHERE c.id=?""",
                 (id,),
             ).fetchone()
@@ -382,6 +397,7 @@ class Knowledge:
                     "updated": row["updated"],
                     "revision": row["revision"],
                     "archived": row["archived"],
+                    "collection": row["collection"],
                     "page": max(1, row["page"]),
                     "passage": id,
                     "start": row["start"],

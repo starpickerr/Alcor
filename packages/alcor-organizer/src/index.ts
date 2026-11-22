@@ -121,6 +121,7 @@ export default class Organizer extends TypertRemoteService {
     if (input.domain === 'knowledge') {
       this.assertActive()
       if (['store_file','parsed_asset'].includes(input.method)) throw new Error('请通过文件导入入口收藏原件。')
+      if (['archive', 'restore', 'erase_archived'].includes(input.method)) throw new Error('知识库已改用文件夹整理资料。')
       if (!this.knowledgeWorker || this.knowledgeWorker.closed) this.knowledgeWorker = this.createKnowledgeWorker()
       const worker = this.knowledgeWorker
       const invoke = (method, args) => worker.call('invoke',{domain:'knowledge',method,arguments:args,request_id:input.requestId})

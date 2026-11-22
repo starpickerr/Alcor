@@ -93,17 +93,21 @@ def install(db):
     with db:
         db.execute("BEGIN IMMEDIATE")
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version == 2:
+        if version == 3:
             return
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise ValueError("请升级 Alcor 后打开此知识库。")
         if version == 0:
             schema = Path(__file__).with_name("knowledge_schema.sql").read_text(encoding="utf-8")
             for statement in schema.split(";"):
                 if statement.strip():
                     db.execute(statement)
-        install_references(db)
-        db.execute("PRAGMA user_version=2")
+        if version < 2:
+            install_references(db)
+        db.execute("CREATE TABLE library_folders (path TEXT PRIMARY KEY)")
+        db.execute("INSERT INTO library_folders SELECT DISTINCT collection FROM sources WHERE collection<>''")
+        db.execute("UPDATE sources SET archived=0 WHERE archived=1")
+        db.execute("PRAGMA user_version=3")
 
 
 def chunk_text(db, chunk):
