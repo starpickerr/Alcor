@@ -487,6 +487,11 @@
   min-height: 300px;
   touch-action: none;
   cursor: grab;
+  outline: none;
+}
+.alcor-graph-canvas:focus-visible {
+  outline: 2px solid var(--alcor-brand);
+  outline-offset: -2px;
 }
 .alcor-graph-canvas[data-dragging],
 .alcor-graph-canvas[data-dragging] .alcor-graph-node {
@@ -530,6 +535,14 @@
   stroke-width: 3px;
   stroke-linejoin: round;
   stroke: var(--dsw-alias-bg-layer-1);
+}
+.alcor-graph-labels text {
+  pointer-events: bounding-box;
+  cursor: pointer;
+  user-select: none;
+}
+.alcor-graph-labels [data-dim='true'] {
+  opacity: 0.28;
 }
 .alcor-graph-labels [data-active='true'] {
   fill: var(--dsw-alias-label-primary);

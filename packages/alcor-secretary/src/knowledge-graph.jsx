@@ -50,8 +50,7 @@ function placeNodes(graph, positions) {
   return { ...graph, nodes, edges }
 }
 
-function graphLabels(nodes, frame, active, related) {
-  const rank = (node) => node.id === active ? 3 : related.has(node.id) ? 2 : node.matched ? 1 : 0
+function graphLabels(nodes, frame) {
   const points = nodes.map((node) => ({
     node,
     x: frame.x + node.x * frame.scale,
@@ -60,8 +59,7 @@ function graphLabels(nodes, frame, active, related) {
   }))
   const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   const labels = []
-  for (const { node, x, y, radius } of [...points].sort((a, b) => rank(b.node) - rank(a.node) || byDegree(a.node, b.node))) {
-    if ((active && !related.has(node.id)) || (frame.zoom < 0.9 && !rank(node))) continue
+  for (const { node, x, y, radius } of [...points].sort((a, b) => Number(!!b.node.matched) - Number(!!a.node.matched) || byDegree(a.node, b.node))) {
     if (x < 0 || y < 0 || x > frame.width || y > frame.height) continue
     const width = Array.from(node.label).reduce((sum, letter) => sum + (/^[ -~]$/.test(letter) ? 7 : 13), 6)
     const textGap = radius + 5
@@ -70,7 +68,7 @@ function graphLabels(nodes, frame, active, related) {
       const box = { left, right: left + width, top: centerY - 9, bottom: centerY + 9 }
       if (box.left < 4 || box.right > frame.width - 4 || box.top < 4 || box.bottom > frame.height - 4) continue
       if (labels.some((other) => overlaps(box, other))) continue
-      if (node.id !== active && points.some((other) => other.node.id !== node.id && overlaps(box, {
+      if (points.some((other) => other.node.id !== node.id && overlaps(box, {
         left: other.x - other.radius, right: other.x + other.radius,
         top: other.y - other.radius, bottom: other.y + other.radius,
       }))) continue
@@ -153,7 +151,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
   const scale = view.zoom * Math.min(1.35, Math.max(1, size.width - 112) / Math.max(1, area.width),
     Math.max(1, size.height - 64) / Math.max(1, area.height))
   const x = size.width / 2 + view.x - area.cx * scale, y = size.height / 2 + view.y - area.cy * scale
-  const labels = graph.nodes.length ? graphLabels(graph.nodes, { ...size, x, y, scale, zoom: view.zoom }, active, related) : []
+  const labels = useMemo(() => graphLabels(graph.nodes, { ...size, x, y, scale }), [graph.nodes, size, x, y, scale])
 
   function zoom(factor, x = 0, y = 0) {
     setView((old) => {
@@ -166,11 +164,17 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
     const canvas = svg.current
     if (!canvas) return
     function wheel(event) {
-      if (!event.deltaY) return
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1
+      const dx = event.deltaX * unit, dy = event.deltaY * unit
+      if (!dx && !dy) return
       event.preventDefault()
       if (gesture.current) return
+      if (!event.ctrlKey && !event.metaKey) {
+        setView((old) => ({ ...old, x: old.x - dx, y: old.y - dy }))
+        return
+      }
       const rect = canvas.getBoundingClientRect()
-      zoom(Math.exp(-Math.sign(event.deltaY) * 0.12),
+      zoom(Math.exp(-Math.max(-160, Math.min(160, dy)) * 0.003),
         event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2)
     }
     const observer = new ResizeObserver(([entry]) => {
@@ -270,6 +274,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
       </div>
       <div className="alcor-graph-body">
         <svg ref={svg} className="alcor-graph-canvas" aria-label="资料引用网络" role="group" tabIndex={0}
+          aria-description="拖动空白或双指滑动平移，捏合或按住 Command / Ctrl 滚轮缩放。"
           data-dragging={dragging || undefined}
           onKeyDown={(event) => {
             const step = { ArrowLeft: [35, 0], ArrowRight: [-35, 0], ArrowUp: [0, 35], ArrowDown: [0, -35] }[event.key]
@@ -283,7 +288,13 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
           onPointerDown={startGesture} onPointerMove={moveGesture}
           onPointerUp={endGesture} onLostPointerCapture={endGesture}
           onClick={(event) => {
-            if (!ignoreClick.current && !event.target.closest('[data-node-id]')) select(null)
+            if (!ignoreClick.current) select(event.target.closest('[data-node-id]')?.dataset.nodeId ?? null)
+          }}
+          onDoubleClick={(event) => {
+            if (ignoreClick.current) return
+            const id = event.target.closest('[data-node-id]')?.dataset.nodeId
+            const node = graph.nodes.find((item) => item.id === id)
+            if (node) onOpen(node)
           }}>
           <defs>
             <marker id={arrow} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
@@ -309,8 +320,6 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
                 transform={`translate(${node.x},${node.y})`}
                 onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}
                 onFocus={() => setHovered(node.id)} onBlur={() => setHovered(null)}
-                onClick={() => { if (!ignoreClick.current) select(node.id) }}
-                onDoubleClick={() => { if (!ignoreClick.current) onOpen(node) }}
                 onKeyDown={(event) => {
                   if (!['Enter', ' '].includes(event.key)) return
                   event.preventDefault()
@@ -318,14 +327,16 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
                   else select(node.id)
                 }}>
                 <title>{node.title} · {node.collection || '顶层'}</title>
-                <circle r={Math.max(node.radius, 7 / scale)} fill="transparent" className="alcor-graph-hit" />
+                <circle r={Math.max(node.radius, 11 / scale)} fill="transparent" className="alcor-graph-hit" />
                 <circle r={node.radius} vectorEffect="non-scaling-stroke" className="alcor-graph-dot" />
               </g>
             ))}
           </g>
           <g className="alcor-graph-labels" aria-hidden="true">
             {labels.map(({ node, left, y }) => (
-              <text key={node.id} x={left} y={y} dominantBaseline="middle" data-active={node.id === active}>{node.label}</text>
+              <text key={node.id} x={left} y={y} dominantBaseline="middle" data-node-id={node.id}
+                data-active={node.id === active} data-dim={!!active && !related.has(node.id)}
+                onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}>{node.label}</text>
             ))}
           </g>
         </svg>
