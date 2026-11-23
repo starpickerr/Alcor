@@ -912,6 +912,19 @@ export function KnowledgePage({ api }) {
     setOffset(0)
     setRevision((n) => n + 1)
   }
+  function openGraphDocument(node, camera) {
+    if (graphFocus) {
+      setGraphTrail((trail) => [...trail.slice(0, -1), { ...trail.at(-1), camera }])
+    } else {
+      overviewCamera.current = camera
+    }
+    revealFolder(node.collection ?? '')
+    setQuery('')
+    setOffset(0)
+    setResult(null)
+    setGraph(false)
+    setTarget(node)
+  }
   function exploreGraph(node, camera) {
     if (graphFocus?.id === node.id) return
     if (!graphFocus) overviewCamera.current = camera
@@ -1136,8 +1149,8 @@ export function KnowledgePage({ api }) {
             </>}
           </div>
           {error ? <Notice tone="error" role="alert">{error} <Button onClick={refresh}>重试</Button></Notice>
-            : result ? <KnowledgeGraph data={result} onOpen={setTarget} onFocus={exploreGraph}
-              focusId={graphFocus?.id} folders={folders} locateRef={locateGraphNode}
+            : result ? <KnowledgeGraph data={result} onOpen={openGraphDocument} onFocus={exploreGraph}
+              focusId={graphFocus?.id} locateRef={locateGraphNode}
               camera={graphFocus ? graphFocus.camera : overviewCamera.current} />
               : <p role="status">正在读取资料…</p>}
         </div>
@@ -1212,15 +1225,6 @@ export function KnowledgePage({ api }) {
             openFolder(path)
             refresh()
           }}
-        />
-      )}
-      {graph && target && (
-        <SourceReader
-          target={target}
-          api={api}
-          collections={folders}
-          close={() => setTarget(null)}
-          onChange={refresh}
         />
       )}
     </main>

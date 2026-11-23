@@ -521,12 +521,12 @@
   outline-offset: -2px;
 }
 .alcor-graph-canvas[data-dragging],
-.alcor-graph-canvas[data-dragging] :is(.alcor-graph-node, .alcor-graph-labels text) {
+.alcor-graph-canvas[data-dragging] .alcor-graph-node {
   cursor: grabbing;
 }
 .alcor-graph-edge {
   stroke: var(--dsw-alias-label-secondary);
-  stroke-opacity: 0.28;
+  stroke-opacity: 0.3;
   stroke-width: 1;
   pointer-events: none;
 }
@@ -536,14 +536,14 @@
   stroke-width: 1.6;
 }
 .alcor-graph-edge[data-dim='true'] {
-  stroke-opacity: 0.08;
+  stroke-opacity: 0.1;
 }
 .alcor-graph-node {
   cursor: pointer;
   outline: none;
 }
 .alcor-graph-node[data-dim='true'] {
-  opacity: 0.25;
+  opacity: 0.2;
 }
 .alcor-graph-dot {
   fill: var(--node-color);
@@ -557,23 +557,10 @@
 .alcor-graph-labels {
   pointer-events: none;
   fill: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  paint-order: stroke;
-  stroke-width: 3px;
-  stroke-linejoin: round;
-  stroke: var(--dsw-alias-bg-layer-1);
-}
-.alcor-graph-labels text {
-  pointer-events: bounding-box;
-  cursor: pointer;
   user-select: none;
 }
 .alcor-graph-labels [data-dim='true'] {
-  opacity: 0.28;
-}
-.alcor-graph-labels [data-active='true'] {
-  fill: var(--dsw-alias-label-primary);
-  font-weight: 600;
+  opacity: 0.1;
 }
 .alcor-graph-inspector {
   min-width: 0;

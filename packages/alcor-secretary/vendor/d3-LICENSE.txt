@@ -1,6 +1,8 @@
-d3-force, d3-dispatch, d3-quadtree, d3-timer
+d3-color, d3-dispatch, d3-drag, d3-ease, d3-force, d3-interpolate,
+d3-quadtree, d3-selection, d3-timer, d3-transition, d3-zoom
 Copyright 2010-2021 Mike Bostock
 Copyright 2010-2026 Mike Bostock
+Copyright 2001 Robert Penner
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
