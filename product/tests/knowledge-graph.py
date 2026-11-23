@@ -44,6 +44,12 @@ def check(path, version):
         assert call("search", collection="课程/数据结构")["items"][0]["id"] == "old"
         assert call("links", id=sid)["incoming"][0]["id"] == "old"
         assert call("read", id="old", revision=1)["text"] == migrated["text"]
+        assert call("graph", collection="课程")["nodes"] == []
+        (child,) = call("graph_view", collection="课程")["nodes"]
+        assert child["id"] == "old" and child["collection"] == "课程/数据结构"
+        local = call("graph_view", collection="课程", focus_id="old", query="无匹配")
+        assert local["edges"] == [{"source": "old", "target": sid}]
+        assert [n["id"] for n in local["nodes"] if n["matched"]] == ["old"]
         for previous, destination in [("课程", ""), ("课程/数据结构", "不存在")]:
             try:
                 call("move", id="old", revision=2, **{"from": previous, "collection": destination})
@@ -76,6 +82,8 @@ def check(path, version):
         assert call("links", id=referencing["id"])["outgoing"][0]["id"] == md["id"]
         assert {x["id"] for x in call("links", id=md["id"])["outgoing"]} == {"old", sid}
         assert {r["id"] for r in call("graph", query="新名称")["nodes"]} == {"old", sid, md["id"]}
+        matches = call("graph_view", query="新名称", limit=1)
+        assert [n["id"] for n in matches["nodes"] if n["matched"]] == [sid]
         pages = ["```md\n分段", "[[课程大纲]]\n```\n[[新", "名称]] 与 [[提纲]]"]
         split = call(
             "store_file",

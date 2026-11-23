@@ -773,6 +773,10 @@ export function KnowledgePage({ api }) {
   const picker = useRef(null)
   const [graph, setGraph] = useState(false),
     [graphQuery, setGraphQuery] = useState('')
+  const [graphFolder, setGraphFolder] = useState('')
+  const [graphTrail, setGraphTrail] = useState([])
+  const overviewCamera = useRef(null)
+  const graphFocus = graphTrail.at(-1)
   const paths = new Set()
   for (const path of collections) {
     for (let part = path; part; part = parentFolder(part)) paths.add(part)
@@ -805,30 +809,32 @@ export function KnowledgePage({ api }) {
     setError('')
     const timer = setTimeout(
       () =>
-        call(api, graph ? 'graph' : 'search', {
-          query: graph ? graphQuery : query,
-          offset,
-          grouped: true,
-        })
+        call(api, graph ? 'graph_view' : 'search', graph
+          ? graphFocus ? { focus_id: graphFocus.id } : { query: graphQuery, collection: graphFolder || null }
+          : { query, offset, grouped: true })
           .then((data) => {
             if (active) setResult(data)
           })
           .catch((e) => {
             if (active) setError(message(e))
           }),
-      (graph ? graphQuery : query) ? 150 : 0
+      (graph ? !graphFocus && graphQuery : query) ? 150 : 0
     )
     return () => {
       active = false
       clearTimeout(timer)
     }
-  }, [api, query, offset, revision, graph, graphQuery, searching])
+  }, [api, query, offset, revision, graph, graphQuery, graphFolder, graphFocus, searching])
   useEffect(() => {
     if (detail.current) detail.current.scrollTop = 0
   }, [target?.id])
   function refresh() {
     setOffset(0)
     setRevision((n) => n + 1)
+  }
+  function exploreGraph(node, camera) {
+    if (!graphFocus) overviewCamera.current = camera
+    setGraphTrail((trail) => trail.at(-1)?.id === node.id ? trail : [...trail, { id: node.id, title: node.title }])
   }
   function documentChanged(saved) {
     if (saved && target?.id === saved.id) {
@@ -1018,13 +1024,32 @@ export function KnowledgePage({ api }) {
         </Notice>
       )}
       {graph ? (
-        <div className="alcor-page-content alcor-knowledge-content">
-          <div className="alcor-knowledge-toolbar">
-            <input type="search" aria-label="筛选图谱标题" placeholder="查找资料及其相邻引用" maxLength={240}
-              value={graphQuery} onChange={(event) => setGraphQuery(event.target.value)} />
+        <div className="alcor-knowledge-graph-view">
+          <div className="alcor-knowledge-toolbar alcor-graph-filters">
+            {graphFocus ? <>
+              {graphTrail.length > 1 && <Button variant="outline" onClick={() => setGraphTrail((trail) => trail.slice(0, -1))}>返回上一步</Button>}
+              <Button variant="outline" onClick={() => setGraphTrail([])}>返回全局图谱</Button>
+              <span title={graphFocus.title}>局部图谱 · {graphFocus.title}</span>
+            </> : <>
+              <input type="search" aria-label="筛选图谱标题" placeholder="搜索资料标题" maxLength={240}
+                value={graphQuery} onChange={(event) => {
+                  overviewCamera.current = null
+                  setGraphQuery(event.target.value)
+                }} />
+              {folders.length > 0 && <select aria-label="筛选图谱文件夹" value={graphFolder}
+                onChange={(event) => {
+                  overviewCamera.current = null
+                  setGraphFolder(event.target.value)
+                }}>
+                <option value="">全部文件夹</option>
+                {folders.map((path) => <option key={path} value={path}>{displayLocation(path)}</option>)}
+              </select>}
+            </>}
           </div>
           {error ? <Notice tone="error" role="alert">{error} <Button onClick={refresh}>重试</Button></Notice>
-            : result ? <KnowledgeGraph data={result} onOpen={setTarget} /> : <p role="status">正在读取资料…</p>}
+            : result ? <KnowledgeGraph data={result} onOpen={setTarget} onFocus={exploreGraph}
+              focusId={graphFocus?.id} folders={folders} camera={graphFocus ? null : overviewCamera.current} />
+              : <p role="status">正在读取资料…</p>}
         </div>
       ) : (
         <div className="alcor-library-split" data-reading={target ? '' : undefined}>

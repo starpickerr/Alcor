@@ -161,21 +161,35 @@ def neighbors(db, source, offset, limit):
     return result
 
 
-def graph(db, collection, query, limit):
-    where = "archived=0" if collection is None else "archived=0 AND collection=?"
-    params = [] if collection is None else [collection]
-    candidates = f"SELECT id,title,kind,0 AS priority FROM sources WHERE {where}"
-    if query:
-        # Match a title and show its immediate neighbors, within the same collection filter.
-        candidates = f"""WITH eligible AS (SELECT id,title,kind FROM sources WHERE {where}),
-            hits AS (SELECT id FROM eligible WHERE instr(lower(title),lower(?))>0),
+def graph(db, collection, query, limit, *, viewer=False, focus=""):
+    where, params = "archived=0", []
+    if collection is not None and not focus:
+        where += " AND " + (
+            "(collection=? OR substr(collection,1,length(?)+1)=?||'/')" if viewer else "collection=?"
+        )
+        params = [collection] * (3 if viewer else 1)
+    eligible = f"WITH eligible AS (SELECT id,title,kind,collection FROM sources WHERE {where})"
+    candidates = "SELECT e.*,0 AS priority FROM eligible e"
+    if focus or query:
+        match = "id=?" if focus else "instr(lower(title),lower(?))>0"
+        eligible += f""",
+            hits AS (SELECT id FROM eligible WHERE {match}),
             near AS (SELECT id FROM hits UNION SELECT target_id FROM document_refs JOIN hits ON source_id=hits.id
-                     UNION SELECT source_id FROM document_refs JOIN hits ON target_id=hits.id)
-            SELECT e.*,CASE WHEN h.id IS NULL THEN 1 ELSE 0 END AS priority
+                     UNION SELECT source_id FROM document_refs JOIN hits ON target_id=hits.id)"""
+        candidates = """SELECT e.*,CASE WHEN h.id IS NULL THEN 1 ELSE 0 END AS priority
             FROM eligible e JOIN near ON near.id=e.id LEFT JOIN hits h ON h.id=e.id"""
-        params.append(query)
+        params.append(focus or query)
+    elif viewer:
+        # Keep connected documents ahead of unrelated documents at the overview limit.
+        candidates = """SELECT e.*,CASE WHEN EXISTS(
+              SELECT 1 FROM document_refs r JOIN eligible peer ON peer.id=r.target_id
+              WHERE r.source_id=e.id AND peer.id<>e.id
+            ) OR EXISTS(
+              SELECT 1 FROM document_refs r JOIN eligible peer ON peer.id=r.source_id
+              WHERE r.target_id=e.id AND peer.id<>e.id
+            ) THEN 0 ELSE 1 END AS priority FROM eligible e"""
     rows = db.execute(
-        f"""SELECT id,title,kind,count(*) OVER() AS total FROM ({candidates})
+        f"""{eligible} SELECT *,count(*) OVER() AS total FROM ({candidates})
         ORDER BY priority,title,id LIMIT ?""",
         (*params, limit),
     ).fetchall()
@@ -189,8 +203,14 @@ def graph(db, collection, query, limit):
             ORDER BY source_id,target_id LIMIT 2001""",
             ids + ids,
         ).fetchall()
+    nodes = []
+    for row in rows:
+        node = {key: row[key] for key in ("id", "title", "kind")}
+        if viewer:
+            node.update(collection=row["collection"], matched=bool(query or focus) and row["priority"] == 0)
+        nodes.append(node)
     return {
-        "nodes": [{"id": r["id"], "title": r["title"], "kind": r["kind"]} for r in rows],
+        "nodes": nodes,
         "edges": [dict(r) for r in edges[:2000]],
         "total": rows[0]["total"] if rows else 0,
         "more_edges": len(edges) > 2000,
