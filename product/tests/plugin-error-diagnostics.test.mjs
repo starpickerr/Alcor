@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, chmod, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, symlink } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,11 +22,13 @@ test('business worker boundary retain startup cause after process error and reje
 
 test('business worker diagnostics identify failed requests without logging their contents', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-safe-runtime-logs-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
   const messages = []
   const worker = new BusinessWorker(root, { worker: new URL('./fixtures/business-diagnostics-worker.py', import.meta.url),
     diagnostic: (message, level) => messages.push({ message, level }) })
-  t.after(() => worker.close())
+  t.after(async () => {
+    await worker.close()
+    await rm(root, { recursive: true, force: true })
+  })
   await assert.rejects(worker.call('invoke', { domain: 'bills', method: 'list_ledger', arguments: { private: 'must-not-appear' } }))
   assert(messages.some(row => row.level === 'info' && /已启动/.test(row.message)))
   assert(messages.some(row => row.level === 'error' && /bills.list_ledger.*请求 [a-f0-9-]{36}/.test(row.message)))
@@ -36,12 +38,14 @@ test('business worker diagnostics identify failed requests without logging their
 
 test('successful worker operations log their identity and duration without inputs or results', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-success-logs-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
   const script = join(root, 'worker.py')
   await writeFile(script, 'import sys,json\nfor line in sys.stdin:\n request=json.loads(line)\n print(json.dumps({"id":request["id"],"ok":True,"value":{"private":"private-result"}}),flush=True)\n')
   const messages = []
-  const worker = new BusinessWorker(root, { worker: new URL('file://' + script), diagnostic: (message, level, domain) => messages.push({ message, level, domain }) })
-  t.after(() => worker.close())
+  const worker = new BusinessWorker(root, { worker: pathToFileURL(script), diagnostic: (message, level, domain) => messages.push({ message, level, domain }) })
+  t.after(async () => {
+    await worker.close()
+    await rm(root, { recursive: true, force: true })
+  })
   assert.deepEqual(await worker.call('invoke', { domain: 'tasks', method: 'create_todo', arguments: { title: 'private-input' } }), { private: 'private-result' })
   await worker.call('apple_peer', { domain: 'calendar', method: 'get_event', args: ['private-input'] })
   await worker.call('due_reminders')
@@ -54,10 +58,10 @@ test('successful worker operations log their identity and duration without input
   assert(!JSON.stringify(messages).includes('private-result'))
 })
 
-test('business worker boundary explain blank replies, protocol failures and uncertain termination', { skip: process.platform === 'win32' }, async t => {
+test('business worker boundary explain blank replies, protocol failures and uncertain termination', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-worker-replies-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const python = join(root, 'synthetic-python')
+  const script = join(root, 'synthetic-worker.py')
   for (const [output, expected] of [
     ['print(json.dumps({"id":request["id"],"ok":False,"error":""}),flush=True)', /worker_operation_failed.*核对/],
     ['print(json.dumps({"id":request["id"],"ok":False,"errorType":"OperationalError","error":"private-server-secret"}),flush=True)', /storage_error.*保留数据库/],
@@ -65,10 +69,9 @@ test('business worker boundary explain blank replies, protocol failures and unce
     ['print("private-server-secret invalid json",flush=True)', /worker_protocol_error.*避免重复/],
     ['sys.exit(7)', /worker_stopped.*7.*避免重复/],
   ]) {
-    await writeFile(python, `#!/usr/bin/env python3\nimport sys,json\nfor line in sys.stdin:\n request=json.loads(line)\n ${output}\n`)
-    await chmod(python, 0o700)
+    await writeFile(script, `import sys,json\nfor line in sys.stdin:\n request=json.loads(line)\n ${output}\n`)
     for (const Worker of [BusinessWorker]) {
-      const worker = new Worker(root, { python })
+      const worker = new Worker(root, { worker: pathToFileURL(script) })
       try { await assert.rejects(worker.call('probe'), error => expected.test(error.message) && !error.message.includes('private-server-secret')) }
       finally { await worker.close() }
     }
@@ -77,9 +80,11 @@ test('business worker boundary explain blank replies, protocol failures and unce
 
 test('native business domains propagate safe storage diagnostics through their real worker', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-business-storage-errors-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
   const worker = new BusinessWorker(root, { worker: new URL('./fixtures/business-diagnostics-worker.py', import.meta.url) })
-  t.after(() => worker.close())
+  t.after(async () => {
+    await worker.close()
+    await rm(root, { recursive: true, force: true })
+  })
   await assert.rejects(worker.call('invoke', { domain: 'briefing', method: 'get_preferences' }), /peer_outcome_unknown.*勿直接重复执行/)
   for (const [domain, read, write] of [
     ['bills', 'list_ledger', 'create_ledger'], ['tasks', 'list_todos', 'create_todo'],
@@ -111,13 +116,15 @@ test('connection pages distinguish proxy DNS, local paths and mailbox login stag
 
 test('a missing task retains its original domain exception and source location across RPC', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-missing-todo-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
   const messages = []
   const linked = join(root, 'plugin-business')
   await symlink(fileURLToPath(new URL('../../packages/alcor-secretary/business/', import.meta.url)), linked, 'junction')
   const worker = new BusinessWorker(root, { worker: pathToFileURL(join(linked, 'worker.py')),
     diagnostic: message => messages.push(message) })
-  t.after(() => worker.close())
+  t.after(async () => {
+    await worker.close()
+    await rm(root, { recursive: true, force: true })
+  })
   await assert.rejects(worker.call('invoke', { domain: 'tasks', method: 'get_todo', arguments: { todo_id: 'private-item-id' } }), /not_found/)
   const failure = messages.map(message => projectLog({ message })).find(row => row.outcome === 'failure')
   assert.equal(failure.diagnostic.code, 'KeyError')
@@ -130,13 +137,15 @@ test('a missing task retains its original domain exception and source location a
 
 test('only missing Apple object probes use debug while genuine query and peer errors retain errors', async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-probe-logs-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
   const rows = []
   const worker = new BusinessWorker(root, {
     worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url),
     diagnostic: (message, level) => rows.push({ message, level }),
   })
-  t.after(() => worker.close())
+  t.after(async () => {
+    await worker.close()
+    await rm(root, { recursive: true, force: true })
+  })
   for (const [domain, method] of [['calendar', 'get_event'], ['tasks', 'get_todo']]) {
     await assert.rejects(worker.call('apple_peer', { domain, method, args: ['synthetic-missing'] }), /not found/)
     assert.equal(rows.at(-1).level, 'debug')

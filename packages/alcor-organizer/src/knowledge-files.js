@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, extname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +17,18 @@ const kinds = new Map([
   ['.md', 'text'],
 ])
 const helper = new URL('../native/knowledge-text.js', import.meta.url)
+const windowsHelper = new URL('../native/knowledge-text-windows.ps1', import.meta.url)
+const extractionOptions = { timeout: 30000, maxBuffer: 10_000_000 }
+
+async function extractWindowsText(path, kind) {
+  const executable = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
+  const script = await readFile(windowsHelper, 'utf8')
+  return run(executable, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+    ...extractionOptions,
+    windowsHide: true,
+    env: { ...process.env, ALCOR_KNOWLEDGE_SOURCE: path, ALCOR_KNOWLEDGE_KIND: kind },
+  })
+}
 
 export async function readKnowledgeFile(fs, path, signal) {
   if (
@@ -70,16 +82,14 @@ export async function indexKnowledgeFile(args, lookup, script = helper) {
     } catch {
       throw new Error('请使用 UTF-8 编码的文本。')
     }
-  } else if (process.platform === 'darwin') {
+  } else if (process.platform === 'darwin' || process.platform === 'win32') {
     const dir = await mkdtemp(join(tmpdir(), 'alcor-knowledge-'))
     try {
       const path = join(dir, 'source' + ext)
       await writeFile(path, bytes, { mode: 0o600 })
-      const { stdout } = await run(
-        '/usr/bin/osascript',
-        ['-l', 'JavaScript', fileURLToPath(script), path, kind],
-        { timeout: 30000, maxBuffer: 10_000_000 }
-      )
+      const { stdout } = process.platform === 'win32'
+        ? await extractWindowsText(path, kind)
+        : await run('/usr/bin/osascript', ['-l', 'JavaScript', fileURLToPath(script), path, kind], extractionOptions)
       const result = JSON.parse(stdout)
       pages = Array.isArray(result) ? result : result.pages
       truncated = result.truncated === true

@@ -106,6 +106,38 @@ def check_shared_settings(page, mode, home):
     dialog.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
 
 
+def check_knowledge(page, home):
+    page.get_by_role('button', name='知识库', exact=True).click()
+    source = home / 'Windows 知识库验收.txt'
+    source.write_text('Windows fixture: ALCOREDGE161', encoding='utf8')
+    page.locator('input[type=file][accept*=".pdf"]').set_input_files(source)
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('button', name='保存', exact=True).click()
+    expect(dialog).to_be_hidden()
+    search = page.get_by_label('搜索知识库')
+    search.fill('ALCOREDGE161')
+    page.get_by_role('button', name='文档 ' + source.name, exact=True).click()
+    reader = page.get_by_role('article', name='资料详情')
+    expect(reader.locator('mark')).to_contain_text('ALCOREDGE161')
+    with page.expect_download() as downloaded:
+        reader.get_by_role('link', name='下载原件').click()
+    assert Path(downloaded.value.path()).read_bytes() == source.read_bytes()
+    search.clear()
+    directory = page.get_by_role('navigation', name='知识库目录')
+    directory.get_by_role('button', name='新建文件', exact=True).click()
+    dialog.get_by_label('标题', exact=True).fill('Windows 引用验收')
+    dialog.get_by_label('笔记', exact=True).fill(f'参见 [[{source.name}]]')
+    dialog.get_by_role('button', name='保存', exact=True).click()
+    expect(dialog).to_be_hidden()
+    page.get_by_role('button', name='图谱', exact=True).click()
+    graph = page.get_by_role('region', name='知识图谱')
+    expect(graph.get_by_role('button', name='打开资料：' + source.name, exact=True)).to_be_visible()
+    expect(graph.get_by_role('button', name='打开资料：Windows 引用验收', exact=True)).to_be_visible()
+    expect(graph.locator('line')).to_have_count(1)
+    page.screenshot(path=home / 'windows-knowledge-graph.png')
+    return source.name
+
+
 def check_automation(page, navigation, home):
     # Each execution owns its fixtures, including when a retained Profile is upgraded.
     run_id = uuid4().hex[:10]
@@ -120,15 +152,13 @@ def check_automation(page, navigation, home):
     }})
     navigation.get_by_role('button', name='自动化', exact=True).click()
     expect(page.get_by_text(native_title, exact=True)).to_be_visible()
-    title = page.get_by_role('heading', name='自动化任务', exact=True)
-    badge = title.locator('..').get_by_text('Alcor', exact=True)
-    expect(badge).to_be_visible()
+    expect(page.get_by_role('heading', name='自动化任务', exact=True)).to_be_visible()
     scope = page.get_by_role('button', name='自动化范围', exact=True)
     scope.click()
-    page.get_by_role('menuitem', name='Alcor 自动化', exact=True).click()
+    page.get_by_role('menuitem', name='仅显示 Alcor 任务', exact=True).click()
     expect(page.get_by_text(native_title, exact=True)).to_have_count(0)
     scope.click()
-    page.get_by_role('menuitem', name='全部自动化', exact=True).click()
+    page.get_by_role('menuitem', name='显示全部任务', exact=True).click()
     expect(page.get_by_text(native_title, exact=True)).to_be_visible()
     page.get_by_role('button', name='选择创建方式', exact=True).click()
     page.get_by_role('menuitem', name='每日简报', exact=True).click()
@@ -173,7 +203,6 @@ def check_automation(page, navigation, home):
     expect(page.get_by_text(template_title, exact=True)).to_be_visible()
     expect(page.get_by_text(native_title, exact=True)).to_be_visible()
     expect(page.get_by_role('button', name='自动化范围')).to_have_count(0)
-    expect(badge).to_have_count(0)
     expect(page.get_by_text(manual_title, exact=True)).to_be_visible()
     ids = {row['id'] for row in rpc(page, 'schedule/catalog')}
     assert {manual['id'], created['id'], native_task['id']} <= ids
@@ -260,17 +289,17 @@ def main():
                                   {'request': {'domain': 'tasks', 'method': 'categories'}}), list)
             task = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo',
                        'arguments': {'payload': {'title': 'Synthetic Windows lifecycle'}}}})
-            nav = page.get_by_label('Alcor 秘书导航', exact=True)
-            expect(nav.locator('.alcor-sidebar-brand')).to_contain_text('Alcor')
-            expect(nav.locator('.alcor-sidebar-chat')).to_contain_text('新对话')
+            nav = page.get_by_role('navigation', name='秘书功能', exact=True)
+            expect(page.locator('.alcor-sidebar-actions .alcor-sidebar-chat')).to_contain_text('新对话')
             apps = nav.get_by_role('group', name='应用')
             system = nav.get_by_role('group', name='系统')
-            workspace = nav.get_by_role('region', name='工作区与会话')
+            workspace = page.get_by_role('tree', name='会话', exact=True)
             expect(workspace.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
             expect(page.get_by_role('navigation', name='全局面板')).to_have_count(0)
             assert apps.bounding_box()['y'] < system.bounding_box()['y'] < workspace.bounding_box()['y']
             expect(apps.get_by_role('button', name='Aurabot')).to_have_count(0)
             page.screenshot(path=home / 'original-alcor-tasks.png')
+            knowledge_filename = check_knowledge(page, home)
             check_automation(page, nav, home)
             check_shared_settings(page, 'alcor', home)
             system.get_by_role('button', name='Aurabot', exact=True).click()
@@ -327,7 +356,10 @@ def main():
                     expect(page.get_by_role('treeitem', name='shared-workspace', exact=True)).to_be_visible()
                     if page.get_by_role('button', name='切换使用模式，当前 DeepSeek Harness', exact=True).count():
                         switch(page, 'DeepSeek Harness', 'Alcor')
-                    page.get_by_role('button', name='新建会话', exact=True).click()
+                    page.get_by_role('button', name='知识库', exact=True).click()
+                    page.get_by_label('搜索知识库').fill('ALCOREDGE161')
+                    expect(page.get_by_role('button', name='文档 ' + knowledge_filename, exact=True)).to_be_visible()
+                    page.locator('.alcor-sidebar-chat').click()
                     page.get_by_role('button', name=re.compile(r'^(打开|收起)右侧边栏$')).wait_for()
                     session = page.context.browser.new_browser_cdp_session()
                     try:
