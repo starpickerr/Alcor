@@ -37,7 +37,11 @@
     "@deepseek-ai/dsh-home-paths": "0.2.2-alpha.3"
   },
   "devDependencies": {
+    "d3-drag": "3.0.0",
     "d3-force": "3.0.0",
+    "d3-selection": "3.0.0",
+    "d3-transition": "3.0.1",
+    "d3-zoom": "3.0.0",
     "esbuild": "0.27.0",
     "pnpm": "11.28.5"
   },

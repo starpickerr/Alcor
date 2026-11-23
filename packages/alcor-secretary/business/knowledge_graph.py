@@ -161,6 +161,19 @@ def neighbors(db, source, offset, limit):
     return result
 
 
+def graph_titles(db, collection, query):
+    if not query:
+        return []
+    return [dict(row) for row in db.execute(
+        """SELECT id,title,collection FROM sources
+        WHERE archived=0 AND (? IS NULL OR collection=? OR substr(collection,1,length(?)+1)=?||'/')
+          AND instr(lower(title),lower(?))>0
+        ORDER BY lower(title)<>lower(?), instr(lower(title),lower(?))<>1, title, id
+        LIMIT 12""",
+        (collection, collection, collection, collection, query, query, query),
+    )]
+
+
 def graph(db, collection, query, limit, *, viewer=False, focus=""):
     where, params = "archived=0", []
     if collection is not None and not focus:

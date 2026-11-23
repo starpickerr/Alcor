@@ -116,6 +116,12 @@ def check(path, version):
         assert not call("links", id=referencing["id"])["outgoing"]
         (unresolved,) = call("read", id=referencing["id"], include_links=True)["body_links"]
         assert unresolved["label"] == "讲义" and unresolved["id"] is None
+        call("save", title="提纲补充", text="补充材料", collection="课程/数据结构")
+        call("save", title="外部提纲", text="其他资料", collection="课程表")
+        titles = call("graph_titles", collection="课程", query="提纲")
+        assert [row["title"] for row in titles] == ["提纲", "提纲补充"]
+        assert titles[0] == {"id": "old", "title": "提纲", "collection": "课程/数据结构"}
+        assert call("graph_titles", query="找不到") == []
         assert not library.db.execute("PRAGMA foreign_key_check").fetchall()
     finally:
         library.close()

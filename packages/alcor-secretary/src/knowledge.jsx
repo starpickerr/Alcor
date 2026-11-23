@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import {
   Button,
   Modal,
@@ -102,6 +102,86 @@ function ReferencePicker({ api, onPick, exclude }) {
       ) : (
         <small>没有可引用的资料</small>
       )}
+    </div>
+  )
+}
+
+function GraphTitleFinder({ api, collection, revision, onLocate, disabled }) {
+  const listId = useId()
+  const list = useRef(null)
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const [result, setResult] = useState(null)
+  const term = query.trim()
+  const show = open && !!term && !disabled
+  const key = JSON.stringify([collection, revision, term])
+  const current = result?.key === key ? result : null
+  const items = current?.items ?? []
+  const choice = items[Math.min(active, items.length - 1)]
+  const optionId = (row) => listId + '-' + row.id
+  useEffect(() => {
+    if (!show) return
+    let live = true
+    const timer = setTimeout(() => {
+      call(api, 'graph_titles', { query: term, collection: collection || null }).then((rows) => {
+        if (live) setResult({ key, items: rows })
+      }).catch((error) => {
+        if (live) setResult({ key, error: message(error) })
+      })
+    }, 140)
+    return () => { live = false; clearTimeout(timer) }
+  }, [api, show, term, collection, key])
+
+  function pick(row) {
+    setOpen(false)
+    onLocate(row)
+  }
+  function keys(event) {
+    if (event.nativeEvent.isComposing || event.keyCode === 229 || !show) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    } else if (event.key === 'Enter' && choice) {
+      event.preventDefault()
+      pick(choice)
+    } else if (['ArrowDown', 'ArrowUp'].includes(event.key) && items.length) {
+      event.preventDefault()
+      const index = Math.min(active, items.length - 1)
+      const next = (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+      setActive(next)
+      list.current?.children[next]?.scrollIntoView({ block: 'nearest' })
+    }
+  }
+  return (
+    <div className="alcor-graph-finder" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+    }}>
+      <input type="search" role="combobox" aria-label="在图谱中查找资料" aria-autocomplete="list"
+        aria-expanded={show && items.length > 0}
+        aria-controls={show && items.length ? listId : undefined}
+        aria-activedescendant={show && choice ? optionId(choice) : undefined}
+        placeholder="输入标题定位资料" maxLength={240} value={query} disabled={disabled}
+        onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onKeyDown={keys}
+        onChange={(event) => {
+          setQuery(event.target.value)
+          setActive(0)
+          setOpen(true)
+        }} />
+      {show && <div className="alcor-graph-matches">
+        {items.length ? (
+          <ul id={listId} ref={list} role="listbox" aria-label="匹配的资料">
+            {items.map((row) => (
+              <li key={row.id} id={optionId(row)} role="option" aria-selected={row === choice}
+                onMouseDown={(event) => event.preventDefault()} onClick={() => pick(row)}>
+                <strong title={row.title}>{row.title}</strong>
+                <small title={displayLocation(row.collection)}>{displayLocation(row.collection)}</small>
+              </li>
+            ))}
+          </ul>
+        ) : <p role="status">{current?.error ?? (current ? '没有匹配的资料' : '正在查找…')}</p>}
+      </div>}
     </div>
   )
 }
@@ -771,8 +851,8 @@ export function KnowledgePage({ api }) {
   const moveInFlight = useRef(false)
   const detail = useRef(null)
   const picker = useRef(null)
-  const [graph, setGraph] = useState(false),
-    [graphQuery, setGraphQuery] = useState('')
+  const locateGraphNode = useRef(null)
+  const [graph, setGraph] = useState(false)
   const [graphFolder, setGraphFolder] = useState('')
   const [graphTrail, setGraphTrail] = useState([])
   const overviewCamera = useRef(null)
@@ -810,7 +890,7 @@ export function KnowledgePage({ api }) {
     const timer = setTimeout(
       () =>
         call(api, graph ? 'graph_view' : 'search', graph
-          ? graphFocus ? { focus_id: graphFocus.id } : { query: graphQuery, collection: graphFolder || null }
+          ? graphFocus ? { focus_id: graphFocus.id } : { collection: graphFolder || null }
           : { query, offset, grouped: true })
           .then((data) => {
             if (active) setResult(data)
@@ -818,13 +898,13 @@ export function KnowledgePage({ api }) {
           .catch((e) => {
             if (active) setError(message(e))
           }),
-      (graph ? !graphFocus && graphQuery : query) ? 150 : 0
+      !graph && query ? 150 : 0
     )
     return () => {
       active = false
       clearTimeout(timer)
     }
-  }, [api, query, offset, revision, graph, graphQuery, graphFolder, graphFocus, searching])
+  }, [api, query, offset, revision, graph, graphFolder, graphFocus, searching])
   useEffect(() => {
     if (detail.current) detail.current.scrollTop = 0
   }, [target?.id])
@@ -832,9 +912,33 @@ export function KnowledgePage({ api }) {
     setOffset(0)
     setRevision((n) => n + 1)
   }
+  function openGraphDocument(node, camera) {
+    if (graphFocus) {
+      setGraphTrail((trail) => [...trail.slice(0, -1), { ...trail.at(-1), camera }])
+    } else {
+      overviewCamera.current = camera
+    }
+    revealFolder(node.collection ?? '')
+    setQuery('')
+    setOffset(0)
+    setResult(null)
+    setGraph(false)
+    setTarget(node)
+  }
   function exploreGraph(node, camera) {
+    if (graphFocus?.id === node.id) return
     if (!graphFocus) overviewCamera.current = camera
-    setGraphTrail((trail) => trail.at(-1)?.id === node.id ? trail : [...trail, { id: node.id, title: node.title }])
+    setResult(null)
+    setGraphTrail((trail) => {
+      const previous = trail.at(-1)
+      const next = { id: node.id, title: node.title }
+      if (previous?.id === node.id) return trail
+      return previous ? [...trail.slice(0, -1), { ...previous, camera }, next] : [next]
+    })
+  }
+  function leaveGraphFocus(toOverview) {
+    setResult(null)
+    setGraphTrail((trail) => toOverview ? [] : trail.slice(0, -1))
   }
   function documentChanged(saved) {
     if (saved && target?.id === saved.id) {
@@ -1027,18 +1131,16 @@ export function KnowledgePage({ api }) {
         <div className="alcor-knowledge-graph-view">
           <div className="alcor-knowledge-toolbar alcor-graph-filters">
             {graphFocus ? <>
-              {graphTrail.length > 1 && <Button variant="outline" onClick={() => setGraphTrail((trail) => trail.slice(0, -1))}>返回上一步</Button>}
-              <Button variant="outline" onClick={() => setGraphTrail([])}>返回全局图谱</Button>
+              {graphTrail.length > 1 && <Button variant="outline" onClick={() => leaveGraphFocus(false)}>返回上一步</Button>}
+              <Button variant="outline" onClick={() => leaveGraphFocus(true)}>返回全局图谱</Button>
               <span title={graphFocus.title}>局部图谱 · {graphFocus.title}</span>
             </> : <>
-              <input type="search" aria-label="筛选图谱标题" placeholder="搜索资料标题" maxLength={240}
-                value={graphQuery} onChange={(event) => {
-                  overviewCamera.current = null
-                  setGraphQuery(event.target.value)
-                }} />
+              <GraphTitleFinder key={graphFolder} api={api} collection={graphFolder} revision={revision}
+                disabled={!result} onLocate={(row) => locateGraphNode.current?.(row)} />
               {folders.length > 0 && <select aria-label="筛选图谱文件夹" value={graphFolder}
                 onChange={(event) => {
                   overviewCamera.current = null
+                  setResult(null)
                   setGraphFolder(event.target.value)
                 }}>
                 <option value="">全部文件夹</option>
@@ -1047,8 +1149,9 @@ export function KnowledgePage({ api }) {
             </>}
           </div>
           {error ? <Notice tone="error" role="alert">{error} <Button onClick={refresh}>重试</Button></Notice>
-            : result ? <KnowledgeGraph data={result} onOpen={setTarget} onFocus={exploreGraph}
-              focusId={graphFocus?.id} folders={folders} camera={graphFocus ? null : overviewCamera.current} />
+            : result ? <KnowledgeGraph data={result} onOpen={openGraphDocument} onFocus={exploreGraph}
+              focusId={graphFocus?.id} locateRef={locateGraphNode}
+              camera={graphFocus ? graphFocus.camera : overviewCamera.current} />
               : <p role="status">正在读取资料…</p>}
         </div>
       ) : (
@@ -1122,15 +1225,6 @@ export function KnowledgePage({ api }) {
             openFolder(path)
             refresh()
           }}
-        />
-      )}
-      {graph && target && (
-        <SourceReader
-          target={target}
-          api={api}
-          collections={folders}
-          close={() => setTarget(null)}
-          onChange={refresh}
         />
       )}
     </main>

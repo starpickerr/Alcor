@@ -11,6 +11,13 @@ The repository [LICENSE](LICENSE) preserves the MIT terms and both copyright not
 
 Third-party Python and npm packages retain their respective licenses. Their versions are recorded in the dependency manifests and lockfile; the repository's MIT license does not replace their license terms.
 
+## CowAgent knowledge graph
+
+Alcor's [knowledge graph renderer](packages/alcor-secretary/src/knowledge-graph.jsx)
+adapts the D3 layout and interactions from
+[CowAgent at `4d0ee4d2`](https://github.com/zhayujie/CowAgent/blob/4d0ee4d2c5a709562551b8f209dfe679fa7c2094/channel/web/static/js/views/knowledge.js#L850-L999).
+The plugin ships the [upstream MIT license](packages/alcor-secretary/vendor/COWAGENT-GRAPH-LICENSE.txt).
+
 ## OpenAI Codex
 
 `core/security/process_environment.py` adapts the platform Core environment lists,
