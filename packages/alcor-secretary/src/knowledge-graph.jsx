@@ -6,7 +6,7 @@ import { zoom, zoomIdentity } from 'd3-zoom'
 import 'd3-transition'
 import { forceCenter, forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide } from 'd3-force'
 
-const folderColors = ['#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab']
+const folderColors = ['#3f65ed', '#009984', '#8b53d9', '#df7426', '#548c32', '#ca4e89', '#1889bc', '#c29506', '#d85751', '#7168b7']
 const folder = (node) => node.collection?.split('/')[0] || ''
 const byDegree = (first, second) => second.degree - first.degree
 
@@ -130,6 +130,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
   }, [model])
   const color = (node) => folderColors[groups.indexOf(folder(node)) % folderColors.length]
   const labelsVisible = view.k >= fitScale * 0.9
+  const dotRadius = (node) => Math.min(node.radius, (5.5 + Math.sqrt(node.degree) * 2) / view.k)
 
   useLayoutEffect(() => {
     const element = svg.current
@@ -290,7 +291,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
                 <g key={node.id} role="button" tabIndex={0} data-node-id={node.id}
                   aria-label={'打开资料：' + node.title} aria-pressed={selectedId === node.id}
                   className="alcor-graph-node" style={{ '--node-color': color(node) }}
-                  data-matched={node.matched} data-dim={!!active && !related.has(node.id)}
+                  data-active={node.id === active} data-matched={node.matched} data-dim={!!active && !related.has(node.id)}
                   transform={`translate(${node.x},${node.y})`}
                   onPointerEnter={(event) => hoverNode(event, node)} onPointerMove={(event) => hoverNode(event, node)}
                   onPointerLeave={() => setHover(null)}
@@ -302,12 +303,14 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
                     else select(node.id)
                   }}>
                   <circle r={Math.max(node.radius, 11 / view.k)} fill="transparent" className="alcor-graph-hit" />
-                  <circle r={node.radius} className="alcor-graph-dot" />
+                  <circle r={dotRadius(node)} vectorEffect="non-scaling-stroke" className="alcor-graph-dot" />
+                  <circle r={dotRadius(node) * 0.55} className="alcor-graph-core" />
+                  <circle r={dotRadius(node) + 3 / view.k} vectorEffect="non-scaling-stroke" className="alcor-graph-halo" />
                 </g>
               ))}
               <g className="alcor-graph-labels" aria-hidden="true" visibility={labelsVisible ? 'visible' : 'hidden'}>
                 {graph.nodes.map((node) => (
-                  <text key={node.id} x={node.x} y={node.y} dx={node.radius + 4 / view.k} dy={3 / view.k}
+                  <text key={node.id} x={node.x} y={node.y} dx={dotRadius(node) + 6 / view.k} dy={3 / view.k}
                     fontSize={10 / view.k} data-dim={!!active && !related.has(node.id)}>{node.label}</text>
                 ))}
               </g>

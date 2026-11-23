@@ -303,19 +303,31 @@ def check(page, docs):
     expect(node).not_to_have_attribute("transform", node_transform)
     expect(node).to_have_attribute("aria-pressed", "false")
     expect(transform).not_to_have_attribute("transform", initial, timeout=12000)
-    fitted = transform.evaluate("""group => new Promise(resolve => {
-        let previous, stableFrames = 0
-        function sample() {
-            const current = group.getAttribute('transform')
-            stableFrames = current === previous ? stableFrames + 1 : 0
-            previous = current
-            if (stableFrames >= 6) resolve(current)
-            else requestAnimationFrame(sample)
+    page.wait_for_function("""group => {
+        const points = Array.from(group.querySelectorAll('.alcor-graph-node'),
+            node => node.transform.baseVal.getItem(0).matrix)
+        const xs = points.map(point => point.e), ys = points.map(point => point.f)
+        const left = Math.min(...xs), right = Math.max(...xs)
+        const top = Math.min(...ys), bottom = Math.max(...ys)
+        const { width, height } = group.ownerSVGElement.getBoundingClientRect()
+        const scale = Math.min(width / (right - left + 32), height / (bottom - top + 32), 4)
+        const translation = group.transform.baseVal.getItem(0).matrix
+        const zoom = group.transform.baseVal.getItem(1).matrix.a
+        return Math.abs(zoom - scale) < 0.001
+            && Math.abs(translation.e - (width / 2 - (left + right) / 2 * scale)) < 0.1
+            && Math.abs(translation.f - (height / 2 - (top + bottom) / 2 * scale)) < 0.1
+    }""", arg=transform.element_handle(), timeout=12000)
+    fitted = transform.get_attribute("transform")
+    point = canvas.evaluate("""svg => {
+        const box = svg.getBoundingClientRect()
+        for (const inset of [24, 48, 72]) {
+            const x = box.x + inset, y = box.y + inset
+            if (document.elementFromPoint(x, y) === svg) return [x, y]
         }
-        sample()
-    })""")
-    box = canvas.bounding_box()
-    x, y = box["x"] + 12, box["y"] + 12
+        return null
+    }""")
+    assert point, "Expected empty canvas for the pan gesture"
+    x, y = point
     page.mouse.move(x, y)
     page.mouse.down()
     page.mouse.move(x + 32, y + 26, steps=6)

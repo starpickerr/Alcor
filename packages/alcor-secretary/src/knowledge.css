@@ -539,6 +539,7 @@
   stroke-opacity: 0.1;
 }
 .alcor-graph-node {
+  --graph-node-accent: color-mix(in srgb, var(--node-color) 92%, var(--dsw-alias-label-primary));
   cursor: pointer;
   outline: none;
 }
@@ -546,13 +547,32 @@
   opacity: 0.2;
 }
 .alcor-graph-dot {
-  fill: var(--node-color);
-  stroke: var(--dsw-alias-bg-layer-1);
-  stroke-width: 1;
+  fill: color-mix(in srgb, var(--graph-node-accent) 18%, var(--dsw-alias-bg-layer-1));
+  stroke: var(--graph-node-accent);
+  stroke-width: 1.25;
 }
-.alcor-graph-node:is(:focus-visible, [aria-pressed='true'], [data-matched='true']) .alcor-graph-dot {
+.alcor-graph-core {
+  fill: var(--graph-node-accent);
+  pointer-events: none;
+}
+.alcor-graph-halo {
+  display: none;
+  fill: none;
+  stroke: var(--graph-node-accent);
+  stroke-width: 1.25;
+  stroke-opacity: 0.7;
+  pointer-events: none;
+}
+.alcor-graph-node:is([data-active='true'], [aria-pressed='true'], [data-matched='true']) .alcor-graph-dot {
+  fill: color-mix(in srgb, var(--graph-node-accent) 36%, var(--dsw-alias-bg-layer-1));
+}
+.alcor-graph-node:is(:focus-visible, [data-active='true'], [aria-pressed='true'], [data-matched='true']) .alcor-graph-halo {
+  display: inline;
+}
+.alcor-graph-node:focus-visible .alcor-graph-halo {
   stroke: var(--dsw-alias-label-primary);
   stroke-width: 2;
+  stroke-opacity: 1;
 }
 .alcor-graph-labels {
   pointer-events: none;
