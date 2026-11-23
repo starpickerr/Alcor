@@ -372,6 +372,55 @@
   flex: none;
   margin-bottom: 12px;
 }
+.alcor-graph-finder {
+  position: relative;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.alcor-graph-finder input {
+  width: 100%;
+  min-width: 0;
+}
+.alcor-graph-matches {
+  position: absolute;
+  z-index: 3;
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 4px 14px #0002;
+}
+.alcor-graph-matches ul {
+  max-height: min(320px, 45vh);
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.alcor-graph-matches li {
+  display: grid;
+  gap: 2px;
+  padding: 6px 9px;
+  border-radius: var(--dsw-radius-md);
+  cursor: pointer;
+}
+.alcor-graph-matches li:is(:hover, [aria-selected='true']) {
+  background: var(--alcor-brand-soft);
+}
+.alcor-graph-matches li :is(strong, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alcor-graph-matches small,
+.alcor-graph-matches p {
+  color: var(--dsw-alias-label-secondary);
+}
+.alcor-graph-matches p {
+  margin: 4px 9px;
+}
 .alcor-graph-filters select {
   max-width: min(45%, 250px);
   padding: 8px 12px;

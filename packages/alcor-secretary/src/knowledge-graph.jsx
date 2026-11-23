@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Button, IconCloseOutlineRegular, IconFolderOpenRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide } from 'd3-force'
 
@@ -91,7 +91,7 @@ function GraphInspector({ graph, selected, onSelect, onOpen, onFocus, focusId, c
     return <ul>{items.map((node) => (
       <li key={node.id}><button type="button"
         title={follow && focusId !== node.id ? '查看「' + node.title + '」的局部图谱' : node.title}
-        onClick={() => follow && focusId !== node.id ? onFocus(node) : onSelect(node.id, true)}>
+        onClick={() => follow && focusId !== node.id ? onFocus(node) : onSelect(node.id, { center: true })}>
         <i style={{ background: color(node) }} /> <span>{node.title}</span>
       </button></li>
     ))}</ul>
@@ -125,13 +125,13 @@ function GraphInspector({ graph, selected, onSelect, onOpen, onFocus, focusId, c
   </aside>
 }
 
-export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera }) {
+export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera, locateRef }) {
   const arrow = useId()
   const svg = useRef(null), panel = useRef(null), gesture = useRef(null), ignoreClick = useRef(false)
   const [size, setSize] = useState({ width: 800, height: 440 })
   const [view, setView] = useState(camera?.view ?? home)
   const [fitBounds, setFitBounds] = useState(camera?.fitBounds ?? null)
-  const [selectedId, setSelectedId] = useState(focusId ?? camera?.selectedId ?? null)
+  const [selectedId, setSelectedId] = useState(camera ? camera.selectedId : focusId ?? null)
   const [positions, setPositions] = useState(() => camera?.positions ?? new Map())
   const [dragging, setDragging] = useState('')
   const [hovered, setHovered] = useState(null)
@@ -185,18 +185,29 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
     }
   }, [!!graph.nodes.length])
 
-  function select(id, center = false) {
+  function select(id, { center = false, revealInspector = true } = {}) {
     setSelectedId(id)
     setHovered(null)
     if (center) {
       const node = graph.nodes.find((item) => item.id === id)
       if (node) setView({ x: (area.cx - node.x) * scale, y: (area.cy - node.y) * scale, zoom: view.zoom })
     }
-    if (id && panel.current && svg.current) {
+    if (id && revealInspector && panel.current && svg.current) {
       const below = panel.current.getBoundingClientRect().top >= svg.current.getBoundingClientRect().bottom - 1
       if (below) panel.current.scrollIntoView({ block: 'nearest' })
     }
   }
+  function openFocus(node) {
+    onFocus(node, { view, fitBounds, selectedId, positions, showUnlinked })
+  }
+  useImperativeHandle(locateRef, () => (row) => {
+    if (!graph.nodes.some((node) => node.id === row.id)) {
+      openFocus(row)
+      return
+    }
+    select(row.id, { center: true, revealInspector: false })
+    svg.current?.querySelector(`[data-node-id="${CSS.escape(row.id)}"]`)?.focus({ preventScroll: true })
+  })
   function fit() {
     setFitBounds(positions.size ? bounds(graph.nodes) : null)
     setView(home)
@@ -319,13 +330,13 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
           </g>
         </svg>
         <GraphInspector graph={graph} selected={selected} onSelect={select} panel={panel}
-          onOpen={onOpen} onFocus={(node) => onFocus(node, { view, fitBounds, selectedId, positions, showUnlinked })}
+          onOpen={onOpen} onFocus={openFocus}
           focusId={focusId} color={color} />
       </div>
       <footer className="alcor-graph-legend">
         {visibleFolders.map((group) => <span key={group}><i style={{ background: color({ collection: group }) }} />{group || '顶层'}</span>)}
         {!graph.edges.length && <span>在资料中插入引用即可建立关系</span>}
-        {(data.total > data.nodes.length || data.more_edges) && <span>当前仅显示部分资料或引用，请缩小搜索范围</span>}
+        {(data.total > data.nodes.length || data.more_edges) && <span>当前仅显示部分资料或引用，可按文件夹缩小范围</span>}
       </footer>
     </section>
   )

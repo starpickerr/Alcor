@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from business.knowledge_graph import graph, neighbors, index_references, inline_links, resolve
+from business.knowledge_graph import graph, graph_titles, neighbors, index_references, inline_links, resolve
 from business.knowledge_index import connect, install, index_source, chunk_text, retrieve, SemanticIndex
 
 
@@ -66,15 +66,18 @@ class Knowledge:
             return self.folder_delete(args, method == "delete_folder")
         if method == "search":
             return self.search(args)
-        if method in ("graph", "graph_view"):
+        if method in ("graph", "graph_view", "graph_titles"):
             collection = args.get("collection")
             if collection is not None:
                 collection = string(collection, 100, "资料集")
+            query = string(args.get("query", ""), 240, "搜索词")
+            if method == "graph_titles":
+                return graph_titles(self.db, collection, query)
             viewer = method == "graph_view"
             return graph(
                 self.db,
                 collection,
-                string(args.get("query", ""), 240, "搜索词"),
+                query,
                 integer(args.get("limit", 240), 1, 240),
                 viewer=viewer,
                 focus=string(args.get("focus_id", ""), 80, "资料编号") if viewer else "",
