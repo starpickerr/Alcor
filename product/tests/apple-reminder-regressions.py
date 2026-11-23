@@ -10,6 +10,7 @@ from unittest.mock import patch
 M = runpy.run_path(str(Path(__file__).with_name('apple-contracts.py')))
 Business, NativeBridge, AppleReminderSync = M['Business'], M['NativeBridge'], M['AppleReminderSync']
 from apple_sync.bridge import AppleCalendarBridge, BridgeError
+from apple_sync.reminder_completion import dispatch
 
 class AlarmBridge(NativeBridge):
     def call(self, op, **payload):
@@ -76,6 +77,29 @@ class Regressions(unittest.TestCase):
         restarted=AppleReminderSync(bridge=self.bridge,db_path=self.root/'sync.sqlite',todo_port=self.business.tasks); restarted.start_auto=lambda:None
         self.assertEqual(restarted.sync()['exported'],0); self.assertEqual(self.business.tasks.list_todos()[0]['id'],identity)
         with self.assertRaises(ValueError): self.business.tasks.create_todo({'title':'invalid','repeat_frequency':'daily','remind_at':at})
+
+    def test_interactive_dispatch_finishes_only_the_selected_completion(self):
+        first = self.bridge.rows[0]
+        first.update(due_on='2026-11-07', recurrence={'frequency': 'daily'})
+        self.bridge.rows.append({**first, 'title': 'Other reminder', 'reminder_id': 'other', 'external_id': 'other-external'})
+        self.start()
+        tasks = self.business.tasks
+        first, other = sorted(tasks.list_todos(), key=lambda task: task['title'], reverse=True)
+        first_op = tasks.complete_todo(first['id'], True)['queued_completion_id']
+        other_op = tasks.complete_todo(other['id'], True)['queued_completion_id']
+        self.sync.set_auto(False)
+        self.assertFalse(dispatch(self.sync, first['id'], first_op))
+        self.sync.set_auto(True)
+        self.assertFalse(dispatch(self.sync, first['id'], other_op))
+        self.assertTrue(dispatch(self.sync, first['id'], first_op))
+        self.assertFalse(dispatch(self.sync, first['id'], first_op))
+        self.assertEqual([row['id'] for row in tasks.apple_operations()], [other_op])
+        sent = [payload for operation, payload in self.bridge.calls if operation == 'reminder_complete']
+        self.assertEqual(len(sent), 1)
+        committed = tasks.get_todo(first['id'])
+        self.assertEqual(committed['due_on'], '2026-11-08')
+        self.assertEqual(len(committed['completion_history']), 1)
+        self.assertEqual(committed['apple_pending'], [])
     def test_alarm_intent_create_edit_clear_and_retry(self):
         self.bridge.rows=[]; self.start(); t=self.business.tasks.create_todo({'title':'UI','alarms':[{'absolute':'2026-11-08T01:00:00Z'}]}); self.assertEqual(self.sync.sync()['status'],'success')
         self.assertEqual(self.bridge.rows[0]['alarm_count'],1)

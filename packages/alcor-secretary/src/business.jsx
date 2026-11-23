@@ -39,6 +39,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [completing, setCompleting] = useState(null)
   const [editor, setEditor] = useState(null)
   const pendingBillDelete = useRef(null), billDeleteEpoch = useRef(0), billDeleteInFlight = useRef(false)
   useEffect(() => () => {
@@ -84,7 +85,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   }, [api])
   async function run(operation, success = '已保存') {
     setBusy(true); setError(''); setNotice('')
-    try { const value = await unwrap(operation()); await refresh(); setNotice(success); return value ?? true }
+    try { const value = await unwrap(operation()); await refresh(); setNotice(typeof success === 'function' ? success(value) : success); return value ?? true }
     catch (failure) { setError(failure.message || '操作失败，请刷新核对。'); return null }
     finally { setBusy(false) }
   }
@@ -141,7 +142,16 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
     }
     return record.kind==='task' ? mutate('tasks','set_todo_category',{todo_id:recordId(record),category_id},'清单已更新') : mutate('calendar','set_event_category',{id:recordId(record),category_id},'日历已更新')
   }
-  const completeRecord = record => mutate('tasks','complete_todo',taskCompletion(record.kind==='task' && record.id.startsWith('task:') ? {...record,id:record.business.id} : record),'事务状态已更新')
+  async function completeRecord(record) {
+    const args = taskCompletion(record.id.startsWith('task:') ? { ...record, id: record.business.id } : record)
+    setCompleting(args.todo_id)
+    try {
+      return await mutate('tasks', 'complete_todo', args, value => {
+        if (value?.apple_pending?.some(operation => operation.action === 'complete')) return ''
+        return args.completed ? '已完成' : '已恢复为未完成'
+      })
+    } finally { setCompleting(null) }
+  }
 
   function toggleArchive(record) { return run(() => api.archive({ id: record.id, expectedRevision: record.revision, archived: !record.archived }), record.archived ? '已恢复' : '已归档') }
   function download(content, name, type) {
@@ -174,7 +184,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       {error && <Notice tone="error">{error}</Notice>}
   </>
   const panelOpen = ['event','task'].includes(kind) && (details !== null || editor !== null)
-  const taskPageProps = {commitDelete,records,view:taskView,setView:setTaskView,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args) => mutate('tasks',method,args,method === 'delete_todo' ? '已删除' : '已保存'),api,reloadKey,busy,loading,error}
+  const taskPageProps = {commitDelete,records,view:taskView,setView:setTaskView,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args,success) => mutate('tasks',method,args,success ?? (method === 'delete_todo' ? '已删除' : '已保存')),api,reloadKey,busy,completing,loading,error}
   const taskDetail = details?.record.kind === 'task' ? data.records.find(item => item.kind === 'task' && item.id === recordId(details.record)) ?? details.record : null
   const panelTitle = editor !== null ? `${editor.id ? '编辑' : '新增'}${titles[editorKind]}` : details?.record.kind === 'task' ? '事务详情' : '日程详情'
   const focused = editor ?? details?.record

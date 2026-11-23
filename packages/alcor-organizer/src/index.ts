@@ -161,7 +161,18 @@ export default class Organizer extends TypertRemoteService {
     if (input.domain === 'briefing' && input.method === 'source_preferences') return this.businessWorker.call('source_settings')
     if (input.domain === 'briefing' && input.method === 'list_sources') return this.effectiveSources()
     if (input.domain === 'briefing' && input.method === 'available_sources') return this.ctx.tools.definitions().map(tool => tool.name).filter(name => /^(mcp__[A-Za-z0-9_-]+__(fetch_messages|fetch_source|fetch)|[A-Za-z0-9_-]{1,64}_briefing_fetch)$/.test(name))
-    return this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+    const saved = await this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+    if (input.domain !== 'tasks' || input.method !== 'complete_todo' || !saved?.queued_completion_id) return saved
+    const { queued_completion_id, ...record } = saved
+    const completion = record.apple_pending?.find(operation => operation.id === queued_completion_id && operation.action === 'complete' && operation.state === 'pending')
+    const apple = completion && appleSyncForAlcor(this.ctx)
+    if (typeof apple?.dispatchReminderCompletion !== 'function') return record
+    // The Apple worker calls back into this owner's queue to commit the receipt.
+    try { await apple.dispatchReminderCompletion(saved.id, completion.id) }
+    catch (error) { reportHostFailure(this.ctx, 'tasks', 'apple.completeReminder', error, '无法立即确认本次 Apple 完成操作。', input.requestId) }
+    return this.serialize(() => this.businessWorker.call('invoke', {
+      domain: 'tasks', method: 'get_todo', arguments: { todo_id: saved.id },
+    }))
   }
 
   @Remote

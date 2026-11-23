@@ -18,7 +18,7 @@ const groups = { overdue: '含逾期', today: '含今天事务', upcoming: '近�
 const dateLabel = day => new Date(`${day}T12:00`).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', ...(day.slice(0, 4) !== localDate().slice(0, 4) ? { year: 'numeric' } : {}) })
 const relativeDay = (day, today) => day === today ? '今天' : day === addDays(today, 1) ? '明天' : dateLabel(day)
 
-export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, reloadKey, busy, loading, categories = [], select, detailRecord, selectedRecord, copy, move, error, view, setView }) {
+export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, reloadKey, busy, completing, loading, categories = [], select, detailRecord, selectedRecord, copy, move, error, view, setView }) {
   const [removing, setRemoving] = useState(null)
   const [removeError, setRemoveError] = useState('')
   const deletePreview = useDeletePreview(api, 'tasks', 'item', removing?.id)
@@ -114,13 +114,14 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     const contextOnly = node && !node.matched
     const actionable = !contextOnly && !parentLink
     const selected = selectedRecord && (selectedRecord.business?.occurrence_id ? taskKey(selectedRecord) === taskKey(item) : recordId(selectedRecord) === recordId(item))
+    const updating = completing === (item.business?.occurrence_id ?? item.id)
     return <li key={taskKey(item)} className="alcor-task-node"><div className="alcor-task-card" style={{'--task-indent': `${Math.min(depth, 4) * 16}px`}} {...(actionable ? context.trigger(item) : {})} data-task-id={item.id} data-tree-key={node?.key} data-context-only={contextOnly || undefined} data-depth={depth} data-record-selected={selected || undefined} data-priority={item.business?.priority} data-group={taskGroup(item, now)} data-completed={item.status === 'done' || undefined}>
       <button type="button" className="alcor-task-open" aria-label={item.title} onClick={() => open(item)} />
       {node && <span className="alcor-task-disclosure">{node.children.length > 0 && <Button variant="ghost" size="sm" aria-label={`${expanded(node, section) ? '收起' : '展开'}子事务：${item.title}`} aria-expanded={expanded(node, section)} onClick={() => setExpanded({ [`${section}:${node.key}`]: !expanded(node, section) })}><IconChevronDownOutlineRegular size={20} /></Button>}</span>}
       {parentLink && <IconChecklistOutlineRegular className="alcor-task-parent-icon" size={18} aria-hidden="true" />}
-      {actionable && <Button className="alcor-task-check" variant="ghost" aria-label={recordRepeats(item) ? item.status === 'done' ? '重新打开本次' : '完成本次' : item.status === 'done' ? '重新打开' : '完成事务'} aria-pressed={item.status === 'done'} disabled={!recordPermissions(item, busy).complete} onClick={() => toggle(item)}>{item.status === 'done' && <IconCheckOutlineRegular size={16} />}</Button>}
+      {actionable && <Button className="alcor-task-check" variant="ghost" aria-label={updating ? '正在更新本次状态' : recordRepeats(item) ? item.status === 'done' ? '重新打开本次' : '完成本次' : item.status === 'done' ? '重新打开' : '完成事务'} aria-busy={updating || undefined} aria-pressed={item.status === 'done'} disabled={!recordPermissions(item, busy).complete} onClick={() => toggle(item)}>{updating ? <IconAlarmClockOutlineRegular size={12} /> : item.status === 'done' && <IconCheckOutlineRegular size={16} />}</Button>}
       <div className="alcor-task-copy"><h3>{item.title}</h3>
-        {!contextOnly && <TaskMetadata item={item} now={now} view={view} categories={categories} hideList={list === item.business?.category_id} />}
+        {!contextOnly && <TaskMetadata item={item} now={now} view={view} categories={categories} hideList={list === item.business?.category_id} updating={updating} />}
         {!contextOnly && item.business?.subtask_count > 0 && <small>已完成 {item.business.progress_completed}/{item.business.progress_total}</small>}
         {node && <div className="alcor-task-urgency">{['overdue', 'today'].map(group => node.urgency[group] > 0 && <Button key={group} variant="ghost" size="sm" data-urgency={group} aria-label={`${item.title}：${node.urgency[group]} 项子事务${group === 'overdue' ? '逾期' : '今天'}`} onClick={() => revealUrgent(node, group, section)}>{node.urgency[group]} 项{group === 'overdue' ? '逾期' : '今天'}</Button>)}</div>}
       </div>
@@ -137,6 +138,7 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     const parent = records.find(item => item.id === current.business?.parent_id && item.id !== current.id)
     const children = records.filter(item => item.business?.parent_id === current.id).sort((left, right) => (left.business?.sort_order ?? 0) - (right.business?.sort_order ?? 0))
     const repeating = recordRepeats(current)
+    const pendingCompletion = current.business?.apple_pending?.find(operation => operation.action === 'complete' && operation.state === 'pending')
     const canAddChild = recordPermissions(current, busy).edit
     function cancelAddChild() {
       setChildTitle('')
@@ -163,6 +165,8 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
     return <>
       <OrganizerDetails inline closeOnEdit={false} closeOnComplete={false} closeOnDelete={false} value={{record:currentAction ?? current,remove:() => requestDelete(current)}} groups={categories} busy={busy} close={() => open(null)} edit={edit} complete={toggle} error={error}>
       <div className="alcor-task-detail">
+      {pendingCompletion && <Button size="sm" variant="outline" disabled={busy}
+        onClick={() => void mutate('cancel_apple_operation', { operation_id: pendingCompletion.id }, '已取消待同步请求。')}>取消本次状态请求</Button>}
       {current.business?.repeat_frequency !== 'none' && current.business?.source_type !== 'apple_reminder' && !current.business?.native_managed && <section className="alcor-task-group"><h2>重复事务</h2><FieldDate value={occurrenceDay} change={setOccurrenceDay} /><Notice>显示所选日期起 31 天，按每次发生分别完成。</Notice>{occurrenceError && <Notice tone="error">{occurrenceError}</Notice>}{occurrences.map(item => <div className="alcor-task-dependency" key={item.id}><span>{item.due_on} · {taskStatuses[item.status]}</span><Button variant="outline" disabled={!recordPermissions(current,busy).complete} onClick={() => void mutate('complete_todo', { todo_id: item.id, completed: item.status !== 'completed' })}>{item.status === 'completed' ? '重新打开本次' : '完成本次'}</Button></div>)}</section>}
       {parent && <nav className="alcor-task-group" aria-label="事务路径">
         <div className="alcor-calendar-period"><h2>父事务</h2></div>
@@ -200,7 +204,7 @@ export function TasksPage({ commitDelete, records, edit, toggle, mutate, api, re
 
 function FieldDate({ value, change }) { return <label className="alcor-field"><span>重复事务开始日期</span><Input type="date" required value={value} onChange={event => { if (event.target.value) change(event.target.value) }} /></label> }
 
-function TaskMetadata({ item, now, view, categories, hideList }) {
+function TaskMetadata({ item, now, view, categories, hideList, updating }) {
   const raw = item.business ?? {}
   const done = raw.status === 'completed'
   const repeating = recordRepeats(item)
@@ -217,7 +221,9 @@ function TaskMetadata({ item, now, view, categories, hideList }) {
     {done && repeating && next && next > today && <span className="alcor-task-badge">下次{relativeDay(next, today)}</span>}
     {showDate && day && day !== deadline && <time className="alcor-task-badge" dateTime={day}>{day < today ? '原计划' : '安排在'}{relativeDay(day, today)}</time>}
     {showDate && deadline && <span className="alcor-task-badge" data-kind="due"><IconAlarmClockOutlineRegular size={13} /><time aria-label="截止时间" dateTime={raw.due_time ? `${deadline}T${raw.due_time}` : deadline}>{relativeDay(deadline, today)}{raw.due_time && ` ${raw.due_time}`} 截止</time></span>}
-    {!!raw.apple_pending?.length && <span className="alcor-task-badge" role="status">{appleOperationMessage(raw.apple_pending[0])}</span>}
+    {(updating || raw.apple_pending?.length > 0) && <span className="alcor-task-badge" role="status">
+      {updating ? '正在更新本次事务状态…' : appleOperationMessage(raw.apple_pending[0])}
+    </span>}
     {!hideList && raw.list_name && <span className="alcor-task-badge" data-kind="list" aria-label={`清单：${raw.list_name}`}><i className="alcor-task-list-dot" style={{background:categories.find(group => group.id === raw.category_id)?.color}} />{raw.list_name}</span>}
     {raw.priority > 0 && <span className="alcor-task-badge" data-priority={raw.priority}>{priorityLabels[raw.priority]}优先级</span>}
   </div>
