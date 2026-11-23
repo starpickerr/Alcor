@@ -1,5 +1,17 @@
 # Windows 原生插件验证
 
+## 2026-11-24 develop 适配
+
+从 `d8503986` 构建秘书插件 `0.1.161`。官方 DSH Windows x64 `0.2.2-rc.5` 的安装包、程序签名和 app.asar 摘要已核对，身份记录见 [版本清单](desktop-release.lock.json)。
+
+隔离 Profile 从 rc.3 交由 rc.5 打开后保留事务 ID、工作区、配置及知识库检索结果。验收包含同窗模式切换、重启恢复、停用与重装、共享自动化和两种模式下的 AuraBot 入口。rc.3 窄窗侧栏通过鼠标和 Ctrl+B 开合。rc.5 在外宽 720px 和 1180px 下验证了标题栏拖动，也验证了右侧栏和内部预览分隔线拖动。
+
+知识库使用 Windows 系统 OCR 索引新导入的 PNG、JPEG 和 PDF，识别语言取自当前 Windows 用户配置。PDF 最多识别前 12 页，原件可完整下载。无可用 OCR 语言、识别超时或无法读取文件时仍可保存原件并添加摘录。已有提取结果继续按文件摘要复用。官方 rc.5 实测可搜索合成图片和 PDF 中的中文，下载的原件与导入文件字节一致。
+
+Windows 定向源码检查包含业务进程、确认协议、宿主兼容、连接器凭据、环境隔离、运行日志及知识库，78 项通过、2 项跳过。锁定的独立 Apple 插件修订无法从当前远端获取，本地定向检查使用可获取的 `v0.2.0` 源码。锁定版本的完整回归仍待验证。
+
+## 历史版本验收
+
 Windows x64 使用官方 DSH 0.2.2-rc.1、0.2.2-rc.2、0.2.2-rc.3 和标准 `@alcor/secretary` 插件。安装文件、可执行文件和 app.asar 的摘要记录在 `product/desktop-release.lock.json`，已核对 Authenticode 签名。以下验收始于全新的测试 Profile，包含真实官方桌面进程和合成业务记录。
 
 - 已在原版 DSH 窗口调用秘书概览和事务分类接口。Python 业务进程支持超过 260 字符的插件路径，标准输入输出以 UTF-8 传输。开发模式使用 Windows 的 python 命令，正式 Host 使用随 DSH 提供的解释器。
@@ -38,10 +50,10 @@ npm ci --force --ignore-scripts
 npm run product:pack
 python -m pip install playwright pywin32 tzdata
 $env:PYTHONUTF8 = '1'
-python product/tests/official_shared_windows.py --app "C:\DSH-rc1\DeepSeek Harness.exe" --package ".local/artifacts/alcor-secretary-0.1.102.tgz" --aurabot "C:\fixtures\dsh-aurabot-qq-1.2.1.tgz" --upgrade-app "C:\DSH-rc2\DeepSeek Harness.exe" --expect-compatible-upgrade
+python product/tests/official_shared_windows.py --app "C:\DSH-rc3\DeepSeek Harness.exe" --package ".local/artifacts/alcor-secretary-0.1.161.tgz" --aurabot "C:\fixtures\dsh-aurabot-qq-1.2.1.tgz" --upgrade-app "C:\DSH-rc5\DeepSeek Harness.exe" --expect-compatible-upgrade
 ```
 
-命令创建独立的本机测试资料，正常退出每次启动的官方进程，并在 `.local/official-shared-windows` 下写入截图、窗口命中位置及日志。`--upgrade-app` 可省略。用旧的不兼容包验证官方回退时，省略 `--expect-compatible-upgrade`。也可直接将 `--app` 指向已锁定的 `rc.2` 可执行文件，独立验证全新 Profile。实际鼠标拖动只在测试窗口持有前台时执行，未执行时会在 `caption.json` 中明确记录。
+命令创建独立的本机测试资料，正常退出每次启动的官方进程，并在 `.local/official-shared-windows` 下写入截图、窗口命中位置及日志。`--upgrade-app` 可省略。用旧的不兼容包验证官方回退时，省略 `--expect-compatible-upgrade`。也可直接将 `--app` 指向已锁定的 `rc.5` 可执行文件，独立验证全新 Profile。实际鼠标拖动只在测试窗口持有前台时执行，未执行时会在 `caption.json` 中明确记录。
 
 从仓库根目录运行以下定向测试，使用 Node 24.9 以上、Python 3 以及已经安装的开发依赖。
 

@@ -41,7 +41,7 @@ def check_caption(page, pid, home, mode):
     dsh = mode == 'DeepSeek Harness'
     filename = 'caption.json' if dsh else 'alcor-caption.json'
     if dsh:
-        expect(page.get_by_label('Alcor 秘书导航', exact=True)).to_have_count(0)
+        expect(page.get_by_role('navigation', name='秘书功能', exact=True)).to_have_count(0)
     def hit(x, y):
         return win32gui.SendMessage(hwnd, win32con.WM_NCHITTEST, 0, win32api.MAKELONG(x & 65535, y & 65535))
     try:
@@ -83,9 +83,9 @@ def check_caption(page, pid, home, mode):
             expect(page.get_by_role('menuitem', name='Alcor' if dsh else 'DeepSeek Harness', exact=True)).to_be_visible()
             page.keyboard.press('Escape')
             if width == 720 and not dsh:
-                nav = page.get_by_label('Alcor 秘书导航', exact=True)
-                toggle = nav.locator('[data-sidebar-toggle]')
-                expect(nav).to_have_attribute('data-collapsed', 'true')
+                nav = page.get_by_role('navigation', name='秘书功能', exact=True)
+                toggle = page.locator('[data-sidebar-toggle]')
+                expect(toggle).to_have_accessible_name('打开侧边栏')
                 expect(toggle).to_be_visible()
                 toggle_box = toggle.bounding_box()
                 assert toggle_box and 0 <= toggle_box['y'] < 48, toggle_box
@@ -95,14 +95,14 @@ def check_caption(page, pid, home, mode):
                     return e.contains(document.elementFromPoint(b.x+b.width/2, b.y+b.height/2));
                 }'''), 'Sidebar opener is hidden behind the native caption'
                 toggle.click()
-                expect(nav).not_to_have_attribute('data-collapsed', 'true')
-                expect(nav.get_by_role('group', name='应用')).to_be_visible()
+                expect(toggle).to_have_accessible_name('收起侧边栏')
+                expect(nav.get_by_role('button', name='应用', exact=True)).to_be_visible()
                 toggle.click()
-                expect(nav).to_have_attribute('data-collapsed', 'true')
+                expect(toggle).to_have_accessible_name('打开侧边栏')
                 press_sidebar_accelerator(hwnd)
-                expect(nav).not_to_have_attribute('data-collapsed', 'true')
+                expect(toggle).to_have_accessible_name('收起侧边栏')
                 press_sidebar_accelerator(hwnd)
-                expect(nav).to_have_attribute('data-collapsed', 'true')
+                expect(toggle).to_have_accessible_name('打开侧边栏')
                 result['sidebarRecovery'] = {'captionButton': toggle_box, 'mouse': True, 'keyboard': True}
                 (home / filename).write_text(json.dumps(results, indent=2))
             page.screenshot(path=home / f'{"dsh" if dsh else "alcor"}-top-{width}.png')
