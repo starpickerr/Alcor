@@ -17,7 +17,9 @@ test('core operation messages separate unconfirmed, confirmed, not-sent, sending
   for (const document of [null, '{broken', {}, { _confirmed_intent: { version: 1 } }]) {
     assert.match(message({ action: 'delete', state: 'pending', document }), /等待本次确认/)
   }
-  assert.match(message({ action: 'complete', state: 'pending' }), /^等待同步/)
+  assert.match(message({ action: 'complete', state: 'pending' }), /已排队，等待同步到 Apple/)
+  assert.match(message({ action: 'complete', state: 'pending', error: 'unavailable' }), /可在详情里取消/)
+  assert.match(message({ action: 'complete', state: 'uncertain' }), /待核对/)
   assert(source.includes("operation.state === 'pending' && <Button"))
   assert(!source.includes('失败会保留数据，可重试或取消'))
 })

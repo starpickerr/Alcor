@@ -5,6 +5,11 @@ import { Button, Input, IconSearchOutlineRegular, IconPlusOutlineRegular, IconCh
 import { Field } from './business-pages.jsx'
 
 export const appleOperationMessage = operation => {
+  if (operation?.action === 'complete') {
+    if (operation.state === 'uncertain') return '本次状态待核对，请先查看 Apple 提醒事项。'
+    if (operation.state === 'sending') return '正在同步本次事务状态…'
+    return operation.error ? '本次状态未能同步，可在详情里取消请求。' : '本次状态已排队，等待同步到 Apple。'
+  }
   if (operation?.state === 'sending') return '正在向 Apple 提交；请等待本机操作结果。'
   if (operation?.state === 'uncertain') return 'Apple 操作结果未知；内容和证据已保留，请核对，不要重复提交。'
   if (!['delete', 'truncate', 'exclude'].includes(operation?.action)) return '等待同步；现有内容已保留。'
