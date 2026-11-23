@@ -480,6 +480,33 @@
   flex: 1;
   min-height: 0;
 }
+.alcor-graph-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.alcor-graph-tooltip {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  gap: 3px;
+  width: max-content;
+  max-width: min(240px, calc(100% - 16px));
+  max-height: 70px;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.alcor-graph-tooltip span {
+  color: var(--dsw-alias-label-secondary);
+}
 .alcor-graph-canvas {
   display: block;
   width: 100%;
@@ -494,7 +521,7 @@
   outline-offset: -2px;
 }
 .alcor-graph-canvas[data-dragging],
-.alcor-graph-canvas[data-dragging] .alcor-graph-node {
+.alcor-graph-canvas[data-dragging] :is(.alcor-graph-node, .alcor-graph-labels text) {
   cursor: grabbing;
 }
 .alcor-graph-edge {

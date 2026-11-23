@@ -4,6 +4,7 @@ import { forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide
 
 const folderColors = ['#4678ca', '#279386', '#a96c38', '#9766bd', '#b95b73', '#65883d', '#4c85a3']
 const home = { x: 0, y: 0, zoom: 1 }
+const minZoom = 0.2, maxZoom = 5
 const folder = (node) => node.collection?.split('/')[0] || ''
 const byDegree = (first, second) => second.degree - first.degree
 
@@ -14,6 +15,16 @@ function bounds(nodes) {
   const top = Math.min(...nodes.map((node) => node.y))
   const bottom = Math.max(...nodes.map((node) => node.y))
   return { width: right - left, height: bottom - top, cx: (left + right) / 2, cy: (top + bottom) / 2 }
+}
+
+function graphSimulation(nodes, edges) {
+  return forceSimulation(nodes)
+    .stop()
+    .force('links', forceLink(edges).distance(94).strength(0.6))
+    .force('repel', forceManyBody().strength(-185))
+    .force('x', forceX().strength(0.05))
+    .force('y', forceY().strength(0.06))
+    .force('spacing', forceCollide((node) => node.radius + 20))
 }
 
 function layout(data, showUnlinked) {
@@ -31,14 +42,7 @@ function layout(data, showUnlinked) {
     const letters = Array.from(node.title)
     node.label = letters.length > 20 ? letters.slice(0, 19).join('') + '…' : node.title
   }
-  forceSimulation(nodes)
-    .stop()
-    .force('links', forceLink(edges).distance(94).strength(0.6))
-    .force('repel', forceManyBody().strength(-185))
-    .force('x', forceX().strength(0.05))
-    .force('y', forceY().strength(0.06))
-    .force('spacing', forceCollide((node) => node.radius + 20))
-    .tick(110)
+  graphSimulation(nodes, edges).tick(110)
   return { nodes, edges, hidden: allNodes.length - nodes.length, ...bounds(nodes) }
 }
 
@@ -126,6 +130,7 @@ function GraphInspector({ graph, selected, onSelect, onOpen, onFocus, focusId, c
 export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera, locateRef }) {
   const arrow = useId()
   const svg = useRef(null), panel = useRef(null), gesture = useRef(null), ignoreClick = useRef(false)
+  const simulation = useRef(null)
   const [size, setSize] = useState({ width: 800, height: 440 })
   const [view, setView] = useState(camera?.view ?? home)
   const [fitBounds, setFitBounds] = useState(camera?.fitBounds ?? null)
@@ -138,6 +143,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
   const graph = useMemo(() => placeNodes(base, positions), [base, positions])
   const area = fitBounds ?? base
   const selected = graph.nodes.find((node) => node.id === selectedId)
+  const hoverNode = graph.nodes.find((node) => node.id === hovered)
   const active = hovered ?? selected?.id
   const related = new Set(active ? [active] : [])
   for (const { source, target } of graph.edges) {
@@ -155,7 +161,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
 
   function zoom(factor, x = 0, y = 0) {
     setView((old) => {
-      const next = Math.min(7, Math.max(0.45, old.zoom * factor))
+      const next = Math.min(maxZoom, Math.max(minZoom, old.zoom * factor))
       const ratio = next / old.zoom
       return { x: x + (old.x - x) * ratio, y: y + (old.y - y) * ratio, zoom: next }
     })
@@ -165,14 +171,10 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
     if (!canvas) return
     function wheel(event) {
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1
-      const dx = event.deltaX * unit, dy = event.deltaY * unit
-      if (!dx && !dy) return
+      const dy = event.deltaY * unit
+      if (!dy) return
       event.preventDefault()
       if (gesture.current) return
-      if (!event.ctrlKey && !event.metaKey) {
-        setView((old) => ({ ...old, x: old.x - dx, y: old.y - dy }))
-        return
-      }
       const rect = canvas.getBoundingClientRect()
       zoom(Math.exp(-Math.max(-160, Math.min(160, dy)) * 0.003),
         event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2)
@@ -189,6 +191,11 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
     }
   }, [!!graph.nodes.length])
 
+  useEffect(() => () => {
+    simulation.current?.stop()
+    simulation.current = null
+  }, [base])
+
   function select(id, { center = false, revealInspector = true } = {}) {
     setSelectedId(id)
     setHovered(null)
@@ -200,6 +207,10 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
       const below = panel.current.getBoundingClientRect().top >= svg.current.getBoundingClientRect().bottom - 1
       if (below) panel.current.scrollIntoView({ block: 'nearest' })
     }
+  }
+  function openNode(node) {
+    select(node.id, { revealInspector: false })
+    onOpen(node)
   }
   function openFocus(node) {
     onFocus(node, { view, fitBounds, selectedId, positions, showUnlinked })
@@ -228,6 +239,19 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
     }
     capture.setPointerCapture(event.pointerId)
   }
+  function startNodeDrag(id) {
+    simulation.current?.stop()
+    const nodes = graph.nodes.map((node) => ({ ...node, vx: 0, vy: 0 }))
+    const byId = new Map(nodes.map((node) => [node.id, node]))
+    const edges = graph.edges.map(({ source, target }) => ({ source: byId.get(source.id), target: byId.get(target.id) }))
+    simulation.current = graphSimulation(nodes, edges)
+      .alpha(0.3)
+      .alphaTarget(0.3)
+      .alphaDecay(0.12)
+      .on('tick', () => setPositions(new Map(nodes.map(({ id, x, y }) => [id, { x, y }]))))
+      .restart()
+    return byId.get(id)
+  }
   function moveGesture(event) {
     const start = gesture.current
     if (!start || start.pointer !== event.pointerId) return
@@ -237,17 +261,27 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
       start.moved = true
       setDragging(start.node ? 'node' : 'canvas')
       setHovered(start.node?.id ?? null)
+      if (start.node) start.dragged = startNodeDrag(start.node.id)
     }
-    if (start.node) {
-      const point = { x: start.x + dx / start.scale, y: start.y + dy / start.scale }
-      setPositions((old) => new Map(old).set(start.node.id, point))
+    if (start.dragged) {
+      start.dragged.fx = start.x + dx / start.scale
+      start.dragged.fy = start.y + dy / start.scale
     } else {
       setView((old) => ({ ...old, x: start.x + dx, y: start.y + dy }))
     }
   }
   function endGesture(event) {
     if (gesture.current?.pointer !== event.pointerId) return
-    ignoreClick.current = gesture.current.moved
+    const { moved, dragged } = gesture.current
+    if (dragged) {
+      // Apply the final pointer position even when release precedes the next tick.
+      dragged.x = dragged.fx
+      dragged.y = dragged.fy
+      dragged.fx = null
+      dragged.fy = null
+      simulation.current?.alphaTarget(0)
+    }
+    ignoreClick.current = moved
     gesture.current = null
     setDragging('')
     if (ignoreClick.current) setHovered(null)
@@ -267,79 +301,85 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, folders, camera
           }} /> 显示未关联资料</label>
         )}
         <div className="alcor-graph-controls">
-          <Button size="sm" variant="ghost" aria-label="缩小图谱" disabled={view.zoom <= 0.45} onClick={() => zoom(0.8)}>−</Button>
-          <Button size="sm" variant="ghost" aria-label="放大图谱" disabled={view.zoom >= 7} onClick={() => zoom(1.25)}>＋</Button>
+          <Button size="sm" variant="ghost" aria-label="缩小图谱" disabled={view.zoom <= minZoom} onClick={() => zoom(0.8)}>−</Button>
+          <Button size="sm" variant="ghost" aria-label="放大图谱" disabled={view.zoom >= maxZoom} onClick={() => zoom(1.25)}>＋</Button>
           <Button size="sm" variant="ghost" onClick={fit}>适应窗口</Button>
         </div>
       </div>
       <div className="alcor-graph-body">
-        <svg ref={svg} className="alcor-graph-canvas" aria-label="资料引用网络" role="group" tabIndex={0}
-          aria-description="拖动空白或双指滑动平移，捏合或按住 Command / Ctrl 滚轮缩放。"
-          data-dragging={dragging || undefined}
-          onKeyDown={(event) => {
-            const step = { ArrowLeft: [35, 0], ArrowRight: [-35, 0], ArrowUp: [0, 35], ArrowDown: [0, -35] }[event.key]
-            if (step) setView((old) => ({ ...old, x: old.x + step[0], y: old.y + step[1] }))
-            else if (event.key === '0') fit()
-            else if (['+', '=', '-'].includes(event.key)) zoom(event.key === '-' ? 0.8 : 1.25)
-            else if (event.key === 'Escape') select(null)
-            else return
-            event.preventDefault()
-          }}
-          onPointerDown={startGesture} onPointerMove={moveGesture}
-          onPointerUp={endGesture} onLostPointerCapture={endGesture}
-          onClick={(event) => {
-            if (!ignoreClick.current) select(event.target.closest('[data-node-id]')?.dataset.nodeId ?? null)
-          }}
-          onDoubleClick={(event) => {
-            if (ignoreClick.current) return
-            const id = event.target.closest('[data-node-id]')?.dataset.nodeId
-            const node = graph.nodes.find((item) => item.id === id)
-            if (node) onOpen(node)
+        <div className="alcor-graph-stage">
+          <svg ref={svg} className="alcor-graph-canvas" aria-label="资料引用网络" role="group" tabIndex={0}
+            aria-description="拖动空白平移。滚轮围绕光标缩放。单击节点或按回车打开资料，按空格查看引用关系。"
+            data-dragging={dragging || undefined}
+            onKeyDown={(event) => {
+              const step = { ArrowLeft: [35, 0], ArrowRight: [-35, 0], ArrowUp: [0, 35], ArrowDown: [0, -35] }[event.key]
+              if (step) setView((old) => ({ ...old, x: old.x + step[0], y: old.y + step[1] }))
+              else if (event.key === '0') fit()
+              else if (['+', '=', '-'].includes(event.key)) zoom(event.key === '-' ? 0.8 : 1.25)
+              else if (event.key === 'Escape') select(null)
+              else return
+              event.preventDefault()
+            }}
+            onPointerDown={startGesture} onPointerMove={moveGesture}
+            onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
+            onClick={(event) => {
+              if (ignoreClick.current) return
+              const id = event.target.closest('[data-node-id]')?.dataset.nodeId
+              const node = graph.nodes.find((item) => item.id === id)
+              if (node) openNode(node)
+              else select(null)
+            }}>
+            <defs>
+              <marker id={arrow} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M0 0 L7 4 L0 8 Z" fill="var(--dsw-alias-label-primary)" />
+              </marker>
+            </defs>
+            <g transform={`translate(${x},${y}) scale(${scale})`}>
+              {graph.edges.map(({ source, target }) => {
+                const dx = target.x - source.x, dy = target.y - source.y
+                const length = Math.hypot(dx, dy) || 1
+                const lit = source.id === active || target.id === active
+                const gap = (target.radius + 2 / scale) / length
+                return <line key={source.id + ':' + target.id} x1={source.x} y1={source.y}
+                  x2={target.x - dx * gap} y2={target.y - dy * gap}
+                  vectorEffect="non-scaling-stroke" markerEnd={lit ? `url(#${arrow})` : undefined}
+                  className="alcor-graph-edge" data-lit={lit} data-dim={!!active && !lit} />
+              })}
+              {graph.nodes.map((node) => (
+                <g key={node.id} role="button" tabIndex={0} data-node-id={node.id}
+                  aria-label={'打开资料：' + node.title} aria-pressed={selectedId === node.id}
+                  className="alcor-graph-node" style={{ '--node-color': color(node) }}
+                  data-matched={node.matched} data-dim={!!active && !related.has(node.id)}
+                  transform={`translate(${node.x},${node.y})`}
+                  onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}
+                  onFocus={() => setHovered(node.id)} onBlur={() => setHovered(null)}
+                  onKeyDown={(event) => {
+                    if (!['Enter', ' '].includes(event.key)) return
+                    event.preventDefault()
+                    if (event.key === 'Enter') openNode(node)
+                    else select(node.id)
+                  }}>
+                  <circle r={Math.max(node.radius, 11 / scale)} fill="transparent" className="alcor-graph-hit" />
+                  <circle r={node.radius} vectorEffect="non-scaling-stroke" className="alcor-graph-dot" />
+                </g>
+              ))}
+            </g>
+            <g className="alcor-graph-labels" aria-hidden="true">
+              {labels.map(({ node, left, y }) => (
+                <text key={node.id} x={left} y={y} dominantBaseline="middle" data-node-id={node.id}
+                  data-active={node.id === active} data-dim={!!active && !related.has(node.id)}
+                  onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}>{node.label}</text>
+              ))}
+            </g>
+          </svg>
+          {hoverNode && !dragging && <div className="alcor-graph-tooltip" aria-hidden="true" style={{
+            left: Math.max(8, Math.min(x + hoverNode.x * scale + hoverNode.radius * scale + 10, size.width - 248)),
+            top: Math.max(8, Math.min(y + hoverNode.y * scale + 10, size.height - 79)),
           }}>
-          <defs>
-            <marker id={arrow} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M0 0 L7 4 L0 8 Z" fill="var(--dsw-alias-label-primary)" />
-            </marker>
-          </defs>
-          <g transform={`translate(${x},${y}) scale(${scale})`}>
-            {graph.edges.map(({ source, target }) => {
-              const dx = target.x - source.x, dy = target.y - source.y
-              const length = Math.hypot(dx, dy) || 1
-              const lit = source.id === active || target.id === active
-              const gap = (target.radius + 2 / scale) / length
-              return <line key={source.id + ':' + target.id} x1={source.x} y1={source.y}
-                x2={target.x - dx * gap} y2={target.y - dy * gap}
-                vectorEffect="non-scaling-stroke" markerEnd={lit ? `url(#${arrow})` : undefined}
-                className="alcor-graph-edge" data-lit={lit} data-dim={!!active && !lit} />
-            })}
-            {graph.nodes.map((node) => (
-              <g key={node.id} role="button" tabIndex={0} data-node-id={node.id}
-                aria-label={'选择资料：' + node.title} aria-pressed={selectedId === node.id}
-                className="alcor-graph-node" style={{ '--node-color': color(node) }}
-                data-matched={node.matched} data-dim={!!active && !related.has(node.id)}
-                transform={`translate(${node.x},${node.y})`}
-                onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}
-                onFocus={() => setHovered(node.id)} onBlur={() => setHovered(null)}
-                onKeyDown={(event) => {
-                  if (!['Enter', ' '].includes(event.key)) return
-                  event.preventDefault()
-                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) onOpen(node)
-                  else select(node.id)
-                }}>
-                <title>{node.title} · {node.collection || '顶层'}</title>
-                <circle r={Math.max(node.radius, 11 / scale)} fill="transparent" className="alcor-graph-hit" />
-                <circle r={node.radius} vectorEffect="non-scaling-stroke" className="alcor-graph-dot" />
-              </g>
-            ))}
-          </g>
-          <g className="alcor-graph-labels" aria-hidden="true">
-            {labels.map(({ node, left, y }) => (
-              <text key={node.id} x={left} y={y} dominantBaseline="middle" data-node-id={node.id}
-                data-active={node.id === active} data-dim={!!active && !related.has(node.id)}
-                onPointerEnter={() => setHovered(node.id)} onPointerLeave={() => setHovered(null)}>{node.label}</text>
-            ))}
-          </g>
-        </svg>
+            <strong>{hoverNode.title}</strong>
+            <span>{hoverNode.collection?.replaceAll('/', ' / ') || '顶层'}</span>
+          </div>}
+        </div>
         <GraphInspector graph={graph} selected={selected} onSelect={select} panel={panel}
           onOpen={onOpen} onFocus={openFocus}
           focusId={focusId} color={color} />
