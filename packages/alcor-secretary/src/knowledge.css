@@ -422,13 +422,9 @@
   margin: 4px 9px;
 }
 .alcor-graph-filters select {
-  max-width: min(45%, 250px);
-  padding: 8px 12px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-bg-layer-1);
-  color: inherit;
-  font: inherit;
+  align-self: stretch;
+  height: auto;
+  min-height: 2.5em;
 }
 .alcor-graph-filters > span {
   min-width: 0;
@@ -484,6 +480,9 @@
   position: relative;
   min-width: 0;
   min-height: 0;
+}
+.alcor-graph-stage:only-child {
+  grid-column: 1 / -1;
 }
 .alcor-graph-tooltip {
   position: absolute;

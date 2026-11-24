@@ -131,8 +131,8 @@ def check_knowledge(page, home):
     expect(dialog).to_be_hidden()
     page.get_by_role('button', name='图谱', exact=True).click()
     graph = page.get_by_role('region', name='知识图谱')
-    expect(graph.get_by_role('button', name='打开资料：' + source.name, exact=True)).to_be_visible()
-    expect(graph.get_by_role('button', name='打开资料：Windows 引用验收', exact=True)).to_be_visible()
+    expect(graph.get_by_role('button', name='查看资料关系：' + source.name, exact=True)).to_be_visible()
+    expect(graph.get_by_role('button', name='查看资料关系：Windows 引用验收', exact=True)).to_be_visible()
     expect(graph.locator('line')).to_have_count(1)
     page.screenshot(path=home / 'windows-knowledge-graph.png')
     return source.name
