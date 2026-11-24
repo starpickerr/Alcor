@@ -1,4 +1,5 @@
 """Category absence participates in the existing cross-process group/item claims."""
+from apple_archive_fixture import deletion_snapshots
 import copy,runpy,sqlite3,unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,7 +24,7 @@ class AbsenceClaims(unittest.TestCase):
                 self.base.missing(sync,bridge,clock);before=copy.deepcopy(sync._get('category-absence:a'))
                 with C['other_process_holds'](sync):
                     with self.assertRaises(ValueError):sync.resolve_category_conflict('a','keep_apple')
-                self.assertTrue(owner.get_category(link['alcor_id']));self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+                self.assertTrue(owner.get_category(link['alcor_id']));self.assertEqual(deletion_snapshots(owner),[])
                 self.assertEqual(sync._get('category-absence:a'),before)
     def test_lost_owner_response_keeps_claim_and_recovery_without_retry(self):
         for kind in ('calendar','reminders'):
@@ -32,7 +33,7 @@ class AbsenceClaims(unittest.TestCase):
                 def lost(expected):
                     result=original(expected);calls.append(result);raise RuntimeError('owner response lost')
                 with patch.object(owner,'apple_remove_category_if_unchanged',side_effect=lost):sync.sync();sync.sync()
-                self.assertEqual(len(calls),1);self.assertEqual(len(owner.list_apple_inbound_recoveries()),1)
+                self.assertEqual(len(calls),1);self.assertEqual(len(deletion_snapshots(owner)),1)
                 self.assertEqual(sync._get('category-absence:a')['phase'],'uncertain')
                 self.assertEqual(sync.status()['scan_claims'][0]['state'],'uncertain')
     def test_cross_container_descendant_is_not_archived_by_parent_absence(self):
@@ -46,7 +47,7 @@ class AbsenceClaims(unittest.TestCase):
             sync.sync();clock[0]='2026-11-07T00:02:00Z';result=sync.sync()
             self.assertEqual(result.get('deleted_categories'),0,result)
             self.assertTrue(owner.get_category(link['alcor_id']));self.assertTrue(owner.get_todo(child['todo_id']))
-            self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+            self.assertEqual(deletion_snapshots(owner),[])
 
     def test_pre_owner_inventory_or_manager_failure_releases_and_can_retry(self):
         from apple_sync import category_absence
@@ -67,7 +68,7 @@ class AbsenceClaims(unittest.TestCase):
                     with target:deleted,reason=category_absence.reconcile(sync,owner,kind,link,inventory,True)
                     self.assertFalse(deleted);self.assertIn('failure',reason)
                     self.assertEqual(sync.status()['scan_claims'],[]);self.assertEqual(sync._get('category-absence:a'),before)
-                    self.assertTrue(owner.get_category(link['alcor_id']));self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+                    self.assertTrue(owner.get_category(link['alcor_id']));self.assertEqual(deletion_snapshots(owner),[])
                     self.assertEqual(sync.sync().get('deleted_categories'),1)
 
     def test_known_owner_rejection_releases_but_preserves_first_conflict(self):
@@ -82,7 +83,7 @@ class AbsenceClaims(unittest.TestCase):
                 self.assertEqual(len(changed),1);self.assertEqual(sync.status()['scan_claims'],[])
                 self.assertEqual(sync._get('category-absence:a')['expected'],expected)
                 self.assertEqual(sync._get('category-absence:a')['phase'],'uncertain')
-                self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+                self.assertEqual(deletion_snapshots(owner),[])
 
     def test_owner_database_error_stays_unknown_not_retried(self):
         for kind in ('calendar','reminders'):
@@ -104,6 +105,6 @@ class AbsenceClaims(unittest.TestCase):
                     return original(snapshot)
                 with patch.object(owner,'apple_remove_category_if_unchanged',side_effect=race):sync.sync()
                 self.assertTrue(sync.status()['scan_claims']);self.assertTrue(owner.get_category(link['alcor_id']))
-                self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+                self.assertEqual(deletion_snapshots(owner),[])
 
 if __name__=='__main__':unittest.main(verbosity=2)

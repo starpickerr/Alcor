@@ -1,4 +1,5 @@
 """Synthetic calendar ID rebind evidence and crash tests; no Apple or Profile."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,os,runpy,subprocess,sys,threading,unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -162,7 +163,7 @@ class Rebind(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'INBOUND_CHANGED'):self.owner.apple_remove_calendar_inbound(snap,'other','new-group','new-event',marker['generation'],missing['deletion_snapshot'])
   self.assertTrue(self.owner.apple_remove_calendar_inbound(snap,'account1','new-group','new-event',marker['generation'],missing['deletion_snapshot']))
   with self.assertRaises(KeyError):self.owner.get_event(self.id)
-  self.assertTrue(self.owner.list_apple_inbound_recoveries())
+  self.assertTrue(deletion_snapshots(self.owner))
  def test_missing_after_rebind_recreated_same_fingerprint_is_preserved(self):
   from apple_sync.calendar import _fingerprint
   import apple_sync.calendar_rebind as rebind
@@ -196,7 +197,7 @@ class Rebind(unittest.TestCase):
   result=self.sync.sync();self.assertEqual(result['deleted_local'],0,result)
   self.assertTrue(self.owner.get_event(self.id))
   self.assertEqual(self.sync._maps()[0]['state'],'conflict')
-  self.assertEqual(self.owner.list_apple_inbound_recoveries(),[])
+  self.assertEqual(deletion_snapshots(self.owner),[])
  def test_missing_delete_edit_during_lookup_is_conflict(self):
   self.sync.clock=lambda:'2026-11-07T00:00:00+00:00'
   self.assertEqual(self.sync.sync()['status'],'success');self.sync._set('sync_deletions',True)

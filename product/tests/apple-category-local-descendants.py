@@ -1,4 +1,5 @@
 """A native container's absence does not authorize deleting local-only descendants."""
+from apple_archive_fixture import deletion_snapshots
 import runpy,unittest
 from pathlib import Path
 M=runpy.run_path(str(Path(__file__).with_name('apple-category-absence-sync.py')))
@@ -19,6 +20,6 @@ class LocalDescendants(unittest.TestCase):
             self.assertEqual(result.get('deleted_categories'),0,result)
             self.assertTrue(owner.get_category(link['alcor_id']));self.assertTrue(owner.get_category(category['id']))
             self.assertEqual(owner.get_todo(child['id'])['title'],'Local only child')
-            self.assertEqual(owner.list_apple_inbound_recoveries(),[])
+            self.assertEqual(deletion_snapshots(owner),[])
 
 if __name__=='__main__':unittest.main(verbosity=2)

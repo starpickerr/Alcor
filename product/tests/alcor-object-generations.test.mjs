@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-generation-aba-') as root:
 
 test('generation migration preserves old business rows and recovery, and rolls back atomically', () => {
   execFileSync(testPython, ['-B', '-c', `
-import sys,tempfile
+import json,sys,tempfile
 from pathlib import Path
 sys.path.insert(0,'packages/alcor-secretary')
 from business.tasks.domain.service import TodoService
@@ -52,16 +52,12 @@ with tempfile.TemporaryDirectory(prefix='alcor-generation-migrate-') as root:
    for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'alcor_generation_%'").fetchall(): db.execute('DROP TRIGGER '+row[0])
    db.execute('DROP TABLE alcor_object_generations')
   svc.apple_remove_item(item['id'])
-  recovery=svc.list_apple_inbound_recoveries()[0]['id']
-  # Old archived row shape remains valid after the generation migration.
   svc=cls(path)
   with svc._connect() as db:
    assert dict(db.execute('SELECT * FROM '+table+' WHERE id=?',(live['id'],)).fetchone())==live_before
-   assert db.execute("SELECT generation FROM alcor_object_generations WHERE entity='item' AND object_id=?",(live['id'],)).fetchone()[0]
-  restored=svc.restore_apple_inbound_recovery(recovery); rid=restored['ids'][0]
-  with svc._connect() as db:
-   after=dict(db.execute('SELECT * FROM '+table+' WHERE id=?',(rid,)).fetchone())
-   assert set(before)==set(after)
+   archived=json.loads(db.execute('SELECT document FROM apple_inbound_recovery WHERE target_id=?',(item['id'],)).fetchone()[0])
+   assert archived['tables'][table]==[before]
+   rid=live['id']
    before_generation=db.execute("SELECT generation FROM alcor_object_generations WHERE entity='item' AND object_id=?",(rid,)).fetchone()[0]
    db.execute('BEGIN IMMEDIATE'); db.execute('DELETE FROM '+table+' WHERE id=?',(rid,)); db.rollback()
    assert db.execute("SELECT generation FROM alcor_object_generations WHERE entity='item' AND object_id=?",(rid,)).fetchone()[0]==before_generation

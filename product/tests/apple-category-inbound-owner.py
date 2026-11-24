@@ -1,4 +1,5 @@
 """Real owners with temporary synthetic databases; no Apple, Profile or scheduler calls."""
+from apple_archive_fixture import deletion_snapshots
 import json
 import runpy
 import sqlite3
@@ -39,9 +40,9 @@ class CategoryAbsence(unittest.TestCase):
         with self.assertRaises((ValueError, KeyError)):
             svc.apple_remove_category_if_unchanged(expected)
         self.assertEqual(svc.get_category(category)['id'], category)
-        self.assertEqual(svc.list_apple_inbound_recoveries(), [])
+        self.assertEqual(deletion_snapshots(svc), [])
 
-    def test_unchanged_empty_and_populated_categories_delete_and_restore(self):
+    def test_unchanged_empty_and_populated_categories_are_archived_and_deleted(self):
         for svc, category in self.owners():
             item = self.item(svc, category)
             svc.apple_record_completion(item['id'], {'reminder_id': 'old', 'due_on': '2026-11-06'}, {'completed': False}) if svc.APPLE_ITEMS == 'todos' else None
@@ -52,12 +53,11 @@ class CategoryAbsence(unittest.TestCase):
             with svc._connect() as db:
                 document = json.loads(db.execute('SELECT document FROM apple_inbound_recovery WHERE id=?', (result['recovery_id'],)).fetchone()[0])
             self.assertEqual(document['tables'][svc.APPLE_ITEMS][0]['id'], item['id'])
-            restored = svc.restore_apple_inbound_recovery(result['recovery_id'])
-            self.assertEqual(len(restored['ids']), 1)
-            self.assertEqual(restored['sync'], 'local_only')
             empty = svc.create_category({'name': 'synthetic empty'})['id']
             result = svc.apple_remove_category_if_unchanged(svc.apple_capture_category_absence(empty))
-            self.assertEqual(len(svc.restore_apple_inbound_recovery(result['recovery_id'])['categoryIds']), 1)
+            self.assertTrue(result['recovery_id'])
+            with self.assertRaises(KeyError):
+                svc.get_category(empty)
 
     def test_rename_and_recolor_after_first_absence(self):
         for field, value in (('name', 'synthetic renamed'), ('color', '#445566')):
@@ -149,7 +149,6 @@ class CategoryAbsence(unittest.TestCase):
             document = json.loads(db.execute('SELECT document FROM apple_inbound_recovery WHERE id=?', (result['recovery_id'],)).fetchone()[0])
         self.assertEqual({row['id'] for row in document['tables']['todos']}, {parent['id'], child['id']})
         self.assertEqual(document['tables']['todo_dependencies'][0]['task_id'], outside['id'])
-        self.assertEqual(len(svc.restore_apple_inbound_recovery(result['recovery_id'])['ids']), 2)
 
     def test_archive_failure_rolls_back_all_owner_changes(self):
         import business.apple_contract as contract
@@ -164,7 +163,7 @@ class CategoryAbsence(unittest.TestCase):
                 with self.assertRaises(sqlite3.OperationalError):
                     svc.apple_remove_category_if_unchanged(expected)
             self.assertEqual(svc.apple_capture_category_absence(category), expected)
-            self.assertEqual(svc.list_apple_inbound_recoveries(), [])
+            self.assertEqual(deletion_snapshots(svc), [])
             with patch.object(contract, 'capture_inbound_delete', return_value=None):
                 self.assert_kept(svc, category, expected)
 
@@ -177,7 +176,7 @@ class CategoryAbsence(unittest.TestCase):
                 with self.assertRaises(sqlite3.OperationalError):
                     svc.apple_remove_category_if_unchanged(expected)
             self.assertEqual(svc.apple_capture_category_absence(category), expected)
-            self.assertEqual(svc.list_apple_inbound_recoveries(), [])
+            self.assertEqual(deletion_snapshots(svc), [])
 
     def test_snapshot_recheck_holds_sqlite_write_lock(self):
         for svc, category in self.owners():

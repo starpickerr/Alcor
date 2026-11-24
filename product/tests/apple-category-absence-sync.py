@@ -1,4 +1,5 @@
 """First trusted category absence and owner CAS, in real synthetic manager flows."""
+from apple_archive_fixture import deletion_snapshots
 import copy
 from contextlib import contextmanager
 import runpy
@@ -50,7 +51,7 @@ class CategoryAbsence(unittest.TestCase):
                 with self.assertRaises(KeyError):
                     service.get_category(link['alcor_id'])
                 self.assertEqual(sync._get('category-absence:a')['phase'], 'done')
-                self.assertEqual(len(service.list_apple_inbound_recoveries()), 1)
+                self.assertEqual(len(deletion_snapshots(service)), 1)
                 self.assertFalse(any(row['apple_id'] == 'a' for row in sync._stored_links()))
 
     def test_rename_or_recolor_while_waiting_preserves_first_snapshot(self):
@@ -63,7 +64,7 @@ class CategoryAbsence(unittest.TestCase):
                     result = sync.sync()
                     self.assertEqual(result.get('deleted_categories'), 0, result)
                     self.assertTrue(service.get_category(link['alcor_id']))
-                    self.assertEqual(service.list_apple_inbound_recoveries(), [])
+                    self.assertEqual(deletion_snapshots(service), [])
                     self.assertEqual(sync._get('category-absence:a')['expected'], expected)
 
     def test_new_member_during_wait_is_not_captured_as_safe_new_baseline(self):
@@ -77,7 +78,7 @@ class CategoryAbsence(unittest.TestCase):
                 read = service.get_event if kind == 'calendar' else service.get_todo
                 self.assertEqual(read(created['id'])['title'], 'new local member')
                 self.assertEqual(sync._get('category-absence:a')['expected'], expected)
-                self.assertEqual(service.list_apple_inbound_recoveries(), [])
+                self.assertEqual(deletion_snapshots(service), [])
 
     def test_member_created_at_owner_call_is_not_deleted_and_not_retried(self):
         for kind in ('calendar', 'reminders'):
@@ -93,7 +94,7 @@ class CategoryAbsence(unittest.TestCase):
                     sync.sync()
                 self.assertEqual(result.get('deleted_categories'), 0)
                 self.assertEqual(len(created), 1)
-                self.assertEqual(service.list_apple_inbound_recoveries(), [])
+                self.assertEqual(deletion_snapshots(service), [])
                 self.assertEqual(sync._get('category-absence:a')['phase'], 'uncertain')
                 read = service.get_event if kind == 'calendar' else service.get_todo
                 self.assertTrue(read(created[0]['id']))
@@ -124,7 +125,7 @@ class CategoryAbsence(unittest.TestCase):
                     result = sync.sync()
                     self.assertEqual(result.get('deleted_categories'), 0, result)
                     self.assertTrue(service.get_category(link['alcor_id']))
-                    self.assertEqual(service.list_apple_inbound_recoveries(), [])
+                    self.assertEqual(deletion_snapshots(service), [])
                     if first:
                         self.assertEqual(sync._get('category-absence:a')['expected'], first['expected'])
 
@@ -171,31 +172,19 @@ class CategoryAbsence(unittest.TestCase):
                 self.assertEqual(reopened._get('category-absence:a')['expected'], expected)
                 self.assertTrue(service.get_category(link['alcor_id']))
 
-    def test_explicit_verified_category_deletion_can_restore_as_local_only(self):
+    def test_explicit_verified_category_deletion_stays_deleted_after_sync(self):
         for kind in ('calendar', 'reminders'):
             with self.subTest(kind=kind), self.case(kind) as (sync, service, bridge, clock, link):
                 sync._set('sync_deletions', False)
                 self.missing(sync, bridge, clock)
                 self.assertEqual(sync.sync().get('deleted_categories'), 0)
                 sync.resolve_category_conflict('a', 'keep_apple')
-                recovery = service.list_apple_inbound_recoveries()[0]
-                restored = service.restore_apple_inbound_recovery(recovery['id'])
-                self.assertEqual(restored['sync'], 'local_only')
-                self.assertTrue(restored['ids'])
                 bridge.calls.clear()
                 sync.sync()
                 self.assertFalse(any(op in ('upsert', 'reminder_upsert', 'create_calendar', 'reminder_list_create') for op, _ in bridge.calls))
-                for category_id in restored['categoryIds']:
-                    self.assertTrue(service.get_category(category_id))
-                read = service.get_event if kind == 'calendar' else service.get_todo
-                for item_id in restored['ids']:
-                    row = read(item_id)
-                    self.assertEqual(row['source_type'], 'apple_recovered')
-                    if kind == 'reminders':
-                        self.assertIsNone(row['remind_at'])
-                        with service._connect() as db:
-                            self.assertEqual(db.execute("SELECT COUNT(*) FROM reminder_occurrences WHERE todo_id=? AND state!='cancelled'", (item_id,)).fetchone()[0], 0)
-                self.assertEqual(len(service.list_apple_inbound_recoveries()), 1)
+                with self.assertRaises(KeyError):
+                    service.get_category(link['alcor_id'])
+                self.assertEqual(len(deletion_snapshots(service)), 1)
 
     def test_source_returning_before_final_check_prevents_deletion(self):
         for kind in ('calendar', 'reminders'):
@@ -216,7 +205,7 @@ class CategoryAbsence(unittest.TestCase):
                     result = sync.sync()
                 self.assertEqual(result.get('deleted_categories'), 0)
                 self.assertTrue(service.get_category(link['alcor_id']))
-                self.assertEqual(service.list_apple_inbound_recoveries(), [])
+                self.assertEqual(deletion_snapshots(service), [])
 
     def test_manager_change_after_owner_commit_preserves_recovery_and_stops_retry(self):
         for kind in ('calendar', 'reminders'):
@@ -237,7 +226,7 @@ class CategoryAbsence(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(sync._get('category-absence:a')['phase'], 'uncertain')
                 self.assertTrue(sync._get('category-absence:a')['owner_result']['recovery_id'])
-                self.assertEqual(len(service.list_apple_inbound_recoveries()), 1)
+                self.assertEqual(len(deletion_snapshots(service)), 1)
                 self.assertEqual(sync._maps()[0]['conflict'], 'new manager evidence')
 
 

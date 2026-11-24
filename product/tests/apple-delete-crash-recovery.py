@@ -1,4 +1,5 @@
 """Abrupt exit of synthetic deletion worker; no real EventKit or personal database."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,os,runpy,unittest,subprocess,sys
 from pathlib import Path
 from unittest.mock import patch
@@ -25,7 +26,7 @@ class CrashRecovery(unittest.TestCase):
                     b.calls.clear()
                     self.assertEqual(run(s,plan,lambda *a:False,owner)['state'],'done')
                     self.assertFalse(helper.writes(b));self.assertFalse(s.status()['scan_claims'])
-                    self.assertIsNone(s._local(plan['local_plan']['id']));self.assertTrue(o.list_apple_inbound_recoveries())
+                    self.assertIsNone(s._local(plan['local_plan']['id']));self.assertTrue(deletion_snapshots(o))
                     self.assertEqual(run(s,plan,lambda *a:False,owner)['state'],'done');self.assertFalse(helper.writes(b))
     def test_receipt_takeover_fences_late_original_writer_without_reopening_done(self):
         helper=M['ApprovedDelete']()

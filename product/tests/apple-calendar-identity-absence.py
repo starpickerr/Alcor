@@ -1,4 +1,5 @@
 """Full identity query absence, temporary owner/manager DBs and fake EventKit only."""
+from apple_archive_fixture import deletion_snapshots
 import copy,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -22,11 +23,9 @@ class IdentityAbsence(unittest.TestCase):
     def assert_no_native_writes(self):self.assertFalse(any(op in ('upsert','delete','create_calendar','rename','delete_calendar') for op,_ in self.b.calls))
     def test_exact_complete_nonrecurring_absence_archives_once(self):
         self.b.rows=[];result=self.s.sync();self.assertEqual(result['deleted_local'],1,result)
-        self.assertIsNone(self.s._local(self.id));self.assertEqual(self.s._maps()[0]['state'],'remote_deleted');self.assertEqual(len(self.o.list_apple_inbound_recoveries()),1)
+        self.assertIsNone(self.s._local(self.id));self.assertEqual(self.s._maps()[0]['state'],'remote_deleted');self.assertEqual(len(deletion_snapshots(self.o)),1)
         self.assertFalse(self.s.status()['scan_claims']);self.assert_no_native_writes();self.assertEqual(self.s.sync()['deleted_local'],0)
-        recovery=self.o.list_apple_inbound_recoveries()[0]
-        restored=self.o.restore_apple_inbound_recovery(recovery['id']);self.s.sync();self.s.sync()
-        self.assertTrue(restored['ids']);self.assertIsNotNone(self.s._local(restored['ids'][0]));self.assert_no_native_writes()
+        self.s.sync(); self.assertIsNone(self.s._local(self.id)); self.assert_no_native_writes()
     def test_moved_outside_window_or_changed_id_candidate_is_preserved(self):
         self.b.rows[0].update(event_id='new-identity',start_at='2032-11-07T01:00:00Z',end_at='2032-11-07T02:00:00Z',occurrence_date='2032-11-07T01:00:00Z')
         result=self.s.sync();self.assertEqual(result['deleted_local'],0);self.assertEqual(self.s._local(self.id),self.before);self.assert_no_native_writes()
@@ -37,7 +36,7 @@ class IdentityAbsence(unittest.TestCase):
         self.assert_no_native_writes()
     def test_local_edit_during_identity_query_preserves_content(self):
         self.b.rows=[];self.on_probe=lambda:self.o.update_event(self.id,{'description':'Local change while absent'})
-        result=self.s.sync();self.assertEqual(result['deleted_local'],0,result);self.assertEqual(self.s._local(self.id)['description'],'Local change while absent');self.assertEqual(self.o.list_apple_inbound_recoveries(),[]);self.assert_no_native_writes()
+        result=self.s.sync();self.assertEqual(result['deleted_local'],0,result);self.assertEqual(self.s._local(self.id)['description'],'Local change while absent');self.assertEqual(deletion_snapshots(self.o),[]);self.assert_no_native_writes()
     def test_owner_cas_rejects_same_id_recreation(self):
         self.b.rows=[];original=self.o.apple_remove_calendar_inbound
         def recreated(*args):
@@ -88,6 +87,6 @@ class IdentityAbsence(unittest.TestCase):
             return result
         with patch.object(self.o,'apple_remove_calendar_inbound',side_effect=changed):result=self.s.sync()
         self.assertEqual(result['status'],'error');self.assertEqual(self.s._maps()[0]['state'],'active');self.assertTrue(self.s.status()['scan_claims'])
-        self.assertTrue(self.o.list_apple_inbound_recoveries());self.assert_no_native_writes();self.s.sync();self.assert_no_native_writes()
+        self.assertTrue(deletion_snapshots(self.o));self.assert_no_native_writes();self.s.sync();self.assert_no_native_writes()
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -1,4 +1,5 @@
 """A reconnect must not turn a persistent category into a different account."""
+from apple_archive_fixture import deletion_snapshots
 import copy
 import json
 import runpy
@@ -92,7 +93,7 @@ class CategorySourceReconnect(unittest.TestCase):
                     self.assertIn('a',result['failed_calendar_ids' if kind=='calendar' else 'failed_list_ids'])
                     self.assertEqual(result['status'],'partial')
                     self.assertFalse(s.status()['scan_claims'])
-                    self.assertFalse(o.list_apple_inbound_recoveries())
+                    self.assertFalse(deletion_snapshots(o))
 
     def test_unverifiable_source_waits_and_exact_source_return_resumes(self):
         for kind in ('calendar','reminders'):

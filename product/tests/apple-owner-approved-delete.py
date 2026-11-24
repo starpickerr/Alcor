@@ -1,4 +1,5 @@
 """Synthetic owner contracts only; does not prove DSH approval or invoke native Apple."""
+from apple_archive_fixture import deletion_snapshots
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 import hashlib
@@ -135,9 +136,7 @@ class OwnerDeletion(unittest.TestCase):
             self.assertEqual(svc.apple_finish_approved_delete(operation['id'])['state'], 'uncertain')
             with svc._connect() as db:
                 self.assertEqual(db.execute(f'SELECT title FROM {svc.APPLE_ITEMS} WHERE id=?', (row['id'],)).fetchone()[0], 'Changed after send')
-                conflict_id = db.execute("SELECT id FROM apple_inbound_recovery WHERE status='operation_conflict'").fetchone()[0]
-            with self.assertRaises(ValueError): self.b.restore_inbound_recovery(domain, conflict_id)
-            self.assertFalse(any(x['id'] == conflict_id for x in self.b.list_inbound_recoveries(domain)))
+                self.assertIsNotNone(db.execute("SELECT id FROM apple_inbound_recovery WHERE status='operation_conflict'").fetchone())
 
     def test_apple_exclude_is_applied_only_after_finish(self):
         svc, row, binding = self.linked('calendar', recurring=True)
@@ -211,52 +210,19 @@ class OwnerDeletion(unittest.TestCase):
                 if day.endswith('01'): self.assertIsNone(current)
                 else: self.assertEqual(current['repeat_until'], '2026-11-02')
 
-    def assert_local_recovery(self, domain, recovery_id, original_ids):
-        svc = getattr(self.b, domain)
-        before = svc.apple_operations()
-        result = self.b.restore_inbound_recovery(domain, recovery_id)
-        self.assertEqual(result['sync'], 'local_only')
-        self.assertFalse(set(result['ids']) & set(original_ids))
-        replay = self.b.restore_inbound_recovery(domain, recovery_id)
-        self.assertTrue(replay['replayed']); self.assertEqual(replay['ids'], result['ids'])
-        self.assertEqual(svc.apple_operations(), before)
-        with svc._connect() as db:
-            for identity in result['ids']:
-                row = db.execute(f'SELECT * FROM {svc.APPLE_ITEMS} WHERE id=?', (identity,)).fetchone()
-                self.assertEqual(row['source_type'], 'apple_recovered'); self.assertIsNone(row['source_key'])
-                self.assertFalse(db.execute("SELECT 1 FROM apple_bindings WHERE entity='item' AND local_id=?", (identity,)).fetchone())
-                if domain == 'tasks':
-                    self.assertFalse(row['remind_at'])
-                    self.assertFalse(db.execute("SELECT 1 FROM reminder_occurrences WHERE todo_id=? AND state!='cancelled'", (identity,)).fetchone())
-                    self.assertFalse(db.execute("SELECT 1 FROM reminder_deliveries d JOIN reminder_occurrences o ON d.occurrence_id=o.occurrence_id WHERE o.todo_id=? AND (d.claim_id IS NOT NULL OR d.lease_until IS NOT NULL OR d.status NOT IN ('shown','accepted','unknown','cancelled'))", (identity,)).fetchone())
-            for identity in result['categoryIds']:
-                self.assertFalse(db.execute("SELECT 1 FROM apple_bindings WHERE entity='category' AND local_id=?", (identity,)).fetchone())
-                self.assertTrue(db.execute("SELECT 1 FROM apple_inbound_local_only WHERE entity='category' AND local_id=?", (identity,)).fetchone())
-        return result
-
-    def test_completed_recoveries_use_existing_local_only_restore(self):
+    def test_approved_snapshot_becomes_completed_only_after_finish(self):
         for domain in ('tasks', 'calendar'):
             for category in (False, True):
                 svc, row, binding = self.linked(domain, category)
-                original = row if not category else self.item(domain, row['id'])
-                if domain == 'tasks':
-                    with svc._connect() as db:
-                        occurrence = self.op()
-                        db.execute('UPDATE todos SET remind_at=? WHERE id=?', ('2026-11-10T09:00:00Z', original['id']))
-                        db.execute('INSERT INTO reminder_occurrences VALUES (?,?,?,?,?,?)', (occurrence, original['id'], '2026-11-10', 'due', '2026-11-10', 'pending'))
-                        db.execute('INSERT INTO reminder_deliveries VALUES (?,?,?,?,?,?,?,?)', (self.op(), occurrence, 'pending', None, None, 0, None, None))
                 operation, _ = self.queue(domain, row, category)
-                self.assertFalse(any(x['target_id'] == row['id'] for x in self.b.list_inbound_recoveries(domain)))
                 with svc._connect() as db:
-                    recovery_id = db.execute("SELECT id FROM apple_inbound_recovery WHERE status='operation_approved'").fetchone()[0]
-                with self.assertRaises(ValueError): self.b.restore_inbound_recovery(domain, recovery_id)
+                    recovery_id = db.execute("SELECT id FROM apple_inbound_recovery WHERE target_id=? AND status='operation_approved'", (row['id'],)).fetchone()[0]
                 svc.apple_begin_approved_delete(operation['id'], operation['document'], binding)
                 svc.apple_finish_approved_delete(operation['id'])
-                listed = next(x for x in self.b.list_inbound_recoveries(domain) if x['id'] == recovery_id)
-                self.assertEqual(listed['status'], 'available')
-                self.assert_local_recovery(domain, recovery_id, [original['id']])
+                with svc._connect() as db:
+                    self.assertEqual(db.execute('SELECT status FROM apple_inbound_recovery WHERE id=?', (recovery_id,)).fetchone()[0], 'operation_completed')
 
-    def test_import_category_delete_is_local_only_conditional_and_recoverable(self):
+    def test_import_category_delete_is_local_only_conditional_and_archived(self):
         for domain in ('tasks', 'calendar'):
             svc, category, binding = self.linked(domain, category=True)
             binding['can_delete'] = False
@@ -277,7 +243,9 @@ class OwnerDeletion(unittest.TestCase):
             self.assertEqual(svc.apple_operations(), [])
             if domain == 'tasks':
                 with svc._connect() as db: self.assertFalse(db.execute('SELECT 1 FROM source_tombstones WHERE source_key=?', ('synthetic-import-key',)).fetchone())
-            self.assert_local_recovery(domain, result['recovery_id'], [item['id']])
+            with svc._connect() as db:
+                doc = db.execute('SELECT document FROM apple_inbound_recovery WHERE id=?', (result['recovery_id'],)).fetchone()[0]
+                self.assertEqual(json.loads(doc)['tables'][svc.APPLE_ITEMS][0]['id'], item['id'])
             with self.assertRaises(ValueError): self.b.apple_peer(domain, 'commit_import_category_delete')
 
     def test_import_category_recreated_id_invalidates_approval(self):
@@ -289,7 +257,7 @@ class OwnerDeletion(unittest.TestCase):
                 db.execute(f'DELETE FROM {svc.APPLE_CATEGORIES} WHERE id=?', (category['id'],))
                 db.execute(f'INSERT INTO {svc.APPLE_CATEGORIES} ({",".join(original)}) VALUES ({",".join("?" for _ in original)})', tuple(original.values()))
             with self.assertRaises(ValueError): self.b.commit_import_category_delete(domain, category['id'], operation, plan['snapshot'])
-            self.assertEqual(self.b.list_inbound_recoveries(domain), [])
+            self.assertEqual(deletion_snapshots(svc), [])
 
     def test_import_category_rejects_started_operation_and_changed_members(self):
         for domain in ('tasks', 'calendar'):

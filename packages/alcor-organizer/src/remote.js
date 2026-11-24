@@ -29,8 +29,6 @@ export const schemas = {
   preparePageDelete: [z.object({ domain: z.enum(['tasks', 'calendar', 'bills']), kind: z.enum(['item', 'category']), id: z.string().min(1).max(200), expectedRevision: z.number().int().positive().optional(), scope: z.enum(['this', 'future']).optional(), occurrenceOn: z.string().optional(), excludeOccurrence: z.boolean().optional() }).strict(), z.json()],
   commitPageDelete: [z.object({ ticket: z.string().uuid() }).strict(), z.json()],
   cancelPageDelete: [z.object({ ticket: z.string().uuid() }).strict(), z.boolean()],
-  listInboundRecoveries: [z.object({ domain: z.enum(['tasks', 'calendar']) }).strict(), z.array(z.object({ id: z.string(), domain: z.string(), entity: z.string(), target_id: z.string(), created_at: z.string(), status: z.string(), title: z.string() }).strict())],
-  restoreInboundRecovery: [z.object({ domain: z.enum(['tasks', 'calendar']), recoveryId: z.string().uuid() }).strict(), z.json()],
   automation: [automationRequest, z.json()],
   read: [z.object({}).strict(), z.object({ records: z.array(recordSchema), jobs: z.array(jobSchema), schedules: z.array(nativeScheduleSchema) }).strict()],
   write: [writeRequest, recordSchema],

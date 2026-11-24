@@ -58,9 +58,6 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   const [creationMenu, setCreationMenu] = useState(false)
   const [creationType, setCreationType] = useState('event')
   const [calendarManage, setCalendarManage] = useState(null)
-  const [recovery, setRecovery] = useState(null)
-  const recoveryEpoch = useRef(0)
-  useEffect(() => { recoveryEpoch.current++; setRecovery(null) }, [view])
   const [reloadKey, setReloadKey] = useState(0)
   const kind = kindFor[view]
   const current = applicationViews.find(item => item.id === view)
@@ -90,25 +87,6 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
     finally { setBusy(false) }
   }
   const records = data.records.filter(item => item.kind === kind && !item.archived).sort((a, b) => kind === 'briefing' ? b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt) : b.updatedAt.localeCompare(a.updatedAt))
-  async function openRecoveries() {
-    const domain = kind === 'task' ? 'tasks' : 'calendar'
-    const epoch = ++recoveryEpoch.current
-    setError('')
-    try {
-      const rows = await unwrap(api.listInboundRecoveries({ domain }))
-      if (epoch === recoveryEpoch.current) setRecovery({ domain, rows })
-    } catch (failure) { if (epoch === recoveryEpoch.current) setError(failure.message || '无法读取恢复记录。') }
-  }
-  async function restoreRecovery(record) {
-    if (!recovery || busy) return
-    const { domain } = recovery
-    const epoch = recoveryEpoch.current
-    const result = await run(() => api.restoreInboundRecovery({ domain, recoveryId: record.id }))
-    if (!result || epoch !== recoveryEpoch.current) return
-    const warnings = (result.conflicts || []).map(item => ({ category_renamed:'分类重名，已另存', category_unavailable:'原分类不可用', parent_unavailable:'原父事务未关联', reminder_paused:'提醒已暂停', external_dependency_not_relinked:'外部依赖未重连', handoff_not_relinked:'简报关联未重连', apple_disconnected:'Apple 同步已断开' })[item.kind] || '有信息需要核对')
-    setNotice(`已恢复本地副本，不会自动同步到 Apple。${warnings.length ? ' ' + [...new Set(warnings)].join('；') + '。' : ''}`)
-    await openRecoveries()
-  }
   function edit(record) { setEditor(record.kind === 'event' && !record.allDay ? { ...record, start: localTime(record.start), end: localTime(record.end) } : record) }
   function requestPanel(action) {
     if (busy) return
@@ -191,7 +169,6 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   return <div data-alcor-bear-page={view} data-alcor-bear-record={focused?.id ? recordId(focused) : undefined} className={`alcor-business${kind === 'bill' ? ' alcor-bills-page' : kind === 'task' ? ' alcor-task-business' : ''}`}>
     <header className="alcor-app-header"><div className="alcor-business-title"><current.icon size={23} /><h1>{current.label}</h1></div><div className="alcor-actions">
       <Button className="alcor-icon-action" variant="ghost" aria-label="刷新" title="刷新" onClick={() => { setError(''); void refresh() }}><IconRefreshOutlineRegular size={16} /></Button>
-      {['event','task'].includes(kind) && <Button variant="outline" disabled={busy} onClick={openRecoveries}>恢复同步移除记录</Button>}
       {kind === 'event' && <><Button variant="outline" disabled={busy} onClick={() => setCalendarManage('categories')}>分类管理</Button></>}
       {kind === 'task' && <Button variant="outline" disabled={busy} onClick={() => setCalendarManage('task-categories')}>清单管理</Button>}
       {kind === 'event' && <Menu open={creationMenu} onClose={() => setCreationMenu(false)} portal autoFocus anchor={<Button variant="primary" aria-label="新建" aria-haspopup="menu" aria-expanded={creationMenu} onClick={() => setCreationMenu(!creationMenu)}><IconPlusOutlineRegular size={20} /></Button>}><MenuItemButton onSelect={() => create(undefined, 9, 'event')}>新建日程</MenuItemButton><MenuItemButton onSelect={() => create(undefined, 9, 'task')}>新建事务</MenuItemButton></Menu>}
@@ -206,11 +183,6 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       </OrganizerRecordPanel>}
     </div>}
     {kind === 'bill' && <BillsPage records={data.records.filter(item => item.kind === 'bill')} api={api} reloadKey={reloadKey} edit={edit} create={() => create()} archive={toggleArchive} download={download} busy={busy} loading={loading} icon={<BillIcon size={32} />} />}
-    <Modal open={!!recovery} title="恢复同步移除记录" closeLabel="关闭恢复记录" onClose={() => { if (!busy) { recoveryEpoch.current++; setRecovery(null) } }} className="alcor-editor-dialog">
-      <Notice>恢复为新的本地副本，不会自动同步到 Apple。提醒默认暂停；外部依赖和简报关联可能需要重新设置。</Notice>
-      {!recovery?.rows.length && <p>没有可恢复记录。</p>}
-      <ul>{recovery?.rows.map(row => <li key={row.id}><strong>{row.title || '未命名记录'}</strong> <span>{row.created_at}</span> {row.status === 'available' ? <Button variant="outline" disabled={busy} onClick={() => restoreRecovery(row)}>恢复本地副本</Button> : <span>已恢复</span>}</li>)}</ul>
-    </Modal>
     <Modal open={calendarManage === 'task-categories'} title="清单管理" closeLabel="关闭清单管理" className="alcor-category-dialog" onClose={() => {if (!busy) setCalendarManage(null)}}><Categories commitDelete={commitDelete} failure={error} api={api} categories={taskCategories} counts={Object.fromEntries(taskCategories.map(group => [group.id, data.records.filter(item => item.kind === 'task' && item.business.category_id === group.id).length]))} task busy={busy} mutate={(method, args) => mutate('tasks', method, method === 'cancel_apple_operation' ? args : method === 'create_category' ? {payload: args} : method === 'update_category' ? {category_id: args.id, payload: args.patch} : {category_id: args.id})} /></Modal>
     {!['event','task'].includes(kind) && <OrganizerDetails value={details} groups={details?.record.kind==='task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
     <Modal open={!['event','task'].includes(kind) && editor !== null} headless title={`${editor?.id ? '编辑' : '新增'}${titles[editorKind] ?? ''}`} onClose={() => { if (!busy) setEditor(null) }} className="alcor-editor-dialog">

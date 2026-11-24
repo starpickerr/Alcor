@@ -1,4 +1,5 @@
 """Owner-only synthetic reminder transactions. Never calls EventKit."""
+from apple_archive_fixture import deletion_snapshots
 import copy
 import json
 import runpy
@@ -125,17 +126,14 @@ class ReminderOwnerCAS(unittest.TestCase):
         row = self.owner.apple_apply_reminder_inbound(self.capture(), {'title': 'After', 'completed': True}, {**self.native, 'completed': True})
         self.assertEqual(row['status'], 'cancelled')
 
-    def test_delete_restore_local_only_no_duplicate_reminders(self):
+    def test_delete_captures_snapshot_without_duplicate_reminders(self):
         expected = self.owner.apple_capture_reminder_missing(self.identity)
         self.assertTrue(self.owner.apple_remove_reminder_inbound(expected['capture'], 'source', 'list', 'native', expected['capture']['generation'], expected['deletion_snapshot']))
-        recoveries = self.owner.list_apple_inbound_recoveries()
+        recoveries = deletion_snapshots(self.owner)
         self.assertEqual(len(recoveries), 1)
-        restored = self.owner.restore_apple_inbound_recovery(recoveries[0]['id'])
-        self.assertEqual(restored['sync'], 'local_only')
-        row = self.owner.get_todo(restored['ids'][0])
-        self.assertFalse(row.get('apple'))
-        self.assertEqual(row['source_type'], 'apple_recovered')
-        self.assertEqual(row['title'], 'Before')
+        self.assertEqual(recoveries[0]['target_id'], self.identity)
+        with self.assertRaises(KeyError):
+            self.owner.get_todo(self.identity)
         with self.owner._connect() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM reminder_occurrences WHERE state='pending'").fetchone()[0], 0)
 
@@ -163,7 +161,7 @@ class ReminderOwnerCAS(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'subtasks'):
             self.owner.apple_remove_reminder_inbound(missing['capture'], 'source', 'list', 'native', missing['capture']['generation'], missing['deletion_snapshot'])
         self.assertEqual(self.owner.get_todo(child['id'])['parent_id'], self.identity)
-        self.assertEqual(self.owner.list_apple_inbound_recoveries(), [])
+        self.assertEqual(deletion_snapshots(self.owner), [])
 
     def test_unbound_category_is_explicit_conflict(self):
         with self.owner._connect() as db:

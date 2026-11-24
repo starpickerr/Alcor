@@ -1,4 +1,5 @@
 """Local-only import receipt cleanup after controlled independent process exits."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,os,runpy,subprocess,sys,unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -24,7 +25,7 @@ class UnlinkRecovery(unittest.TestCase):
      self.assertFalse(s.status()['scan_claims']);self.assertFalse(any(r['apple_id']==link['apple_id'] for r in s.status()['category_conflicts']));self.assertFalse(any(r['alcor_id']==link['alcor_id'] for r in s._stored_links() if r['enabled']))
      self.assertFalse(any(r['id']==link['alcor_id'] for r in o.categories()));self.assertEqual(len(s._maps()),1)
      self.assertEqual(s._get('approved-delete:'+plan['operation_id'])['state'],'done')
-     self.assertEqual(b.rows,native);self.assertFalse(helper.writes(b));self.assertEqual(len(o.list_apple_inbound_recoveries()),1)
+     self.assertEqual(b.rows,native);self.assertFalse(helper.writes(b));self.assertEqual(len(deletion_snapshots(o)),1)
      b.rows[1]['title']='Healthy after local cleanup';s.sync()
      self.assertEqual((o.list_events() if kind=='calendar' else o.list_todos())[0]['title'],'Healthy after local cleanup')
  def test_missing_receipt_stays_held_and_does_not_repeat_owner_action(self):
@@ -52,8 +53,11 @@ class UnlinkRecovery(unittest.TestCase):
        row=db.execute('SELECT target_id FROM alcor_security_receipts WHERE operation_id=?',(plan['operation_id'],)).fetchone();doc=json.loads(row[0]);doc['_snapshot']='0'*64
        db.execute('UPDATE alcor_security_receipts SET target_id=? WHERE operation_id=?',(json.dumps(doc),plan['operation_id']))
      else:
-      restored=o.restore_apple_inbound_recovery(o.list_apple_inbound_recoveries()[0]['id'])
-      data={'id':item['id'],'title':'Recreated local item','category_id':restored['categoryIds'][0]}
+      category_id=o.create_category({'name':'Existing local-only category'})['id']
+      with o._connect() as db:
+       db.execute('CREATE TABLE IF NOT EXISTS apple_inbound_local_only (entity TEXT NOT NULL, local_id TEXT NOT NULL, PRIMARY KEY(entity,local_id))')
+       db.execute('INSERT INTO apple_inbound_local_only VALUES (?,?)',('category',category_id))
+      data={'id':item['id'],'title':'Recreated local item','category_id':category_id}
       if kind=='calendar':o.create_event({**data,'start_at':'2026-11-09T01:00:00Z','end_at':'2026-11-09T02:00:00Z'})
       else:o.create_todo(data)
      before=copy.deepcopy(s._maps());b.calls.clear();s.sync();s.sync()
