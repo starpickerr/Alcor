@@ -94,10 +94,10 @@
 }
 .alcor-library-row {
   position: relative;
-  --alcor-library-row-tools-width: 36px;
+  --alcor-library-row-tools-width: 66px;
 }
 .alcor-library-folder-row {
-  --alcor-library-row-tools-width: 96px;
+  --alcor-library-row-tools-width: 126px;
 }
 .alcor-library-row-tools {
   position: absolute;

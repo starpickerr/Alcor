@@ -17,6 +17,13 @@ def string(value, limit, name, required=False):
     return value.strip()
 
 
+def folder_path(parent, name):
+    name = string(name, 100, "文件夹名称", True)
+    if name in (".", "..") or any(c in name for c in "/\\"):
+        raise ValueError("文件夹名称不能含有斜线，也不能是 . 或 ..。")
+    return string(f"{parent}/{name}" if parent else name, 100, "文件夹路径", True)
+
+
 def integer(value, low, high):
     if type(value) is not int or not low <= value <= high:
         raise ValueError("页码、版本或范围无效。")
@@ -91,15 +98,14 @@ class Knowledge:
             ]
         if method == "create_folder":
             parent = string(args.get("parent", ""), 100, "上级文件夹")
-            name = string(args.get("name"), 100, "文件夹名称", True)
-            if name in (".", "..") or any(c in name for c in "/\\"):
-                raise ValueError("文件夹名称不能含有斜线，也不能是 . 或 ..。")
-            path = string(f"{parent}/{name}" if parent else name, 100, "文件夹路径", True)
+            path = folder_path(parent, args.get("name"))
             with self.db:
                 self.db.execute("BEGIN IMMEDIATE")
                 self.require_folder(parent)
                 self.db.execute("INSERT OR IGNORE INTO library_folders(path) VALUES(?)", (path,))
             return {"path": path}
+        if method == "rename_folder":
+            return self.rename_folder(args)
         if method == "parsed_asset":
             digest = string(args.get("digest"), 64, "文件指纹", True)
             row = self.db.execute("SELECT index_notice FROM assets WHERE hash=?", (digest,)).fetchone()
@@ -194,9 +200,14 @@ class Knowledge:
                 index_references(self.db, source["id"])
             self.semantic.wake.set()
             return self.header(source["id"])
+        if method == "rename":
+            args = {"revision": args.get("revision"), "title": args.get("name"), "text": source["note"]}
+            method = "edit"
         if method not in ("edit", "archive", "restore"):
             raise ValueError("不支持的知识库操作。")
         revision = integer(args.get("revision"), 1, 2**53 - 1)
+        if revision != source["revision"]:
+            raise ValueError("资料已变化，请重新打开后操作。")
         title, note, url = source["title"], source["note"], source["url"]
         archived = int(method == "archive")
         if method == "edit":
@@ -261,12 +272,42 @@ class Knowledge:
             )
         return {"removed": True}
 
+    def folder_exists(self, path):
+        return self.db.execute(
+            """SELECT 1 FROM library_folders WHERE path=? OR substr(path,1,length(?)+1)=?||'/' LIMIT 1""",
+            (path, path, path),
+        ).fetchone() is not None
+
     def require_folder(self, path):
-        if path and not self.db.execute(
-            """SELECT 1 FROM library_folders WHERE path=?
-               OR substr(path,1,length(?)+1)=?||'/' LIMIT 1""", (path, path, path)
-        ).fetchone():
+        if path and not self.folder_exists(path):
             raise ValueError("目标文件夹已不可用，请重新选择。")
+
+    def rename_folder(self, args):
+        old = string(args.get("path"), 100, "文件夹路径", True)
+        new = folder_path(old.rpartition("/")[0], args.get("name"))
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            self.require_folder(old)
+            if new == old:
+                return {"path": old}
+            if self.folder_exists(new):
+                raise ValueError("同一位置已有同名文件夹。")
+            folders = self.db.execute(
+                """SELECT path FROM library_folders WHERE path=? OR substr(path,1,length(?)+1)=?||'/'""",
+                (old, old, old),
+            ).fetchall()
+            for (path,) in folders:
+                destination = string(new + path[len(old):], 100, "文件夹路径", True)
+                self.db.execute("UPDATE library_folders SET path=? WHERE path=?", (destination, path))
+            in_subtree = "collection=:old OR substr(collection,1,length(:old)+1)=:old||'/'"
+            params = {"old": old, "new": new}
+            for (source_id,) in self.db.execute("SELECT id FROM sources WHERE " + in_subtree, params):
+                source = self.header(source_id)
+                self.db.execute("INSERT INTO history VALUES(?,?,?)",
+                                (source_id, source["revision"], json.dumps(source, ensure_ascii=False)))
+            self.db.execute("UPDATE sources SET collection=:new||substr(collection,length(:old)+1), "
+                            "revision=revision+1 WHERE " + in_subtree, params)
+        return {"path": new}
 
     def erase_source(self, source_id, source):
         self.db.execute(

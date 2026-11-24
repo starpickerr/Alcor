@@ -564,7 +564,7 @@ function DeleteLibraryEntry({ api, entry, onClose, onDeleted }) {
   )
 }
 
-function Reader({ api, target, close, onChange, collections, onOpen, back, inline, movedLocations }) {
+function Reader({ api, target, close, onChange, collections, onOpen, back, inline, libraryRevision }) {
   const [version, setVersion] = useState(inline ? undefined : target.revision)
   const [confirmErase, setConfirmErase] = useState(false)
   const [page, setPage] = useState(target.page || 1),
@@ -572,26 +572,27 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
   const [error, setError] = useState(''),
     [retry, setRetry] = useState(0),
     [editing, setEditing] = useState(false)
-  const moved = movedLocations?.[target.id]
-  const current = source && !source.historical && moved?.revision > source.revision ? { ...source, ...moved } : source
   const original = useOriginal(api, source?.filename ? source.id : undefined)
+  useEffect(() => setSource(null), [api, target.id, page, version])
   useEffect(() => {
     let active = true
     setError('')
-    setSource(null)
     call(api, 'read', { id: target.id, page, include_links: true, ...(version ? { revision: version } : {}) })
       .then((row) => {
         if (active) setSource(row)
       })
       .catch((e) => {
-        if (active) setError(message(e))
+        if (active) {
+          setSource(null)
+          setError(message(e))
+        }
       })
     return () => {
       active = false
     }
-  }, [api, target.id, page, retry, version])
-  if (confirmErase)
-    return <DeleteLibraryEntry api={api} entry={current} onClose={() => setConfirmErase(false)} onDeleted={() => {
+  }, [api, target.id, page, retry, version, libraryRevision])
+  if (confirmErase && source)
+    return <DeleteLibraryEntry api={api} entry={source} onClose={() => setConfirmErase(false)} onDeleted={() => {
       onChange?.()
       close()
     }} />
@@ -599,7 +600,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
     return (
       <Editor
         api={api}
-        source={current}
+        source={source}
         collections={collections}
         onClose={() => setEditing(false)}
         onSaved={(_, saved) => {
@@ -650,7 +651,7 @@ function Reader({ api, target, close, onChange, collections, onOpen, back, inlin
             )}
             <span className="alcor-library-location">
               <span>{labels[source.kind]}</span>
-              {current.collection.split('/').filter(Boolean).map((folder, index) => (
+              {source.collection.split('/').filter(Boolean).map((folder, index) => (
                 <React.Fragment key={index}>
                   <IconChevronRightOutlineRegular size={12} aria-hidden="true" />
                   <span>{folder}</span>
@@ -760,12 +761,14 @@ function LibraryIconButton({ icon: Icon, label, title = label, onClick }) {
   </Button>
 }
 
-function LibraryActions({ className, name, onCreateFile, onCreateFolder, onDelete }) {
+function LibraryActions({ className, name, onCreateFile, onCreateFolder, onRename, onDelete }) {
   return <div className={className} role="group" aria-label={name ? name + '的操作' : '目录操作'}>
     <LibraryIconButton icon={IconPlusOutlineRegular} label={name ? '在' + name + '中新建文件' : '新建文件'}
       title="新建文件" onClick={onCreateFile} />
     <LibraryIconButton icon={IconProjectAddOutlineRegular} label={name ? '在' + name + '中新建文件夹' : '新建文件夹'}
       title="新建文件夹" onClick={onCreateFolder} />
+    {onRename && <LibraryIconButton icon={IconEditOutlineRegular} label={'重命名文件夹：' + name}
+      title="重命名文件夹" onClick={onRename} />}
     {onDelete && <LibraryIconButton icon={IconTrashOutlineRegular} label={'删除文件夹：' + name}
       title="删除文件夹" onClick={onDelete} />}
   </div>
@@ -796,33 +799,41 @@ function FolderDocuments({ api, path, revision, renderDocument, onRetry }) {
   </>
 }
 
-function NewFolder({ api, initialParent, folders, onClose, onCreated }) {
-  const [name, setName] = useState('')
-  const [parent, setParent] = useState(initialParent)
+function LibraryNameDialog({ api, entry, folders, onClose, onSaved }) {
+  const creating = entry.parent !== undefined
+  const oldName = entry.path ? folderName(entry.path) : entry.title || ''
+  const [name, setName] = useState(oldName)
+  const [parent, setParent] = useState(entry.parent)
+  const title = creating ? '新建文件夹' : entry.path ? '重命名文件夹' : '重命名文件'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const canSave = !busy && !!name.trim() && name.trim() !== oldName
   async function save(event) {
     event.preventDefault()
-    if (busy) return
+    if (!canSave) return
     setBusy(true)
     setError('')
     try {
-      const result = await call(api, 'create_folder', { parent, name })
-      onCreated(result.path)
+      let saved
+      if (creating) saved = await call(api, 'create_folder', { parent, name })
+      else if (entry.path) saved = await call(api, 'rename_folder', { path: entry.path, name })
+      else saved = await call(api, 'rename', { id: entry.id, revision: entry.revision, name })
+      onSaved(saved)
     } catch (reason) {
       setError(message(reason))
       setBusy(false)
     }
   }
   return (
-    <Modal open title="新建文件夹" closeLabel="关闭" className="alcor-editor-dialog" onClose={() => !busy && onClose()}>
+    <Modal open title={title} closeLabel="关闭" className="alcor-editor-dialog" onClose={() => !busy && onClose()}>
       <form className="alcor-knowledge-form" onSubmit={save}>
-        <label>文件夹名称<input required autoFocus maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <FolderLocationSelect folders={folders} value={parent} onChange={setParent} />
+        <label>{entry.id ? '文件名称' : '文件夹名称'}<input required autoFocus maxLength={entry.id ? 240 : 100}
+          value={name} onFocus={(event) => event.target.select()} onChange={(event) => setName(event.target.value)} /></label>
+        {creating && <FolderLocationSelect folders={folders} value={parent} onChange={setParent} />}
         {error && <Notice role="alert" tone="error">{error}</Notice>}
         <div className="alcor-knowledge-actions">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-          <Button type="submit" variant="primary" disabled={busy || !name.trim()}>新建</Button>
+          <Button type="submit" variant="primary" disabled={!canSave}>{creating ? '新建' : '保存'}</Button>
         </div>
       </form>
     </Modal>
@@ -839,12 +850,11 @@ export function KnowledgePage({ api }) {
     [error, setError] = useState('')
   const [target, setTarget] = useState(null),
     [editor, setEditor] = useState(null)
-  const [creatingFolder, setCreatingFolder] = useState(null)
+  const [naming, setNaming] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [expanded, setExpanded] = useState(new Set())
   const [movePending, setMovePending] = useState(false)
   const [moveMessage, setMoveMessage] = useState(null)
-  const [movedLocations, setMovedLocations] = useState({})
   const [dropTarget, setDropTarget] = useState(null)
   const [showTopDrop, setShowTopDrop] = useState(false)
   const dragging = useRef(null)
@@ -972,10 +982,8 @@ export function KnowledgePage({ api }) {
       const saved = await call(api, 'move', {
         id: source.id, revision: source.revision, from: source.collection, collection: destination,
       })
-      const { id, revision, collection } = saved
-      setMovedLocations((value) => ({ ...value, [id]: { revision, collection } }))
       documentChanged(saved)
-      if (target?.id !== id) revealFolder(destination)
+      if (target?.id !== saved.id) revealFolder(destination)
       setMoveMessage({ text: undo ? '已撤销移动' : '已移到 ' + displayLocation(destination), undo: undo ? null : { source: saved, path: source.collection } })
     } finally {
       moveInFlight.current = false
@@ -1034,6 +1042,8 @@ export function KnowledgePage({ api }) {
           <span><strong>{row.title}</strong>{searching && <small>{displayLocation(row.collection)}{row.kind === 'pdf' ? ' · 第 ' + row.page + ' 页' : ''}</small>}</span>
         </button>
         <div className="alcor-library-row-tools">
+          <LibraryIconButton icon={IconEditOutlineRegular} label={`重命名文件：${row.title}`}
+            title="重命名文件" onClick={() => setNaming(row)} />
           <LibraryIconButton icon={IconTrashOutlineRegular} label={`删除文件：${row.title}`}
             title="删除文件" onClick={() => setDeleting(row)} />
         </div>
@@ -1064,7 +1074,8 @@ export function KnowledgePage({ api }) {
           </button>
           <LibraryActions className="alcor-library-row-tools" name={name}
             onCreateFile={() => setEditor({ initialCollection: path })}
-            onCreateFolder={() => setCreatingFolder(path)}
+            onCreateFolder={() => setNaming({ parent: path })}
+            onRename={() => setNaming({ path })}
             onDelete={() => setDeleting({ path })} />
         </div>
         {isOpen && <ul className="alcor-library-tree">
@@ -1164,7 +1175,7 @@ export function KnowledgePage({ api }) {
               </div>
               <LibraryActions className="alcor-library-directory-tools"
                 onCreateFile={() => setEditor({ initialCollection: collection })}
-                onCreateFolder={() => setCreatingFolder(collection)} />
+                onCreateFolder={() => setNaming({ parent: collection })} />
               {showTopDrop && <div className="alcor-library-top-drop" {...folderDrop('')}>移到顶层</div>}
             </div>
             <div className="alcor-library-scroll">
@@ -1190,7 +1201,7 @@ export function KnowledgePage({ api }) {
               <Button className="alcor-library-back" size="sm" variant="ghost" onClick={() => setTarget(null)}>返回目录</Button>
               <SourceReader key={target.id + ':' + (target.page ?? 1)} target={target} api={api} inline
                 collections={folders} close={() => setTarget(null)} onChange={documentChanged}
-                movedLocations={movedLocations} />
+                libraryRevision={revision} />
             </> : <Empty title={collection ? folderName(collection) : '选择资料'} icon={<IconDeliverDocRegular size={28} />} />}
           </section>
         </div>
@@ -1207,10 +1218,25 @@ export function KnowledgePage({ api }) {
           }
           refresh()
         }} />}
-      {creatingFolder !== null && <NewFolder api={api} initialParent={creatingFolder} folders={folders}
-        onClose={() => setCreatingFolder(null)} onCreated={(path) => {
-          setCreatingFolder(null)
-          openFolder(path)
+      {naming && <LibraryNameDialog api={api} entry={naming} folders={folders} onClose={() => setNaming(null)}
+        onSaved={(saved) => {
+          setNaming(null)
+          if (naming.id) {
+            setGraphTrail((trail) => trail.map((step) => step.id === saved.id ? { ...step, title: saved.title } : step))
+            setMoveMessage(null)
+            documentChanged(saved)
+            return
+          }
+          if (naming.path) {
+            const remap = (path) => inFolder(path, naming.path) ? saved.path + path.slice(naming.path.length) : path
+            setExpanded((value) => new Set([...value].map(remap)))
+            setCollection(remap)
+            setGraphFolder(remap)
+            setTarget((row) => row ? { ...row, collection: remap(row.collection ?? '') } : row)
+            setMoveMessage(null)
+          } else {
+            openFolder(saved.path)
+          }
           refresh()
         }} />}
       {editor && (
