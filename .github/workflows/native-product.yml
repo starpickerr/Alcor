@@ -201,6 +201,15 @@ jobs:
         run: |
           $env:ALCOR_BUSINESS_PYTHON = (Get-Command python).Source
           node --test product/tests/business-python.test.mjs product/tests/business-execution.test.mjs product/tests/alcor-delete-confirmation.test.mjs product/tests/mail-credentials.test.mjs product/tests/elearning-credentials.test.mjs product/tests/host-compatibility.test.mjs product/tests/environments.test.mjs product/tests/shared-business-tools.test.mjs product/tests/native-runtime-boundary.test.mjs
+      - name: Save the Windows secretary package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secretary-windows-x64
+          path: Alcor/.local/artifacts/alcor-secretary-*.tgz
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
   native-product:
     runs-on: macos-15
     timeout-minutes: 25
@@ -263,3 +272,12 @@ jobs:
         run: |
           npm run product:privacy:pack
           npm run product:privacy:test
+      - name: Save the macOS secretary package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secretary-macos
+          path: Alcor/.local/artifacts/alcor-secretary-*.tgz
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
