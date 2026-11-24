@@ -1,6 +1,7 @@
 """Probe installed frozen servers without fetching personal or network data."""
 import asyncio
 import json
+import os
 import re
 from jsonschema import validate
 import sys
@@ -18,7 +19,8 @@ async def main():
         root = Path(sys.argv[1]).resolve() / f'@alcor/{package}/server'
         assert not any(path.is_symlink() for path in root.rglob('*'))
         with tempfile.TemporaryDirectory(prefix='source-protocol-') as data:
-            parameters = StdioServerParameters(command=str(root / binary), args=['--data-dir', data, '--dsh-credentials'], cwd=data,
+            executable = binary + '.exe' if os.name == 'nt' else binary
+            parameters = StdioServerParameters(command=str(root / executable), args=['--data-dir', data, '--dsh-credentials'], cwd=data,
                 env={'HOME': data, env_key: json.dumps(value)})
             async with stdio_client(parameters) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -31,7 +33,7 @@ async def main():
                     if package == 'elearning':
                         assert 'cursors' in next(row for row in tools.tools if row.name == 'fetch').inputSchema['properties']
                     skill = root.parent / 'skills' / ('alcor-' + package) / 'SKILL.md'
-                    examples = [json.loads(raw) for raw in re.findall(r'```json\n([\s\S]*?)\n```', skill.read_text())]
+                    examples = [json.loads(raw) for raw in re.findall(r'```json\n([\s\S]*?)\n```', skill.read_text(encoding='utf-8'))]
                     method_names = ['fetch', 'list_files', 'download_file', 'get_assignment', 'submit_assignment'] if package == 'elearning' else ['fetch_messages']
                     assert len(examples) == len(method_names)
                     for method, example in zip(method_names, examples):

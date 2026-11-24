@@ -16,7 +16,7 @@ Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Prof
 
 邮件 DSH 模式只发布 `list_accounts`、`list_sources`、`get_cursors`、`fetch_messages`、`test_connection`、`list_folders`；账号增删不作为 MCP 工具，且禁止伪造管理调用。账号密码仅来自当前 DSH 记录，MCP 忽略旧数据库账号和环境默认密码，业务库只保存游标。读取采用只读 IMAP，不标已读、不发送或删除邮件。停用插件关闭连接、撤销工具，保留凭据与历史数据；移除账号后阻断后续访问。
 
-在任一服务仓的 `plugin/` 中运行 `npm pack`，也可从 Alcor 运行 `npm run product:sources:pack` 构建两个包。`source-releases.lock.json` 固定 Alcor 消费的插件 Tag 和相应的 MCP 来源。CI 先发布两个独立插件 Tag，再使用这两个 Tag 验证 Alcor。冻结库在入包时解除符号链接，并保留运行依赖许可证。
+在任一服务仓的 `plugin/` 中运行 `npm pack`，也可从 Alcor 运行 `npm run product:sources:pack` 构建两个包。`source-releases.lock.json` 固定 Alcor 消费的独立插件提交和 MCP 来源。CI 按锁定提交检出连接器，并在 macOS 和 Windows 验证冻结后的协议。冻结库在入包时解除符号链接，并保留运行依赖许可证。
 
 学校 1.0.8 开发候选基于学校仓库 `40683b5`，包含未提交的下载与作业提交实现；锁中的 `sourceState: working-tree` 明确此状态，sourceRevision 仅标记基线，准确输入以源码摘要为准。正式发布前应在获得提交授权后固定最终提交。邮件 1.0.6 对应邮件仓库提交 `7bb82f44f8c16d9b5494ed2748994a3ded4d98c2`。两处源码均以 `product/source-releases.lock.json` 中的摘要校验。
 

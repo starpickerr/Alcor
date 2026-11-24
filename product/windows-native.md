@@ -1,5 +1,27 @@
 # Windows 原生插件验证
 
+## 四插件开发与打包
+
+Windows x64 使用官方 DSH Desktop `0.2.2-rc.5`、Node.js 24.9 以上和 Conda 的 Python 3.12 环境。把 `dsh-email`、`dsh-fudan-elearning` 与 `dsh-chatgpt` 放在 Alcor 检出目录旁。邮件和 eLearning 的构建输入由各自的 `requirements.lock` 与 Alcor 的来源清单核对。
+
+在 Alcor 根目录用 PowerShell 构建。邮件和 eLearning 的 Windows 安装包各包含一个冻结后的 MCP 程序。
+
+```powershell
+conda activate alcor
+python -m pip install --require-hashes -r ../dsh-email/requirements.lock -r ../dsh-fudan-elearning/requirements.lock
+python -m pip install PyInstaller==6.22.3
+npm ci --force --ignore-scripts
+npm ci --prefix ../dsh-email/plugin
+npm ci --prefix ../dsh-fudan-elearning/plugin
+npm ci --prefix ../dsh-chatgpt
+npm run product:pack
+npm run product:sources:pack
+$artifacts = (Resolve-Path .local/artifacts).Path
+npm pack ../dsh-chatgpt --pack-destination $artifacts
+```
+
+在 DSH 的插件页选择 `.local/artifacts` 中对应的 `.tgz` 安装。使用 [Windows 四插件测试](tests/windows-plugin-integration.py) 可在隔离 Profile 检查四包共存、MCP 子进程和 ChatGPT 的模拟授权，并验证重启前后的账户状态。
+
 ## 2026-11-24 develop 适配
 
 从 `d8503986` 构建秘书插件 `0.1.161`。官方 DSH Windows x64 `0.2.2-rc.5` 的安装包、程序签名和 app.asar 摘要已核对，身份记录见 [版本清单](desktop-release.lock.json)。
