@@ -1,4 +1,5 @@
 import { checkMessages } from './elearning-status.js'
+import { logSchemas } from './log-contract.js'
 import { z } from 'zod'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 
@@ -14,6 +15,7 @@ const identifier = z.string().min(1).max(200)
 export const ownershipSchema = z.object({ projects: z.record(identifier, space), projectViews: z.record(identifier,z.object({alcor:z.string().optional(),dsh:z.string().optional()}).strict()).optional(), sessions: z.record(identifier, space), qq: z.record(identifier, z.string().max(128)).optional() }).strict()
 export const spacesSchema = ownershipSchema.extend({ defaults: z.object({ alcor: identifier, dsh: identifier }).strict() }).strict()
 export const accountSchemas = {
+  logs: logSchemas,
   searchSpace: [z.object({ space, query: z.string().trim().min(1).max(1000), sessionIds: z.array(identifier).max(10000) }).strict(),
     z.object({ items: z.array(z.object({ sessionId: identifier, snippet: z.string() }).strict()).max(20), hasMore: z.boolean() }).strict()],
   spaces: [z.object({}).strict(), spacesSchema],

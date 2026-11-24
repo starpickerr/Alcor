@@ -88,6 +88,22 @@ SERVICE_DESCRIPTORS = [
 ]
 
 
+# Expose the same typed preferences through Agent method discovery.
+from .domain.routing import POLICY_OPTIONS
+for _method in SERVICE_DESCRIPTORS[0]['methods']:
+    if _method['name'] == 'update_preferences':
+        _method['inputSchema']['properties']['payload'] = {
+            'type': 'object',
+            'properties': {'elearning_policy': {
+                'type': 'object',
+                'description': 'Partial update of briefing content choices. exclude disables a category; model reads its original text. Other values use local source facts.',
+                'properties': {key: {'type': 'string', 'enum': sorted(values)} for key, values in POLICY_OPTIONS.items()},
+                'additionalProperties': False,
+            }},
+            'additionalProperties': True,
+        }
+
+
 def _jsonable(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
         return _jsonable(asdict(value))
@@ -174,7 +190,7 @@ def _dispatch(svc: BriefingService, method: str, params: dict[str, Any], invoke_
     return getattr(svc, method)(**params)
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
     if spec is None:
@@ -188,17 +204,32 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         svc = _service(invoke_params)
         value = _jsonable(_dispatch(svc, method, params, invoke_params))
     except PeerOutcomeUnknown:
-        return {'status':'unknown','sideEffects':'unknown','operationId':invoke_params.get('idempotencyKey') or method}
+        return {'status':'unknown','sideEffects':'unknown','operationId':invoke_params.get('idempotencyKey') or method,
+                'error': {'code': 'peer_outcome_unknown', 'message': '业务委托已发出，但结果无法确认。请刷新核对目标业务及操作回执，勿直接重复执行。'}}
     except AdapterUnavailable as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("unsupported", str(exc))
     except PermissionError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail('permission_denied', str(exc))
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except sqlite3.IntegrityError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("conflict", str(exc))
     except (ValueError, TypeError) as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("invalid_argument", str(exc))
+    except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
+        return _unexpected(exc, read_only=effect == "query")
     if effect == "query":
         return {"status": "succeeded", "sideEffects": "none", "value": value}
     return {
@@ -211,3 +242,22 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
 
 def _fail(code: str, message: str) -> dict[str, Any]:
     return {"status": "failed", "sideEffects": "none", "error": {"code": code, "message": message}}
+
+
+def _unexpected(error, *, read_only):
+    # Unknown writes may already have committed; never invite an automatic retry.
+    import sqlite3
+    if isinstance(error, PermissionError):
+        code, message = 'resource_permission_denied', '插件资源访问被拒绝，请核对资源授权及系统目录权限；不能据此认定需要更改 DSH 审批策略。'
+    elif isinstance(error, FileNotFoundError):
+        code, message = 'local_path_missing', '插件需要的本地文件或程序不存在，请检查插件安装、数据目录及配置路径。'
+    elif isinstance(error, sqlite3.Error):
+        code, message = 'storage_error', '插件数据库操作失败，请检查数据目录权限、磁盘空间及其他实例占用；保留数据库和备份，不要删除数据库重试。'
+    elif isinstance(error, OSError):
+        code, message = 'io_error', '插件读写或外部连接失败，请检查磁盘空间、系统目录权限、网络与代理。'
+    else:
+        code, message = 'plugin_internal_error', '插件发生未分类错误，请核对插件版本与日志；不能据此认定为账号或审批问题。'
+    if not read_only:
+        message += ' 本次写入结果尚未确认，请先刷新核对，勿直接重复执行。'
+    return {'status': 'failed' if read_only else 'unknown', 'sideEffects': 'none' if read_only else 'unknown',
+            'error': {'code': code, 'message': message}}

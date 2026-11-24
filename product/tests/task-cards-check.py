@@ -36,7 +36,7 @@ def main():
             expect(page.locator('.alcor-page-feedback').get_by_role('status')).to_have_text('事务状态已更新')
             vanished = business('tasks', 'create_todo', {'payload': {'title': 'Removed elsewhere'}})
             page.get_by_role('button', name='刷新', exact=True).click()
-            page.get_by_role('button', name='更多操作：Removed elsewhere', exact=True).click()
+            page.get_by_role('button', name='Removed elsewhere', exact=True).click(button='right')
             page.get_by_role('menuitem', name='删除事务', exact=True).click()
             business('tasks', 'delete_todo', {'todo_id': vanished['id']})
             dialog = page.get_by_role('dialog', name='删除事务', exact=True)
@@ -46,7 +46,7 @@ def main():
             dialog.get_by_role('button', name='取消', exact=True).click()
             persistent = business('tasks', 'create_todo', {'payload': {'title': 'Persistent task', 'notes': 'Only task information remains.', 'due_on': '2026-12-25', 'repeat_frequency': 'daily'}})
             page.get_by_role('button', name='刷新', exact=True).click()
-            page.get_by_role('button', name='更多操作：Persistent task', exact=True).click()
+            page.get_by_role('button', name='Persistent task', exact=True).press('Shift+F10')
             page.get_by_role('menuitem', name='删除整个系列', exact=True).click()
             dialog = page.get_by_role('dialog', name='删除事务', exact=True)
             expect(dialog).to_contain_text('整个重复系列')
@@ -57,6 +57,7 @@ def main():
             assert not errors, errors
         with desktop.desktop(playwright, home, 'task-cards-restart') as (page, errors):
             open_secretary(page)
+            page.get_by_role('tab', name='全部事务', exact=False).click()
             page.get_by_role('button', name='Persistent task', exact=True).click()
             expect(page.locator('.alcor-task-description')).to_have_text('Only task information remains.')
             expect(page.get_by_role('heading', name='检查清单', exact=True)).to_have_count(0)

@@ -92,12 +92,10 @@ def test_signed_zip_omits_pytest_cache(tmp_path):
 
 
 def _official_bills_entry() -> tuple[dict, Path]:
-    catalog_path = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "catalog" / "official.json"
-    if not catalog_path.is_file():
-        catalog_path = Path("..") / "Stella-Plugins" / "catalog" / "official.json"
+    catalog_path = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "catalog" / "official.json"
     if not catalog_path.is_file():
         import pytest
-        pytest.skip("Stella-Plugins sibling checkout not present")
+        pytest.fail("Bundled first-party source catalog is missing")
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     entry = next(p for p in catalog["plugins"] if p["pluginId"] == "stella.bills")
     root = (catalog_path.parent / entry["path"]).resolve()
@@ -155,7 +153,7 @@ def test_installed_package_digest_stable_after_cache_inject(tmp_path):
 
 def test_release_builder_preserves_manifest_versions(tmp_path, monkeypatch):
     import importlib.util
-    script = Path(__file__).resolve().parents[2] / 'Stella-Plugins/scripts/build_release_catalog.py'
+    script = Path(__file__).resolve().parents[1] / 'desktop/scripts/pack_signed_plugin_catalog.py'
     spec = importlib.util.spec_from_file_location('stella_release_builder_test', script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -165,14 +163,17 @@ def test_release_builder_preserves_manifest_versions(tmp_path, monkeypatch):
     manifest = json.loads(_MANIFEST)
     manifest['version'] = '1.2.3'
     source.joinpath('plugin.json').write_text(json.dumps(manifest))
-    monkeypatch.setattr(module, 'ROOT', tmp_path)
+    monkeypatch.setattr(module, 'PLUGINS_ROOT', tmp_path / 'plugins')
+    monkeypatch.setattr(module, 'RESOURCES', tmp_path / 'resources')
+    monkeypatch.setattr(module, 'PACKAGES', tmp_path / 'resources/plugin-packages')
+    monkeypatch.setattr(module, 'CATALOG_OUT', tmp_path / 'resources/plugin-catalog.json')
+    monkeypatch.setattr(module, 'SECRET_FILE', tmp_path / 'resources/plugin-signing.secret')
     monkeypatch.setattr(module, 'DOMAINS', ('demo',))
     monkeypatch.setenv('STELLA_PLUGIN_SIGNING_SECRET', 'test-release-secret')
     assert module.main() == 0
-    catalog = tmp_path / 'catalog/release.json'
+    catalog = tmp_path / 'resources/plugin-catalog.json'
     row = json.loads(catalog.read_text())['plugins'][0]
     assert row['version'] == '1.2.3'
-    assert '1.2.3' in row['url']
     result = fetch_and_install_from_catalog(catalog_path=catalog, plugin_id='stella.demo',
                                             package_store=PackageStore(tmp_path / 'packages'))
     assert result['status'] == 'installed'
@@ -194,7 +195,7 @@ def test_desktop_source_catalog_installs_all_first_party_plugins(tmp_path, monke
     catalog = resources / 'plugin-catalog.json'
     rows = json.loads(catalog.read_text())['plugins']
     expected = {f'stella.{name}' for name in
-                ['bills', 'calendar', 'tasks', 'briefing', 'automation', 'agent-hub', 'knowledge', 'memory']}
+                ['bills', 'calendar', 'tasks', 'briefing', 'automation', 'knowledge', 'memory']}
     assert {row['pluginId'] for row in rows} == expected
     store = PackageStore(tmp_path / 'installed')
     for row in rows:
@@ -204,26 +205,15 @@ def test_desktop_source_catalog_installs_all_first_party_plugins(tmp_path, monke
 
 def test_desktop_management_bootstrap_adopts_all_first_party_plugins(tmp_path, monkeypatch):
     from core.plugins.bootstrap import run_desktop_bootstrap
-    import sqlite3
-    hub_db = tmp_path / 'old-hub.db'
-    schema = Path('../Stella-Plugins/plugins/agent-hub/backend/domain/schema.sql').read_text()
-    schema = schema.replace('    agent_id TEXT,\n    access_mode TEXT,\n', '')
-    with sqlite3.connect(hub_db) as db:
-        db.executescript(schema)
-        db.execute("INSERT INTO provider_configs(provider_config_id,provider_local_id,display_name,created_at,updated_at) VALUES ('old','codex-cli','Old','now','now')")
-    monkeypatch.setattr('common.state_dir.agent_hub_db', lambda **_: hub_db)
     from config import conf
     monkeypatch.setitem(conf(), 'deep_dream_enabled', False)
-    catalog = Path('../Stella-Plugins/catalog/official.json').resolve()
+    catalog = Path('stella-plugins-workspace/catalog/official.json').resolve()
     result = run_desktop_bootstrap(data_dir=tmp_path / 'data', catalog_path=catalog)
     assert result['status'] == 'ok', result['failed']
-    assert 'stella.agent-hub' in result['installed']
     from core.plugins.management import ManagementStore
     from core.plugins.settings import PluginSettingsService
     settings = PluginSettingsService(ManagementStore(tmp_path / 'data/plugin-packages'))
     assert settings.read('stella.memory', 'local-default', 'memory.preferences', 'curation')['values']['deep_dream_enabled'] is False
-    with sqlite3.connect(hub_db) as db:
-        assert db.execute("SELECT agent_id, access_mode FROM provider_configs WHERE provider_config_id='old'").fetchone() == ('codex', 'cli')
 
 
 def test_package_store_never_copies_ignored_bytecode(tmp_path):

@@ -1,7 +1,7 @@
 """Combined receipt stage permissions use only synthetic SQLite manager claims."""
 import sqlite3,sys,tempfile,unittest
 from pathlib import Path
-sys.path.insert(0,'packages/alcor-apple-sync/python')
+sys.path.insert(0,'../dsh-apple-sync/python')
 from apple_sync.group_scan_claims import WorkClaim,ScanHeld
 
 class Sync:

@@ -12,7 +12,7 @@ from apple_sync.calendar import AppleCalendarSync
 from apple_sync.reminders import AppleReminderSync
 from apple_sync.approved_export import prepare, run, guard_unresolved
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('export_worker', ROOT/'packages/alcor-apple-sync/python/worker.py')
+spec = importlib.util.spec_from_file_location('export_worker', ROOT/'../dsh-apple-sync/python/worker.py')
 worker_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(worker_module)
 
 

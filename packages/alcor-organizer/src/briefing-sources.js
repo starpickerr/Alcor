@@ -12,17 +12,26 @@ const pluginPage = z.object({
   next_offset: z.number().int().nonnegative().nullable(), truncated:z.boolean().optional(), errors: z.array(z.string()).default([]),
 })
 
+export class BriefingSourceAccessError extends Error {}
+
 function allowedSource(ctx,tool) {
   const name=(tool?.startsWith('mcp__email__') || tool?.startsWith('mcp__mail__'))?'@alcor/mail':tool?.startsWith('mcp__elearning__')?'@alcor/elearning':null
   return !name || permits(selectedScope(ctx,name),'alcor')
 }
 
 async function execute(ctx, name, args, signal) {
-  if(!allowedSource(ctx,name))throw Error('来源已从 Alcor 移出。')
+  if(!allowedSource(ctx,name))throw new BriefingSourceAccessError('来源已从 Alcor 移出。')
   const batch = await ctx.tools.execute({ signal, calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }] })
-  if(!allowedSource(ctx,name))throw Error('来源分配已变化。')
+  if(!allowedSource(ctx,name))throw new BriefingSourceAccessError('来源分配已变化。')
   const result = batch.results[0]?.result
-  if (!result || result.isError) throw new Error(result?.error?.message || '来源插件读取失败，请检查连接后重试。')
+  if (!result || result.isError) {
+    let detail = result?.error?.message || '来源插件未返回结果，请检查插件连接与状态。'
+    try {
+      const parsed = JSON.parse(detail)
+      if (typeof parsed.error_code === 'string' && typeof parsed.message === 'string') detail = `[${parsed.error_code}] ${parsed.message}`
+    } catch { /* Host errors can also be plain text. */ }
+    throw new Error(`${name}：${detail}`)
+  }
   return result.value?.structuredContent?.value ?? result.value
 }
 
@@ -37,7 +46,7 @@ export async function discoverBriefingSources(ctx) {
   try {
     const school = permits(selectedScope(ctx,'@alcor/elearning'),'alcor') && await ctx.get('alcorElearning')?.briefingSource()
     if (school && names.has(school.tool)) sources.push(school)
-  } catch { errors.push('学校来源暂时不可用，请检查连接。') }
+  } catch (error) { errors.push(`学校来源不可用：${error.message || '未返回具体原因，请检查插件连接。'}`) }
   for (const name of names) {
     const native = pluginPrefix.exec(name)
     if (native && names.has(native[1] + '_briefing_fetch')) {
@@ -45,7 +54,7 @@ export async function discoverBriefingSources(ctx) {
         const value = await execute(ctx, name, {}, AbortSignal.timeout(15000))
         const rows = pluginSources.parse(value?.sources)
         for (const row of rows) sources.push({ source: `plugin:${native[1]}:${row.id}`, accountId: row.account_id, label: row.label, tool: native[1] + '_briefing_fetch', method: 'briefing_fetch', arguments: { source_id: row.id } })
-      } catch { errors.push(`${native[1]} 的简报来源目录不可用，请检查插件。`) }
+      } catch (error) { errors.push(`${native[1]} 的简报来源目录不可用：${error.message || '未返回具体原因，请检查插件。'}`) }
       continue
     }
     if (!/^mcp__[A-Za-z0-9_-]+__list_sources$/.test(name)) continue
@@ -57,7 +66,7 @@ export async function discoverBriefingSources(ctx) {
       for (const row of rows) if (row.source === 'email' && typeof row.account_id === 'string' && typeof row.mailbox_id === 'string') {
         sources.push({ source: 'email', accountId: row.account_id, label: String(row.name || '邮箱'), tool: fetch, method: 'fetch_messages', arguments: { account_id: row.mailbox_id } })
       }
-    } catch { errors.push('邮件来源目录暂时不可用，请检查连接后刷新。') }
+    } catch (error) { errors.push(`邮件来源目录不可用：${error.message || '未返回具体原因，请检查连接后刷新。'}`) }
   }
   const connections = []
   for (const [service, type, name, label] of [
@@ -89,12 +98,12 @@ export async function briefingSourceOptions(ctx, source) {
 
 export async function readBriefingSourcePage(ctx, config, { since, until, offset, cursors, signal }) {
   const owner={email:'@alcor/mail',elearning:'@alcor/elearning'}[config.source]
-  if(owner && !permits(selectedScope(ctx,owner),'alcor'))throw Error('来源没有分配给 Alcor。')
+  if(owner && !permits(selectedScope(ctx,owner),'alcor'))throw new BriefingSourceAccessError('来源没有分配给 Alcor。')
   if (config.method === 'briefing_fetch') {
     const prefix = config.tool.slice(0, -'_briefing_fetch'.length)
-    if (!/^[A-Za-z0-9_-]{1,64}_briefing_fetch$/.test(config.tool) || config.source !== `plugin:${prefix}:${config.arguments.source_id}`) throw new Error('插件来源标识无效，请重新选择。')
+    if (!/^[A-Za-z0-9_-]{1,64}_briefing_fetch$/.test(config.tool) || config.source !== `plugin:${prefix}:${config.arguments.source_id}`) throw new BriefingSourceAccessError('插件来源标识无效，请重新选择。')
     const value = pluginPage.parse(await execute(ctx, config.tool, { source_id: config.arguments.source_id, account_id: config.accountId, since, until, offset, limit: 100 }, signal))
-    if (value.account_id !== config.accountId || value.source_id !== config.arguments.source_id) throw new Error('插件返回了不同账号或范围的数据，已拒绝使用。')
+    if (value.account_id !== config.accountId || value.source_id !== config.arguments.source_id) throw new BriefingSourceAccessError('插件返回了不同账号或范围的数据，已拒绝使用。')
     return { ...value, source: config.source }
   }
   const schema = config.method === 'fetch' && config.source === 'elearning' ? ctx.tools.schemas?.().find(row => row.name === config.tool) : undefined
@@ -102,8 +111,8 @@ export async function readBriefingSourcePage(ctx, config, { since, until, offset
   const args = { ...config.arguments, since, until, ...(config.method === 'fetch' ? { offset, limit: 50, cursors } : { cursors }) }
   const value = await execute(ctx, config.tool, args, signal)
   if (!value || !Array.isArray(value.items ?? value.source_items)) throw new Error('来源返回格式无效。')
-  if ((value.source && value.source !== config.source) || (value.account_id && value.account_id !== config.accountId)) throw new Error('来源账号与简报配置不一致，请重新选择账号。')
-  if ((value.items ?? value.source_items).some(item => (item.source && item.source !== config.source) || (item.account_id && item.account_id !== config.accountId))) throw new Error('来源账号已变化，请重新选择简报来源。')
+  if ((value.source && value.source !== config.source) || (value.account_id && value.account_id !== config.accountId)) throw new BriefingSourceAccessError('来源账号与简报配置不一致，请重新选择账号。')
+  if ((value.items ?? value.source_items).some(item => (item.source && item.source !== config.source) || (item.account_id && item.account_id !== config.accountId))) throw new BriefingSourceAccessError('来源账号已变化，请重新选择简报来源。')
   return value
 }
 

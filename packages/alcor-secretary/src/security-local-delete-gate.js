@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { createHash } from 'node:crypto'
 import { symbols } from '@deepseek-ai/cordis'
 import { billOperationId } from './security-bill-delete.js'
+import { denyDeleteApproval } from './delete-approval-feedback.js'
 
 const providerIdentity = provider => provider?.[symbols.original] ?? provider
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -19,13 +20,22 @@ export const isLocalDeletion = execution => execution?.name === 'alcor_business'
     || (execution.arguments?.domain === 'calendar' && ['delete_event', 'delete_category', 'exclude_occurrence'].includes(execution.arguments?.method))
     || (execution.arguments?.domain === 'bills' && execution.arguments?.method === 'delete_ledger'))
 
+export function deleteTargetKey(domain, method) {
+  if (domain === 'tasks' && method === 'delete_category') return 'category_id'
+  if (method === 'delete_external_todo') return 'source_key'
+  if (domain === 'tasks') return 'todo_id'
+  return method === 'exclude_occurrence' ? 'series_id' : 'id'
+}
+
 function deletionRequest(execution, turn) {
   const input = execution.arguments, { domain, method, arguments: args = {} } = input
   const task = domain === 'tasks', bill = domain === 'bills', category = method === 'delete_category', external = method === 'delete_external_todo', exclusion = method === 'exclude_occurrence'
-  const keys = bill ? ['id', 'expectedRevision'] : category ? [task ? 'category_id' : 'id'] : external ? ['source_key', 'confirm', 'preserve_children'] : task ? ['todo_id', 'preserve_children'] : exclusion ? ['series_id', 'occurrence_on'] : ['id', 'scope', 'occurrence_on']
-  const id = category && task ? args?.category_id : external ? args?.source_key : task ? args?.todo_id : exclusion ? args?.series_id : args?.id
+  const targetKey = deleteTargetKey(domain, method)
+  const options = bill ? ['expectedRevision'] : category ? [] : external ? ['confirm', 'preserve_children']
+    : task ? ['preserve_children'] : exclusion ? ['occurrence_on'] : ['scope', 'occurrence_on']
+  const id = args?.[targetKey]
   if (!record(args) || Object.keys(input).some(key => !['domain', 'method', 'arguments', 'requestId'].includes(key))
-      || Object.keys(args).some(key => !keys.includes(key)) || !identity(id) || id.length > 200
+      || Object.keys(args).some(key => key !== targetKey && !options.includes(key)) || !identity(id) || id.length > 200
       || (bill && args.expectedRevision !== undefined && (!Number.isSafeInteger(args.expectedRevision) || args.expectedRevision < 1))
       || (task && args.preserve_children !== undefined && typeof args.preserve_children !== 'boolean')
       || (external && args.preserve_children !== undefined && args.preserve_children !== true)
@@ -157,20 +167,25 @@ export function createLocalDeleteGate({ prepare, commit, getApproval, actorStill
       if (!['allow', 'ask'].includes(host.kind) || !authorize()) throw new Error('当前会话无权删除。')
       const request = deletionRequest(execution, turn)
       const result = frozenDeletion(await prepare(request, authorize), request)
-      if (!authorize()) throw new Error('删除授权已失效。')
+      if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
       // A previous receipt is read-only. It never grants another dispatch, even if pending.
       if (result.kind !== 'receipt') {
         approval = getApproval()
-        if (!approval || typeof approval.request !== 'function' || typeof approval.overrideOf !== 'function' || !authorize()) throw new Error('当前会话没有可用的删除审批，请核对 DSH 审批设置。')
+        if (typeof approval?.request !== 'function' || typeof approval.overrideOf !== 'function') return denyDeleteApproval('DELETE_APPROVAL_UNAVAILABLE')
+        if (policyOf(approval, session) === 'never') return denyDeleteApproval('DELETE_APPROVAL_DISABLED')
+        if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
         const detail = deletionDetail(result)
         const reason = [host.kind === 'ask' ? host.reason : undefined, detail].filter(Boolean).join('\n')
         const displayReason = host.kind === 'ask' && host.displayReason
           ? Object.fromEntries(Object.entries(host.displayReason).map(([locale, text]) => [locale, [text, detail].filter(Boolean).join('\n')])) : undefined
         if (reason.length > 120000 || Object.values(displayReason ?? {}).some(text => text.length > 120000)) throw new Error('删除预览过大，请缩小范围。')
         const outcome = await approval.request({ agent, toolName: name, callId, reason, ...(displayReason ? { displayReason } : {}), signal })
-        if (outcome !== 'allowed-once') throw new Error('删除未获单次批准，未执行。')
+        if (signal.aborted) return { kind: 'cancel' }
+        if (!authorize()) return denyDeleteApproval('DELETE_APPROVAL_EXPIRED')
+        if (outcome === 'rejected') return denyDeleteApproval('DELETE_APPROVAL_REJECTED')
+        if (outcome === 'cancelled') return denyDeleteApproval('DELETE_APPROVAL_CANCELLED')
+        if (outcome !== 'allowed-once') return denyDeleteApproval('DELETE_APPROVAL_UNAVAILABLE')
       }
-      if (!authorize()) throw new Error('删除授权已失效。')
       deadline = Date.now() + 4 * 60 * 1000
       prepared.set(execution, { result, authorize }); retained = true
       return { kind: 'allow' }

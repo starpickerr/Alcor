@@ -79,12 +79,8 @@ def _merge_threads(candidates: Sequence[SelectedCandidate]) -> list[SelectedCand
 
 class NeedModel(Exception):
     def __init__(self, task, rules, schema, entries):
-        if 'decisions' in schema.get('properties', {}):
-            item = schema['properties']['decisions']['items']
-            item.pop('allOf', None)
-            item['properties']['score'].pop('minimum', None)
-            item['properties']['score'].pop('maximum', None)
-        self.request = {'task': task, 'rules': rules, 'schema': schema, 'entries': entries}
+        self.request = {'task': task, 'rules': rules, 'schema': schema,
+                        'submitSchema': submission_schema(), 'entries': entries}
 
 
 class ResultTool:
@@ -160,15 +156,26 @@ def decision_schema():
             "reason": {"type": "string"}, "section": {"type": "string", "enum": ["action", "fyi"]},
             "category": {"type": "string", "enum": ["needs_action", "attention", "status_update", "other"]},
             "information_type": {"type": "string", "enum": ["assignment", "grade", "meeting", "material", "competition", "announcement", "action", "information"]},
-            "score": {"type": "integer", "minimum": 0, "maximum": 100}, "summary": {"type": "string"},
+            "score": {"type": "integer"}, "summary": {"type": "string"},
             "calendar": {"type": "object", "description": "仅会议或活动明确给出实际开始与结束时间时填写。截止时间不是日程时间。时间须带时区，仅提出待确认建议。", "properties": {
                 "start_at": {"type": "string", "description": "ISO 8601 含时区"},
                 "end_at": {"type": "string", "description": "可选，ISO 8601 含时区"},
                 "all_day": {"type": "boolean"}}},
         }, "required": ["id", "selected", "reason"],
-        "allOf": [{"if": {"properties": {"selected": {"const": True}}, "required": ["selected"]},
-                   "then": {"required": ["section", "score", "summary"]}}],
     }}}, "required": ["decisions"]}
+
+
+def submission_schema():
+    schema = decision_schema()
+    schema['properties'].update({
+        'body': {'type': 'string'},
+        'source_item_ids': {'type': 'array', 'items': {'type': 'string'}},
+        'reports': {'type': 'array', 'items': {'type': 'object', 'properties': {
+            'id': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['id', 'content']}},
+    })
+    # Each stage enforces its own required fields and exact IDs at submission.
+    schema.pop('required')
+    return schema
 
 
 def decision_task(batch, window_start, window_end):
@@ -212,6 +219,18 @@ def rules_document(rules):
     return rule_text
 
 
+def source_entry(item, email):
+    return {"id": item.id, "source": item.source, "account_id": item.account_id,
+            "source_id": item.source_id, "thread_id": item.thread_id,
+            "sender": item.sender, "sender_email": email.sender_email if email else "",
+            "list_id": email.list_id if email else "", "list_unsubscribe": bool(item.payload.get("list_unsubscribe")),
+            "title": item.title, "snippet": item.snippet,
+            "occurred_at": item.occurred_at, "url": item.url,
+            "body": str(item.payload.get("body") or item.snippet),
+            "metadata": {key: value for key, value in item.payload.items() if key != "body"},
+            "body_available": "body" in item.payload}
+
+
 class AgentBriefingGenerator:
     def __init__(self, submissions, *, global_mode=False):
         self.submissions = iter(submissions)
@@ -235,15 +254,7 @@ class AgentBriefingGenerator:
         entries, by_id = [], {}
         for item, email in rows:
             by_id[item.id] = item
-            entries.append({"id": item.id, "source": item.source, "account_id": item.account_id,
-                "source_id": item.source_id, "thread_id": item.thread_id,
-                "sender": item.sender, "sender_email": email.sender_email if email else "",
-                "list_id": email.list_id if email else "", "list_unsubscribe": bool(item.payload.get("list_unsubscribe")),
-                "title": item.title, "snippet": item.snippet,
-                "occurred_at": item.occurred_at, "url": item.url,
-                "body": str(item.payload.get("body") or item.snippet),
-                "metadata": {key: value for key, value in item.payload.items() if key != "body"},
-                "body_available": "body" in item.payload})
+            entries.append(source_entry(item, email))
         entries_by_id = {row["id"]: row for row in entries}
         decisions = dict(preserved_decisions or {})
         global_result = None
@@ -251,14 +262,8 @@ class AgentBriefingGenerator:
         # incremental windows retain bounded, durable checkpoints in the same Agent.
         if (self.global_mode and entries and not decisions and not preserved_reports and not previous_reports
                 and len(entries) <= 20 and len(json.dumps(entries, ensure_ascii=False)) <= 24000):
-            schema = decision_schema()
-            schema['properties'].update({
-                'body': {'type': 'string'},
-                'source_item_ids': {'type': 'array', 'items': {'type': 'string'}},
-                'reports': {'type': 'array', 'items': {'type': 'object', 'properties': {
-                    'id': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['id', 'content']}},
-            })
-            schema['required'] += ['body', 'source_item_ids', 'reports']
+            schema = submission_schema()
+            schema['required'] = list(schema['properties'])
             ids = [row['id'] for row in entries]
             tool = ResultTool('briefing_global_result', schema,
                 lambda payload: validate_decisions(payload, ids))

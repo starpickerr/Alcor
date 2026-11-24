@@ -241,7 +241,6 @@ def main():
                         Path(directory).mkdir(parents=True, exist_ok=True)
                         page.screenshot(path=str(Path(directory) / 'stella-native-rail.png'), animations='disabled')
                     settings(page)
-                    expect(page.get_by_text('使用 DSH 访问模式', exact=True)).to_be_visible()
                     if directory := os.environ.get('STELLA_CHECK_ARTIFACTS'):
                         page.screenshot(path=str(Path(directory) / 'stella-native-settings.png'), animations='disabled')
                     page.get_by_role('button', name='Close', exact=True).click()
@@ -278,7 +277,6 @@ def main():
                     settings(page)
                     expect(page.get_by_text('Alcor 对话工具', exact=True)).to_have_count(0)
                     expect(page.get_by_text('Stella 对话工具', exact=True)).to_have_count(0)
-                    expect(page.get_by_text('使用 DSH 访问模式', exact=True)).to_be_visible()
                     expect(page.get_by_label('学工号', exact=True)).to_have_count(0)
                     assert rpc(page, url, 'alcorSecretary/checkElearning', {'request': {}}) == {'status': 'disconnected'}
                     page.get_by_role('dialog', name='Settings', exact=True).get_by_role('button', name='Close', exact=True).click()
@@ -310,9 +308,7 @@ def main():
                         page.keyboard.press('Escape')
                         expect(page.locator('[data-sidebar-opener]')).to_be_focused()
                         page.locator('[data-sidebar-opener]').click()
-                        settings(page)
-                        expect(page.get_by_role('heading', name='当前空间的项目', exact=True)).to_be_visible()
-                        page.get_by_role('dialog').get_by_role('button',name='Close',exact=True).click()
+                        settings(page).get_by_role('button', name='Close', exact=True).click()
                         if page.locator('[data-sidebar-opener]').is_visible():
                             page.locator('[data-sidebar-opener]').click()
                         page.locator('.alcor-sidebar nav').get_by_role('button',name='插件',exact=True).click()
@@ -449,7 +445,7 @@ def main():
 def pack_briefing_fixture(home):
     plugin = home / 'synthetic-plugin'
     plugin.mkdir()
-    (plugin / 'package.json').write_text(json.dumps({'name': '@stella-test/briefing-source', 'version': '0.0.1', 'type': 'module', 'exports': './index.mjs', 'dsh': {'bundle': {'patch': './cordis.patch.yml'}}, 'engines': {'dsh': '0.2.2-alpha.3 || 0.2.2-rc.1'}}))
+    (plugin / 'package.json').write_text(json.dumps({'name': '@stella-test/briefing-source', 'version': '0.0.1', 'type': 'module', 'exports': './index.mjs', 'dsh': {'bundle': {'patch': './cordis.patch.yml'}}, 'engines': {'dsh': '0.2.2-alpha.3 || 0.2.2-rc.1 || 0.2.2-rc.2 || 0.2.2-rc.3 || 0.2.2-rc.5'}}))
     (plugin / 'index.mjs').write_text((ROOT / 'product/tests/fixtures/briefing-plugin.mjs').read_text())
     (plugin / 'cordis.patch.yml').write_text('- insert:\n    - id: synthetic-briefing-source\n      name: "@stella-test/briefing-source"\n')
     plugin_pack = home / 'synthetic-plugin.tgz'

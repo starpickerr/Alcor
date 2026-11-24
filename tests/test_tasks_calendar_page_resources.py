@@ -10,7 +10,7 @@ from core.plugins.pages import resolve_page_html
 
 def _package_root(domain: str) -> Path:
     workspace = Path(f"stella-plugins-workspace/plugins/{domain}")
-    sibling = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / domain
+    sibling = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / domain
     if workspace.is_dir() and (workspace / "plugin.json").is_file():
         return workspace.resolve()
     if sibling.is_dir():

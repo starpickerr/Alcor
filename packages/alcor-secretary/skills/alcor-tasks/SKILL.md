@@ -23,6 +23,8 @@ description: 管理 Alcor 事务：新增、查询、完成、修改待办和重
 {"domain":"tasks","method":"list_todos","arguments":{"include_completed":false}}
 ```
 
+列表返回 items、total、next_offset。每页默认 20 条，在 arguments 中传 offset 和 limit（1 至 50）翻页。按 ID 查询详情。
+
 检查重复事务时用 `include_completed:true` 查询，按返回的标题、课程或来源、截止时间、重复序列和父子关系核对候选；同名的循环任务历史或不同来源不直接判为重复。先报告候选和依据，用户未要求合并或删除时不修改数据。
 
 从返回结果取得真实 ID。`get_todo` 传 todo_id；`update_todo` 传 todo_id 和 payload（仅修改字段）；`complete_todo` 传 todo_id 和 completed 布尔值。重复事务的完成由服务推进下一次，不把原序列直接改成永久完成。

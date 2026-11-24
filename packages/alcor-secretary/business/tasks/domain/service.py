@@ -1132,8 +1132,8 @@ class TodoService(AppleContract):
                 raise ValueError('已推进的重复提醒请在 Apple 中恢复对应历史记录')
             with self._connect() as db:
                 self._apple_guard(db,'item',old['id'],'can_modify')
-                self._apple_queue(db,'item',old['id'],'complete',{'completed':completed,'occurrence_on':old['due_on']})
-            return self.get_todo(old['id'])
+                operation = self._apple_queue(db,'item',old['id'],'complete',{'completed':completed,'occurrence_on':old['due_on']})
+            return {**self.get_todo(old['id']), 'queued_completion_id': operation['operation_id']}
         if old["source_type"] == "apple_reminder":
             if occurrence:
                 raise ValueError('Apple reminder completion requires its current source item')

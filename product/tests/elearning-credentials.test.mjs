@@ -1,3 +1,4 @@
+import { loadSourceModule } from './source-test-modules.mjs'
 import { assertPrivatePermissions } from './private-permissions.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -11,9 +12,9 @@ import Authorization from '@deepseek-ai/dsh-authorization'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
 import * as Executor from '@deepseek-ai/dsh-tool-executor-native'
-import Elearning, { accountKey } from '../../packages/alcor-secretary/src/elearning.js'
 
 test('eLearning uses native DSH credentials, rotates and revokes the live MCP, and survives restart', async t => {
+  const { default: Elearning, accountKey } = await loadSourceModule(t, 'elearning', 'elearning.js')
   const folder = await mkdtemp(join(tmpdir(), 'stella-native-credentials-'))
   t.after(() => rm(folder, { recursive: true, force: true }))
   const filename = join(folder, '.credentials.yaml')
@@ -42,6 +43,7 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   await ctx.credentials.set(credentialRef('UNRELATED_MODEL_API_KEY'), 'synthetic-model-key')
   await ctx.alcorElearning.save({ username: 'first-account', password: 'first-synthetic-secret' })
   assert((await ctx.alcorElearning.state()).connected)
+  assert.equal((await ctx.alcorElearning.checkConnection()).status, 'ready')
   assert.deepEqual(await ctx.alcorElearning.state(), { installed: true, configured: true, connected: true, writable: true })
   assert.equal((await ctx.alcorElearning.state({ includeUsername: true })).username, 'first-account')
   const source = await ctx.alcorElearning.briefingSource()
@@ -88,9 +90,9 @@ test('eLearning uses native DSH credentials, rotates and revokes the live MCP, a
   assert.equal((await ctx.credentials.resolve(credentialRef('UNRELATED_MODEL_API_KEY'))).value, 'synthetic-model-key')
 })
 
-test('school connection checks distinguish safe failure categories without showing raw errors', async () => {
-  const { checkConnection } = await import('../../packages/alcor-secretary/src/elearning.js')
-  const { checkMessage } = await import('../../packages/alcor-secretary/src/elearning-status.js')
+test('school connection checks distinguish safe failure categories without showing raw errors', async t => {
+  const { checkConnection } = await loadSourceModule(t, 'elearning', 'elearning.js')
+  const { checkMessage } = await import('../../packages/alcor-plugin-info/src/elearning-status.js')
   const check = result => checkConnection({ tools: { executable: () => true, execute: async () => ({ results: [{ result }] }) } })
   for (const code of ['browser_unavailable', 'network_error', 'login_form_error', 'login_timeout', 'login_required', 'permission_denied']) {
     const result = await check({ isError: true, error: { message: JSON.stringify({ error_code: code, message: 'synthetic-secret' }) } })

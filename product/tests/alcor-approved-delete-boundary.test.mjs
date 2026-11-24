@@ -18,14 +18,14 @@ import * as Ptc from '@deepseek-ai/dsh-tool-executor-ptc'
 import { createDeletePageHost } from '../../packages/alcor-secretary/src/delete-page-host.js'
 import { apply } from '../../packages/alcor-secretary/src/tools.js'
 import { remote as organizerRemote } from '../../packages/alcor-organizer/src/remote.js'
-import { remote as appleRemote } from '../../packages/alcor-apple-sync/src/remote.js'
+import { remote as appleRemote } from '../../../dsh-apple-sync/src/remote.js'
 
 let Organizer, AppleSync, output
 before(async () => {
   output = await mkdtemp(join(process.cwd(), '.alcor-approved-delete-build-'))
   for (const [name, source] of [['organizer', 'alcor-organizer'], ['apple', 'alcor-apple-sync']]) {
     const outfile = join(output, name + '.mjs')
-    await build({ entryPoints: [`packages/${source}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
+    await build({ entryPoints: [name === 'apple' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/${source}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
     const Klass = (await import(pathToFileURL(outfile))).default
     if (name === 'organizer') Organizer = Klass; else AppleSync = Klass
   }
@@ -184,6 +184,30 @@ test('plan is frozen; changed parameters, policy, turn, provider or owner versio
   assert.equal((await frozen.call()).isError, false); assert.match(frozen.state.asks[0].reason, /Synthetic target/)
 })
 
+test('only a known Apple ticket failure with a matching durable receipt can report a queued delete', async t => {
+  const ticketError = '删除审批无效或已消费。'
+  for (const [message, match] of [['Other Apple error', true], [ticketError, false]]) {
+    const f = await fixture(t, 'native', 'apple')
+    const read = f.owner.businessWorker.call.bind(f.owner.businessWorker)
+    let reads = 0
+    f.owner.businessWorker.call = async (action, input) => {
+      if (action === 'prepare_delete_receipt' && input.confirmed_fingerprint) {
+        reads++
+        return { replayed: true, operation_id: input.operation_id, state: 'pending',
+          confirmed_fingerprint: match ? input.confirmed_fingerprint : 'different' }
+      }
+      return read(action, input)
+    }
+    f.apple.commitApprovedDelete = async () => { throw new Error(message) }
+    const result = await f.call()
+    assert.equal(result.isError, true)
+    assert.ok(JSON.stringify(result).includes(message))
+    assert.equal(reads, message === ticketError ? 1 : 0)
+    assert.equal(f.state.ownerWrites, 1)
+    assert.equal(f.state.nativeSends, 0)
+  }
+})
+
 test('Host retains one grant for worker retry requests; unknown response is not retried (unsent proof belongs to Python)', async t => {
   const retry = await fixture(t, 'native', 'apple'); retry.state.safeRetry = true
   assert.equal((await retry.call()).isError, false); assert.equal(retry.state.asks.length, 1); assert.equal(retry.state.attempts, 2); assert.equal(retry.state.nativeSends, 1)
@@ -206,6 +230,20 @@ test('revocation between owner queue and native dispatch does not send; owner ro
 test('completed or pending replay is read-only, never a fresh dispatch grant', async t => {
   const f = await fixture(t, 'native', 'apple'); f.state.receipt = { replayed: true, operation_id: 'synthetic-prior', state: 'uncertain', pending: true, targetConflict: false }
   const result = await f.call(); assert.equal(result.isError, false); assert.equal(f.state.asks.length, 0); assert.equal(f.state.ownerWrites, 0); assert.equal(f.state.nativeSends, 0)
+})
+
+test('reassigning Apple to DSH during deletion approval prevents both writes', async t => {
+  const { owner, state, call } = await fixture(t, 'native', 'apple')
+  let productScope = 'alcor'
+  const get = owner.ctx.get
+  owner.ctx.get = name => name === 'configEditor'
+    ? { entries: () => [{ options: { id: 'alcor-apple-sync', config: { productScope } } }] }
+    : get(name)
+  state.beforeAnswer = () => { productScope = 'dsh' }
+  assert.equal((await call()).isError, true)
+  assert.equal(state.asks.length, 1)
+  assert.equal(state.ownerWrites, 0)
+  assert.equal(state.nativeSends, 0)
 })
 
 test('private methods are absent from Remote descriptors; public direct deletion and page ticket remain non-authorizing', async t => {

@@ -9,7 +9,7 @@ const runtime=join(app,'Contents/Resources/app.asar/dsh/node_modules/@deepseek-a
 assert.equal(JSON.parse(readFileSync(runtime+'dsh-app-boot/package.json')).version,'0.2.2-rc.1')
 const { loadOverlayPatches, composeEntries }=await import(pathToFileURL(runtime+'dsh-app-boot/lib/index.js'))
 const root=new URL('../../',import.meta.url).pathname
-const names=['apple-sync','secretary','elearning','mail','agent-hub']
+const names=['apple-sync','secretary','elearning','mail']
 const load=path=>loadOverlayPatches('synthetic',path)
 const base=load(runtime+'dsh-base/cordis.patch.yml'),web=load(runtime+'dsh-web-app/cordis.patch.yml')
 const alcor=names.map(n=>load(root+'packages/alcor-'+n+'/cordis.patch.yml'))

@@ -199,7 +199,7 @@ def test_standard_mcp_different_schema_is_mapped_once_for_all_consumers(
     package = tmp_path / 'generic-source-package'
     package.mkdir()
     shutil.copy2(Path(__file__).parent / 'fixtures/generic_data_mcp.py', package / 'server.py')
-    shutil.copy2(root / 'MCP/email-mcp/requirements.lock', package / 'requirements.lock')
+    shutil.copy2(root / 'dsh-email/requirements.lock', package / 'requirements.lock')
     config = {
         "name": "generic-source",
         "type": "stdio",

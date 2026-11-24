@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'packages/alcor-secretary'))
-sys.path.insert(0, str(ROOT / 'packages/alcor-apple-sync/python'))
+sys.path.insert(0, str(ROOT / '../dsh-apple-sync/python'))
 
 from business.calendar.domain.service import CalendarService
 from business.tasks.domain.service import TodoService

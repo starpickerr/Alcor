@@ -4,8 +4,8 @@ import { OrganizerDetails } from './organizer-details.jsx'
 import { recordClipboardText, recordEditTarget, recordId, recordRepeats } from './organizer-actions.js'
 import { taskCompletion } from './task-focus.js'
 import React, { useEffect, useRef, useState } from 'react'
-import { Button, Modal, IconUsersOutlineRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, Menu, MenuItemButton, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
-import { localDate } from './presentation.js'
+import { Button, Modal, IconUsersOutlineRegular, IconFolderOpenRegular, IconChecklistOutlineRegular, IconDeliverDocRegular, IconAlarmClockOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, Menu, MenuItemButton, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
+import { localDate, taskMatches } from './presentation.js'
 import { BillsPage, BillEditor } from './bills.jsx'
 import { TasksPage } from './tasks-page.jsx'
 import { CalendarPage, Categories } from './calendar-page.jsx'
@@ -23,6 +23,7 @@ export const applicationViews = [
   { id: 'alcor-calendar', label: '日程', icon: CalendarIcon },
   { id: 'alcor-briefing', label: '简报', icon: IconDeliverDocRegular },
   { id: 'alcor-bills', label: '账单', icon: BillIcon },
+  { id: 'alcor-knowledge', label: '知识库', icon: IconFolderOpenRegular },
   { id: 'alcor-schedules', label: '自动化', icon: IconAlarmClockOutlineRegular },
 ].map(item => ({ ...item, group: '应用' }))
 
@@ -32,11 +33,13 @@ const kindFor = { 'alcor-tasks': 'task', 'alcor-calendar': 'event', 'alcor-brief
 const titles = { task: '事务', event: '日程', bill: '账单' }
 
 export function BusinessDesk({ view, api, currentSession, startSession, openSession }) {
+  const [taskView, setTaskView] = useState('today')
   const [data, setData] = useState({ records: [], jobs: [], schedules: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [completing, setCompleting] = useState(null)
   const [editor, setEditor] = useState(null)
   const pendingBillDelete = useRef(null), billDeleteEpoch = useRef(0), billDeleteInFlight = useRef(false)
   useEffect(() => () => {
@@ -82,7 +85,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   }, [api])
   async function run(operation, success = '已保存') {
     setBusy(true); setError(''); setNotice('')
-    try { const value = await unwrap(operation()); await refresh(); setNotice(success); return value ?? true }
+    try { const value = await unwrap(operation()); await refresh(); setNotice(typeof success === 'function' ? success(value) : success); return value ?? true }
     catch (failure) { setError(failure.message || '操作失败，请刷新核对。'); return null }
     finally { setBusy(false) }
   }
@@ -139,7 +142,16 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
     }
     return record.kind==='task' ? mutate('tasks','set_todo_category',{todo_id:recordId(record),category_id},'清单已更新') : mutate('calendar','set_event_category',{id:recordId(record),category_id},'日历已更新')
   }
-  const completeRecord = record => mutate('tasks','complete_todo',taskCompletion(record.kind==='task' && record.id.startsWith('task:') ? {...record,id:record.business.id} : record),'事务状态已更新')
+  async function completeRecord(record) {
+    const args = taskCompletion(record.id.startsWith('task:') ? { ...record, id: record.business.id } : record)
+    setCompleting(args.todo_id)
+    try {
+      return await mutate('tasks', 'complete_todo', args, value => {
+        if (value?.apple_pending?.some(operation => operation.action === 'complete')) return ''
+        return args.completed ? '已完成' : '已恢复为未完成'
+      })
+    } finally { setCompleting(null) }
+  }
 
   function toggleArchive(record) { return run(() => api.archive({ id: record.id, expectedRevision: record.revision, archived: !record.archived }), record.archived ? '已恢复' : '已归档') }
   function download(content, name, type) {
@@ -149,13 +161,17 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
   const primary = kind === 'task' ? '新建事务' : null
   const editorKind = editor?.id ? editor.kind : kind === 'event' ? creationType : kind
   function newItem() {
-    if (kind === 'task' || kind === 'event') create()
-
+    requestPanel(() => {setDetails(null); setEditor(taskView === 'today' ? { planned_on: localDate() } : {})})
   }
   const editorContent = <>
       {kind === 'event' && editor !== null && !editor.id && <SegmentedControl id="calendar-create-type" label="创建类型" value={creationType} onChange={setCreationType} options={[{value:'event',label:'日程'}, {value:'task',label:'事务'}]} />}
       {editor !== null && <>
-        {(kind === 'task' || kind === 'event' && (!editor.id || editor.kind === 'task')) && <div hidden={editorKind !== 'task'}><TaskEditor key={editor.id ?? 'new-task'} record={editor.id ? editor : undefined} draft={editor} calendar={kind === 'event'} categories={taskCategories} busy={busy} onDirty={() => setEditorDirty(true)} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('tasks', editor.id ? 'update_todo' : 'create_todo', editor.id ? { todo_id: editor.id, payload } : { payload })) setEditor(null) }} /></div>}
+        {(kind === 'task' || kind === 'event' && (!editor.id || editor.kind === 'task')) && <div hidden={editorKind !== 'task'}><TaskEditor key={editor.id ?? 'new-task'} record={editor.id ? editor : undefined} draft={editor} calendar={kind === 'event'} categories={taskCategories} busy={busy} onDirty={() => setEditorDirty(true)} cancel={() => requestPanel(() => setEditor(null))} save={async payload => {
+          const saved = await mutate('tasks', editor.id ? 'update_todo' : 'create_todo', editor.id ? { todo_id: editor.id, payload } : { payload })
+          if (!saved) return
+          if (kind === 'task' && !editor.id && !taskMatches({ due: saved.due_on, business: saved }, taskView, new Date())) setTaskView('all')
+          setEditor(null)
+        }} /></div>}
         {kind === 'event' && (!editor.id || editor.kind === 'event') && <div hidden={editorKind !== 'event'}><CalendarEditor key={editor.id ?? 'new-event'} record={editor.id ? editor : undefined} draft={editor} categories={categories} busy={busy} onDirty={() => setEditorDirty(true)} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('calendar', editor.id ? 'update_event' : 'create_event', editor.id ? { id: editor.id, patch: payload } : payload)) setEditor(null) }} /></div>}
         {kind === 'bill' && <BillEditor key={editor.id ?? 'new'} record={editor.id ? editor : undefined} busy={busy} cancel={() => requestPanel(() => setEditor(null))} save={async payload => { if (await mutate('bills', editor.id ? 'update_ledger' : 'create_ledger', editor.id ? { id: editor.id, patch: payload, expectedRevision: editor.business.revision } : payload)) setEditor(null) }} remove={async () => { if (billDeleteInFlight.current) return; billDeleteInFlight.current = true; const epoch = billDeleteEpoch.current; try { const result = await run(async () => {
           const preview = await unwrap(api.preparePageDelete({ domain: 'bills', kind: 'item', id: editor.id, expectedRevision: editor.business.revision }))
@@ -168,7 +184,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       {error && <Notice tone="error">{error}</Notice>}
   </>
   const panelOpen = ['event','task'].includes(kind) && (details !== null || editor !== null)
-  const taskPageProps = {commitDelete,records,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args) => mutate('tasks',method,args,method === 'delete_todo' ? '已删除' : '已保存'),api,reloadKey,busy,loading,error}
+  const taskPageProps = {commitDelete,records,view:taskView,setView:setTaskView,categories:taskCategories,select:(record,remove,trigger) => record ? inspect(record,remove,undefined,trigger) : requestPanel(() => {setEditor(null);setDetails(null)}),copy:copyRecord,move:moveRecord,edit:editRecord,toggle:completeRecord,mutate:(method,args,success) => mutate('tasks',method,args,success ?? (method === 'delete_todo' ? '已删除' : '已保存')),api,reloadKey,busy,completing,loading,error}
   const taskDetail = details?.record.kind === 'task' ? data.records.find(item => item.kind === 'task' && item.id === recordId(details.record)) ?? details.record : null
   const panelTitle = editor !== null ? `${editor.id ? '编辑' : '新增'}${titles[editorKind]}` : details?.record.kind === 'task' ? '事务详情' : '日程详情'
   const focused = editor ?? details?.record
@@ -186,7 +202,7 @@ export function BusinessDesk({ view, api, currentSession, startSession, openSess
       {kind === 'task' && <div className="alcor-task-workspace"><TasksPage {...taskPageProps} selectedRecord={editor ?? details?.record} /></div>}
       {kind === 'event' && <CalendarPage commitDelete={commitDelete} selectedRecord={editor ?? details?.record} archive={toggleArchive} archived={false} templates={data.records.filter(item => ['event', 'task'].includes(item.kind))} taskCategories={taskCategories} toggle={completeRecord} edit={editRecord} inspect={inspect} copy={copyRecord} move={moveRecord} taskMutate={(method,args) => mutate('tasks',method,args)} create={create} busy={busy} loading={loading} api={api} mutate={(method, args) => mutate('calendar', method, args)} categories={categories} reloadKey={reloadKey} manage={calendarManage} setManage={setCalendarManage} />}
       {panelOpen && <OrganizerRecordPanel title={panelTitle} focusKey={`${editor ? 'edit' : 'view'}:${editor?.id ?? details?.record.id ?? 'new'}`} trigger={panelTrigger} editing={editor !== null} busy={busy} close={() => requestPanel(() => {setEditor(null);setDetails(null)})}>
-        {editor !== null ? <div className="alcor-calendar-panel-editor">{editorContent}</div> : kind === 'task' ? <TasksPage {...taskPageProps} detailRecord={taskDetail} /> : <OrganizerDetails inline value={details} groups={details?.record.kind === 'task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
+        {editor !== null ? <div className="alcor-calendar-panel-editor">{editorContent}</div> : kind === 'task' ? <TasksPage {...taskPageProps} detailRecord={taskDetail} selectedRecord={details?.record} /> : <OrganizerDetails inline value={details} groups={details?.record.kind === 'task' ? taskCategories : categories} busy={busy} close={() => setDetails(null)} edit={editRecord} complete={completeRecord} error={error} />}
       </OrganizerRecordPanel>}
     </div>}
     {kind === 'bill' && <BillsPage records={data.records.filter(item => item.kind === 'bill')} api={api} reloadKey={reloadKey} edit={edit} create={() => create()} archive={toggleArchive} download={download} busy={busy} loading={loading} icon={<BillIcon size={32} />} />}

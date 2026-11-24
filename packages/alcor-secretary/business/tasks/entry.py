@@ -151,7 +151,7 @@ def _complete_scheduler_link(svc: TodoService, params: dict[str, Any]) -> dict[s
     return {"todo_id": todo_id, "outcome": outcome}
 
 
-def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
+def handle_invoke(invoke_params: dict[str, Any], *, on_error=None) -> dict[str, Any]:
     method = invoke_params["method"]
     spec = METHODS.get(method)
     if spec is None:
@@ -184,11 +184,19 @@ def handle_invoke(invoke_params: dict[str, Any]) -> dict[str, Any]:
         elif method == "sync_briefing_facts":
             value = list(value)
     except KeyError as exc:
+        if on_error is not None:
+            on_error(exc)
         return _fail("not_found", str(exc.args[0]) if exc.args else "not found")
     except ValueError as exc:
+        if on_error is not None:
+            on_error(exc)
         text = str(exc)
         code = "conflict" if "conflict" in text or text.startswith("unfinished_dependencies") else "invalid_argument"
         return _fail(code, text)
+    except Exception as exc:
+        if on_error is not None:
+            on_error(exc)
+        return _unexpected(exc, read_only=effect == "query")
     if effect == "query":
         return _ok(value)
     return {
@@ -205,3 +213,22 @@ def _ok(value: Any) -> dict[str, Any]:
 
 def _fail(code: str, message: str) -> dict[str, Any]:
     return {"status": "failed", "sideEffects": "none", "error": {"code": code, "message": message}}
+
+
+def _unexpected(error, *, read_only):
+    # Unknown writes may already have committed; never invite an automatic retry.
+    import sqlite3
+    if isinstance(error, PermissionError):
+        code, message = 'resource_permission_denied', '插件资源访问被拒绝，请核对资源授权及系统目录权限；不能据此认定需要更改 DSH 审批策略。'
+    elif isinstance(error, FileNotFoundError):
+        code, message = 'local_path_missing', '插件需要的本地文件或程序不存在，请检查插件安装、数据目录及配置路径。'
+    elif isinstance(error, sqlite3.Error):
+        code, message = 'storage_error', '插件数据库操作失败，请检查数据目录权限、磁盘空间及其他实例占用；保留数据库和备份，不要删除数据库重试。'
+    elif isinstance(error, OSError):
+        code, message = 'io_error', '插件读写或外部连接失败，请检查磁盘空间、系统目录权限、网络与代理。'
+    else:
+        code, message = 'plugin_internal_error', '插件发生未分类错误，请核对插件版本与日志；不能据此认定为账号或审批问题。'
+    if not read_only:
+        message += ' 本次写入结果尚未确认，请先刷新核对，勿直接重复执行。'
+    return {'status': 'failed' if read_only else 'unknown', 'sideEffects': 'none' if read_only else 'unknown',
+            'error': {'code': code, 'message': message}}

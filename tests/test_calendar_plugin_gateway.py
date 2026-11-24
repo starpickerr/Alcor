@@ -154,12 +154,12 @@ def test_default_plugins_and_catalog_list_calendar():
     assert "stella.calendar" in ids
 
     catalog = json.loads(
-        (Path("..") / "Stella-Plugins" / "catalog" / "official.json").read_text(encoding="utf-8")
-    ) if (Path("..") / "Stella-Plugins" / "catalog" / "official.json").is_file() else None
+        (Path("stella-plugins-workspace") / "catalog" / "official.json").read_text(encoding="utf-8")
+    ) if (Path("stella-plugins-workspace") / "catalog" / "official.json").is_file() else None
     if catalog is None:
         pytest.skip("Stella-Plugins sibling checkout not present")
     entry = next(p for p in catalog["plugins"] if p["pluginId"] == "stella.calendar")
-    root = (Path("..") / "Stella-Plugins" / "catalog" / entry["path"]).resolve()
+    root = (Path("stella-plugins-workspace") / "catalog" / entry["path"]).resolve()
     assert verify_package_digest(root, entry["sha256"])
 
 

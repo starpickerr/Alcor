@@ -4,6 +4,8 @@
 
 ## 插件管理入口与封装方向
 
+邮件 `@alcor/mail` 和复旦 eLearning `@alcor/elearning` 从 0.2.0 起在各自服务仓的 `plugin/` 目录开发和打包。可在官方 DSH Desktop 0.2.2-rc.5 的原生插件页单独配置。安装 Alcor 后，简报使用原有连接和账号标识。插件沿用 DSH 凭据键与既有存储路径，连接设置仅接受本机所有者的调用。
+
 Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Profile、插件生命周期、配置和 `pluginManager/listBundles` 的访问检查；不另建安装器、账号表单或工具授权列表。
 
 本机 Profile 已完成跨包迁移；安装版本以实际 Profile 为准，每个来源只启用一个版本。当前 eLearning 开发候选为 `@alcor/elearning@0.1.12`，冻结独立 MCP 1.0.8；邮件 MCP 为 1.0.6。Bundle 管理安装、启停、配置、原生凭据与 MCP Client，不依赖开发目录或用户另装 Python。学校连接复用现有适配器和课程来源身份，候选凭据键为 `alcor-elearning/account`；邮件候选键为 `alcor-email/accounts`，多邮箱编辑保留其他账号。旧键必须先通过受控离线迁移核验，不能直接安装新包后假设账号已迁入。账号表单始终展开，测试连接位于各表单下方；已保存授权码以固定星号占位，空值保留原授权码。不同表单的未提交编辑保留原版本，冲突时拒绝覆盖并允许撤销修改。两包均不安装 DSH 核心组件。
@@ -14,7 +16,7 @@ Alcor 侧栏「插件」直接打开宿主原生插件页面。保留当前 Prof
 
 邮件 DSH 模式只发布 `list_accounts`、`list_sources`、`get_cursors`、`fetch_messages`、`test_connection`、`list_folders`；账号增删不作为 MCP 工具，且禁止伪造管理调用。账号密码仅来自当前 DSH 记录，MCP 忽略旧数据库账号和环境默认密码，业务库只保存游标。读取采用只读 IMAP，不标已读、不发送或删除邮件。停用插件关闭连接、撤销工具，保留凭据与历史数据；移除账号后阻断后续访问。
 
-构建：`npm run product:sources:pack`，版本来自各包 package.json。依赖与源码摘要在 `source-releases.lock.json` 固定，修改来源后先验证再更新锁。冻结库在入包时解除符号链接，防止 npm 省略运行库；保留运行依赖许可证。
+在任一服务仓的 `plugin/` 中运行 `npm pack`，也可从 Alcor 运行 `npm run product:sources:pack` 构建两个包。`source-releases.lock.json` 固定 Alcor 消费的插件 Tag 和相应的 MCP 来源。CI 先发布两个独立插件 Tag，再使用这两个 Tag 验证 Alcor。冻结库在入包时解除符号链接，并保留运行依赖许可证。
 
 学校 1.0.8 开发候选基于学校仓库 `40683b5`，包含未提交的下载与作业提交实现；锁中的 `sourceState: working-tree` 明确此状态，sourceRevision 仅标记基线，准确输入以源码摘要为准。正式发布前应在获得提交授权后固定最终提交。邮件 1.0.6 对应邮件仓库提交 `7bb82f44f8c16d9b5494ed2748994a3ded4d98c2`。两处源码均以 `product/source-releases.lock.json` 中的摘要校验。
 

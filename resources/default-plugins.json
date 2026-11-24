@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Default first-party plugin bootstrap list (D22). Bytes are fetched from Stella-Plugins; Core DMG does not embed business packages.",
+  "description": "Default retained first-party plugins; source lives in stella-plugins-workspace.",
   "plugins": [
     {
       "pluginId": "stella.bills",
@@ -51,16 +51,6 @@
         "automation"
       ],
       "sourceSha256": "80ea5c374e8deb7ba6d5e78000f0e98a313d1888d26f9839225f568cc77abab2"
-    },
-    {
-      "pluginId": "stella.agent-hub",
-      "catalogRef": "official/stella.agent-hub",
-      "versionRange": "^1.0.0",
-      "defaultEnabled": true,
-      "requiredFor": [
-        "agent-hub"
-      ],
-      "sourceSha256": "3e05691d43c259118a21fe284274ab197624176a4614d89e06240d591504e83c"
     },
     {
       "pluginId": "stella.knowledge",

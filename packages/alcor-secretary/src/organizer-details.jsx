@@ -7,14 +7,14 @@ import { groupName, priorityLabels, recordAlarms, recordMenuEntries, recordPermi
 
 export function useRecordContextMenu() {
   const [target, setTarget] = useState(null)
-  const open = (event, record, anchored = false) => {
+  const open = (event, record) => {
     event.preventDefault(); event.stopPropagation()
     const element = event.target.closest('button, [tabindex]') ?? event.currentTarget
     const rect = element.getBoundingClientRect()
-    const keyboard = anchored || event.type === 'keydown' || (!event.clientX && !event.clientY)
+    const keyboard = event.type === 'keydown' || (!event.clientX && !event.clientY)
     setTarget({ record, element, x: keyboard ? rect.left : event.clientX, y: keyboard ? rect.bottom : event.clientY })
   }
-  return { target, open, showGroups: () => setTarget(value => ({...value,groups:true})), back: () => setTarget(value => ({...value,groups:false})), close: () => setTarget(null), trigger: record => ({
+  return { target, showGroups: () => setTarget(value => ({...value,groups:true})), back: () => setTarget(value => ({...value,groups:false})), close: () => setTarget(null), trigger: record => ({
     onContextMenu: event => open(event, record),
     onKeyDown: event => { if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) open(event, record) },
   }) }
@@ -71,6 +71,7 @@ export function OrganizerDetails({ value, groups, busy, close, edit, complete, e
   const record = value?.record
   const raw = record?.business ?? {}
   const task = record?.kind === 'task'
+  const taskBody = task && record.details?.trim()
   const group = groups.find(item => item.id === raw.category_id)
   const rights = record ? recordPermissions(record, busy) : {}
   const alarms = recordAlarms(raw)
@@ -83,10 +84,17 @@ export function OrganizerDetails({ value, groups, busy, close, edit, complete, e
       {!inline && <header className="alcor-inspector-header"><Button variant="ghost" size="sm" aria-label="关闭简介" disabled={busy} onClick={close}><IconCloseOutlineRegular size={16} /></Button><h2>简介</h2><span /></header>}
       <div className="alcor-inspector-body">
         {error && <Notice tone="error">{error}</Notice>}
-        <section className="alcor-inspector-card alcor-inspector-title" style={{ '--alcor-event-color': group?.color ?? 'var(--alcor-accent)' }}><h3>{record.title}</h3>{record.details && <p className={task ? 'alcor-task-description' : undefined}>{record.details}</p>}{url && (/^https?:\/\//i.test(url) ? <a href={url} target="_blank" rel="noreferrer">{url}</a> : <p>{url}</p>)}</section>
-        {(raw.apple_history || raw.apple_pending?.length > 0 || raw.apple?.can_modify === false) && <Notice role="status">{raw.apple_history ? '已完成的历史记录' : raw.apple_pending?.length ? appleOperationMessage(raw.apple_pending[0]) : 'Apple 来源内容只读'}{raw.apple_pending?.map(item => item.error).filter(Boolean).map(error => <span key={error}>{error}</span>)}</Notice>}
+        <section className="alcor-inspector-card alcor-inspector-title" style={{ '--alcor-event-color': group?.color ?? 'var(--alcor-accent)' }}><h3>{record.title}</h3>{!task && record.details && <p>{record.details}</p>}{url && (/^https?:\/\//i.test(url) ? <a href={url} target="_blank" rel="noreferrer">{url}</a> : <p>{url}</p>)}</section>
+        {(raw.apple_history || raw.apple_pending?.length > 0 || raw.apple?.can_modify === false) && <Notice role="status">{raw.apple_history ? '已完成的历史记录' : raw.apple_pending?.length ? appleOperationMessage(raw.apple_pending[0]) : 'Apple 来源内容只读'}{raw.apple_pending?.filter(item => item.action !== 'complete' && item.error).map(item => <span key={item.id}>{item.error}</span>)}</Notice>}
         {children}
+        {task && <section className="alcor-inspector-card" aria-label="正文">
+          <div className="alcor-inspector-row alcor-task-body">
+            <h3>正文</h3>
+            <p className="alcor-task-description" data-empty={!taskBody || undefined}>{taskBody ? record.details : '暂无正文'}</p>
+          </div>
+        </section>}
         <section aria-label="日期与时间"><h3 className="alcor-inspector-section-title">日期与时间</h3><dl className="alcor-inspector-card">
+          {task && raw.planned_on && <DetailRow label="安排日期" icon="date">{dateTitle(raw.planned_on)}</DetailRow>}
           {task ? <><DetailRow label="日期" icon="date">{dateTitle(record.due ?? raw.due_on)}</DetailRow><DetailRow label="时间" icon="time">{raw.due_time || '未设置时间'}</DetailRow></> : <><DetailRow label="开始" icon="date">{record.allDay ? `${dateTitle(record.start)} · 全天` : timeTitle(record.start)}</DetailRow><DetailRow label={record.allDay ? '结束（不含当天）' : '结束'} icon="time">{record.allDay ? dateTitle(record.end) : timeTitle(record.end)}</DetailRow></>}
           {raw.floating && <DetailRow label="时区" icon="time">浮动时间</DetailRow>}
         </dl></section>

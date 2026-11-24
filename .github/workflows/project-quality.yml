@@ -84,19 +84,14 @@ jobs:
         run: python scripts/check_legacy_sources.py --github-output "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
-          repository: ${{ steps.sources.outputs.plugins_repository }}
-          ref: ${{ steps.sources.outputs.plugins_revision }}
-          path: Stella-Plugins
-      - uses: actions/checkout@v7
-        with:
           repository: ${{ steps.sources.outputs.email_repository }}
           ref: ${{ steps.sources.outputs.email_revision }}
-          path: MCP/email-mcp
+          path: dsh-email
       - uses: actions/checkout@v7
         with:
           repository: ${{ steps.sources.outputs.elearning_repository }}
           ref: ${{ steps.sources.outputs.elearning_revision }}
-          path: MCP/fudan-elearning-mcp
+          path: dsh-fudan-elearning
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:

@@ -1,6 +1,7 @@
 """Independent briefing lifecycle on the unchanged official Desktop; synthetic model/data only."""
 import json
 import os
+import re
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 import threading
 import time
@@ -31,12 +32,15 @@ class Provider(NativeProvider):
             return super().do_POST()
         try:
             names = {tool['function']['name'] for tool in tools}
-            assert names == {'briefing_submit', 'briefing_read'}, 'Unexpected briefing tools: ' + ','.join(sorted(names))
             text = lambda content: content if isinstance(content, str) else '\n'.join(part.get('text', '') for part in content or [])
             prompt = next(text(m['content']) for m in reversed(payload['messages']) if '可阅读的原文数据：' in text(m.get('content')))
             entries = json.loads(prompt.split('可阅读的原文数据：\n')[1])
-            schema = submit['parameters']['properties']
-            kind = 'global' if 'decisions' in schema and 'reports' in schema else 'screen' if 'decisions' in schema else 'body'
+            import re
+            fields = re.search(r'本批字段：([^。]+)。', prompt).group(1).split(', ')
+            routed = '一次提交本批' in prompt
+            assert names == ({'briefing_submit'} if routed else {'briefing_read', 'briefing_submit'})
+            assert set(submit['parameters']['properties']) == ({'decisions'} if routed else {'decisions', 'body', 'reports', 'source_item_ids'})
+            kind = 'global' if 'decisions' in fields and 'reports' in fields else 'screen' if 'decisions' in fields else 'body'
             Provider.batches.append(kind)
             if Provider.hold:
                 Provider.waiting.set()
@@ -44,7 +48,7 @@ class Provider(NativeProvider):
             decisions = [{'id': row['id'], 'selected': True, 'reason': 'Synthetic validation', 'section': 'action', 'score': 80, 'summary': row['title']} for row in entries]
             if kind == 'screen': value = {'decisions': decisions}
             else:
-                ids = [row['id'] for row in entries] if kind == 'global' else schema['source_item_ids']['items']['enum']
+                ids = [row['id'] for row in entries] if kind == 'global' else json.loads(re.search(r'"expected_ids": (\[[^\]]*\])', prompt).group(1))
                 value = {'body': 'Synthetic structured briefing saved through DSH.', 'source_item_ids': ids,
                          'reports': [{'id': identity, 'content': 'Synthetic source report'} for identity in ids]}
                 if kind == 'global': value['decisions'] = decisions
@@ -68,6 +72,7 @@ def business(page, method, arguments=None):
 
 
 def main():
+    desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK', str(desktop.PACK)))
     desktop.verify_release()
     desktop.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
@@ -110,12 +115,28 @@ def main():
                 page.get_by_role('button', name='简报', exact=True).click()
                 page.get_by_role('heading', name='简报', exact=True).wait_for()
                 page.get_by_role('button', name='简报设置', exact=True).click()
+                page.get_by_role('tab', name='生成设置', exact=True).click()
                 page.get_by_role('textbox', name='简报时区', exact=True).fill('Asia/Shanghai')
                 page.get_by_role('button',name='保存时区').click()
                 expect(page.get_by_role('button',name='保存时区')).to_be_disabled()
                 assert business(page,'get_preferences')['time_zone']=='Asia/Shanghai'
                 page.get_by_role('button',name='返回简报').click()
-                page.get_by_role('button', name='生成今日简报', exact=True).click()
+                gate = reads_file.with_name('hold-fetch')
+                gate.touch()
+                try:
+                    page.get_by_role('button', name='生成今日简报', exact=True).click()
+                    progress = page.get_by_role('region', name='简报生成进度', exact=True)
+                    expect(progress.get_by_text('正在采集 1/1：Synthetic plugin inbox', exact=True)).to_be_visible(timeout=15000)
+                    expect(page.locator('.alcor-briefing-detail').get_by_role('region', name='简报生成进度', exact=True)).to_be_visible()
+                    assert business(page, 'generation_status')['completedSources'] == 0
+                    progress.get_by_role('button', name='查看生成进度', exact=True).click()
+                    expect(progress.get_by_text('已采集 0 个来源', exact=True)).to_be_visible()
+                    expect(progress.get_by_role('button', name='查看执行会话 ↗', exact=True)).to_have_count(0)
+                    page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-first-source.png'))
+                finally:
+                    gate.unlink(missing_ok=True)
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
                 deadline = time.monotonic() + 35
                 while not Provider.waiting.is_set() and time.monotonic() < deadline and not Provider.failure:
                     page.wait_for_timeout(100)
@@ -124,13 +145,26 @@ def main():
                 run = business(page, 'generation_status')
                 assert run['phase'] == 'model' and run['completedBatches'] == 0
                 assert run['sessionId'] and 'sources' not in run and 'submissions' not in run
+                expect(progress.get_by_text('已采集 1 个来源', exact=True)).to_be_visible()
+                expect(progress.get_by_text('已完成 0 批处理', exact=True)).to_be_visible()
                 assert len(reads()) == 2
+                history = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})
+                assert history['runs'][0]['sessionId'] == run['sessionId']
+                assert 'conversationSessionId' not in history['runs'][0]
                 page.get_by_role('button', name='事务', exact=True).click()
                 page.get_by_role('button', name='简报', exact=True).click()
                 expect(page.get_by_role('button', name='取消生成', exact=True)).to_be_visible()
                 page.reload()
                 page.get_by_role('heading', name='简报', exact=True).wait_for(timeout=30000)
-                expect(page.get_by_role('button', name='执行详情', exact=True)).to_be_visible()
+                progress = page.get_by_role('region', name='简报生成进度', exact=True)
+                expect(progress).to_be_visible()
+                expect(page.get_by_role('button', name='正在生成…', exact=True)).to_be_disabled()
+                expect(page.locator('.alcor-briefing-detail').get_by_role('region', name='简报生成进度', exact=True)).to_be_visible()
+                expect(page.get_by_role('button', name='查看执行会话 ↗', exact=True)).not_to_be_visible()
+                progress.get_by_role('button', name='查看生成进度', exact=True).click()
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(progress.get_by_role('button', name='查看执行会话 ↗', exact=True)).to_be_visible()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
                 assert business(page, 'generation_status')['requestId'] == run['requestId']
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-running.png'))
                 assert not errors, errors
@@ -142,17 +176,24 @@ def main():
                 expect(page.get_by_role('button', name='继续生成', exact=True)).to_be_visible(timeout=15000)
                 restored = business(page, 'generation_status')
                 assert restored['phase'] == 'interrupted' and restored['completedBatches'] == 0
-                assert Provider.batches == ['global'], 'Restart must not replay requests'
+                assert Provider.batches == ['screen'], 'Restart must not replay requests'
+                page.get_by_role('button', name='关闭提示', exact=True).click()
+                expect(page.get_by_role('region', name='简报生成进度', exact=True)).to_have_count(0)
+                page.reload()
+                expect(page.get_by_role('button', name='继续生成', exact=True)).to_be_visible(timeout=15000)
                 page.get_by_role('button', name='继续生成', exact=True).click()
                 expect(page.get_by_role('button', name='查看条目：Plugin item 0', exact=True)).to_be_visible(timeout=35000)
                 finished = business(page, 'generation_status')
                 assert finished['phase'] == 'completed' and finished['sessionId'] == run['sessionId']
                 expect(page.get_by_role('button',name='更新今日简报')).to_be_visible()
+                expect(page.get_by_role('region', name='简报生成进度', exact=True)).to_have_count(0)
+                expect(page.locator('.alcor-page-feedback')).to_have_count(0)
+                expect(page.get_by_role('button', name='执行详情', exact=True)).to_have_count(0)
                 page.get_by_role('button',name='查看条目：Plugin item 0',exact=True).click()
                 expect(page.get_by_label('处理状态',exact=False)).to_have_count(0)
                 page.get_by_role('button',name='返回报告列表',exact=True).click()
                 assert finished['completedBatches'] == 1
-                assert Provider.batches == ['global', 'global']
+                assert Provider.batches == ['screen', 'screen']
                 assert len(reads()) == 2, 'Completed source pages must not be read again'
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed.png'))
                 # Schedule receipt is distinct from completion: use the real DSH scheduler and wait for the saved report.
@@ -162,13 +203,38 @@ def main():
                 auto = lambda action, request: desktop.rpc(page, 'alcorOrganizer/automation', {'request': {'action': action, 'scope': 'alcor', 'request': request}})
                 job_request = {'title': 'Independent scheduled briefing', 'prompt': '使用已选来源，生成并保存今日简报。', 'timing': {'kind': 'at', 'at': (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}}
                 job = auto('create', job_request)
+                Provider.waiting.clear(); Provider.release.clear(); Provider.hold = True
                 auto('run', {'id': job['id']})
+                progress = page.get_by_role('region', name='简报生成进度', exact=True)
+                expect(progress).to_be_visible(timeout=15000)
+                expect(page.locator('.alcor-briefing-detail').get_by_role('region', name='简报生成进度', exact=True)).to_be_visible()
+                source_box = page.locator('.alcor-source-summary').bounding_box()
+                progress_box = progress.bounding_box()
+                generated_box = page.get_by_text('生成于 ', exact=False).first.bounding_box()
+                assert generated_box['y'] < progress_box['y'] < source_box['y'], (generated_box, progress_box, source_box)
+                page.locator('[data-revision]').first.click()
+                expect(progress).to_have_count(0)
+                page.get_by_role('button', name='当前版本 最新简报内容', exact=True).click()
+                expect(progress).to_be_visible()
+                for theme in ('dark', 'light'):
+                    page.emulate_media(color_scheme=theme)
+                    page.set_viewport_size({'width': 430, 'height': 900})
+                    progress.scroll_into_view_if_needed()
+                    assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
+                    page.screenshot(path=str(desktop.ARTIFACTS / f'briefing-progress-{theme}-narrow.png'))
+                page.set_viewport_size({'width': 1440, 'height': 1000})
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-inline-progress.png'))
+                progress.get_by_role('button', name='取消生成', exact=True).click()
+                expect(progress.get_by_text('已取消生成', exact=True)).to_be_visible(timeout=15000)
+                Provider.hold = False; Provider.release.set()
+                progress.get_by_role('button', name='继续生成', exact=True).click()
                 deadline = time.monotonic() + 35
                 while time.monotonic() < deadline:
                     scheduled = business(page, 'generation_status')
                     if scheduled.get('requestId') != run['requestId'] and scheduled['phase'] in ('completed', 'failed'): break
                     page.wait_for_timeout(100)
                 assert scheduled['phase'] == 'completed' and scheduled['requestId'] != run['requestId'], scheduled
+                expect(progress).to_have_count(0)
                 assert scheduled['sessionId'] != run['sessionId']
                 assert len(reads()) == 4, 'Scheduled briefings must read the same selected external source without separate approval'
                 assert all(row['source_id'] == 'inbox' for row in reads())
@@ -187,10 +253,41 @@ def main():
                 assert any(item['source'].startswith('plugin:') for item in saved['items']), 'Scheduled updates must retain external cards'
                 assert saved['revisions'][0]['trigger'] == 'scheduled'
                 assert len(business(page,'list_briefings')) == 1
+                page.get_by_role('button', name='更新今日简报', exact=True).click()
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_have_count(0)
+                deadline = time.monotonic() + 35
+                while time.monotonic() < deadline:
+                    latest_run = business(page, 'generation_status')
+                    if latest_run.get('requestId') != after_disable['requestId'] and latest_run['phase'] in ('completed', 'failed'): break
+                    page.wait_for_timeout(100)
+                assert latest_run['phase'] == 'completed' and latest_run['requestId'] != after_disable['requestId'], latest_run
+                run_history = desktop.rpc(page, 'alcorOrganizer/briefingRuns', {'request': {'limit': 20}})['runs']
+                latest = run_history[0]
+                assert latest['trigger'] == 'manual' and latest['phase'] == 'completed', latest
+                assert latest['requestId'] == latest_run['requestId'] and 'conversationSessionId' not in latest, latest
+                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-stays-on-page.png'))
+                page.get_by_role('button', name='简报设置', exact=True).click()
+                page.get_by_role('tab', name='运行记录', exact=True).click()
+                history = page.get_by_role('tabpanel', name='运行记录', exact=True)
+                completed = history.locator('li[data-phase="completed"]')
+                expect(completed.get_by_text('手动生成', exact=True).first).to_be_visible()
+                expect(completed.get_by_text('定时生成', exact=True).first).to_be_visible()
+                rows = history.get_by_role('listitem')
+                expect(rows).to_have_count(len(run_history))
+                resumed = rows.nth(next(index for index, row in enumerate(run_history) if row['requestId'] == run['requestId']))
+                resumed.get_by_role('button', name=re.compile(r'^查看.*运行详情$')).click()
+                session_link = resumed.get_by_role('button', name='查看会话', exact=True)
+                expect(session_link).to_be_visible()
+                page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-run-history-desktop.png'))
                 page.set_viewport_size({'width': 430, 'height': 900})
                 expect(page.locator('.alcor-sidebar [data-sidebar-toggle]')).not_to_be_visible(timeout=5000)
-                expect(page.get_by_role('heading', name='简报', exact=True)).to_be_visible()
+                expect(page.get_by_role('heading', name='简报设置', exact=True)).to_be_visible()
                 page.screenshot(path=str(desktop.ARTIFACTS / 'briefing-completed-narrow.png'))
+                session_link.click()
+                expect(page.locator('[data-composer-input][contenteditable="true"]')).to_be_visible()
+                page.wait_for_function('id => JSON.parse(localStorage.getItem("dsh.sessions.current"))?.sessionId === id', arg=run['sessionId'])
                 assert not errors, errors
             assert not Provider.failure, Provider.failure
         print('PASS: signed official Desktop runs an isolated briefing session with only scoped read/submit tools; navigation/reload preserve work; restart resumes the same session and reuses source checkpoints')

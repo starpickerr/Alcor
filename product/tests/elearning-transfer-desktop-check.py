@@ -10,8 +10,8 @@ import official_desktop_check as desktop
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = json.loads((ROOT / 'packages/alcor-elearning/package.json').read_text())['version']
-PACK = Path(os.environ.get('ALCOR_ELEARNING_REVIEW_PACK', str(ROOT / '.local/artifacts/elearning-file-submissions' / f'alcor-elearning-{VERSION}.tgz')))
+VERSION = json.loads((ROOT.parent / 'dsh-fudan-elearning/plugin/package.json').read_text())['version']
+PACK = Path(os.environ.get('ALCOR_ELEARNING_REVIEW_PACK', str(ROOT / '.local/artifacts' / f'alcor-elearning-{VERSION}.tgz')))
 NAMES = {'mcp__elearning__' + name for name in ('list_courses', 'fetch', 'list_files', 'download_file', 'get_assignment', 'submit_assignment')}
 
 

@@ -10,7 +10,7 @@ test('permanent deletion owner boundaries and reversible positive controls', () 
 
 test('native top-level dispatch rejects unconditioned delete opcodes before any EventKit store construction', () => {
   for (const [file, entry, ops] of [['CalendarBridge.swift', 'run', ['delete', 'delete_calendar', 'reminder_delete', 'reminder_list_delete']], ['ReminderBridge.swift', 'runReminder', ['reminder_delete', 'reminder_list_delete']]]) {
-    const text = readFileSync(new URL('../../packages/alcor-apple-sync/python/apple_sync/native/' + file, import.meta.url), 'utf8')
+    const text = readFileSync(new URL('../../../dsh-apple-sync/python/apple_sync/native/' + file, import.meta.url), 'utf8')
     const start = text.indexOf(`func ${entry}(_ request: [String: Any])`); assert(start >= 0)
     const beforeStore = text.slice(start, text.indexOf('let store = EKEventStore()', start))
     assert.match(beforeStore, /contains\(op\) && !validDeleteRequest\(request\).*throw BridgeFailure/)

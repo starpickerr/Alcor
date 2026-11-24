@@ -13,10 +13,12 @@ import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .store import _parse_payload
 
 CATEGORIES = {'needs_action', 'attention', 'status_update', 'other'}
 KINDS = {'todo', 'calendar', 'reminder'}
 OPERATIONS = {'create', 'link', 'unlink', 'ignore', 'defer', 'keep', 'retry', 'confirm_update', 'keep_current', 'remind'}
+TASK_NOTES_LIMIT = 4000
 class PeerOutcomeUnknown(RuntimeError):
     side_effects = 'unknown'
 
@@ -25,7 +27,7 @@ class AdapterUnavailable(RuntimeError):
     """Todo/calendar adapters are host-side; the plugin worker cannot reach them."""
 
 
-DEFAULT_PREFERENCES = {'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': []}
+DEFAULT_PREFERENCES = {'elearning_policy': {}, 'time_zone': '', 'show_low_priority': True, 'show_ongoing': True, 'reminder_frequency': 'daily', 'summary_detail': 'brief', 'important_types': [], 'task_prompt': '', 'task_target': 'new', 'task_workspace_id': ''}
 
 
 def _now():
@@ -206,6 +208,12 @@ class BriefingActions:
                     raise ValueError('invalid preference option')
                 if 'important_types' in payload and (not isinstance(payload['important_types'], list) or any(not isinstance(v, str) or len(v)>100 for v in payload['important_types'])):
                     raise ValueError('important_types must be strings')
+                if 'task_prompt' in payload and (not isinstance(payload['task_prompt'], str) or not payload['task_prompt'].strip() or len(payload['task_prompt']) > 12000):
+                    raise ValueError('请填写任务内容，最多 12000 字。')
+                if payload.get('task_target', 'new') not in {'new', 'new_once', 'current'}:
+                    raise ValueError('无效的简报执行位置。')
+                if 'task_workspace_id' in payload and (not isinstance(payload['task_workspace_id'], str) or len(payload['task_workspace_id']) > 200):
+                    raise ValueError('无效的简报工作区。')
                 if 'time_zone' in payload:
                     zone = payload['time_zone']
                     if not isinstance(zone,str) or len(zone)>100:
@@ -215,6 +223,10 @@ class BriefingActions:
                             ZoneInfo(zone)
                         except (ValueError,KeyError) as error:
                             raise ValueError('无效的简报时区。') from error
+                if 'elearning_policy' in payload:
+                    from .routing import validate_policy
+                    validate_policy(payload['elearning_policy'])
+                    payload = {**payload, 'elearning_policy': {**current.get('elearning_policy', {}), **payload['elearning_policy']}}
                 current.update(payload)
                 db.execute('INSERT OR REPLACE INTO briefing_preferences VALUES (1,?)', (_json(current),))
             return current
@@ -393,13 +405,13 @@ class BriefingActions:
                 if kind == 'reminder' and ((not options.get('remind_at') and not cancellation_retry) or not self._receipt(db,key,'todo') or not self._receipt(db,key,'todo')['business']):
                     raise ValueError('reminder requires a linked task and explicit reminder time')
                 self._write(db, key, kind, options=options, operation='remind' if kind == 'reminder' else 'create', authorization='user_confirmation')
-                self._execute(db, entity, kind, force=operation == 'confirm_update')
+                self._execute(db, entity, kind, force=operation == 'confirm_update', item_id=item_id)
             receipt = self._receipt(db, key, kind)
         if kind != 'todo' and payload.get('remember') is True and receipt['state'] == 'succeeded':
             self.save_rule(dict(source=entity['source'],account_id=entity['account_id'],information_type=entity['information_type'],course_id=entity['course_id'],kind=kind,mode='auto'))
         return receipt
 
-    def _execute(self, db, entity, kind, force=False, propagate=False):
+    def _execute(self, db, entity, kind, force=False, propagate=False, item_id=None):
         key = entity['entity_key']
         action = self._receipt(db, key, kind)
         facts = json.loads(entity['facts'])
@@ -431,6 +443,13 @@ class BriefingActions:
                 if kind == 'todo':
                     data = {'title': options.get('title') or entity['title'], **todo_due({**facts, **({'due_at': options['due_at']} if 'due_at' in options else {})})}
                     data.update({k: options[k] for k in ('parent_id','planned_on','remind_at') if k in options})
+                    snapshot = db.execute('SELECT payload,snippet FROM briefing_items WHERE id=?', (item_id,)).fetchone()
+                    if snapshot is not None:
+                        body = _parse_payload(snapshot['payload']).get('body')
+                        notes = (body.strip() if isinstance(body, str) else '') or snapshot['snippet'].strip()
+                        if len(notes) > TASK_NOTES_LIMIT:
+                            notes = notes[:TASK_NOTES_LIMIT - 1].rstrip() + '…'
+                        data['notes'] = notes
                     business = service.create_todo(data, _briefing_key=stable_key)
                 else:
                     data = {'title':options.get('title') or entity['title'], 'start_at':options.get('start_at') or facts.get('start_at'), 'end_at':options.get('end_at') or facts.get('end_at'), 'all_day':options.get('all_day',False)}

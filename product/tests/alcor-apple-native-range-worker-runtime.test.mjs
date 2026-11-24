@@ -29,7 +29,7 @@ for (const entity of ['this', 'future', 'future-changed', 'future-finish-recover
   const classes = {}
   for (const name of ['organizer', 'apple-sync']) {
     const outfile = join(output, name+'.mjs')
-    await build({ entryPoints: [`packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
+    await build({ entryPoints: [name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
     classes[name] = (await import(pathToFileURL(outfile))).default
   }
   const owner = Object.create(classes.organizer.prototype), apple = Object.create(classes['apple-sync'].prototype)

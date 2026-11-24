@@ -13,13 +13,12 @@
     "dev": "node scripts/product/web.mjs",
     "test": "npm run product:test",
     "product:web": "node scripts/product/web.mjs",
-    "preproduct:test": "node scripts/product/build-agent-hub.mjs",
-    "product:test": "node --test product/tests/*.test.mjs",
+    "product:test": "node --expose-internals --test product/tests/*.test.mjs",
     "product:build": "node scripts/product/build-client.mjs",
     "product:pack": "npm run product:build && npm pack --workspace @alcor/secretary --pack-destination .local/artifacts",
     "product:privacy:pack": "node scripts/product/build-privacy.mjs && npm pack --workspace @alcor/privacy --pack-destination .local/artifacts",
     "product:privacy:test": "python3 product/tests/keychain_check.py",
-    "product:apple:pack": "node scripts/product/build-apple-sync.mjs && npm pack --workspace @alcor/apple-sync --pack-destination .local/artifacts",
+    "product:apple:pack": "node scripts/product/build-apple-sync.mjs",
     "product:preview:build": "npm run product:build && node scripts/product/sync-client.mjs",
     "product:prepare": "node scripts/product/prepare-upstream.mjs",
     "product:desktop": "node scripts/product/environments.mjs launch",
@@ -27,9 +26,8 @@
     "product:launcher:pack": "npm run product:pack && node scripts/product/build-launcher.mjs && npm pack --workspace @alcor/launcher --pack-destination .local/artifacts",
     "product:desktop:preview": "node .local/upstream/node_modules/tsx/dist/cli.mjs scripts/product/desktop.mjs",
     "product:ui:build": "node scripts/product/build-native-ui.mjs",
-    "product:sources:pack": "node scripts/product/build-sources.mjs && npm pack --workspace @alcor/elearning --pack-destination .local/artifacts && npm pack --workspace @alcor/mail --pack-destination .local/artifacts",
+    "product:sources:pack": "node scripts/product/build-sources.mjs",
     "product:plugin-info:pack": "node scripts/product/build-plugin-info.mjs && npm pack --workspace @alcor/plugin-info --pack-destination .local/artifacts",
-    "product:hub:pack": "node scripts/product/build-agent-hub.mjs && npm pack --workspace @alcor/agent-hub --pack-destination .local/artifacts",
     "product:extension:pack": "node scripts/product/build-extension.mjs && npm pack --workspace @alcor/extension --pack-destination .local/artifacts",
     "product:client:pack": "npm run product:pack && npm run product:extension:pack && node scripts/product/build-client-shell.mjs"
   },
@@ -39,6 +37,11 @@
     "@deepseek-ai/dsh-home-paths": "0.2.2-alpha.3"
   },
   "devDependencies": {
+    "d3-drag": "3.0.0",
+    "d3-force": "3.0.0",
+    "d3-selection": "3.0.0",
+    "d3-transition": "3.0.1",
+    "d3-zoom": "3.0.0",
     "esbuild": "0.27.0",
     "pnpm": "11.28.5"
   },

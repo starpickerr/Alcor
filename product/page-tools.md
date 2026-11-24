@@ -8,14 +8,19 @@ Alcor 根据用户指令调用工具，页面展示与管理同一份持久数�
 | 日程 | 日程、分类、重复与例外、特殊日期、节假日；读取日期文件导入 | `alcor_business` → `calendar`；`alcor_import_dates` |
 | 账单 | 单条增改查删、冲正、日小计、月／年汇总及分类／排行；导入微信／支付宝文件，按日期范围导出 CSV | `alcor_business` → `bills`；`alcor_import_bills`；`alcor_export_bills` |
 | 简报 | 生成／更新、历史修订、来源快照、条目处理、建立或关联事务／日程、整理规则 | `alcor_business` → `briefing`；`alcor_generate_briefing` |
+| 知识库 | 按资料集收藏笔记、网页摘录和文件，检索段落、打开原件或引用版本，编辑、归档与恢复，浏览文档图谱和双向引用 | `alcor_knowledge` |
 | 自动化 | 列表、新建、编辑、暂停／恢复、删除、立即运行、执行历史 | `alcor_business` → `automation` |
 
 调用领域方法前先读取该领域 `catalog`，取得参数与示例。自动化只管理 Alcor 所属计划，复用 DSH 唯一调度器。文件工具仅限用户主动主对话；自动化的启动／管理也拒绝委托或定时回合，避免递归创建。
 
-AgentHub 已拆为独立的 DSH 开发者插件，Alcor 不再提供其页面、工具领域或协作 Skill。运行与数据迁移见 [AgentHub](../packages/alcor-agent-hub/README.md)。
+AgentHub 插件及其源码已移除，本机残留数据已按用户授权清理。
 
 文件通过执行 Agent 的 DSH fs 读写。日期导入沿用页面的 UTF-8 CSV／ICS 全天日期和简单年度重复能力，最大 1 MB／500 条，不支持任意带时刻的 ICS；CSV 必需 `title,date`，可选 `annual,description,uid`。账单 CSV 导出要求绝对新文件路径及起止日期（含当天），保留准确金额与币种、状态，处理公式型文本，不覆盖已有文件；底层 XLSX 返回接口仍可查询，但本轮没有新增 XLSX 落盘工具。
 
+知识库保存在当前 Profile 的 `alcor/business/knowledge.sqlite3`。原件按 SHA-256 去重，同一文件的多个收藏可以有不同标题、摘录和资料集。正文按页和段落建立 FTS5 索引。macOS 有相应语言模型时后台补齐本机中英文向量，查询按关键词和向量的排名融合。索引可由原文重建，老引用使用资料版本和页内位置打开。导入支持 5 MB 以内的 PDF、PNG、JPEG、UTF-8 文本和 Markdown。网页收藏保留用户提供的网址与摘录。macOS 可在本地提取 PDF 文本和识别图片，无法提取时原件仍可打开并补充摘录。
+
+知识库的「图谱」按当前收藏中的显式引用连线。笔记、摘录和导入的文本支持 `[[资料标题]]`、`[[标题|显示名]]` 和同目录 Markdown 文件链接。编辑器「插入资料引用」绑定具体资料，适用于同名资料。已解析的引用在改名后继续指向原资料；归档的资料退出图谱，恢复后重新出现。资料详情可打开引用及反向引用。主对话工具的 `graph` 返回资料和有向边。按标题查图时同时显示直接相连的资料，`links` 按资料 ID 分页返回引用和反向引用。图谱只传标题、类型和 ID，正文沿用带版本的 `read`。
+
 账号登录、Apple 系统权限及私人信息来源授权由现有设置管理，不因对话调用扩大。工具覆盖不表示旧版全部功能或私人数据迁移已经完成，未迁移项继续以 [功能对照](feature-parity.md) 为准。
 
-验证：`page-tools.test.mjs`、`secretary-tools.test.mjs`、`business-domain.test.mjs`；`page-tools-chat-check.py` 使用隔离 Profile、合成模型及文件验证五领域实际对话调用、持久结果、自动化暂停及页面可访问。独立协作验证使用 `agent-hub-check.py`。设置 `STELLA_CHECK_NATIVE_DESKTOP=1` 和 `STELLA_CHECK_DESKTOP_APP` 验证指定官方桌面产物。
+验证：`page-tools.test.mjs`、`secretary-tools.test.mjs`、`business-domain.test.mjs`；`page-tools-chat-check.py` 使用隔离 Profile、合成模型及文件验证五领域实际对话调用、持久结果、自动化暂停及页面可访问。设置 `STELLA_CHECK_NATIVE_DESKTOP=1` 和 `STELLA_CHECK_DESKTOP_APP` 验证指定官方桌面产物。

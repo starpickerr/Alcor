@@ -7,7 +7,7 @@ export const legacyPanelIds = Object.keys(oldPanels)
 const retiredPanels = new Set(['alcor-qq-history', 'alcor-persona', 'alcor-channels'])
 export const canonicalPanel = panel => retiredPanels.has(panel) ? 'alcor-tasks' : Object.hasOwn(oldPanels, panel) ? oldPanels[panel] : panel
 export const sharedPanel = panel => canonicalPanel(panel)
-const ownPanels = new Set(Object.values(oldPanels))
+const ownPanels = new Set([...Object.values(oldPanels), 'alcor-logs', 'alcor-knowledge'])
 export function startSecretarySession(ctx, prompt) {
   return ctx.uiWorkspace.startSession(undefined, {
     agentPreset: 'alcor',

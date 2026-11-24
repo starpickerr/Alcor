@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 test('Apple preview binds the exact target; old pending intent cannot authorize background dispatch', () => {
   execFileSync(testPython, ['-B', '-c', `
 import hashlib,json,runpy,sys
-sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
+sys.path[:0]=['packages/alcor-secretary','../dsh-apple-sync/python']
 m=runpy.run_path('product/tests/apple-contracts.py')
 from apple_sync.contracts import process_operations
 case=m['Contracts']('test_unconfirmed_occurrence_delete_preserves_instances_after_restart');case.setUp()

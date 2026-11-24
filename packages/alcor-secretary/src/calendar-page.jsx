@@ -33,8 +33,8 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
   useEffect(() => {const timer=setInterval(() => setNow(new Date()),60000);return () => clearInterval(timer)},[])
   useEffect(() => setMiniMonth(selected),[selected])
   const [hiddenGroups, setHiddenGroups] = useState([])
-  const [records, setRecords] = useState([])
-  const [fetching, setFetching] = useState(true)
+  const [snapshot, setSnapshot] = useState(null)
+  const [syncRevision, setSyncRevision] = useState(0)
   const [error, setError] = useState('')
   const [coverage, setCoverage] = useState(null)
   const [remove, setRemove] = useState(null)
@@ -46,11 +46,18 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
   const chosen = new Date(`${selected}T12:00`)
   const [first, last] = range(selected, view)
   const version = templates.map(item => `${item.id}:${item.updatedAt}:${item.archived}`).join('|')
+  const start = new Date(`${addDays(first,-2)}T00:00`).toISOString()
+  const end = new Date(`${addDays(last,2)}T00:00`).toISOString()
+  const rangeKey = start + '/' + end
+  const ready = snapshot?.range === rangeKey
+  const records = ready ? snapshot.records : []
+  const fetching = !error && (!ready || (!records.length && snapshot.syncRevision !== syncRevision))
   useEffect(() => {
+    if (loading) return
     let disposed = false
-    setFetching(true); setRecords([]); setError('')
+    setError('')
     Promise.all([
-      api.business({ domain: 'calendar', method: 'list_events', arguments: { start: new Date(`${addDays(first,-2)}T00:00`).toISOString(), end: new Date(`${addDays(last,2)}T00:00`).toISOString() } }),
+      api.readCalendarRange({start, end}),
       api.business({ domain: 'tasks', method: 'list_todos', arguments: { start: addDays(first, -1), end: addDays(last, 1) } }),
     ]).then(([events, tasks]) => {
       if (disposed) return
@@ -58,11 +65,30 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
       const allowed = new Set(templates.filter(item => item.archived === archived).map(item => `${item.kind}:${item.id}`))
       const known = new Set(templates.map(item => `${item.kind}:${item.id}`))
       const visible = (rows, kind) => rows.filter(row => allowed.has(`${kind}:${row.series_id ?? row.id}`) || (!archived && !known.has(`${kind}:${row.series_id ?? row.id}`)))
-      void api.business({domain:'apple',method:'status',arguments:{kind:'calendar'}}).then(result => { if (!disposed && result.ok) setCoverage(result.value.range_state) }).catch(() => {})
-      setRecords([...visible(events.value,'event').map(calendarRecord).filter(item => item.allDay ? item.start < last && item.end > first : new Date(item.start)<new Date(`${last}T00:00`) && new Date(item.end)>=new Date(`${first}T00:00`)), ...visible(tasks.value, 'task').filter(row => row.status !== 'cancelled').map(calendarTaskRecord).filter(Boolean)]); setFetching(false)
-    }).catch(failure => { if (!disposed) { setError(failure.message); setFetching(false) } })
+      const eventRows = visible(events.value,'event').map(calendarRecord).filter(item => item.allDay ? item.start < last && item.end > first : new Date(item.start)<new Date(`${last}T00:00`) && new Date(item.end)>=new Date(`${first}T00:00`))
+      const taskRows = visible(tasks.value,'task').filter(row => row.status !== 'cancelled').map(calendarTaskRecord).filter(Boolean)
+      setSnapshot({ range: rangeKey, syncRevision, records: [...eventRows, ...taskRows] })
+    }).catch(failure => { if (!disposed) setError(failure.message) })
     return () => { disposed = true }
-  }, [api, first, last, version, reloadKey, archived])
+  }, [api, first, last, start, end, rangeKey, version, reloadKey, archived, loading, syncRevision])
+
+  useEffect(() => {
+    if (!ready) return
+    let disposed = false
+    setCoverage({range:rangeKey, status:'syncing'})
+    api.syncCalendarRange({start, end}).then(result => {
+      if (disposed) return
+      if (!result.ok) throw new Error(result.error?.message || 'Apple 日历同步失败')
+      const state = result.value
+      setCoverage({status:'success', ...state, range:rangeKey})
+      // A paused connection or a fresh coverage receipt did not change local events.
+      if (state && state.status !== 'cached' && !state.checked_at) setSyncRevision(value => value + 1)
+    }).catch(failure => {
+      if (!disposed) setCoverage({range:rangeKey, status:'error', reason:failure.message})
+    })
+    return () => { disposed = true }
+  }, [api, ready, rangeKey, start, end, reloadKey])
+  const syncing = ready && coverage?.range === rangeKey && coverage.status === 'syncing'
   const groups = [...categories, ...taskCategories.map(item => ({ ...item, id: `task:${item.id}`, name: `${item.name} · 事务` }))]
   const groupId = item => item.groupId ?? item.business.category_id
   const filtered = records.filter(item => !hiddenGroups.includes(item.kind === 'task' ? '__tasks__' : groupId(item))).sort(calendarOrder)
@@ -129,7 +155,8 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
       </div>
       <div className="alcor-calendar-main">
         <div className="alcor-calendar-toolbar"><div className="alcor-calendar-navigation"><h2>{period}</h2><div className="alcor-actions"><Button variant="ghost" size="sm" aria-label="上一期" onClick={() => shift(-1)}><IconChevronLeftOutlineRegular size={16} /></Button><Button variant="outline" size="sm" onClick={() => selectDay(localDate())}>{({ week:'本周',month:'本月',year:'今年',list:'今年' })[view] ?? '今天'}</Button><Button variant="ghost" size="sm" aria-label="下一期" onClick={() => shift(1)}><IconChevronRightOutlineRegular size={16} /></Button></div></div><SegmentedControl id="calendar-view" label="日历视图" value={view} onChange={setView} options={[[ 'day','日' ],['week','周'],['month','月'],['year','年'],['list','列表']].map(([value,label]) => ({value,label}))} /></div>
-        {coverage && coverage.status !== 'success' && <Notice role="status" className="alcor-calendar-coverage">{coverage.reason || '此范围尚未完整同步；显示本地已保存日程。'}</Notice>}
+        {syncing && !records.length && <Notice role="status">正在从 Apple 同步此范围的日程…</Notice>}
+        {coverage?.range === rangeKey && !syncing && coverage.status !== 'success' && <Notice role="status" className="alcor-calendar-coverage">{coverage.reason || '此范围尚未完整同步；显示本地已保存日程。'}</Notice>}
         {(loading || fetching) && <Notice role="status" className="alcor-calendar-loading">正在读取日程…</Notice>}{error && <Notice tone="error" role="alert" className="alcor-error">{error}</Notice>}
         <div id={`calendar-view-${view}-panel`} role="tabpanel" aria-labelledby={`calendar-view-${view}`}>
           <div className="alcor-calendar-surface">
@@ -153,7 +180,7 @@ export function CalendarPage({ commitDelete, selectedRecord, templates, edit, cr
                 {days.includes(today) && <div className="alcor-current-time" style={{top:`${(now.getTime()-todayStart)/(tomorrowStart-todayStart)*100}%`}}><time dateTime={now.toISOString()}>{clock(now)}</time></div>}
               </div></div>
             </div></div>}
-            {view === 'list' && <>{[...new Set(filtered.map(item => item.allDay ? item.start : localDate(new Date(item.start))))].sort().map(day => <section className="alcor-agenda-date" key={day}><h3>{dateTitle(day)}</h3><ul className="alcor-agenda-list">{filtered.filter(item => (item.allDay ? item.start : localDate(new Date(item.start))) === day).map(item => entry(item))}</ul></section>)}{!filtered.length && !fetching && <Empty mascot={!error && !records.length} title="本年暂无日程" />}</>}
+            {view === 'list' && <>{[...new Set(filtered.map(item => item.allDay ? item.start : localDate(new Date(item.start))))].sort().map(day => <section className="alcor-agenda-date" key={day}><h3>{dateTitle(day)}</h3><ul className="alcor-agenda-list">{filtered.filter(item => (item.allDay ? item.start : localDate(new Date(item.start))) === day).map(item => entry(item))}</ul></section>)}{!filtered.length && ready && !fetching && coverage?.range === rangeKey && !syncing && <Empty mascot={!error && !records.length} title="本年暂无日程" />}</>}
           </div>
         </div>
       </div>

@@ -20,7 +20,7 @@ def main():
         profile=home/'dsh/profiles/desktop';profile.mkdir(parents=True);(home/'documents').mkdir()
         (profile/'package.json').write_text(json.dumps({'name':'apple-review','private':True,'dsh':{'profile':{'bundles':['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']}}}))
         (profile/'cordis.patch.yml').write_text(f'- id: workspace-controller\n  config:\n    documentsDirectory: {home / "documents"}\n')
-        apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+        apple_version=json.loads((desktop.ROOT/'../dsh-apple-sync/package.json').read_text())['version']
         pack=Path(os.environ.get('STELLA_APPLE_REVIEW_PACK',str(desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz')))
         desktop.native_cli(home,'review-install','add',str(desktop.PACK),str(pack),'--ignore-scripts')
         worker=profile/'node_modules/@alcor/apple-sync/python/worker.py'

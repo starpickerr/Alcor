@@ -28,7 +28,7 @@ claims.uncertain(s,token)
 '''
     child = subprocess.Popen([sys.executable, '-B', '-c', code, str(sync.db_path), group, item],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        env={**os.environ, 'PYTHONPATH': str(ROOT/'packages/alcor-apple-sync/python')})
+        env={**os.environ, 'PYTHONPATH': str(ROOT/'../dsh-apple-sync/python')})
     try:
         token = child.stdout.readline().strip()
         if not token:
@@ -52,6 +52,20 @@ class CommonClaims(unittest.TestCase):
         sync=(self.case.calendar if kind=='calendar' else self.case.reminder)(bridge)
         sync.start_sync();bridge.calls.clear()
         return sync, bridge, self.case.business.calendar if kind=='calendar' else self.case.business.tasks
+
+    def test_status_reads_only_active_claims_with_large_history(self):
+        from apple_sync import group_scan_claims as claims
+        from unittest.mock import patch
+        sync, _, _ = self.setup_domain('calendar')
+        active = claims.acquire(sync, 'account1', 'a', ['active-window'])
+        with sync._connect() as db:
+            db.executemany("INSERT INTO calendar_scan_attempts VALUES (?, 'account1','a','done','[]','','{}')",
+                           [(f'history-{i}',) for i in range(10000)])
+            db.commit()
+            # Bound SQLite instructions on the actual status query, independent of disk speed.
+            db.set_progress_handler(lambda: 1, 2000)
+            with patch.object(sync, '_connect', return_value=db):
+                self.assertEqual([row['attempt_id'] for row in claims.status(sync)], [active])
 
     def test_replace_links_respects_other_process_group_claim(self):
         for kind in ('calendar','reminders'):
@@ -83,7 +97,7 @@ class CommonClaims(unittest.TestCase):
         # Instantiate only the DB interface: reminder and calendar manager schemas differ.
         code=code.replace("from apple_sync.calendar import AppleCalendarSync", "import sqlite3\nclass AppleCalendarSync:\n def __init__(self,**kw):self.path=kw['db_path']\n def _connect(self):\n  d=sqlite3.connect(self.path);d.row_factory=sqlite3.Row;return d\n def clock(self):return '2026-11-08T00:00:00Z'")
         child=subprocess.run([sys.executable,'-B','-c',code,str(sync.db_path),group],capture_output=True,text=True,
-            env={**os.environ,'PYTHONPATH':str(ROOT/'packages/alcor-apple-sync/python')})
+            env={**os.environ,'PYTHONPATH':str(ROOT/'../dsh-apple-sync/python')})
         self.assertEqual(child.returncode,0,child.stderr)
         return child.stdout.strip()
 

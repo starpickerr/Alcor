@@ -526,6 +526,11 @@ class BriefingStore:
         with self._conn() as db:
             return self._checkpoint(db)
 
+    def pending_source_windows(self):
+        with self._conn() as db:
+            row = db.execute("SELECT json_extract(receipt,'$.pending_windows') FROM briefing_collections ORDER BY rowid DESC LIMIT 1").fetchone()
+            return json.loads(row[0]) if row and row[0] else {}
+
     def collection(self, request_id):
         with self._conn() as db:
             row = db.execute('SELECT receipt FROM briefing_collections WHERE request_id=?', (request_id,)).fetchone()

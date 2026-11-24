@@ -1,6 +1,10 @@
 # 在官方 DSH 中使用 Alcor
 
-Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.106`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏、应用／系统分组和业务页面；切回 DSH 恢复官方原生侧栏。
+Alcor 作为原生插件运行在官方 DSH Desktop 中。宿主版本与产物身份以[客户端版本清单](desktop-release.lock.json)为准，插件各自发布版本。[DSH 0.2.2-rc.5 兼容验证](compatibility/dsh-0.2.2-rc.5.md) · [插件版本与发布](releases.md)。
+
+ChatGPT 订阅模型由独立的 DSH 插件提供，可在同一 Profile 的 Alcor 和 DSH 对话中使用。[dsh-chatgpt](https://github.com/starpickerr/dsh-chatgpt)
+
+Alcor 是安装在原版官方 DeepSeek Harness（DSH）桌面客户端中的可选插件，当前秘书包为 `@alcor/secretary@0.1.118`。左上角菜单在同一窗口切换 **Alcor** 与 **DeepSeek Harness**。Alcor 保留小熊品牌、原侧栏的应用／系统分组和业务页面；切回 DSH 恢复官方侧栏。
 
 两个界面共用同一个 Host、Profile、运行环境、模型、配置、会话、工作区和插件目录。切换只改变界面，不启动第二个 Host，后台继续运行。第三方插件原样安装，Alcor 的「系统」分组仍打开它们自己的页面。
 
@@ -9,17 +13,16 @@ Alcor 使用官方插件接口和公开 UI 插槽，不修改或覆盖官方程�
 ## 安装与数据
 
 1. 安装官方 DSH，完成目标 Profile 的初始化。已验证的桌面版本和产物身份见[版本清单](desktop-release.lock.json)，各插件仍须满足自身 `engines.dsh` 和平台声明。
-2. 在 DSH 的「插件」页选择「添加插件」，安装 `alcor-secretary-0.1.106.tgz`。构建方法见[开发与打包](#开发与打包)。安装不需要单独的 Alcor 客户端或修改官方文件。
+2. 在 DSH 的「插件」页选择「添加插件」，安装 `alcor-secretary-0.1.114.tgz`。构建方法见[开发与打包](#开发与打包)。安装不需要单独的 Alcor 客户端或修改官方文件。
 3. 退出并重新打开 DSH，在左上角菜单选择 Alcor。日常模式切换即时生效；安装、启用、停用及卸载后按重启使用。
 4. 按需安装下表中的独立插件，账号与插件设置由 DSH 原生插件页管理。
 
 | 安装标识 | 用途与范围 |
 | --- | --- |
 | `@alcor/secretary` | Alcor 事务、日程、简报、账单、自动化与专用对话；本轮已验 macOS Apple Silicon 和 Windows x64。 |
-| `@alcor/apple-sync` | Apple Calendar／Reminders 同步；当前安装包仅 macOS，权限与限制见[Apple 插件说明](../packages/alcor-apple-sync/README.md)。 |
+| `@alcor/apple-sync` | Apple 日历和提醒事项的 DSH 独立插件，安装 Alcor 后可选双向同步。源码及权限说明见 [dsh-apple-sync](https://github.com/starpickerr/dsh-apple-sync)。 |
 | `@alcor/elearning` | 复旦 eLearning 课程、作业与公告；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
 | `@alcor/mail` | IMAP 邮件只读查询与简报来源；当前安装包仅 macOS，见[MCP 接入](mcp-connections.md)。 |
-| `@alcor/agent-hub` | 独立开发者协作插件；0.1.5 支持 alpha.3／rc.1／rc.3，rc.2 尚未验证。 |
 
 QQ 与桌宠来自独立 AuraBot 社区插件。秘书不加载社交人格、长期社交记忆或主动交流队列；小熊形象包与安装边界见[桌宠说明](../assets/desktop-pet/README.md)，通道设置见[QQ 社交与秘书业务](channels.md)。
 
@@ -29,11 +32,13 @@ QQ 与桌宠来自独立 AuraBot 社区插件。秘书不加载社交人格、�
 
 ## 界面与共享关系
 
+0.1.114 保留原 Alcor 导航外观，通过官方侧栏扩展接入，保持原生模块激活与插件同步，见[修复说明](sidebar-activation-fix.md)。
+
 | Alcor 事务页 | 官方 DSH |
 | --- | --- |
 | ![Alcor 原侧栏、事务页和共享工作区](../docs/images/alcor-shared-tasks.png) | ![官方 DSH 原侧栏和同一共享工作区](../docs/images/dsh-shared-workspace.png) |
 
-左上角按钮通过官方 `shell.overlay` 插槽呈现，保留 44px 标题栏位置。侧栏借助可逆的 Loader 生命周期交接，工作区与设置仍由官方组件提供。两种界面使用同一工作区目录和插件管理器，无须按模式重复安装插件。
+左上角按钮通过官方 `shell.overlay` 插槽呈现，保留 44px 标题栏位置。Alcor 通过官方侧栏的品牌和会话操作扩展插槽承载原导航，保留应用／系统分组。工作区、会话与设置仍由官方组件提供；模式切换不再停用官方侧栏模块。两种界面使用同一工作区目录和插件管理器，无须按模式重复安装插件。
 
 共享模式不是数据或进程隔离。原生插件属于同进程可信代码，模式切换不构成操作系统沙箱。工具执行继续遵循 DSH 当前会话的权限、审批和凭据设施；打开页面或切换界面本身不调用模型。
 
@@ -66,12 +71,11 @@ npm run product:pack
 npm test
 ```
 
-秘书归档写入 `.local/artifacts/`，当前为 `alcor-secretary-0.1.106.tgz`。记录提交、包版本和归档／客户端摘要，不仅凭版本号判断产物身份。Windows 开发依赖树包含仅 macOS 的工作区包，按现有 CI 使用 `npm ci --force --ignore-scripts`；该选项只用于开发检出，不用于官方 Profile 安装或跳过兼容检查。
+秘书归档写入 `.local/artifacts/`，当前为 `alcor-secretary-0.1.114.tgz`。记录提交、包版本和归档／客户端摘要，不仅凭版本号判断产物身份。Windows 开发依赖树包含仅 macOS 的工作区包，按现有 CI 使用 `npm ci --force --ignore-scripts`；该选项只用于开发检出，不用于官方 Profile 安装或跳过兼容检查。
 
 | 命令 | 产物或用途 |
 | --- | --- |
 | `npm run product:pack` | 秘书插件。 |
-| `npm run product:hub:pack` | 独立 AgentHub 插件。 |
 | `npm run product:apple:pack` | macOS Apple 同步插件及原生桥。 |
 | `npm run product:sources:pack` | macOS 学校／邮件插件及冻结 MCP；依赖相邻 MCP 仓库，见[MCP 接入](mcp-connections.md)。 |
 | `npm run dev` | 使用专用开发 Profile 的 Web 预览；不替代官方桌面验收。 |
@@ -108,12 +112,12 @@ npm test
 
 插件使用运行中宿主提供的可选 peer SDK，不把旧 `@deepseek-ai/*` 核心组件安装进 Profile。宿主升级时，须检查配置、业务数据、插件生命周期，以及插件不兼容时官方 DSH 是否仍能启动。不要通过放宽 `engines.dsh`、关闭兼容检查、修改或固定官方程序来维持旧插件运行。
 
-`product/tests/upgrade-compatibility-check.py` 使用五个旧包复现宿主升级后的不兼容状态，再安装当前五个包，核对插件服务、重启、工作区和事务唯一 ID、启用列表及 owner 文件保留。先构建秘书、Apple、学校／邮件和 AgentHub 包，再设置 `ALCOR_PREVIOUS_DESKTOP_APP`（已验证的旧官方程序）、`ALCOR_PREVIOUS_ARTIFACTS`（不支持新宿主的五个旧包目录）、`STELLA_CHECK_DESKTOP_APP`（新官方程序）和 `STELLA_CHECK_ARTIFACTS`（验证输出目录）执行该脚本；两个程序都必须匹配版本清单。测试只使用独立 Profile 和合成数据。
+`product/tests/upgrade-compatibility-check.py` 使用四个旧包复现宿主升级后的不兼容状态，再安装当前四个包，核对插件服务、重启、工作区和事务唯一 ID、启用列表及 owner 文件保留。先构建秘书、Apple、学校／邮件包，再设置 `ALCOR_PREVIOUS_DESKTOP_APP`（已验证的旧官方程序）、`ALCOR_PREVIOUS_ARTIFACTS`（不支持新宿主的四个旧包目录）、`STELLA_CHECK_DESKTOP_APP`（新官方程序）和 `STELLA_CHECK_ARTIFACTS`（验证输出目录）执行该脚本；两个程序都必须匹配版本清单。测试只使用独立 Profile 和合成数据。
 
 公开 SDK 的使用也不意味着模块名、插槽 ID、DOM 标记和标题栏布局永久稳定。Alcor 的顶部入口和侧栏仍有版本耦合，发生上游变更时适配插件并重新验证。入口与自动化实现的过程证据见[顶部入口记录](top-overlay-status.md)；更早检查点见[实施记录](official-shared-plan.md)，其中历史状态不替代本页的交付范围。
 
-## 保留的独立方案与来源
+## 来源说明
 
-独立 Host／Profile 客户端保留在专用分支 [`archive/isolated-runtimes-20261112-02217cd4`](https://github.com/starpickerr/Alcor/tree/archive/isolated-runtimes-20261112-02217cd4)，不是当前插件安装路径。`product/client-shell/`、`@alcor/extension`、旧双窗口入口和客户端补丁脚本属于该方案或历史兼容维护，不是使用当前共享插件的前提；不删除已有环境和原始备份。
+Alcor 通过公开插槽注册自有页面和插件组件。包内 MIT 衍生 UI 的来源及摘要见 [`NATIVE-UI-PROVENANCE.json`](../packages/alcor-secretary/vendor/NATIVE-UI-PROVENANCE.json)、[DSH 来源声明](NOTICE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
-包内 MIT 衍生 UI 保留来源及摘要，见 [`NATIVE-UI-PROVENANCE.json`](../packages/alcor-secretary/vendor/NATIVE-UI-PROVENANCE.json)、[DSH 来源声明](NOTICE.md)与[第三方声明](../THIRD_PARTY_NOTICES.md)。当前共享路径仅注册 Alcor 自有页面和所需插件组件，不替换官方模块；历史预览所用补丁不应用到个人官方客户端。
+插件错误诊断的覆盖范围和验证边界见[错误诊断](plugin-error-diagnostics.md)。

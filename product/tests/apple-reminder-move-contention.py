@@ -18,7 +18,7 @@ class S:
 with WorkClaim(S(),{'b':'account1'},[],{'kind':'synthetic_competing_work'}):
  print('ready',flush=True);sys.stdin.readline()
 '''
-    child=subprocess.Popen([sys.executable,'-B','-c',script,str(sync.db_path)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env={**os.environ,'PYTHONPATH':str(ROOT/'packages/alcor-apple-sync/python')})
+    child=subprocess.Popen([sys.executable,'-B','-c',script,str(sync.db_path)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env={**os.environ,'PYTHONPATH':str(ROOT/'../dsh-apple-sync/python')})
     try:
         assert child.stdout.readline().strip()=='ready'
         yield

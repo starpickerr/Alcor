@@ -31,9 +31,7 @@ def _managed_mcp_opt_in_for_tests(monkeypatch):
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 for _domain in ('memory', 'knowledge'):
-    _backend = Path(__file__).resolve().parents[2] / 'Stella-Plugins' / 'plugins' / _domain / 'backend'
-    if not _backend.is_dir():
-        _backend = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace' / 'plugins' / _domain / 'backend'
+    _backend = Path(__file__).resolve().parents[1] / 'stella-plugins-workspace' / 'plugins' / _domain / 'backend'
     sys.path.insert(0, str(_backend))
 
 

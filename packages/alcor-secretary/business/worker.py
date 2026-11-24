@@ -113,9 +113,14 @@ class Business:
         request = {'method': method, 'input': arguments or {}, 'idempotencyKey': request_id,
                    '_hostDataHandle': {'hubCoordinator': True, 'sourceDirectory': [], 'executionTask': (arguments or {}).get('task'),
                                        'executionSandbox': {'mode': 'core', **((arguments or {}).get('task') or {}), 'outputDirectory': str(self.root / 'executions')}}}
-        result = entry.handle_invoke(request)
+        original = []
+        result = entry.handle_invoke(request, on_error=original.append)
         if result['status'] != 'succeeded':
-            raise ValueError(result.get('error', {}).get('message') or 'Operation outcome unknown; check the saved state before retrying')
+            detail = result.get('error') or {}
+            message = detail.get('message') or 'Operation outcome unknown; check the saved state before retrying'
+            failure = ValueError(f"[{detail['code']}] {message}" if detail.get('code') else message)
+            failure.business_code = detail.get('code')
+            raise failure from (original[0] if original else None)
         return jsonable(result.get('value'))
 
     def _metadata(self, record, raw):
@@ -138,10 +143,10 @@ class Business:
         for item in self.tasks.list_todos_focus():
             if item.get('series_id'):
                 field = 'last_completed_occurrence' if item['status'] == 'completed' else 'current_occurrence'
-                focus.setdefault(item['series_id'], {})[field] = {**{key: item[key] for key in ('id', 'due_on', 'status', 'completed_at')},'apple_history':bool(item.get('apple_history'))}
+                focus.setdefault(item['series_id'], {})[field] = {**{key: item[key] for key in ('id', 'due_on', 'due_time', 'planned_on', 'status', 'completed_at')},'apple_history':bool(item.get('apple_history'))}
         for row in self.tasks.list_todos():
             if row['repeat_frequency'] != 'none' and (row['source_type'] != 'apple_reminder' or row.get('native_managed')):
-                row = {**row, 'current_occurrence': ({key:row[key] for key in ('id','due_on','status','completed_at')} if row.get('native_managed') else None), **focus.get(row['id'], {})}
+                row = {**row, 'current_occurrence': ({key:row[key] for key in ('id','due_on','due_time','planned_on','status','completed_at')} if row.get('native_managed') else None), **focus.get(row['id'], {})}
             records.append(self._metadata({'kind': 'task', 'id': row['id'], 'title': row['title'], 'details': row['notes'],
                                           'due': row['due_on'], 'status': 'done' if row['status'] in ('completed', 'cancelled') else 'open'}, row))
         for row in self.calendar.list_events():
@@ -201,7 +206,8 @@ class Business:
         window = self.collection_window(stamp)
         record = {**record, 'date':window['day']}
         configs = [row for row in self.source_settings() if row['source'] in ('calendar_agenda','alcor_tasks','alcor_bills')]
-        sources = [self.calendar_agenda(stamp, window['start']) if row['source']=='calendar_agenda' else self.local_source(row['source'], stamp, window['start']) for row in configs]
+        starts = self.source_windows(record['date'], stamp, configs)
+        sources = [self.calendar_agenda(stamp, start) if row['source']=='calendar_agenda' else self.local_source(row['source'], stamp, start) for row, start in zip(configs, starts)]
         return self.generated_briefing(record, request_id, sources, run_at=stamp, configurations=configs, local_only=True)['record']
 
     def collection_window(self, stamp, time_zone=None):
@@ -221,7 +227,7 @@ class Business:
         scoped['actions'] = self.briefing.actions.view(scoped['items'])
         scoped['preferences'] = self.briefing.get_preferences()
         scoped['revisions'] = [row for row in self.briefing.store.list_revisions(receipt['briefingId']) if row['number']<=receipt['revision']]
-        scoped['briefing'] = {**saved['briefing'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'], 'source_windows':{k:v for k,v in saved['briefing']['source_windows'].items() if k in keys}}
+        scoped['briefing'] = {**saved['briefing'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'], 'source_windows':{k:v for k,v in saved['briefing']['source_windows'].items() if k in keys or k in receipt.get('uncovered', [])}}
         return {**record, 'id':receipt['id'], 'date':window['day'], 'title':saved['briefing']['title'], 'body':saved['briefing']['body'] if receipt['body'] is None else receipt['body'],
                 'revision':receipt['revision'], 'archived':False, 'createdAt':saved['briefing']['created_at'], 'updatedAt':saved['briefing']['updated_at'],
                 'business':{'briefingId':receipt['briefingId'], 'revision':receipt['revision'], **({'snapshot':scoped} if snapshot else {})}}
@@ -268,7 +274,12 @@ class Business:
         from business.briefing.domain.incremental import daily_candidates, commit_daily, collection_stats
         stats = collection_stats()
         candidates = daily_candidates(self.briefing, selected, configurations, detail, window, stats)
-        if detail.get('briefing', {}).get('rule_text') != rules_document(rules):
+        routed = run and run.get('routingVersion') == 1 and not local_only
+        if routed:
+            from business.briefing.domain.routing import routed_draft, routing_rules
+        policy = self.briefing.get_preferences().get('elearning_policy', {})
+        expected_rules = routing_rules(rules, policy) if routed else rules_document(rules)
+        if detail.get('briefing', {}).get('rule_text') != expected_rules:
             candidates.decisions.clear()
             candidates.reports.clear()
             candidates.previous_reports.clear()
@@ -276,6 +287,9 @@ class Business:
             if local_only:
                 from business.briefing.domain.pipeline import compose_draft
                 draft = compose_draft(list(candidates.rows.values()), rules, record['date'])
+            elif routed:
+                draft = routed_draft(list(candidates.rows.values()), rules, record['date'],
+                                     submissions or [], candidates.decisions, stamp, policy)
             else:
                 draft = AgentBriefingGenerator(submissions or [], global_mode=True).generate(
                     list(candidates.rows.values()), rules, briefing_date=record['date'], window_start=start,
@@ -439,8 +453,10 @@ class Business:
         return current
 
     def source_windows(self, date, run_at, sources, time_zone=None):
-        start = self.collection_window(run_at, time_zone)['start']
-        return [start for _ in sources]
+        from business.briefing.domain.incremental import source_window
+        window = self.collection_window(run_at, time_zone)
+        pending = self.briefing.store.pending_source_windows()
+        return [source_window(window, pending, source)['start'] for source in sources]
 
     def source_cursors(self, source, account_id, configuration=None):
         from business.briefing.domain.incremental import source_cursors
@@ -456,10 +472,10 @@ class Business:
             raise ValueError('Invalid recovery request')
         return getattr(self, domain).restore_apple_inbound_recovery(recovery_id)
 
-    def prepare_delete_receipt(self, domain, method, arguments, operation_id):
+    def prepare_delete_receipt(self, domain, method, arguments, operation_id, confirmed_fingerprint=None):
         from business.delete_receipt import prepare
         if domain not in ('tasks', 'calendar'): raise ValueError('Unknown deletion domain')
-        return prepare(getattr(self, domain), domain, method, arguments, operation_id)
+        return prepare(getattr(self, domain), domain, method, arguments, operation_id, confirmed_fingerprint)
 
     def prepare_import_category_delete(self, domain, category_id, operation_id):
         from business.import_category_delete import prepare
@@ -612,8 +628,19 @@ def main():
                 raise ValueError('Unknown business action')
             response = {'id': request['id'], 'ok': True, 'value': value}
         except Exception as error:
-            traceback.print_exc(file=sys.stderr)
-            response = {'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__}
+            # Report shipped code locations and literal reasons, never frame locals or formatted user input.
+            origin = error.__cause__ or error
+            root = Path(__file__).resolve().parent
+            frames = [(frame.f_code, Path(frame.f_code.co_filename).resolve(), line)
+                      for frame, line in traceback.walk_tb(origin.__traceback__)]
+            locations = [f"{path.relative_to(root).as_posix()}:{line} in {code.co_name}"
+                         for code, path, line in frames if path.is_relative_to(root)][-8:]
+            reason = origin.args[0] if origin.args and isinstance(origin.args[0], str) else None
+            literal = reason if frames and frames[-1][1].is_relative_to(root) and reason in frames[-1][0].co_consts else None
+            response = {'id': request['id'], 'ok': False, 'error': str(error), 'errorType': type(error).__name__,
+                        'locations': locations, 'reason': literal, 'diagnosticType': type(origin).__name__,
+                        'businessCode': getattr(error, 'business_code', None),
+                        'systemCode': getattr(origin, 'sqlite_errorname', None) or getattr(origin, 'errno', None)}
         print(json.dumps(jsonable(response), ensure_ascii=False), flush=True)
 
 

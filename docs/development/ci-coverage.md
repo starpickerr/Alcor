@@ -27,7 +27,7 @@ Mac 实装证据来自 2026-11-13 的 `native-candidate-be0231bb/MAC-ACCEPTANCE.
 | 范围 | 自动检查 | 手动入口 |
 | --- | --- | --- |
 | `packages/`、`product/`、`scripts/product/`、根 npm 清单、Makefile、工作流 | 对 main/develop 的 PR 执行当前完整产品套件、构建、包内身份与三平台业务/权限边界；推送另含完整原生包及冻结连接器 | Native workflow dispatch 对精确候选提交运行完整原生包、Keychain、连接器和各平台检查；`make audit` |
-| 保留的 `product/client-shell/`、`@alcor/extension`、隔离环境管理脚本 | 仍在 Native 完整产品测试集内；保留生命周期、凭据传输、进程归属及数据保护断言 | Native workflow dispatch；原隔离方案另保留在 `archive/isolated-runtimes-20261112-02217cd4` |
+| `product/client-shell/`、`@alcor/extension`、环境管理脚本 | Native 完整产品测试集覆盖生命周期、凭据传输、进程归属及数据保护 | Native workflow dispatch |
 | `agent/`、`core/`、`application/`、`desktop/` 等保留代码与旧依赖/检查/来源锁 | 相关 PR/推送保留 Linux 实际进程、授权、HTTP/SSRF 和工具检查；完整历史审计改为每周一 03:17 UTC（北京时间 11:17） | Legacy workflow dispatch 默认执行完整旧审计、18 个旧 UI 脚本及旧 Agent evals；`full_legacy_audit=false` 仅复验同一提交的 Linux 安全边界。`make check-legacy` 仍可定向运行 |
 | 旧 Windows Bash streaming | 原工作流继续在实现、对应测试或工作流变化的 PR 上执行 | Windows Bash workflow dispatch |
 

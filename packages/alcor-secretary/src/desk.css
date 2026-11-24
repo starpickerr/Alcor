@@ -31,19 +31,26 @@
 .alcor-emblem { display:flex; align-items:center; justify-content:center; width:34px; height:34px; flex-shrink:0; }
 .alcor-sidebar-brand button { display:flex; align-items:center; justify-content:center; margin-left:auto; border:0; border-radius:var(--dsw-radius-sm); color:var(--dsw-alias-label-secondary); background:none; width:28px; height:28px; padding:0; cursor:pointer; }
 .alcor-sidebar-brand button:hover { background:var(--dsw-alias-interactive-bg-hover); }
-.alcor-sidebar .alcor-sidebar-chat { display:flex; align-items:center; justify-content:center; gap:8px; flex-shrink:0; height:40px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); background:var(--alcor-brand); color:var(--dsw-alias-label-primary-inverted); padding:0 12px; margin:0 3px 10px; font:inherit; font-weight:500; white-space:nowrap; cursor:pointer; }
-.alcor-sidebar .alcor-sidebar-chat:hover { background:var(--alcor-brand-hover); }
-.alcor-sidebar nav { display:flex; flex-direction:column; gap:20px; min-height:0; overflow-y:auto; overflow-x:hidden; flex:0 1 auto; scrollbar-width:thin; scrollbar-color:transparent transparent; }
-.alcor-sidebar nav:hover, .alcor-sidebar nav:focus-within { scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent; }
+:is(.alcor-sidebar,.alcor-sidebar-actions) .alcor-sidebar-chat { display:flex; align-items:center; justify-content:center; gap:8px; flex-shrink:0; height:40px; border:1px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); background:var(--alcor-brand); color:var(--dsw-alias-label-primary-inverted); padding:0 12px; margin:0 3px 10px; font:inherit; font-weight:500; white-space:nowrap; cursor:pointer; }
+:is(.alcor-sidebar,.alcor-sidebar-actions) .alcor-sidebar-chat:hover { background:var(--alcor-brand-hover); }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav { display:flex; flex-direction:column; gap:8px; min-height:0; overflow-y:auto; overflow-x:hidden; flex:0 1 auto; scrollbar-width:thin; scrollbar-color:transparent transparent; }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav:hover, :is(.alcor-sidebar,.alcor-sidebar-actions) nav:focus-within { scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent; }
 .alcor-nav-group { display:flex; flex-direction:column; gap:4px; }
-.alcor-sidebar nav button { position:relative; display:flex; align-items:center; gap:10px; width:100%; min-height:40px; background:transparent; background-clip:padding-box; border:0; border-inline:3px solid transparent; padding:7px 9px; border-radius:var(--dsw-radius-md); text-align:left; font:inherit; color:inherit; white-space:nowrap; cursor:pointer; }
-.alcor-sidebar nav button[aria-current='page'] { background-color:var(--alcor-surface); color:var(--alcor-brand); font-weight:600; box-shadow:var(--alcor-shadow); }
-.alcor-sidebar nav small { margin-left:auto; min-width:18px; border-radius:var(--dsw-radius-xs); background:var(--dsw-alias-interactive-bg-active); font-size:11px; line-height:18px; text-align:center; }
-.alcor-nav-group > p { margin:0 12px 6px; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
-.alcor-sidebar-workspaces { --dsh-sidebar-inline-padding:8px; --dsh-sidebar-row-padding:12px; --dsh-sidebar-label-gap:6px; --dsh-sidebar-paint-inset:3px; display:flex; flex:1; min-height:100px; margin-top:24px; padding-top:18px; border-top:1px solid var(--dsw-alias-border-l3); overflow:hidden; }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav button { position:relative; display:flex; align-items:center; gap:10px; width:100%; min-height:40px; background:transparent; background-clip:padding-box; border:0; border-inline:3px solid transparent; padding:7px 9px; border-radius:var(--dsw-radius-md); text-align:left; font:inherit; color:inherit; white-space:nowrap; cursor:pointer; }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav button[aria-current='page'] { background-color:var(--alcor-surface); color:var(--alcor-brand); font-weight:600; box-shadow:var(--alcor-shadow); }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav small { margin-left:auto; min-width:18px; border-radius:var(--dsw-radius-xs); background:var(--dsw-alias-interactive-bg-active); font-size:11px; line-height:18px; text-align:center; }
+.alcor-section-toggle, :is(.alcor-sidebar,.alcor-sidebar-actions) nav .alcor-section-toggle {
+  display:flex; align-items:center; gap:6px; min-width:0; min-height:28px; padding:3px 8px;
+  background:transparent; border:0; border-radius:var(--dsw-radius-md); cursor:pointer;
+  color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; font-weight:500; text-align:start;
+}
+.alcor-section-toggle:hover { background:var(--dsw-alias-interactive-bg-hover); }
+.alcor-section-toggle:focus-visible { outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary)); outline-offset:-2px; }
+.alcor-section-toggle[aria-expanded='false'] svg { transform:rotate(-90deg); }
+.alcor-sidebar-workspaces { --dsh-sidebar-inline-padding:8px; --dsh-sidebar-row-padding:12px; --dsh-sidebar-label-gap:6px; --dsh-sidebar-paint-inset:3px; display:flex; flex:1; min-height:var(--alcor-workspace-min-height,clamp(110px,28vh,240px)); margin-top:12px; padding-top:8px; border-top:1px solid var(--dsw-alias-border-l3); overflow:hidden; }
 .alcor-sidebar[data-collapsed] .alcor-sidebar-workspaces { flex:none; min-height:0; margin-top:12px; }
 .alcor-sidebar footer { display:flex; flex-direction:column; margin-top:auto; padding-top:12px; flex-shrink:0; }
-.alcor-sidebar nav button:hover { background-color:var(--dsw-alias-interactive-bg-hover); }
+:is(.alcor-sidebar,.alcor-sidebar-actions) nav button:hover { background-color:var(--dsw-alias-interactive-bg-hover); }
 .alcor-sidebar[data-collapsed] { width:56px; min-width:56px; padding:18px 10px 6px; }
 .alcor-sidebar[data-collapsed] .alcor-sidebar-brand { flex-direction:column; justify-content:center; gap:0; margin:0 0 12px; min-height:36px; }
 .alcor-sidebar[data-collapsed] .alcor-emblem { display:none; }

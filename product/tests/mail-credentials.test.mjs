@@ -1,3 +1,4 @@
+import { loadSourceModule } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
@@ -9,9 +10,9 @@ import Authorization from '@deepseek-ai/dsh-authorization'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
 import * as Executor from '@deepseek-ai/dsh-tool-executor-native'
-import MailConnection from '../../packages/alcor-mail/src/connection.js'
 
 test('mail owns native credential lifecycle, preserves other mailboxes and revokes stale MCP connections', async t => {
+  const { default: MailConnection } = await loadSourceModule(t, 'mail', 'connection.js')
   const dir = await mkdtemp(join(tmpdir(), 'alcor-mail-credentials-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const filename = join(dir, '.credentials.yaml'); const command = join(dir, 'synthetic-mail.mjs')
@@ -80,7 +81,8 @@ for await (const line of createInterface({input:process.stdin})) {
 })
 
 
-test('mail checks classify timeouts, reject stale success and never expose arbitrary connector text', async () => {
+test('mail checks classify timeouts, reject stale success and never expose arbitrary connector text', async t => {
+  const { default: MailConnection } = await loadSourceModule(t, 'mail', 'connection.js')
   const subject={active:'saved-credential',generation:1,ctx:{tools:{}}}
   const check=()=>MailConnection.prototype.check.call(subject,{id:'synthetic'})
   subject.ctx.tools.execute=async()=>{throw new DOMException('private-code','TimeoutError')}

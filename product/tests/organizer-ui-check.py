@@ -10,7 +10,7 @@ from web_check import rpc, stop, open_secretary
 
 
 def main():
-    apple_version = json.loads((ROOT / 'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_version = json.loads((ROOT / '../dsh-apple-sync/package.json').read_text())['version']
     apple_pack = ROOT / f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     artifacts = Path(os.environ.get('STELLA_CHECK_ARTIFACTS', '/private/tmp/stella-organizer-plugin-artifacts'))
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -178,9 +178,10 @@ def main():
 
 def check_tasks(page, business, artifacts):
     open_secretary(page)
+    page.get_by_role('tab', name=re.compile(r'^全部事务')).click()
     page.get_by_role('button', name='新建事务', exact=True).click()
     form = page.get_by_role('form', name='新增事务', exact=True)
-    assert form.locator('.alcor-field > span:first-child').all_text_contents()[:8] == ['标题', '事务详情', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
+    assert form.locator('.alcor-field > span:first-child').all_text_contents()[:9] == ['标题', '事务详情', '安排日期', '截止日期', '截止时间', '优先级', '标签', '事务清单', '频率']
     for label in ['事务时区', '计划日期', '提醒时间', '清单', '重复频率', '标记为重要']:
         expect(form.get_by_label(label, exact=True)).to_have_count(0)
     expect(form.get_by_text('提醒时间使用本机时区', exact=False)).to_have_count(0)
@@ -202,8 +203,8 @@ def check_tasks(page, business, artifacts):
     page.get_by_role('button', name='刷新', exact=True).click()
     card = page.locator(f'[data-task-id="{saved["id"]}"]')
     expect(card.get_by_role('button', name='编辑事务', exact=True)).to_have_count(0)
-    trash = card.get_by_role('button', name='更多操作：Project parent', exact=True)
-    assert not trash.inner_text().strip() and trash.locator('svg').count() == 1
+    expect(card.get_by_role('button', name='更多操作：Project parent', exact=True)).to_have_count(0)
+    task_row = card.get_by_role('button', name='Project parent', exact=True)
     assert card.evaluate('e => getComputedStyle(e).borderBottomStyle !== "none"')
     assert page.locator('.alcor-task-tabs').evaluate('e => Math.abs(e.getBoundingClientRect().right - document.querySelector(".alcor-agent-strip").getBoundingClientRect().right) < 2')
     page.screenshot(path=str(artifacts / 'tasks-list-desktop.png'), animations='disabled')
@@ -262,17 +263,17 @@ def check_tasks(page, business, artifacts):
     page.get_by_role('button', name='关闭详情', exact=True).click()
     mobile(page)
     assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
-    card.get_by_role('button', name='更多操作：Project parent', exact=True).click(trial=True)
+    task_row.click(trial=True)
     page.screenshot(path=str(artifacts / 'tasks-list-mobile.png'), full_page=True, animations='disabled')
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    trash.click()
+    task_row.click(button='right')
     page.get_by_role('menuitem', name='删除事务', exact=True).click()
     dialog = page.get_by_role('dialog', name='删除事务', exact=True)
     expect(dialog).to_contain_text('子事务')
     dialog.get_by_role('button', name='取消', exact=True).click()
     expect(card).to_be_visible()
     expect(page.locator('.alcor-task-detail')).to_have_count(0)
-    trash.click()
+    task_row.press('Shift+F10')
     page.get_by_role('menuitem', name='删除事务', exact=True).click()
     dialog.get_by_role('button', name='确认删除', exact=True).click()
     expect(dialog).not_to_be_visible()
@@ -321,7 +322,7 @@ def check_tasks(page, business, artifacts):
     daily_card = page.locator(f'[data-task-id="{daily_id}"]:visible').filter(has=page.get_by_role('button', name='完成本次', exact=True))
     daily_card.get_by_role('button', name='完成本次', exact=True).click()
     expect(daily_card.get_by_role('button', name='完成本次', exact=True)).to_be_visible()
-    expect(daily_card.locator('time')).to_have_text(tomorrow)
+    expect(daily_card.locator('time')).to_have_attribute('datetime', tomorrow)
     assert next(row for row in business('tasks', 'list_todos', {'start': today, 'end': tomorrow}) if row.get('series_id') == daily['id'])['status'] == 'completed'
     expect(page.get_by_role('button', name='Daily study', exact=True)).to_have_count(4)
     expect(page.get_by_role('tab', name=re.compile(r'^全部事务'))).to_have_attribute('aria-selected', 'true')

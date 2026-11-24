@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 ROOT=Path(__file__).resolve().parents[2]
-NATIVE=ROOT/'packages/alcor-apple-sync/python/apple_sync/native'
+NATIVE=ROOT/'../dsh-apple-sync/python/apple_sync/native'
 
 class NativeCreateContract(unittest.TestCase):
  def test_real_swift_conditions_precede_save_and_receipt_binds_result(self):

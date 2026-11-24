@@ -60,7 +60,7 @@ async function fixture(t, mode = 'native') {
     static inject = ['schedule']
     constructor(ctx) { super(ctx, 'alcorOrganizer'); this.active = true; this.queue = Promise.resolve() }
   }
-  for (const name of ['assertActive', 'serialize', 'automation', 'approvedAutomationDelete', 'business', 'editSchedule']) {
+  for (const name of ['assertActive', 'serialize', 'executeAutomation', 'automation', 'approvedAutomationDelete', 'business', 'editSchedule']) {
     Object.defineProperty(TestOrganizer.prototype, name, Object.getOwnPropertyDescriptor(Organizer.prototype, name))
   }
   await ctx.plugin(TestOrganizer)

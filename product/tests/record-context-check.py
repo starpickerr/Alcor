@@ -47,7 +47,7 @@ def main():
     artifacts.mkdir(parents=True,exist_ok=True);desktop.ARTIFACTS=artifacts
     desktop.PACK=Path(os.environ.get('STELLA_SECRETARY_REVIEW_PACK',str(desktop.PACK)))
     desktop.verify_release()
-    apple_version=json.loads((desktop.ROOT/'packages/alcor-apple-sync/package.json').read_text())['version']
+    apple_version=json.loads((desktop.ROOT/'../dsh-apple-sync/package.json').read_text())['version']
     apple_pack=desktop.ROOT/f'.local/artifacts/alcor-apple-sync-{apple_version}.tgz'
     with fresh_test_home(prefix='stella-record-context-') as temporary,sync_playwright() as playwright:
         home=Path(temporary);desktop.environment(home)
@@ -61,6 +61,7 @@ def main():
         with desktop.desktop(playwright,home,'context-menus') as (page,errors):
             business=lambda domain,method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':domain,'method':method,'arguments':args or {}}})
             open_secretary(page);page.set_viewport_size({'width':1440,'height':1000})
+            page.get_by_role('tab', name='全部事务', exact=True).click()
             page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__stellaCopied=text}}})")
             task=page.locator(f'[data-task-id="{data["task"]["id"]}"]')
             task.click(button='right')
@@ -90,7 +91,7 @@ def main():
             task.click(button='right');menu.get_by_role('menuitem',name='清单',exact=True).click()
             page.get_by_role('menuitem',name='学习',exact=True).click()
             assert business('tasks','get_todo',{'todo_id':data['task']['id']})['category_id']==data['task_target']['id']
-            task.get_by_role('button',name='更多操作：'+data['task']['title'],exact=True).click()
+            task.get_by_role('button',name=data['task']['title'],exact=True).press('Shift+F10')
             expect(menu.get_by_role('menuitem',name='标为已完成',exact=True)).to_be_visible()
             menu.get_by_role('menuitem',name='标为已完成',exact=True).click()
             expect(task).to_have_attribute('data-completed','true')
@@ -115,7 +116,7 @@ def main():
             page.set_viewport_size({'width':1440,'height':1000})
             repeating.click(button='right');menu.get_by_role('menuitem',name='编辑详情',exact=True).click()
             edit=page.get_by_role('form',name='编辑事务',exact=True)
-            expect(edit.get_by_label('截止日期',exact=True)).to_have_value(data['anchor'])
+            expect(edit.get_by_label('开始日期',exact=True)).to_have_value(data['anchor'])
             edit.get_by_role('button',name='取消编辑').click()
             for title,status in [('只读事务','Apple 来源内容只读'),('待确认事务','等待 Apple 确认')]:
                 page.get_by_role('button',name=title,exact=True).click()

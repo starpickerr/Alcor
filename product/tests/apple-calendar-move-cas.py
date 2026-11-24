@@ -203,7 +203,7 @@ class CalendarMove(unittest.TestCase):
                     code = "import json,sys\nfrom apple_sync.calendar import AppleCalendarSync\nfrom apple_sync.export_reservations import reserve\ns=AppleCalendarSync(bridge=object(),db_path=sys.argv[1],calendar_port=object())\ntry:reserve(s,json.load(sys.stdin));print('reserved')\nexcept ValueError:print('blocked')\n"
                     child = subprocess.run([sys.executable, '-B', '-c', code, str(self.sync.db_path)], input=json.dumps(approved),
                                            capture_output=True, text=True, check=True,
-                                           env={**os.environ, 'PYTHONPATH': str(ROOT/'packages/alcor-apple-sync/python')})
+                                           env={**os.environ, 'PYTHONPATH': str(ROOT/'../dsh-apple-sync/python')})
                     self.assertEqual(child.stdout.strip(), 'blocked')
             return original(operation, **payload)
         with patch.object(self.bridge, 'call', side_effect=paused):

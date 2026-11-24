@@ -66,7 +66,7 @@ test('Stella inherits native tool visibility and host denials, including later t
   bindScopeParent(secretary, preset)
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt'] }))
   const names = agent => ctx.tools.schemas(agent).map(tool => tool.name).sort()
-  assert.deepEqual(names(secretary), ['alcor_overview', 'bash', 'working_directory'])
+  assert.deepEqual(names(secretary), ['alcor_overview', 'alcor_read_logs', 'bash', 'working_directory'])
   register('later_installed_executor')
   assert(names(secretary).includes('later_installed_executor'))
   const call = (agent, name) => ctx.tools.execute({ agent, signal: AbortSignal.timeout(5000), calls: [{ type: 'tool-call', id: 'host-probe', name, arguments: '{}' }] })
@@ -142,7 +142,7 @@ test('scheduled briefings use saved sources, deny delegated/unknown turns and re
   ctx.provide('alcorOrganizer', {
     business: async () => [{ source: 'alcor_tasks', accountId: 'local' }, { source: 'elearning', accountId: 'school' }],
     localBriefingSources: async () => assert.fail('Scheduled briefings must use the shared saved-source selection'),
-    generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing' } },
+    generateBriefing: async input => { saved.push(input); return { id: input.requestId, date: input.date, body: 'Synthetic saved briefing', business: { snapshot: { briefing: { error_message: '邮件未覆盖' } } } } },
     startBriefing: async input => ({ requestId: input.requestId, phase: 'starting', sessionId: 'independent-root' }),
     taskReview: async () => ({ open: [{ title: 'Synthetic task' }], completed: 0 }),
   })
@@ -173,9 +173,19 @@ test('scheduled briefings use saved sources, deny delegated/unknown turns and re
   await turn(agent, 'user')
   const started = await call(agent, 'alcor_generate_briefing')
   assert.equal(started.isError, false)
-  assert(JSON.stringify(started).includes('independent-root'))
-  assert(!JSON.stringify(started).includes('\"saved\":true'))
-  assert.equal(saved.length, 3, 'Manual chat starts a task; only scheduled calls wait for business completion')
+  assert(JSON.stringify(started).includes('Synthetic saved briefing'))
+  assert.equal(started.value.coverageWarning, '邮件未覆盖')
+  assert(JSON.stringify(started).includes('\"saved\":true'))
+  assert.equal(saved.length, 4, 'Manual and scheduled chats both wait for the saved briefing')
+  assert.equal(Object.hasOwn(saved[3], 'trigger'), false)
+  await call(agent, 'alcor_generate_briefing')
+  assert.equal(saved[4].requestId, saved[3].requestId, 'Replaying one tool call must reuse its run')
+  const other = { session: { id: 'another-chat', header: {} } }
+  bindScopeParent(other, preset)
+  await turn(other, 'user')
+  await call(other, 'alcor_generate_briefing')
+  assert.notEqual(saved[5].requestId, saved[3].requestId, 'Different conversations may reuse the same model tool-call ID')
+  await turn(agent, 'user')
   const result = await call(agent, 'alcor_review_tasks')
   assert.equal(result.isError, false)
   assert(JSON.stringify(result).includes('Synthetic task'))

@@ -11,6 +11,45 @@ M = runpy.run_path(str(Path(__file__).with_name('apple-category-connection-cas.p
 READS = {'status','reminder_status','calendars','reminder_lists','events','reminders','lookup','reminder_lookup','lookup_identity'}
 
 class CategorySourceReconnect(unittest.TestCase):
+    def test_held_rebind_destination_does_not_stop_healthy_calendar(self):
+        from apple_sync import group_scan_claims as claims
+        with M['case']('calendar') as (s,o,b):
+            fresh,healthy,link=self.fixture('calendar',s,o,b,empty=False)
+            b.sources[0]['id']='replacement'
+            fresh.update(calendar_id='replacement',event_id='replacement-event')
+            healthy['title']='Healthy edit after interruption'
+            token=claims.acquire(s,'account1','replacement',['old window'])
+            claims.uncertain(s,token)
+            before=copy.deepcopy(o.get_category(link['alcor_id']))
+            result=s.start_sync()['result']
+            self.assertEqual(result['status'],'partial',result)
+            self.assertEqual(o.get_category(link['alcor_id']),before)
+            self.assertTrue(any(row['title']==healthy['title'] for row in o.list_events()))
+            state=s.status()
+            self.assertEqual([row['attempt_id'] for row in state['scan_claims']],[token])
+            self.assertEqual(state['sync_result']['checked_group_ids'],['healthy'])
+            self.assertFalse(any(row['apple_id']=='replacement' for row in s._stored_links()))
+
+    def test_calendar_read_failure_can_retry_without_an_orphaned_hold(self):
+        with M['case']('calendar') as (s,o,b):
+            fresh,healthy,_=self.fixture('calendar',s,o,b,empty=False)
+            original=b.call
+            def call(op,**kwargs):
+                if op=='events' and kwargs['calendar_ids']==['a']:
+                    raise RuntimeError('synthetic EventKit read failure')
+                return original(op,**kwargs)
+            b.call=call
+            healthy['title']='Healthy edit during read failure'
+            result=s.sync()
+            self.assertEqual(result['status'],'partial',result)
+            self.assertIn('a',result['failed_calendar_ids'])
+            state=s.status()
+            self.assertEqual(state['scan_claims'],[])
+            self.assertEqual(state['sync_result']['failed_group_ids'],['a'])
+            self.assertTrue(any(row['title']==healthy['title'] for row in o.list_events()))
+            b.call=original
+            self.assertEqual(s.sync()['status'],'success')
+
     def fixture(self, kind, s, o, b, *, empty=True, writable=True):
         fresh=copy.deepcopy(b.rows[0]);b.sources[0]['writable']=writable
         fresh['writable']=writable

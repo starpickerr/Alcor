@@ -1,14 +1,11 @@
 import { discoverBriefingSources } from '../../packages/alcor-organizer/src/briefing-sources.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises'
-import { execFileSync } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
-import { HubWorker } from '../../packages/alcor-agent-hub/src/worker.js'
-import { HubCoordinator } from '../../packages/alcor-agent-hub/src/hub.js'
 import { ReminderDelivery } from '../../packages/alcor-organizer/src/reminders.js'
 import { BriefingGenerator } from '../../packages/alcor-organizer/src/briefing.js'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -28,7 +25,7 @@ class TestBriefingGenerator extends BriefingGenerator {
     await authorize()
     const prompt = `任务\n${request.task}\n\n可阅读的原文数据：\n${JSON.stringify(request.entries)}`
     const activation = await this.ctx.subagents.startActivation({ signal: state.controller.signal,
-      request: { prompt: [{ type: 'text', text: prompt }], outputSchema: request.schema } })
+      request: { prompt: [{ type: 'text', text: prompt }], outputSchema: request.schema, submitSchema: request.submitSchema } })
     const result = await activation.result
     state.controller.signal.throwIfAborted()
     if (result.stopReason !== 'completed' || !result.structured) throw new Error('模型未提交完整简报')
@@ -44,9 +41,7 @@ class TestBriefingGenerator extends BriefingGenerator {
 async function fixture(context) {
   const directory = await mkdtemp(join(tmpdir(), 'stella-business-execution-'))
   const options = { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) }
-  const business = new BusinessWorker(directory, options)
-  const hub = new HubWorker(join(directory,'hub')); await hub.call('initialize')
-  const worker = {call:(action,input={}) => action==='invoke' && input.domain==='agent_hub' ? hub.call(action,input) : business.call(action,input),close:async()=>{await hub.close();await business.close()}}
+  const worker = new BusinessWorker(directory, options)
   context.after(async () => { await worker.close(); await rm(directory, { recursive: true, force: true }) })
   const invoke = (domain, method, args = {}) => worker.call('invoke', { domain, method, arguments: args })
   return { directory, options, worker, invoke }
@@ -71,122 +66,6 @@ test('briefing settings reject stale writes', async context => {
 
 })
 
-test('Hub executes dependency joins, captures model/persona, and retries a failed step explicitly', async context => {
-  const { worker, invoke } = await fixture(context)
-  const requests = []
-  let active = 0
-  let maximum = 0
-  let fail = true
-  let releaseInitialPair
-  const initialPairStarted = new Promise(resolve => { releaseInitialPair = resolve })
-  const coordinator = new HubCoordinator({ logger: { warn: assert.fail }, sessionController: { resolveAgent: async () => ({ agent: { model: { current: () => ({ provider: 'synthetic', model: 'default-model' }) } } }) }, subagents: {
-    startActivation: async request => {
-      requests.push(request)
-      active++; maximum = Math.max(maximum, active)
-      const initial = requests.length <= 2
-      if (requests.length === 2) releaseInitialPair()
-      return { childId: 'child-' + requests.length, dispose: async () => {}, result: (initial ? initialPairStarted : Promise.resolve()).then(() => {
-        active--
-        const failed = request.label === 'Fail once' && fail
-        if (failed) fail = false
-        return { stopReason: failed ? 'failed' : 'completed', output: [{ type: 'text', text: 'Formal reply ' + request.label }] }
-      }) }
-    },
-  } }, worker)
-  context.after(() => coordinator.close())
-  const task = await invoke('agent_hub', 'create_task', { payload: { title: 'Join', goal: 'Deliver report', participants: [
-    { nativeAgentId: 'stella', displayName: 'Research', persona: 'Research persona', modelSelection: { mode: 'explicit', providerId: 'synthetic', modelId: 'research-model' } },
-    { nativeAgentId: 'stella', displayName: 'Review' }, { nativeAgentId: 'stella', displayName: 'Fail once' },
-  ] }, request_id: randomUUID() })
-  const steps = [
-    { stepId: 'a', title: 'Research A', participantId: task.participants[0].participantId, dependsOn: [] },
-    { stepId: 'b', title: 'Research B', participantId: task.participants[1].participantId, dependsOn: [] },
-    { stepId: 'c', title: 'Join after both', participantId: task.participants[2].participantId, dependsOn: ['a', 'b'] },
-    { stepId: 'd', title: 'Final summary', participantId: task.participants[1].participantId, dependsOn: ['c'] },
-  ]
-  await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps, expected_revision: task.revision, request_id: randomUUID() })
-  await coordinator.start({ task_id: task.taskId, parentSessionId: 'parent' })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  let result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'failed')
-  assert.equal(maximum, 2)
-  assert.equal(requests[2].request.prompt[0].text.includes('Formal reply Research'), true)
-  assert.equal(requests[0].request.prompt[0].text.includes('Research persona'), true)
-  assert.deepEqual(requests[0].request.agentOptions, { provider: 'synthetic', model: 'research-model' })
-  assert.equal(result.steps[0].attempts[0].actualModel, 'research-model')
-  await coordinator.start({ task_id: task.taskId, parentSessionId: 'parent', step_id: 'c', retry: true })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'succeeded')
-  assert.equal(result.steps[2].attempts.length, 2)
-  assert.equal(result.messages.filter(message => message.kind === 'reply').length, 4)
-  assert.equal(result.steps[2].attempts[1].attemptId, 'child-4')
-  assert.equal(requests.length, 5, 'Retry only the failed step, then continue its pending dependents')
-  assert.ok(requests[4].request.prompt[0].text.includes('Formal reply Fail once'))
-})
-
-test('unreturned Hub attempts become unknown after restart and do not replay', async context => {
-  const { directory, options, worker, invoke } = await fixture(context)
-  let task = await invoke('agent_hub', 'create_task', { payload: { title: 'Interrupted', goal: 'Check once', participants: [{ nativeAgentId: 'stella' }] }, request_id: randomUUID() })
-  task = await invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps: [{ stepId: 'one', title: 'One', participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: randomUUID() })
-  await invoke('agent_hub', 'claim_step', { task_id: task.taskId, step_id: 'one' })
-  await worker.close()
-  const restarted = new HubWorker(join(directory,'hub')); await restarted.call('initialize')
-  context.after(() => restarted.close())
-  const result = await restarted.call('invoke', { domain: 'agent_hub', method: 'get_task', arguments: { task_id: task.taskId } })
-  assert.equal(result.steps[0].attempts[0].status, 'outcome_unknown')
-  assert.equal(result.steps[0].attempts.length, 1)
-  assert.equal(result.messages.at(-1).kind, 'status')
-})
-
-test('external CLI runs use the chosen workspace, persist formal output, and support cancellation', async context => {
-  const { directory, worker, invoke } = await fixture(context)
-  const windows = process.platform === 'win32'
-  const binary = join(directory, windows ? 'synthetic-codex.exe' : 'synthetic-codex')
-  if (windows) {
-    const source = join(directory, 'SyntheticCli.cs')
-    await writeFile(source, `using System;
-using System.Text;
-using System.Threading;
-using System.Web.Script.Serialization;
-class SyntheticCli {
-  static void Main(string[] args) {
-    Console.OutputEncoding = new UTF8Encoding(false);
-    if (Array.IndexOf(args,"--version") >= 0) Console.WriteLine("synthetic 1.0");
-    else if (args[args.Length-1].Contains("WAIT")) Thread.Sleep(30000);
-    else Console.WriteLine(new JavaScriptSerializer().Serialize(new { type="item.completed",
-      item=new { type="agent_message",text="合成回复："+Environment.CurrentDirectory } }));
-  }
-}`, 'utf8')
-    execFileSync(join(process.env.SystemRoot, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
-      ['/nologo', '/codepage:65001', '/reference:System.Web.Extensions.dll', '/out:' + binary, source])
-  } else {
-    await writeFile(binary, '#!/usr/bin/env python3\nimport json,os,sys,time\nif "--version" in sys.argv:\n print("synthetic 1.0")\nelif "WAIT" in sys.argv[-1]:\n time.sleep(30)\nelse:\n print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"合成回复："+os.getcwd()}}),flush=True)\n', { mode: 0o700 })
-  }
-  const provider = await invoke('agent_hub', 'upsert_provider', { provider: { providerLocalId: 'codex-cli', binaryPath: binary } })
-  assert.equal((await invoke('agent_hub', 'probe_provider', { provider_config_id: provider.providerConfigId })).status, 'ready')
-  const coordinator = new HubCoordinator({ logger: { warn: assert.fail } }, worker)
-  context.after(() => coordinator.close())
-  async function create(goal) {
-    let task = await invoke('agent_hub', 'create_task', { payload: { title: goal, goal, participants: [{ providerConfigId: provider.providerConfigId }] }, request_id: randomUUID() })
-    return invoke('agent_hub', 'set_workflow', { task_id: task.taskId, steps: [{ stepId: 'run', title: goal, participantId: task.participants[0].participantId, dependsOn: [] }], expected_revision: task.revision, request_id: randomUUID() })
-  }
-  const task = await create('Deliver')
-  await coordinator.start({ task_id: task.taskId, workspacePath: directory })
-  await waitFor(() => !coordinator.tasks.has(task.taskId))
-  const result = await invoke('agent_hub', 'get_task', { task_id: task.taskId })
-  assert.equal(result.status, 'succeeded')
-  assert.equal(result.messages.find(message => message.kind === 'reply').body, '合成回复：' + await realpath(directory))
-  assert.equal(result.steps[0].attempts[0].artifactRefs.length, 1)
-  const waiting = await create('WAIT')
-  await coordinator.start({ task_id: waiting.taskId, workspacePath: directory })
-  await waitFor(async () => (await invoke('agent_hub', 'list_external_runs')).some(run => run.status === 'running'))
-  await coordinator.cancel(waiting.taskId)
-  await waitFor(() => !coordinator.tasks.has(waiting.taskId))
-  const cancelled = await invoke('agent_hub', 'get_task', { task_id: waiting.taskId })
-  assert.equal(cancelled.steps[0].attempts[0].status, 'cancelled')
-})
-
 test('desktop reminder outbox retries failures, suppresses acknowledged and cancelled deliveries', async context => {
   const { worker, invoke } = await fixture(context)
   const past = new Date(Date.now() - 5000).toISOString()
@@ -205,7 +84,7 @@ test('desktop reminder outbox retries failures, suppresses acknowledged and canc
   await delivery.close()
 })
 
-test('model briefings collect MCP pages, validate complete decisions, retry a failed source and commit one revision', async context => {
+test('model briefings collect MCP pages, validate complete decisions, save available sources and recover missing coverage on update', async context => {
   const { worker, invoke } = await fixture(context)
   const date = new Date().toISOString().slice(0, 10)
   const stamp = new Date(Date.now() - 1000).toISOString()
@@ -223,7 +102,7 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
     const prompt = request.prompt[0].text
     const original = JSON.parse(prompt.split('可阅读的原文数据：\n')[1])
     let structured
-    if (request.outputSchema.properties.decisions) structured = { decisions: original.map(item => ({ id: item.id, selected: true, reason: 'Needs action', section: 'action', score: 90, summary: item.snippet })) }
+    if (request.outputSchema.properties.decisions) structured = { decisions: original.map(item => ({ id: item.id, selected: true, reason: 'Needs action', section: 'action', score: 90, summary: item.body })) }
     else {
       const expected = JSON.parse(prompt.slice(prompt.indexOf('{"date":'), prompt.indexOf('\n\n可阅读的原文数据：'))).items.map(item => item.id)
       structured = { body: '已核对两条来源，准备处理。', source_item_ids: expected, reports: expected.map(id => ({ id, content: '具体任务报告' })) }
@@ -239,13 +118,15 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
   ]
   await worker.call('source_settings', { sources })
   assert.deepEqual(await worker.call('source_settings'), sources)
-  await assert.rejects(generator.generate({record,requestId,parent:{},sources}),/Synthetic source unavailable/)
-  assert.equal((await invoke('briefing','list_briefings')).length,0)
-  assert.equal(await invoke('briefing','get_cursor',{source:'elearning',account_id:'synthetic',cursor_key:'until'}),null)
+  const first = await generator.generate({ record, requestId, parent: {}, sources })
+  assert.equal(first.business.snapshot.briefing.status, 'partial')
+  assert.equal(first.business.snapshot.briefing.error_message, '邮件未覆盖')
+  assert.equal((await invoke('briefing','get_cursor',{source:'elearning',account_id:'synthetic',cursor_key:'until'})).cursor_value, pages[0].until)
+  assert.equal(await invoke('briefing','get_cursor',{source:'email',account_id:'mail-test',cursor_key:'until'}),null)
   mailOffline = false
-  await generator.resume(requestId,async()=>{})
-  const result = await generator.wait(requestId)
-  assert.equal(result.body, '已核对两条来源，准备处理。')
+  const result = await generator.generate({ record, requestId: randomUUID(), parent: {}, sources })
+  assert.match(result.body, /Candidate 0\nDue tomorrow/)
+  assert.match(result.body, /Candidate 1\nDue tomorrow/)
   assert.equal(modelCalls, 1)
   const partial = new TestBriefingGenerator({ tools: { execute: async ({ calls }) => {
     const args = JSON.parse(calls[0].arguments)
@@ -259,16 +140,17 @@ test('model briefings collect MCP pages, validate complete decisions, retry a fa
   } } }, worker)
   await incremental.collect({ ...sources[0], method: 'fetch_source', tool: 'mcp__elearning__fetch_source' }, pages[0].since, pages[0].until, new AbortController().signal)
   assert.deepEqual(receivedCursors, {}, 'A different source method has a different cursor scope')
-  assert.deepEqual(pages.filter(page => 'offset' in page).map(page => page.offset), [0, 1])
+  assert.deepEqual(pages.filter(page => 'offset' in page).map(page => page.offset), [0, 1, 0, 1])
   const saved = await invoke('briefing', 'get_briefing', { briefing_id: result.business.briefingId })
   assert.equal(saved.briefing.status, 'completed')
   assert.equal(saved.mail.length, 2)
   assert.equal(saved.items.length, 2)
   assert.equal(saved.briefing.error_message, '')
-  assert.equal((await invoke('briefing', 'get_cursor', { source: 'elearning', account_id: 'synthetic', cursor_key: 'until' })).cursor_value, pages[0].until)
-  assert.equal((await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' })).cursor_value, pages[0].until)
+  assert.equal((await invoke('briefing', 'get_cursor', { source: 'elearning', account_id: 'synthetic', cursor_key: 'until' })).cursor_value, pages.at(-1).until)
+  assert.equal((await invoke('briefing', 'get_cursor', { source: 'email', account_id: 'mail-test', cursor_key: 'until' })).cursor_value, pages.at(-1).until)
   const same = await generator.generate({ record, requestId, parent: {}, sources })
-  assert.equal(same.id, result.id)
+  assert.equal(same.id, first.id)
+  assert.equal(same.business.snapshot.briefing.status, 'partial')
   assert.equal(modelCalls, 1)
   const inputStamp = new Date().toISOString()
   const invalid = await worker.call('generated_briefing', { record, request_id: randomUUID(), sources: [{ source: 'test', items: [{ source_id: 'bad', title: 'Bad', occurred_at: inputStamp }], cursors: {} }], submissions: [] })
@@ -308,9 +190,7 @@ test('briefing rejects changed source accounts and stops after authorization rev
   const { worker, invoke } = await fixture(context)
   const generator = new TestBriefingGenerator({ tools: { execute: async () => ({ results: [{ result: { value: { structuredContent: { value: { items: [{ source: 'email', account_id: 'different-account' }] } } } } }] }) }, subagents: { startActivation: async () => { throw new Error('must not reach model') } } }, worker)
   context.after(() => generator.close())
-  const collected = await generator.collect({ source: 'email', accountId: 'selected', method: 'fetch_messages', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal)
-  assert.deepEqual(collected.items, [])
-  assert.match(collected.errors[0], /账号已变化/)
+  await assert.rejects(generator.collect({ source: 'email', accountId: 'selected', method: 'fetch_messages', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal), /账号已变化/)
   const record = buildBriefing([], '2026-11-05', 'Synthetic note', new Date().toISOString())
   await assert.rejects(generator.generate({ record, requestId: randomUUID(), parent: {}, sources: [], authorize: async () => { throw new Error('授权已撤销') } }), /授权已撤销/)
   assert.equal((await invoke('briefing', 'list_briefings')).length, 0)
@@ -333,21 +213,24 @@ test('briefing source discovery only enumerates supported metadata and revocatio
     pages++
     return { results: [{ result: { value: { structuredContent: { value: { items: [], next_offset: 1 } } } } }] }
   } } }, worker)
-  const result = await generator.collect({ source: 'elearning', accountId: 'test', method: 'fetch', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal,
-    async () => { if (pages) throw new Error('Source authorization revoked') })
+  await assert.rejects(generator.collect({ source: 'elearning', accountId: 'test', method: 'fetch', arguments: {} }, '2026-11-04T00:00:00Z', '2026-11-05T00:00:00Z', new AbortController().signal,
+    async () => { if (pages) throw new Error('Source authorization revoked') }), /Source authorization revoked/)
   assert.equal(pages, 1)
-  assert.deepEqual(result.errors, ['Source authorization revoked'])
 })
 
-test('briefing body batches expose only their own thread members and constrain output ids', async context => {
+test('legacy briefing body batches expose only their own thread members and constrain output ids', async context => {
   const { worker } = await fixture(context)
   const date = new Date().toISOString().slice(0,10)
   const stamp = new Date(Date.now()-1000).toISOString()
   let bodyBatches=0
+  let firstSubmitSchema
   const generator=new TestBriefingGenerator({tools:{execute:async()=>({results:[{result:{isError:false,value:{structuredContent:{value:{
     source_items:Array.from({length:26},(_,i)=>({source_id:'batch-'+i,thread_id:i<2?'merged-thread':'thread-'+i,title:'Synthetic '+i,snippet:'Needs attention',occurred_at:stamp,payload:{resource_type:'assignment',body:'Full original '+i}})),
     next_offset:null,errors:[],
   }}}}}]})},subagents:{startActivation:async({request})=>{
+    assertObjectJsonSchema(request.submitSchema)
+    firstSubmitSchema ??= request.submitSchema
+    assert.deepEqual(request.submitSchema, firstSubmitSchema)
     assertObjectJsonSchema(request.outputSchema)
     const prompt=request.prompt[0].text
     const original=JSON.parse(prompt.split('可阅读的原文数据：\n')[1])
@@ -368,7 +251,11 @@ test('briefing body batches expose only their own thread members and constrain o
   }}},worker)
   context.after(()=>generator.close())
   const sources=[{source:'elearning',accountId:'synthetic',tool:'mcp__elearning__fetch',method:'fetch',arguments:{}}]
-  const result=await generator.generate({record:buildBriefing([],date,'',stamp),requestId:randomUUID(),parent:{},sources})
+  const requestId = randomUUID(), record = buildBriefing([],date,'',stamp)
+  await worker.call('briefing_run', { method: 'prepare', request_id: requestId, record, sources, context: {} })
+  await worker.call('briefing_run', { method: 'save', request_id: requestId, patch: { routingVersion: null, phase: 'interrupted' } })
+  await generator.resume(requestId, async () => {})
+  const result=await generator.wait(requestId)
   assert.equal(result.kind,'briefing')
   assert.equal(bodyBatches,2)
 })
@@ -384,15 +271,16 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   const generator=new TestBriefingGenerator({tools:{execute:async({calls:[call]})=>{
     const args=JSON.parse(call.arguments);seen.push(args)
     if(failure)throw new Error('Synthetic source failure')
-    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:'A'}},
-      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{resource_type:'assignment',course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
+    const data=empty?[]:[{source_id:'a',title:'A',snippet:'A',occurred_at:stamp,payload:{resource_type:'announcement',course_id:args.course_ids[0],body:'A'}},
+      {source_id:'b',title:'B',snippet:'B',occurred_at:stamp,payload:{resource_type:'announcement',course_id:args.course_ids[0],body:changed?'Changed B':'B'}}]
     return {results:[{result:{isError:false,value:{structuredContent:{value:{source_items:data,next_offset:null,errors:[],cursors:{elearning_state:changed?'v2':'v1'}}}}}}]}
   }},subagents:{startActivation:async({request})=>{
     modelCalls++
     const text=request.prompt[0].text
     const originals=JSON.parse(text.split('可阅读的原文数据：\n')[1])
+    if (changed) assert.deepEqual(originals.map(row => row.body), ['Changed B'])
     let structured
-    if(request.outputSchema.properties.decisions)structured={decisions:originals.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.snippet}))}
+    if(request.outputSchema.properties.decisions)structured={decisions:originals.map(row=>({id:row.id,selected:true,reason:'Keep',section:'fyi',score:80,summary:row.body}))}
     else {const ids=request.outputSchema.properties.source_item_ids.items.enum||[];structured={body:'Synthetic report',source_item_ids:ids,reports:ids.map(id=>({id,content:'Report '+id}))}}
     return {dispose:async()=>{},result:Promise.resolve({stopReason:'completed',structured})}
   }}},worker)
@@ -411,7 +299,7 @@ test('briefing updates bind cursors to selection, reuse unchanged results and on
   assert.equal(current.items.length,2,'Unchanged cards remain in the current day report')
   changed=true;empty=false
   await generate()
-  assert.equal(modelCalls,3,'Only the changed item requires selection and writing')
+  assert.equal(modelCalls,2,'Only the changed notice requires interpretation')
   const beforeFailure=await worker.call('source_cursors',{source:'elearning',account_id:'school',configuration:scope})
   failure=true
   await assert.rejects(generate(),/Synthetic source failure/)

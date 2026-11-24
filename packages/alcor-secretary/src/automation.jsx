@@ -32,7 +32,7 @@ export function AutomationPage({ scope, api, schedule, renderFactorySlot, availa
   if (!available) return <section className="alcor-business"><header className="alcor-app-header"><h1>自动化</h1></header><Notice>请在 DSH 中管理自动化。</Notice><Button variant="outline" onClick={openNative}>打开 DSH 自动化</Button></section>
   return <section style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
     {notice && <Notice tone="warning" role="status">{notice}</Notice>}
-    <div style={{ flex: 1, minHeight: 0 }}>{renderFactorySlot(managerFactory, { remote: adapter.remote, managerHeader, ...(scope === 'alcor' || alcorControls ? { scopeLabel: 'Alcor', manualCreation: true, templates: automationTemplates } : {}) })}</div>
+    <div style={{ flex: 1, minHeight: 0 }}>{renderFactorySlot(managerFactory, { remote: adapter.remote, managerHeader, ...(scope === 'alcor' || alcorControls ? { scopeLabel: 'Alcor', hideScopeLabel: alcorControls, manualCreation: true, templates: automationTemplates } : {}) })}</div>
     <Modal open={!!confirmation} title="确认永久删除自动化" closeLabel="取消删除" onClose={() => settle(false)} className="alcor-editor-dialog"
       footer={<div className="alcor-actions"><Button variant="outline" data-modal-autofocus onClick={() => settle(false)}>取消</Button><Button variant="primary" onClick={() => settle(true)}>删除所列 {confirmation?.targets.length ?? 0} 项</Button></div>}>
       <Notice tone="warning">删除无法撤销。只删除下列版本；变化的自动化会保留。{confirmation?.batch ? '批量逐项处理，可能部分完成。' : ''}</Notice>
@@ -46,8 +46,8 @@ export function SharedAutomationPage(props) {
   const [scope, setScope] = useState('all')
   const [open, setOpen] = useState(false)
   const header = <Menu open={open} onClose={()=>setOpen(false)} portal autoFocus
-    anchor={<Button variant="ghost" size="sm" aria-label="自动化范围" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{scope==='all'?'全部自动化':'Alcor 自动化'}</Button>}>
-    {[['all','全部自动化'],['alcor','Alcor 自动化']].map(([value,label])=><MenuItemButton key={value} current={scope===value} onSelect={()=>{setScope(value);setOpen(false)}}>{label}</MenuItemButton>)}
+    anchor={<Button variant="ghost" size="sm" aria-label="自动化范围" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{scope==='all'?'显示全部任务':'仅显示 Alcor 任务'}</Button>}>
+    {[['all','显示全部任务'],['alcor','仅显示 Alcor 任务']].map(([value,label])=><MenuItemButton key={value} current={scope===value} onSelect={()=>{setScope(value);setOpen(false)}}>{label}</MenuItemButton>)}
   </Menu>
   return <AutomationPage {...props} scope={scope} createScope="alcor" available alcorControls managerFactory="alcor.automation.view" managerHeader={header} />
 }

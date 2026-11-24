@@ -19,7 +19,8 @@ import { BusinessWorker } from '../../packages/alcor-organizer/src/business.js'
 
 // Real SDK/tools, both real Host classes and separate real owner/AppleWorker processes.
 // Only the native EventKit dependency and approval answerer are synthetic.
-for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'category', 'category-import', 'item-finish-recovery', 'item-not-sent'])
+for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'category', 'category-import', 'item-finish-recovery', 'item-not-sent',
+  ...(kind === 'reminders' ? ['item-being-exported', 'item-late-approval'] : [])])
  test(`${kind} ${entity}: real worker/peer roundtrip consumes concrete SDK approval once`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'alcor-delete-wire-')), output = await mkdtemp(join(process.cwd(), '.delete-wire-build-'))
   const ctx = new Context(), ownerWorker = new BusinessWorker(join(root, 'owner'), { worker: new URL('../../packages/alcor-secretary/business/worker.py', import.meta.url) })
@@ -28,7 +29,7 @@ for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'cat
   const classes = {}
   for (const name of ['organizer', 'apple-sync']) {
     const outfile = join(output, name+'.mjs')
-    await build({ entryPoints: [`packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
+    await build({ entryPoints: [name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`], outfile, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24', logLevel: 'silent' })
     classes[name] = (await import(pathToFileURL(outfile))).default
   }
   const owner = Object.create(classes.organizer.prototype), apple = Object.create(classes['apple-sync'].prototype)
@@ -53,23 +54,62 @@ for (const kind of ['calendar', 'reminders']) for (const entity of ['item', 'cat
   const category = entity.startsWith('category'), unlink = entity === 'category-import'
   const domain = kind === 'reminders' ? 'tasks' : 'calendar'
   const rows = await ownerWorker.call('invoke', { domain, method: category ? 'categories' : kind === 'reminders' ? 'list_todos' : 'list_events', arguments: {} })
-  assert(rows.length); const row = rows[0]
+  assert(rows.length)
+  const exporting = entity === 'item-being-exported'
+  const row = exporting ? await ownerWorker.call('invoke', { domain, method: 'create_todo',
+    arguments: { payload: { title: 'New Alcor task', category_id: rows[0].category_id } } }) : rows[0]
   for (const plugin of [Sessions, Projections, Agents, SystemPrompt, Tools, Approval, Native]) await ctx.plugin(plugin, {})
   ctx.provide('alcorSecretary', {}); ctx.provide('alcorOrganizer', owner)
   const session = ctx.sessions.create('synthetic-wire'); session.append('turn/start', { turn: 1 })
   const agent = { ctx, options: { subagentDepth: 0 }, session }, preset = {}; bindScopeParent(agent, preset)
   await ctx.plugin(Object.assign(inner => apply(createScope(inner, preset).ctx), { inject: ['tools', 'systemPrompt', 'alcorSecretary', 'alcorOrganizer'] }))
   const asks = []; let answer = 'rejected'
-  ctx.on('approval/request', request => { asks.push(request); return answer })
+  const late = entity === 'item-late-approval'
+  let delayedPlan
+  ctx.on('approval/request', request => {
+    asks.push(request)
+    if (late && answer === 'allowed-once') {
+      const ticket = [...apple.preparedDeletes.values()].at(-1)
+      delayedPlan = JSON.parse(ticket.serialized)
+      ticket.expires = Date.now() - 1
+    }
+    return answer
+  })
   await ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, messages: [{ source: { kind: 'user' } }] }, async () => {})
   const input = { domain, method: category ? 'delete_category' : kind === 'reminders' ? 'delete_todo' : 'delete_event', arguments: { [domain === 'calendar' ? 'id' : category ? 'category_id' : 'todo_id']: row.id } }
   const call = async id => (await ctx.tools.execute({ agent, signal: AbortSignal.timeout(10000), calls: [{ type: 'tool-call', id, name: 'alcor_business', arguments: JSON.stringify(input) }] })).results[0].result
-  const denied = await call('deny'); assert.equal(denied.isError, true); assert.equal(asks.length, 1, JSON.stringify(denied))
+  // The first owner lookup precedes the normal auto-export, as in the reported race.
+  let exportRun
+  if (exporting) {
+    const originalCall = ownerWorker.call.bind(ownerWorker)
+    ownerWorker.call = async (action, input) => {
+      const result = await originalCall(action, input)
+      if (!exportRun && action === 'invoke' && input.method === 'get_todo') {
+        assert.equal(result.apple, undefined)
+        exportRun = new Promise(resolve => setImmediate(resolve)).then(() => apple.invoke({ method: 'sync', arguments: { kind } }))
+      }
+      return result
+    }
+  }
+  const denied = await call('deny')
+  if (exportRun) assert.equal((await exportRun).status, 'success')
+  assert.equal(denied.isError, true); assert.equal(asks.length, 1, JSON.stringify(denied))
   await assert.rejects(() => readFile(join(root, 'apple', 'synthetic-native-writes.jsonl')), { code: 'ENOENT' })
   answer = 'allowed-once'
   const result = await call('confirm'); assert.equal(result.isError, false, JSON.stringify(result)); assert.equal(asks.length, 2)
   assert.match(asks[1].reason, /account1/)
   const writeCount = async () => { try { return (await readFile(join(root, 'apple', 'synthetic-native-writes.jsonl'), 'utf8')).trim().split('\n').length } catch (error) { if (error.code === 'ENOENT') return 0; throw error } }
+  if (late) {
+    assert.match(JSON.stringify(result), /等待同步/)
+    assert.equal(await writeCount(), 0)
+    const receiptRequest = { ...input, operation_id: delayedPlan.operation_id, confirmed_fingerprint: delayedPlan.plan_fingerprint }
+    assert.equal((await ownerWorker.call('prepare_delete_receipt', receiptRequest)).state, 'pending')
+    await assert.rejects(() => ownerWorker.call('prepare_delete_receipt', { ...receiptRequest, confirmed_fingerprint: 'a'.repeat(64) }), /fingerprint/)
+    await apple.invoke({ method: 'sync', arguments: { kind } })
+    assert.equal((await ownerWorker.call('prepare_delete_receipt', receiptRequest)).state, 'done')
+    await apple.invoke({ method: 'sync', arguments: { kind } })
+    assert.equal(asks.length, 2)
+  }
   assert.equal(await writeCount(), unlink || entity === 'item-not-sent' ? 0 : 1)
   if (unlink) assert.match(asks[1].reason, /Apple 不变/)
   assert(peers.includes('approved_delete')); assert(peers.includes('approved_delete_owner'))

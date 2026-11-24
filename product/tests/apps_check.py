@@ -55,6 +55,7 @@ def check_apps(page, url, compatible):
     rejects('write', {'record': {**task, 'unexpected': True}, 'expectedRevision': 1})
     if compatible:
         open_secretary(page)
+        page.get_by_role('tab', name='全部事务', exact=False).click()
         page.get_by_role('heading', name=task['title'], exact=True).wait_for()
         page.get_by_role('button', name='完成事务', exact=True).click()
         page.get_by_text('事务状态已更新', exact=True).wait_for()
@@ -89,11 +90,12 @@ def check_apps(page, url, compatible):
     if compatible:
         check_app_theme(page)
         open_secretary(page)
+        page.get_by_role('tab', name='全部事务', exact=True).click()
         page.get_by_label('搜索事务', exact=True).fill('no matching task')
         page.get_by_role('heading', name='没有符合条件的事务', exact=True).wait_for()
         page.get_by_label('搜索事务', exact=True).fill('Edited synthetic')
         page.get_by_role('heading', name='Edited synthetic task', exact=True).wait_for()
-        page.get_by_role('tab', name='已完成 0', exact=True).click()
+        page.get_by_role('tab', name='已完成', exact=True).click()
         page.get_by_role('heading', name='没有符合条件的事务', exact=True).wait_for()
         page.get_by_role('button', name='日程', exact=True).click()
         for label in ['日', '周', '年', '列表', '月']:

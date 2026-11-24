@@ -10,10 +10,14 @@ def stamp():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+def completed_sources(run):
+    return run.get('completedSources', sum(not row.get('errors') for row in run['collected']))
+
+
 def public_run(run):
     keys = ('requestId', 'date', 'phase', 'message', 'sessionId', 'model', 'createdAt', 'updatedAt', 'briefingId')
     return {**{key: run[key] for key in keys if key in run},
-            'completedSources': run.get('completedSources', len(run['collected'])), 'completedBatches': run.get('completedBatches', len(run['submissions']))}
+            'completedSources': completed_sources(run), 'completedBatches': run.get('completedBatches', len(run['submissions']))}
 
 
 class BriefingRuns:
@@ -22,6 +26,7 @@ class BriefingRuns:
         self.serialize = serialize
         self.db = business.meta
         self.db.execute('CREATE TABLE IF NOT EXISTS briefing_runs (id TEXT PRIMARY KEY, phase TEXT NOT NULL, document TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS briefing_task_session (id INTEGER PRIMARY KEY CHECK (id=1), document TEXT NOT NULL)')
         for run in self.active():
             if run['phase'] in ACTIVE:
                 record = self.invoke('result', run['requestId'])
@@ -42,7 +47,7 @@ class BriefingRuns:
     def save(self, run, patch):
         run = {**run, **patch, 'updatedAt': stamp()}
         if run['phase'] == 'completed':
-            run.update(completedSources=run.get('completedSources', len(run['collected'])), completedBatches=run.get('completedBatches', len(run['submissions'])))
+            run.update(completedSources=completed_sources(run), completedBatches=run.get('completedBatches', len(run['submissions'])))
             run.update(collected=[], submissions=[], baseline={}, rules=[], sourceStates=[])
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO briefing_runs VALUES (?,?,?)', (run['requestId'], run['phase'], json.dumps(run, ensure_ascii=False)))
@@ -56,7 +61,56 @@ class BriefingRuns:
         if generated_at != baseline_at or states != run['sourceStates'] or run['window']['previous'] != self.business.briefing.store.checkpoint():
             raise ValueError('中断期间简报或来源已有更新，请重新生成简报。')
 
+    def workspace_repairs(self, handled):
+        key = 'briefing_workspace_repair_v1'
+        with self.db:
+            row = self.db.execute('SELECT document FROM settings WHERE key=?', (key,)).fetchone()
+            if row is None:
+                # Snapshot the old executions once so a later user ungrouping stays intentional.
+                pending = [dict(item) for item in self.db.execute("""
+                    SELECT id AS requestId, json_extract(document, '$.sessionId') AS sessionId,
+                        json_extract(document, '$.context.parentSessionId') AS parentSessionId,
+                        json_extract(document, '$.context.cwd') AS cwd
+                    FROM briefing_runs WHERE phase='completed' AND json_extract(document, '$.context.trigger')='scheduled'
+                        AND json_extract(document, '$.context.workspaceId') IS NULL
+                        AND sessionId IS NOT NULL AND parentSessionId IS NOT NULL AND cwd IS NOT NULL
+                    ORDER BY rowid""")]
+            else:
+                pending = json.loads(row[0])
+            if row is None or handled:
+                done = set(handled)
+                pending = [item for item in pending if item['requestId'] not in done]
+                self.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, json.dumps(pending)))
+            return pending
+
     def invoke(self, method, request_id=None, **args):
+        if method == 'workspace_repairs':
+            return self.workspace_repairs(args.get('handled', []))
+        if method == 'session':
+            if 'binding' in args:
+                with self.db:
+                    self.db.execute('INSERT OR REPLACE INTO briefing_task_session VALUES (1,?)', (json.dumps(args['binding']),))
+                return args['binding']
+            row = self.db.execute('SELECT document FROM briefing_task_session WHERE id=1').fetchone()
+            return json.loads(row[0]) if row else None
+        if method == 'history':
+            limit = args.get('limit', 20)
+            if type(limit) is not int or not 1 <= limit <= 50:
+                raise ValueError('运行记录数量须为 1 至 50。')
+            parameters = []
+            where = ''
+            if args.get('before'):
+                previous = self.get(args['before'])
+                where = "WHERE (json_extract(document, '$.createdAt'), id) < (?, ?)"
+                parameters.extend([previous['createdAt'], previous['requestId']])
+            documents = [json.loads(row[0]) for row in self.db.execute(
+                f"SELECT document FROM briefing_runs {where} ORDER BY json_extract(document, '$.createdAt') DESC, id DESC LIMIT ?", [*parameters, limit + 1])]
+            runs = []
+            for run in documents[:limit]:
+                context = run.get('context', {})
+                runs.append({**public_run(run), 'trigger': context.get('trigger', 'manual'),
+                             **({'conversationSessionId': context['parentSessionId']} if context.get('parentSessionId') else {})})
+            return {'runs': runs, 'nextCursor': runs[-1]['requestId'] if len(documents) > limit else None}
         if method == 'status':
             row = self.db.execute("SELECT document FROM briefing_runs ORDER BY (phase IN ('starting','collecting','model')) DESC, rowid DESC LIMIT 1").fetchone()
             return public_run(json.loads(row[0])) if row else {'phase': 'idle'}
@@ -102,7 +156,7 @@ class BriefingRuns:
         requested_date = record['date']
         record = {**record,'date':window['day']}
         current = self.business.briefing.briefing_for_date(record['date'])
-        run = {'protocol':'single-agent-window-v2', 'requestedDate':requested_date, 'window':window, 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
+        run = {'protocol':'single-agent-window-v2', 'routingVersion':1, 'requestedDate':requested_date, 'window':window, 'requestId': request_id, 'date': record['date'], 'record': record, 'sources': sources,
                'context': args.get('context', {}), 'phase': 'starting', 'message': '正在准备简报…',
                'createdAt': stamp(), 'runAt':run_at, 'collected': [], 'submissions': [],
                'rules': self.serialize(self.business.briefing.list_rules(enabled_only=True)),
@@ -114,5 +168,7 @@ class BriefingRuns:
                 raise ValueError('同一操作标识不能用于不同简报。')
             return self.save(run, {'phase': 'completed', 'message': '简报已保存', 'briefingId': saved['business']['briefingId']})
         run['sourceStates'] = [self.business.source_cursors(source['source'], source['accountId'], source) for source in sources]
-        run['windows'] = [window['start']] * len(sources)
+        from .domain.incremental import source_window
+        pending = self.business.briefing.store.pending_source_windows()
+        run['windows'] = [source_window(window, pending, source) for source in sources]
         return self.save(run, {})

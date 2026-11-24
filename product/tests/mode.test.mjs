@@ -341,7 +341,7 @@ test('host main slots register new panels and legacy aliases with equivalent des
   const React = { createElement: noop, useEffect: noop, useState: noop, useRef: noop }
   const generic = new Proxy(noop, { get: () => noop }), require = createRequire(import.meta.url)
   new Function('module', 'exports', 'require', output.outputFiles[0].text)(module, module.exports, name => name === 'react' ? React : name === 'zod' ? require(name) : generic)
-  const slots = { registerFactory: noop, inject: (name, callback) => { if (['main', 'schedule.manager.header'].includes(name)) callback() }, register: row => calls.push(row) }
+  const slots = { registerFactory: noop, inject: (name, callback) => { if (['main', 'schedule.manager.header', 'settings.section'].includes(name)) callback() }, register: row => calls.push(row) }
   const ctx = { slots, configForms:{get:()=>({})}, effect: noop, remote: { $mount: async () => {}, settings: {}, schedule: {}, alcorSecretary: {}, alcorOrganizer: {} },
     inject: (_names, callback) => callback(ctx), uiWorkspace: {}, uiSession: {}, sessions: {}, workspaces: {}, layout: {} }
   await module.exports.apply(ctx)
@@ -350,6 +350,7 @@ test('host main slots register new panels and legacy aliases with equivalent des
     assert.equal(calls.find(row => row.key === current)?.inject().view, current)
   }
   assert.equal(calls.some(row => row.key === 'schedules'), false)
+  assert.equal(calls.some(row => row.name === 'settings.section' && row.id === 'alcor'), false)
   for (const key of ['stella-schedules','alcor-schedules']) assert.equal(calls.filter(row=>row.key===key).length,1)
   const previous = globalThis.__ALCOR_CLIENT_SHELL__
   try {
@@ -365,6 +366,7 @@ test('host main slots register new panels and legacy aliases with equivalent des
     assert.equal(rows.length, 2); assert.equal(rows[0].inject().scope, 'alcor'); assert.equal(rows[1].priority, -10)
   }
   assert.equal(calls.find(row => row.key === 'schedules').inject().scope, 'all')
+  assert.equal(calls.filter(row => row.name === 'settings.section' && row.id === 'alcor').length, 1)
 })
 
 

@@ -7,7 +7,7 @@ from business.object_generations import generations_for
 from business.security_receipts import read_receipt, validate_operation_id
 
 
-def prepare(svc, domain, method, arguments, operation_id):
+def prepare(svc, domain, method, arguments, operation_id, confirmed_fingerprint=None):
     validate_operation_id(operation_id)
     entity, identity, args = _request(domain, method, arguments)
     with svc._connect() as db:
@@ -19,7 +19,8 @@ def prepare(svc, domain, method, arguments, operation_id):
         kind = stored['method']
         if kind.startswith('apple_delete:'):
             receipt = read_receipt(db, operation_id, f'apple_delete:{domain}:{method}', args)
-            return apple_replay(db, svc, entity, receipt['targetId'], operation_id)
+            return apple_replay(db, svc, entity, receipt['targetId'], operation_id, confirmed_fingerprint=confirmed_fingerprint)
+        if confirmed_fingerprint is not None: raise ValueError('expected a confirmed Apple deletion receipt')
         if method == 'delete_category' and kind in ('delete_category', 'delete_import_category'):
             canonical = {'id': identity}
         elif domain == 'tasks' and method == 'delete_todo' and kind == 'delete_todo':

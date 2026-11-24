@@ -1,13 +1,97 @@
 """Task list design in the unchanged official Desktop, with isolated organizer records."""
 import json
 import os
-import tempfile
+import sys
 from fresh_profile_fixture import fresh_test_home, initialize_fresh
 from datetime import datetime,timedelta
 from pathlib import Path
 from playwright.sync_api import expect,sync_playwright
 import official_desktop_check as desktop
 from web_check import open_secretary
+
+
+def check_today_plan(page, business, artifacts):
+    zone = page.evaluate('Intl.DateTimeFormat().resolvedOptions().timeZone')
+    today = datetime.fromisoformat(page.evaluate('new Date().toLocaleDateString("sv-SE")'))
+    yesterday, current, tomorrow, later = [(today + timedelta(days=offset)).date().isoformat() for offset in (-1, 0, 1, 3)]
+
+    def create(title, **fields):
+        return business('create_todo', {'payload': {'title': title, 'timezone': zone, **fields}})
+
+    homework = create('CS30066.01 计算机网络 · Homework4', due_on=current, due_time='23:59')
+    daily = create('leetcode*5', due_on=current, repeat_frequency='daily')
+    review = create('下周复习', planned_on=later)
+    undated = create('未安排的事务')
+    workspace = page.locator('.alcor-task-workspace')
+    today_tab = workspace.get_by_role('tab', name='今天', exact=False)
+    plan_tab = workspace.get_by_role('tab', name='计划', exact=False)
+    panel = workspace.get_by_role('tabpanel')
+    complete_section = panel.locator('[data-group="completed"].alcor-task-group')
+
+    def card(item):
+        return panel.locator(f'[data-task-id="{item["id"]}"]')
+
+    open_secretary(page)
+    expect(today_tab).to_have_attribute('aria-selected', 'true')
+    expect(card(homework)).to_contain_text('今天 23:59 截止')
+    expect(card(daily)).to_have_count(1)
+    expect(card(review)).to_have_count(0)
+    expect(card(undated)).to_have_count(0)
+    initial_occurrence = card(daily).get_attribute('data-tree-key')
+    card(daily).get_by_role('button', name='完成本次', exact=True).click()
+    expect(complete_section.get_by_role('heading', name='今天已完成 1 项')).to_be_visible()
+    expect(card(daily)).to_have_count(1)
+    expect(card(daily)).to_have_attribute('data-tree-key', initial_occurrence)
+    expect(card(daily).get_by_role('button', name='重新打开本次')).to_have_attribute('aria-pressed', 'true')
+    for label in ['本次已完成', '每天重复', '下次明天']:
+        expect(card(daily)).to_contain_text(label)
+    page.screenshot(path=str(artifacts / 'today-finished.png'), animations='disabled')
+
+    card(daily).get_by_role('button', name='leetcode*5', exact=True).click()
+    details = page.get_by_role('region', name='事务详情', exact=True)
+    expect(details.get_by_role('button', name='标为未完成')).to_be_enabled()
+    details.get_by_role('button', name='关闭详情').click()
+    page.reload()
+    open_secretary(page)
+    expect(card(daily).get_by_role('button', name='重新打开本次')).to_be_visible()
+    plan_tab.click()
+    expect(panel.locator(f'section[data-group="{tomorrow}"]')).to_contain_text('leetcode*5')
+    expect(panel.locator(f'section[data-group="{later}"]')).to_contain_text('下周复习')
+    expect(card(daily).get_by_role('button', name='完成本次')).to_have_attribute('aria-pressed', 'false')
+    expect(card(homework)).to_have_count(0)
+    page.screenshot(path=str(artifacts / 'plan.png'), animations='disabled')
+
+    today_tab.click()
+    card(homework).get_by_role('button', name='完成事务', exact=True).click()
+    expect(complete_section.get_by_role('heading', name='今天已完成 2 项')).to_be_visible()
+    expect(card(homework).get_by_role('button', name='重新打开', exact=True)).to_have_attribute('aria-pressed', 'true')
+    card(daily).get_by_role('button', name='重新打开本次').click()
+    expect(card(daily).get_by_role('button', name='完成本次')).to_be_visible()
+    plan_tab.click()
+    expect(card(daily)).to_have_count(0)
+
+    today_tab.click()
+    page.get_by_role('textbox', name='快速添加事务', exact=True).fill('今天快速添加')
+    page.get_by_role('button', name='添加事务', exact=True).click()
+    expect(panel.get_by_role('button', name='今天快速添加', exact=True)).to_be_visible()
+    quick = next(item for item in business('list_todos') if item['title'] == '今天快速添加')
+    assert quick['planned_on'] == current and quick['due_on'] is None
+    overdue = create('过期的截止日期', due_on=yesterday)
+    page.get_by_role('button', name='刷新', exact=True).click()
+    expect(panel.locator('section[data-group="overdue"]')).to_contain_text(overdue['title'])
+    page.get_by_role('tab', name='全部事务', exact=False).click()
+    expect(card(undated)).to_be_visible()
+    today_tab.click()
+    page.emulate_media(color_scheme='dark')
+    page.wait_for_function('document.body.hasAttribute("data-ds-dark-theme")')
+    page.set_viewport_size({'width': 390, 'height': 844})
+    assert page.locator('body').evaluate('e => e.scrollWidth <= e.clientWidth')
+    complete_section.get_by_role('button', name='重新打开', exact=True).scroll_into_view_if_needed()
+    expect(complete_section.get_by_role('button', name='重新打开', exact=True)).to_be_in_viewport()
+    page.screenshot(path=str(artifacts / 'today-narrow-dark.png'), animations='disabled')
+    page.emulate_media(color_scheme='light')
+    page.set_viewport_size({'width': 1440, 'height': 1100})
+    print('PASS: today/plan routing, reload, recurrence detail identity, single completion, undo, quick planning, overdue, undated and narrow dark layout', flush=True)
 
 
 def main():
@@ -26,6 +110,10 @@ def main():
         with desktop.desktop(playwright,home,'tasks-layout') as (page,errors):
             page.set_viewport_size({'width':1440,'height':1100})
             business=lambda method,args=None:desktop.rpc(page,'alcorOrganizer/business',{'request':{'domain':'tasks','method':method,'arguments':args or {}}})
+            if '--today-plan-only' in sys.argv:
+                check_today_plan(page, business, artifacts)
+                assert not errors, errors
+                return
             lists=[business('create_category',{'payload':{'name':name,'color':color}}) for name,color in [('planA','#597ac5'),('学习','#48a28e'),('工作','#b58b54'),('生活','#9b72b0')]]
             day=page.evaluate('new Date().toLocaleDateString("sv-SE")');now=datetime.fromisoformat(day)
             tasks=[]
@@ -46,7 +134,8 @@ def main():
             legacy=[{'id':'legacy-check','title':'保留旧检查数据','completed':False}]
             business('update_todo',{'todo_id':tasks[2]['id'],'payload':{'tags':['课程','Python'],'flagged':True,'url':'https://example.com/course','alarms':[{'offset':-900}],'checklist':legacy,'planned_on':day}})
             child=business('add_subtask',{'parent_id':tasks[2]['id'],'payload':{'title':'核对练习附件','notes':'检查提交所需文件。'}})
-            open_secretary(page);page.get_by_role('button',name='刷新',exact=True).click()
+            open_secretary(page);page.get_by_role('tab',name='全部事务',exact=False).click()
+            page.get_by_role('button',name='刷新',exact=True).click()
             tasks_page=page.locator('.alcor-tasks-page');expect(tasks_page).to_contain_text('完成 Python 练习')
             page.screenshot(path=str(artifacts/('00-before.png' if baseline else '01-tasks-desktop.png')),animations='disabled')
             if baseline:return
@@ -138,7 +227,7 @@ def main():
             assert page.locator('body').evaluate('e=>e.scrollWidth<=e.clientWidth')
             expect(page.get_by_role('button',name='添加事务',exact=True)).to_be_in_viewport()
             page.screenshot(path=str(artifacts/'05-tasks-narrow.png'),animations='disabled')
-            card.get_by_role('button',name='更多操作：完成 Python 练习',exact=True).click()
+            card.get_by_role('button',name='完成 Python 练习',exact=True).press('Shift+F10')
             expect(page.get_by_role('menuitem',name='删除事务',exact=True)).to_be_visible();page.keyboard.press('Escape')
             page.get_by_role('tab',name='已完成',exact=False).click()
             expect(page.get_by_role('button',name='整理桌面文件',exact=True)).to_be_visible()

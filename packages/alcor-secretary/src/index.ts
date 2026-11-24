@@ -1,5 +1,4 @@
 import {permits,selectedScope,publishApplication} from '../../alcor-plugin-info/src/assignments.js'
-import { checkConnection } from './elearning.js'
 import { Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as schema } from 'zod'
@@ -8,6 +7,8 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { remote, overviewSchema, accountSchemas, ownershipSchema } from './remote.js'
 import { ProductSpaces } from './space-host.js'
 import { initializeProfile } from '../../alcor-organizer/src/profile-migration.js'
+import { RuntimeLogs } from './log-host.js'
+import { logHistory, logSchemas } from './log-contract.js'
 
 const domainSpec = defineDomain({
   name: 'alcor_secretary', version: 1,
@@ -35,6 +36,12 @@ export default class Secretary extends TypertRemoteService {
     publishApplication(this.ctx)
     if(process.env.ALCOR_CLIENT_SHELL==='1')this.ctx.on('webserver/index-inject',rows=>rows.push({kind:'global',name:'__ALCOR_CLIENT_SHELL__',value:true}))
     await initializeProfile(this.ctx)
+    let logDomain
+    try { logDomain = await this.ctx.storageDomain.open(defineDomain({ name: 'alcor_logs', version: 1, tables: { history: domainTable(logHistory) } })) }
+    catch { /* Keep Alcor available when diagnostic storage is unavailable. */ }
+    this.runtimeLogs = new RuntimeLogs(this.ctx, logDomain?.table('history') ?? { get: () => undefined, put: async () => { throw new Error('日志存储不可用。') } })
+    this.ctx.effect(() => async () => { await this.runtimeLogs.close(); await logDomain?.close() })
+    this.ctx.logger('alcor-secretary').info('Alcor 日志采集已启动。')
     this.domain = await this.ctx.storageDomain.open(domainSpec)
     this.ctx.effect(() => () => this.domain.close())
     const spaces = await this.ctx.storageDomain.open(defineDomain({ name: 'alcor_spaces', version: 1, tables: { ownership: domainTable(ownershipSchema) } }))
@@ -46,6 +53,11 @@ export default class Secretary extends TypertRemoteService {
       package: '@alcor/secretary', face: 'host', schemas: [],
       invocations: remote.descriptors, model: { services: [], events: [], objects: [] },
     })
+  }
+
+  @Remote
+  async logs(request) {
+    return this.runtimeLogs.list(logSchemas[0].parse(request))
   }
 
   @Remote
@@ -95,7 +107,7 @@ export default class Secretary extends TypertRemoteService {
   async checkElearning(request) {
     accountSchemas.checkElearning[0].parse(request)
     if(!permits(selectedScope(this.ctx,'@alcor/elearning'),'alcor'))return {status:'disconnected'}
-    return checkConnection(this.ctx)
+    return this.ctx.get('alcorElearning')?.checkConnection?.() ?? { status: 'disconnected' }
   }
 
   @Remote

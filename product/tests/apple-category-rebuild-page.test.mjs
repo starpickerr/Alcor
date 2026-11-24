@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createCategoryRebuildPage } from '../../packages/alcor-apple-sync/src/category-rebuild-page.js'
-import { createCategoryRebuildHost } from '../../packages/alcor-apple-sync/src/category-rebuild-host.js'
-import { rebuildCommitSchema, rebuildPreviewSchema } from '../../packages/alcor-apple-sync/src/remote.js'
-import { reviewItems, connectionStatus, resolutionRequest } from '../../packages/alcor-apple-sync/src/presentation.js'
+import { createCategoryRebuildPage } from '../../../dsh-apple-sync/src/category-rebuild-page.js'
+import { createCategoryRebuildHost } from '../../../dsh-apple-sync/src/category-rebuild-host.js'
+import { rebuildCommitSchema, rebuildPreviewSchema } from '../../../dsh-apple-sync/src/remote.js'
+import { reviewItems, connectionStatus, resolutionRequest } from '../../../dsh-apple-sync/src/presentation.js'
 const plan = {ticket:'00000000-0000-4000-8000-000000000000',kind:'calendar',apple_id:'old',source_id:'source',source:{id:'source',title:'Account'},title:'Work',local_id:'local',snapshot:'a'.repeat(64),mode:'empty_container_only',retained_members:[{id:'item',title:'Retain me'}]}
 const ok=value=>({ok:true,value})
 function fixture(overrides={}) {

@@ -13,7 +13,7 @@ test('independent Apple worker shares business records over reverse RPC and stop
   await chmod(helper, 0o755)
   const fixture = join(directory, 'worker.py')
   await writeFile(fixture, `import os, sys
-sys.path.insert(0, ${JSON.stringify(fileURLToPath(new URL('../../packages/alcor-apple-sync/python', import.meta.url)))})
+sys.path.insert(0, ${JSON.stringify(fileURLToPath(new URL('../../../dsh-apple-sync/python', import.meta.url)))})
 os.environ['ALCOR_EVENTKIT_HELPER'] = ${JSON.stringify(helper)}
 os.environ['ALCOR_EVENTKIT_STATE'] = ${JSON.stringify(join(directory, 'eventkit-state.json'))}
 import worker

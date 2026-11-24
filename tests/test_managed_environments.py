@@ -572,7 +572,7 @@ def test_locked_real_mcp_dependencies_install_offline_without_core_site_packages
     package = tmp_path / 'package'
     package.mkdir()
     import shutil
-    shutil.copy2(Path('../MCP/email-mcp/requirements.lock'), package / 'requirements.lock')
+    shutil.copy2(Path('../dsh-email/requirements.lock'), package / 'requirements.lock')
     (package / 'pyproject.toml').write_text('[project]\nname="synthetic-mcp"\nversion="1.0.0"\n')
     store = EnvironmentStore(tmp_path / 'runtime')
     record = store.prepare_python(kind='mcp', identifier='locked-mcp', user='alice', package=package, digest='e'*64)

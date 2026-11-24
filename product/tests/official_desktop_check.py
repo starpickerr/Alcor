@@ -15,6 +15,7 @@ import time
 from uuid import uuid4
 
 from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout, expect, sync_playwright
+from web_check import settings
 
 ROOT = Path(__file__).resolve().parents[2]
 APP = Path(os.environ.get('STELLA_CHECK_DESKTOP_APP', str(ROOT / '.local/desktop-official/mount/DeepSeek Harness.app')))
@@ -215,11 +216,8 @@ def install(page):
 
 
 def check_settings(page):
-    page.get_by_role('button', name=re.compile(r'^(Account menu|账号菜单|More|更多)$')).last.click()
-    page.get_by_role('menuitem', name=re.compile(r'^(Settings|设置)')).click()
-    page.get_by_role('dialog', name=re.compile(r'^(Settings|设置)$')).get_by_role('button', name='Alcor', exact=True).click()
-    page.get_by_role('heading', name='当前空间的项目', exact=True).wait_for()
-    page.get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
+    page.get_by_role('button', name=re.compile(r'^切换使用模式，当前 ')).wait_for()
+    settings(page).get_by_role('button', name=re.compile(r'^(Close|关闭)$')).click()
 
 
 def check_mode_menu_region(page):
@@ -348,7 +346,7 @@ def main():
                     if not args.install_only:
                         check_modes(page)
                     page.screenshot(path=str(ARTIFACTS / 'official-stella-installed.png'))
-                    print('PASS: installed Stella settings and mode checks', flush=True)
+                    print('PASS: native settings open without a redundant Alcor section', flush=True)
                     if not args.install_only:
                         task = rpc(page, 'alcorOrganizer/business', {'request': {'domain': 'tasks', 'method': 'create_todo', 'arguments': {'payload': {'title': 'Synthetic official Desktop persistence'}}}})
                         workers = [line for line in subprocess.check_output(['ps', '-Ao', 'args='], text=True).splitlines()

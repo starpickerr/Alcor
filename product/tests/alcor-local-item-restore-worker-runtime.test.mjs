@@ -32,7 +32,7 @@ for(const kind of ['calendar','reminders'])for(const scenario of ['restore','own
     } finally {await rm(root,{recursive:true,force:true});await rm(output,{recursive:true,force:true})}
   })
   const classes={}
-  for(const name of ['organizer','apple-sync']){const outfile=join(output,name+'.mjs');await build({entryPoints:[`packages/alcor-${name}/src/index.ts`],outfile,bundle:true,packages:'external',format:'esm',platform:'node',target:'node24',logLevel:'silent'});classes[name]=(await import(pathToFileURL(outfile))).default}
+  for(const name of ['organizer','apple-sync']){const outfile=join(output,name+'.mjs');await build({entryPoints:[name==='apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`],outfile,bundle:true,packages:'external',format:'esm',platform:'node',target:'node24',logLevel:'silent'});classes[name]=(await import(pathToFileURL(outfile))).default}
   const owner=Object.create(classes.organizer.prototype),apple=Object.create(classes['apple-sync'].prototype)
   owner.active=true;owner.queue=Promise.resolve();owner.businessWorker=ownerWorker;owner.ctx={get:key=>key==='alcorAppleSync'?apple:undefined}
   apple.active=true;apple.ctx={alcorOrganizer:owner};apple.itemRestores=new Map()
@@ -95,7 +95,7 @@ with sqlite3.connect(p) as db:
     const {default:Gateway}=await import('@deepseek-ai/dsh-api-gateway')
     const {default:RemoteAccess}=await import('@deepseek-ai/dsh-api-remote-access')
     const {HostConnectionService}=await import('@deepseek-ai/dsh-client-connection')
-    const {remote}=await import('../../packages/alcor-apple-sync/src/remote.js')
+    const {remote}=await import('../../../dsh-apple-sync/src/remote.js')
     class PageApple extends TypertRemoteService {constructor(ctx){super(ctx,'alcorAppleSync');this.active=true;this.worker=appleWorker;this.itemRestores=apple.itemRestores}}
     for(const name of ['restoreLocalItem','runItemRestore'])Object.defineProperty(PageApple.prototype,name,Object.getOwnPropertyDescriptor(classes['apple-sync'].prototype,name))
     await ctx.plugin(Typert);await ctx.plugin(RemoteAccess);await ctx.plugin(Gateway,{});await ctx.plugin(PageApple)

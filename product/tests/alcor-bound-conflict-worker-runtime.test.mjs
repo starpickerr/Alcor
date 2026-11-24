@@ -27,7 +27,7 @@ for(const kind of ['calendar','reminders'])for(const choice of ['keep_apple','ke
   let appleWorker
   t.after(async()=>{await ctx.fiber.dispose();if(appleWorker)await appleWorker.close();await ownerWorker.close();await rm(root,{recursive:true,force:true});await rm(output,{recursive:true,force:true})})
   const classes={}
-  for(const name of ['organizer','apple-sync']){const outfile=join(output,name+'.mjs');await build({entryPoints:[`packages/alcor-${name}/src/index.ts`],outfile,bundle:true,packages:'external',format:'esm',platform:'node',target:'node24',logLevel:'silent'});classes[name]=(await import(pathToFileURL(outfile))).default}
+  for(const name of ['organizer','apple-sync']){const outfile=join(output,name+'.mjs');await build({entryPoints:[name==='apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `packages/alcor-${name}/src/index.ts`],outfile,bundle:true,packages:'external',format:'esm',platform:'node',target:'node24',logLevel:'silent'});classes[name]=(await import(pathToFileURL(outfile))).default}
   const owner=Object.create(classes.organizer.prototype),apple=Object.create(classes['apple-sync'].prototype)
   owner.active=true;owner.queue=Promise.resolve();owner.exportAuthorizers=new WeakMap();owner.businessWorker=ownerWorker;owner.ctx={get:key=>key==='alcorAppleSync'?apple:undefined}
   apple.active=true;apple.ctx={alcorOrganizer:owner};apple.preparedExports=new Map();apple.runningExports=new Map()
@@ -76,7 +76,7 @@ for(const kind of ['calendar','reminders'])for(const choice of ['keep_apple','ke
     const {default:Gateway}=await import('@deepseek-ai/dsh-api-gateway')
     const {default:RemoteAccess}=await import('@deepseek-ai/dsh-api-remote-access')
     const {HostConnectionService}=await import('@deepseek-ai/dsh-client-connection')
-    const {remote}=await import('../../packages/alcor-apple-sync/src/remote.js')
+    const {remote}=await import('../../../dsh-apple-sync/src/remote.js')
     let confirmed=false,confirmationCalls=0
     class PageApple extends TypertRemoteService {constructor(ctx){super(ctx,'alcorAppleSync');this.active=true;this.worker=appleWorker;this.preparedExports=apple.preparedExports;this.runningExports=apple.runningExports;this.confirmConflict=async request=>{confirmationCalls++;assert.equal(request.kind,'apple-update');for(const value of [row.id,'account1','Chosen Alcor content'])assert.ok(request.detail.includes(value));return confirmed}}}
     for(const name of ['resolveItemConflict','prepareExport','commitExport'])Object.defineProperty(PageApple.prototype,name,Object.getOwnPropertyDescriptor(classes['apple-sync'].prototype,name))

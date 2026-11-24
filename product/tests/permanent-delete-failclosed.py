@@ -1,7 +1,7 @@
 """Real business owners in synthetic SQLite only. No Profile, model or EventKit."""
 import json,sys,tempfile,unittest,sqlite3
 from pathlib import Path
-sys.path[:0]=['packages/alcor-secretary','packages/alcor-apple-sync/python']
+sys.path[:0]=['packages/alcor-secretary','../dsh-apple-sync/python']
 from business.worker import Business
 from apple_sync.bridge import AppleCalendarBridge,BridgeError
 from apple_sync.contracts import process_operations

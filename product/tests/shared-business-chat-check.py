@@ -83,7 +83,7 @@ class Provider(BaseHTTPRequestHandler):
             assert 'list_todos' in content and 'include_completed:true' in content
             return 'alcor_business', {'domain': 'tasks', 'method': 'list_todos', 'arguments': {'include_completed': True}}
         if self.phase == 2:
-            rows = json.loads(messages[-1]['content'])['result']
+            rows = json.loads(messages[-1]['content'])['result']['items']
             assert any(row['id'] == self.expected_id and row['title'] == 'Synthetic shared task' for row in rows), rows
             return None
         raise AssertionError('Unexpected task-tool phase')

@@ -13,7 +13,7 @@ import pytest
 from core.services import automation_gateway
 
 WORKSPACE_ROOT = Path("stella-plugins-workspace/plugins/automation")
-SIBLING_ROOT = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins" / "automation"
+SIBLING_ROOT = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins" / "automation"
 AGENT = "agent-a"
 USER = "u1"
 

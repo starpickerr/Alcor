@@ -1,7 +1,9 @@
-import {permits,selectedScope} from '../../alcor-plugin-info/src/assignments.js'
+import { indexKnowledgeFile } from './knowledge-files.js'
+import { reportHostFailure } from './worker-diagnostic.js'
+import { permits, selectedScope } from '../../alcor-plugin-info/src/assignments.js'
 import { Service } from '@deepseek-ai/cordis'
 import { createDeletePageHost } from '../../alcor-secretary/src/delete-page-host.js'
-import { billDeleteTitle } from '../../alcor-secretary/src/security-local-delete-gate.js'
+import { billDeleteTitle, deleteTargetKey } from '../../alcor-secretary/src/security-local-delete-gate.js'
 import { z } from 'zod'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -13,6 +15,7 @@ import { BusinessWorker, resolveBusinessPython } from './business.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { setTimeout as wait } from 'node:timers/promises'
 import { ReminderDelivery } from './reminders.js'
 import { BriefingGenerator } from './briefing.js'
 import { discoverBriefingSources, briefingSourceOptions, effectiveBriefingSources, localBriefingSources } from './briefing-sources.js'
@@ -29,14 +32,21 @@ function assertCompatibleProfile(ctx) {
   if (selected.includes('@stella/secretary')) throw new Error('旧版 Stella 插件与 Alcor 不能同时启用，请先迁移 Profile。')
 }
 
+function appleSyncForAlcor(ctx) {
+  return permits(selectedScope(ctx, '@alcor/apple-sync'), 'alcor') ? ctx.get('alcorAppleSync') : undefined
+}
+
 export default class Organizer extends TypertRemoteService {
   readonly agentHubDetached = true
-  static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools']
+  static inject = ['credentials', 'storageDomain', 'typert', 'schedule', 'subagents', 'sessionController', 'agentPresets', 'tools', 'workspaceRegistry']
   private domain
   private businessWorker
+  private knowledgeWorker?: BusinessWorker
+  private createKnowledgeWorker: () => BusinessWorker
   private briefingGenerator
   private active = true
   private queue = Promise.resolve()
+  private calendarPageSyncs = new Map<string, Promise<unknown>>()
   private exportAuthorizers = new WeakMap()
   private deleteAuthorizers = new WeakMap()
   private pageDeletes = createDeletePageHost({
@@ -51,11 +61,20 @@ export default class Organizer extends TypertRemoteService {
     await initializeProfile(this.ctx)
     this.domain = await this.ctx.storageDomain.open(spec)
     const profile = this.ctx.get('profileContext')
-    this.businessWorker = new BusinessWorker(join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business'), { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
+    const directory = join(profile?.dir ?? dshHomePath('profiles', 'default'), 'alcor', 'business')
+    const options = {
+      python: await resolveBusinessPython(),
+      diagnostic: (message, level = 'warn', domain?) =>
+        this.ctx.logger(domain ? `alcor-${domain}` : 'alcor-organizer')[level](message),
+    }
+    this.businessWorker = new BusinessWorker(directory, options)
+    this.createKnowledgeWorker = () => new BusinessWorker(directory, {...options, worker:new URL('../business/knowledge_worker.py',import.meta.url)})
     try { await this.businessWorker.call('migrate', { records: [...this.domain.table('records').entries()].map(([, value]) => value) }) }
     catch (error) { await this.businessWorker.close(); await this.domain.close(); throw error }
     this.ctx.inject(['agentHub'], ctx => { void ctx.agentHub.importLegacyJobs([...this.domain.table('jobs').entries()].map(([,value])=>value)).catch(error=>this.ctx.logger.warn('旧协作记录导入失败：'+error.message)) })
     this.briefingGenerator = new BriefingGenerator(this.ctx, this.businessWorker)
+    try { await this.briefingGenerator.repairLegacyWorkspaces() }
+    catch (error) { reportHostFailure(this.ctx, 'briefing', 'briefing.repairWorkspace', error, '读取或保存历史简报工作区修复进度失败，下次启动时重试。') }
     const reminders = new ReminderDelivery(this.businessWorker, { python: await resolveBusinessPython(), diagnostic: message => this.ctx.logger.warn(message) })
     const reminderTimer = setInterval(() => { void reminders.tick() }, 30000)
     void reminders.tick()
@@ -76,6 +95,7 @@ export default class Organizer extends TypertRemoteService {
       }
       await this.domain.close()
       await this.businessWorker.close()
+      await this.knowledgeWorker?.close()
     })
   }
 
@@ -98,9 +118,21 @@ export default class Organizer extends TypertRemoteService {
           || (input.method === 'delete_event' && !(input.arguments.scope === 'future' && typeof input.arguments.occurrence_on === 'string'))))) {
       throw new Error('缺少可验证的本次人工确认通道，不可恢复删除暂不可用。')
     }
+    if (input.domain === 'knowledge') {
+      this.assertActive()
+      if (['store_file','parsed_asset'].includes(input.method)) throw new Error('请通过文件导入入口收藏原件。')
+      if (['archive', 'restore', 'erase_archived'].includes(input.method)) throw new Error('知识库已改用文件夹整理资料。')
+      if (!this.knowledgeWorker || this.knowledgeWorker.closed) this.knowledgeWorker = this.createKnowledgeWorker()
+      const worker = this.knowledgeWorker
+      const invoke = (method, args) => worker.call('invoke',{domain:'knowledge',method,arguments:args,request_id:input.requestId})
+      if (input.method !== 'import') return invoke(input.method,input.arguments)
+      const args = await indexKnowledgeFile(input.arguments, digest => invoke('parsed_asset',{digest}))
+      this.assertActive()
+      return invoke('store_file',args)
+    }
     if (input.domain === 'automation') return callAutomation(this, input.method, input.arguments)
     if (input.domain === 'apple') {
-      const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+      const apple = appleSyncForAlcor(this.ctx)
       if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
       return apple.invoke({ method: input.method, arguments: input.arguments })
     }
@@ -129,11 +161,42 @@ export default class Organizer extends TypertRemoteService {
     if (input.domain === 'briefing' && input.method === 'source_preferences') return this.businessWorker.call('source_settings')
     if (input.domain === 'briefing' && input.method === 'list_sources') return this.effectiveSources()
     if (input.domain === 'briefing' && input.method === 'available_sources') return this.ctx.tools.definitions().map(tool => tool.name).filter(name => /^(mcp__[A-Za-z0-9_-]+__(fetch_messages|fetch_source|fetch)|[A-Za-z0-9_-]{1,64}_briefing_fetch)$/.test(name))
-    return this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+    const saved = await this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
+    if (input.domain !== 'tasks' || input.method !== 'complete_todo' || !saved?.queued_completion_id) return saved
+    const { queued_completion_id, ...record } = saved
+    const completion = record.apple_pending?.find(operation => operation.id === queued_completion_id && operation.action === 'complete' && operation.state === 'pending')
+    const apple = completion && appleSyncForAlcor(this.ctx)
+    if (typeof apple?.dispatchReminderCompletion !== 'function') return record
+    // The Apple worker calls back into this owner's queue to commit the receipt.
+    try { await apple.dispatchReminderCompletion(saved.id, completion.id) }
+    catch (error) { reportHostFailure(this.ctx, 'tasks', 'apple.completeReminder', error, '无法立即确认本次 Apple 完成操作。', input.requestId) }
+    return this.serialize(() => this.businessWorker.call('invoke', {
+      domain: 'tasks', method: 'get_todo', arguments: { todo_id: saved.id },
+    }))
+  }
+
+  @Remote
+  readCalendarRange(request) {
+    const dates = schemas.readCalendarRange[0].parse(request)
+    return this.queryCalendarRange({domain:'calendar', method:'list_events', arguments:dates})
+  }
+
+  @Remote
+  async syncCalendarRange(request) {
+    const {start, end} = schemas.syncCalendarRange[0].parse(request)
+    this.assertActive()
+    const key = start + '/' + end
+    const pending = this.calendarPageSyncs.get(key)
+    if (pending) return pending
+    const refresh = this.refreshCalendarRange(start, end)
+      .then(result => result ?? null)
+      .finally(() => this.calendarPageSyncs.delete(key))
+    this.calendarPageSyncs.set(key, refresh)
+    return refresh
   }
 
   private async refreshCalendarRange(start, end) {
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple) return
     try { return await apple.invoke({ method: 'sync_range', arguments: { kind: 'calendar', start, end } }) }
     catch (error) { return { status: 'error', reason: error instanceof Error ? error.message : 'Apple 日程加载失败' } }
@@ -213,20 +276,26 @@ export default class Organizer extends TypertRemoteService {
     })
     if (!['tasks', 'calendar'].includes(domain)) throw new Error('未知的删除范围。')
     const task = domain === 'tasks', category = method === 'delete_category', external = method === 'delete_external_todo'
-    const id = category && task ? args.category_id : external ? args.source_key : task ? args.todo_id : method === 'exclude_occurrence' ? args.series_id : args.id
-    const prepared = await this.serialize(async () => {
+    const targetKey = deleteTargetKey(domain, method)
+    const id = args[targetKey]
+    const prepare = () => this.serialize(async () => {
       if (authorize() !== true) throw new Error('删除授权已失效。')
       const receipt = await this.businessWorker.call('prepare_delete_receipt', request)
       if (receipt) return { kind: 'receipt', request, plan: receipt }
       const row = external ? null : await this.businessWorker.call('invoke', { domain,
         method: category ? 'get_category' : task ? 'get_todo' : 'get_event',
-        arguments: { [task ? category ? 'category_id' : 'todo_id' : 'id']: id } })
+        arguments: { [task ? targetKey : 'id']: id } })
       if (authorize() !== true) throw new Error('删除授权已失效。')
       if (external || (row?.apple && !row.apple.planned)) {
         // The manager must distinguish import unlink from native category deletion first.
         if (category) return { kind: 'apple-category', request }
         const plan = await this.businessWorker.call('prepare_apple_delete', request)
         return { kind: plan.replayed ? 'receipt' : 'apple', request, plan }
+      }
+      if (task && !category && !row?.apple && row?.category_id && ['', 'briefing'].includes(row.source_type ?? '')) {
+        const list = await this.businessWorker.call('invoke', { domain, method: 'get_category', arguments: { category_id: row.category_id } })
+        if (authorize() !== true) throw new Error('删除授权已失效。')
+        if (list?.apple && !list.apple.planned && list.apple.can_modify) return { kind: 'awaiting-task-binding', request }
       }
       if (!task && !category && args.occurrence_on) {
         const plan = await this.businessWorker.call('prepare_local_occurrence_delete', {
@@ -239,9 +308,19 @@ export default class Organizer extends TypertRemoteService {
       })
       return { kind: plan.replay ? 'receipt' : 'local', request, plan }
     })
+    let prepared = await prepare()
+    if (prepared.kind === 'awaiting-task-binding') {
+      const deadline = performance.now() + 6000
+      // Release the owner queue so the ordinary reminder sync can finalize its binding.
+      while (prepared.kind === 'awaiting-task-binding' && performance.now() < deadline) {
+        await wait(250)
+        prepared = await prepare()
+      }
+      if (prepared.kind === 'awaiting-task-binding') throw new Error('这条事务尚未建立 Apple 关联。请等待提醒事项同步完成后重试「删除事务」。')
+    }
     if (authorize() !== true) throw new Error('删除授权已失效。')
     if (!['apple', 'apple-category'].includes(prepared.kind)) return prepared
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple) throw new Error('请先安装并启用 Apple 同步插件。')
     let live = this.deleteAuthorizers.get(authorize)
     if (!live) { live = () => this.active && authorize() === true; this.deleteAuthorizers.set(authorize, live) }
@@ -264,7 +343,8 @@ export default class Organizer extends TypertRemoteService {
         scope: plan.scope, operation_id, snapshot: plan.snapshot })
     })
     if (prepared.kind !== 'apple') throw new Error('未知的已批准删除。')
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined), live = this.deleteAuthorizers.get(authorize)
+    const apple = appleSyncForAlcor(this.ctx)
+    const live = this.deleteAuthorizers.get(authorize)
     this.deleteAuthorizers.delete(authorize)
     if (!apple || !live || live() !== true) throw new Error('Apple 删除授权已失效。')
     if (prepared.applePlan.mode === 'local-import-unlink') return apple.commitApprovedDelete(prepared.applePlan, live)
@@ -274,7 +354,28 @@ export default class Organizer extends TypertRemoteService {
         confirmed_intent: { version: 1, plan_fingerprint: prepared.applePlan.plan_fingerprint } })
     })
     if (live() !== true) return { status: 'pending', operation_id, pending: true, message: '删除已排队，但会话授权已失效，尚未继续发送到 Apple。' }
-    return apple.commitApprovedDelete(prepared.applePlan, live)
+    try {
+      return await apple.commitApprovedDelete(prepared.applePlan, live)
+    } catch (error) {
+      // A short-lived Apple preview may expire while the confirmation is open.
+      // The durable outbox already owns this exact approved intent. Only read its state.
+      if (!(error instanceof Error) || error.message !== '删除审批无效或已消费。') throw error
+      const receipt = await this.serialize(() => this.businessWorker.call('prepare_delete_receipt', {
+        ...request, confirmed_fingerprint: prepared.applePlan.plan_fingerprint,
+      })).catch(() => null)
+      if (receipt?.replayed !== true || receipt.operation_id !== operation_id ||
+          receipt.confirmed_fingerprint !== prepared.applePlan.plan_fingerprint) throw error
+      if (receipt.state === 'cancelled') throw new Error('此次删除已取消。')
+      let status = receipt.state, message
+      if (receipt.targetConflict || receipt.state === 'uncertain' || (receipt.has_error && receipt.state !== 'done')) {
+        status = 'needs_review'; message = '已保留删除确认，目标或同步结果需要核对。请在 Apple 同步中查看。'
+      } else if (receipt.state === 'pending') message = '删除已确认，等待同步。'
+      else if (receipt.state === 'sending') message = '删除已确认，正在同步。'
+      else if (receipt.state === 'done') message = '删除已完成。'
+      else throw error
+      this.ctx.logger?.('alcor-organizer').info('本次 Apple 删除未获执行许可，已核实原确认回执 · %s · 操作 %s', status, operation_id)
+      return { status, operation_id, pending: receipt.pending, message }
+    }
   }
 
   approvedDeletePeer(request, authorize) {
@@ -313,7 +414,7 @@ export default class Organizer extends TypertRemoteService {
 
   async prepareApprovedExport(request, authorize) {
     this.assertActive()
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple || this.ctx.invocation) throw new Error('Apple 导出审批入口不可用。')
     let live = this.exportAuthorizers.get(authorize)
     if (!live) { live = () => this.active && authorize() === true; this.exportAuthorizers.set(authorize, live) }
@@ -322,7 +423,7 @@ export default class Organizer extends TypertRemoteService {
 
   async commitApprovedExport(plan, authorize) {
     this.assertActive()
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (!apple || this.ctx.invocation) throw new Error('Apple 导出审批入口不可用。')
     const live = this.exportAuthorizers.get(authorize)
     this.exportAuthorizers.delete(authorize)
@@ -355,7 +456,7 @@ export default class Organizer extends TypertRemoteService {
 
   // Only the live explicit restore call may access these conditional owner methods.
   restoreAppleItem(request, authorize) {
-    const apple = (permits(selectedScope(this.ctx,'@alcor/apple-sync'),'alcor') ? this.ctx.get('alcorAppleSync') : undefined)
+    const apple = appleSyncForAlcor(this.ctx)
     if (this.ctx.invocation || !this.active || !apple || typeof authorize !== 'function') throw new Error('本地恢复入口不可用。')
     return apple.restoreItem(request, () => this.active && authorize() === true)
   }
@@ -476,8 +577,51 @@ export default class Organizer extends TypertRemoteService {
   }
 
   @Remote
+  async briefingConversation(request) {
+    const input = schemas.briefingConversation[0].parse(request)
+    return this.serialize(async () => {
+      const preferences = await this.businessWorker.call('invoke', { domain: 'briefing', method: 'get_preferences', arguments: {} })
+      if (preferences.task_target !== 'new_once') throw new Error('执行位置已更改，请重新生成简报。')
+      const registry = this.ctx.workspaceRegistry
+      const workspaceId = preferences.task_workspace_id || input.workspaceId || registry.list()[0]?.id
+      const workspace = workspaceId ? registry.get(workspaceId) : undefined
+      if (workspaceId && !workspace) throw new Error('关联工作区不可用，请重新选择。')
+      const binding = await this.businessWorker.call('briefing_run', { method: 'session' })
+      if (binding && binding.workspaceId === (workspaceId || '') && !registry.archivedSessionIds.includes(binding.sessionId) && workspace?.sessionIds.includes(binding.sessionId)) {
+        const found = await this.ctx.sessionController.resolveAgent(binding.sessionId)
+        if ('error' in found && found.error.code !== 'session/not-found') throw new Error('简报会话暂时不可用，请稍后重试。')
+        if (!('error' in found) && this.ctx.agentPresets.presetForSession(found.agent.session) === 'alcor') return { sessionId: binding.sessionId }
+      }
+      const created = await this.ctx.sessionController.create({ agentPreset: 'alcor', ...(workspaceId ? { workspaceId } : {}) })
+      await this.ctx.sessionController.rename({ sessionId: created.sessionId, title: '生成/更新简报' })
+      const placed = registry.list().find(item => item.sessionIds.includes(created.sessionId))
+      await this.businessWorker.call('briefing_run', { method: 'session', binding: { sessionId: created.sessionId, workspaceId: placed?.id || workspaceId || '' } })
+      return { sessionId: created.sessionId }
+    })
+  }
+
+  @Remote
+  async briefingRuns(request) {
+    const input = schemas.briefingRuns[0].parse(request)
+    this.assertActive()
+    return this.businessWorker.call('briefing_run', { method: 'history', ...input })
+  }
+
+  @Remote
   async automation(request) {
     const input = schemas.automation[0].parse(request)
+    try {
+      const result = await this.executeAutomation(input)
+      if (result?.code) reportHostFailure(this.ctx, 'automation', 'automation.' + input.action, result, '调度服务返回失败回执。')
+      return result
+    } catch (error) {
+      const known = [automationDeleteUnavailable, '只能读取 Alcor 自动化。', '只能管理 Alcor 自动化。']
+      reportHostFailure(this.ctx, 'automation', 'automation.' + input.action, error, known.includes(error.message) ? error.message : '调度服务未完成该操作。')
+      throw error
+    }
+  }
+
+  private async executeAutomation(input) {
     this.assertActive()
     if (input.action === 'deleteInactive' || (input.action === 'edit' && input.request.action === 'delete')) {
       throw new Error(automationDeleteUnavailable)

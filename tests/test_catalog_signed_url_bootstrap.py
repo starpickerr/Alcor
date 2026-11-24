@@ -21,7 +21,7 @@ def _layout(tmp_path: Path) -> tuple[Path, Path]:
     packages.mkdir(parents=True)
     plugins_root = Path("stella-plugins-workspace/plugins")
     if not plugins_root.is_dir():
-        plugins_root = Path(__file__).resolve().parents[2] / "Stella-Plugins" / "plugins"
+        plugins_root = Path(__file__).resolve().parents[1] / "stella-plugins-workspace" / "plugins"
     entries = []
     for domain in DOMAINS:
         src = plugins_root / domain

@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-NATIVE = ROOT / 'packages/alcor-apple-sync/python/apple_sync/native'
-spec = importlib.util.spec_from_file_location('category_bridge_under_test', ROOT / 'packages/alcor-apple-sync/python/apple_sync/bridge.py')
+NATIVE = ROOT / '../dsh-apple-sync/python/apple_sync/native'
+spec = importlib.util.spec_from_file_location('category_bridge_under_test', ROOT / '../dsh-apple-sync/python/apple_sync/bridge.py')
 bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
 BINDING = 'a' * 64

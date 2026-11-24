@@ -1,6 +1,6 @@
 """Check scope labels in both product modes on an isolated official Desktop.
 
-Pass local secretary, AgentHub and Alcor QQ archives as positional arguments.
+Pass local secretary, mail and Alcor QQ archives as positional arguments.
 Build @alcor/plugin-info with npm run product:plugin-info:pack first.
 """
 import argparse
@@ -46,17 +46,17 @@ def main():
             for name, scope in [('@alcor/secretary', 'Alcor'), ('dsh-onebot-qq', 'Alcor'),
                                 ('@alcor/plugin-info', '共用')]:
                 expect(page.locator(f'[data-plugin-package="{name}"] .alcor-plugin-scope')).to_have_text(scope)
-            hub = page.locator('[data-plugin-package="@alcor/agent-hub"]')
-            buttons = hub.get_by_role('group', name='@alcor/agent-hub 使用范围')
+            connection = page.locator('[data-plugin-package="@alcor/mail"]')
+            buttons = connection.get_by_role('group', name='@alcor/mail 使用范围')
             expect(buttons.get_by_role('button')).to_have_text(['共用', 'Alcor', 'DSH工作台'])
-            expect(buttons.get_by_role('button', name='DSH工作台')).to_have_attribute('aria-pressed', 'true')
-            buttons.get_by_role('button', name='共用').focus()
-            page.keyboard.press('Space')
             expect(buttons.get_by_role('button', name='共用')).to_have_attribute('aria-pressed', 'true')
-            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/agent-hub']=='both'
-            hub.get_by_role('button').first.click()
+            buttons.get_by_role('button', name='Alcor', exact=True).focus()
+            page.keyboard.press('Space')
+            expect(buttons.get_by_role('button', name='Alcor', exact=True)).to_have_attribute('aria-pressed', 'true')
+            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/mail']=='alcor'
+            connection.get_by_role('button').first.click()
             facts = page.locator('.alcor-plugin-facts')
-            expect(facts.get_by_role('button', name='共用')).to_have_attribute('aria-pressed', 'true')
+            expect(facts.get_by_role('button', name='Alcor', exact=True)).to_have_attribute('aria-pressed', 'true')
             expect(facts).to_have_text('共用AlcorDSH工作台')
             page.set_viewport_size({'width': 560, 'height': 840})
             facts.scroll_into_view_if_needed()
@@ -67,14 +67,14 @@ def main():
             mode.click()
             page.get_by_role('menuitem', name=next_mode, exact=True).click()
             open_plugins.click()
-            expect(hub.locator('.alcor-plugin-scope')).to_have_count(1)
+            expect(connection.locator('.alcor-plugin-scope')).to_have_count(1)
             page.get_by_role('button', name=re.compile(r'^(添加插件|Add plugin)$')).first.click()
             expect(page.get_by_role('dialog')).to_be_visible()
             page.keyboard.press('Escape')
             expect(page.get_by_role('dialog')).to_have_count(0)
             assert not errors, errors
         with desktop.desktop(playwright,home,'plugin-scope-restart') as (page, errors):
-            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/agent-hub']=='both'
+            assert desktop.rpc(page,'alcorPluginModes/readScopes',{'request':{}})['@alcor/mail']=='alcor'
             assert not errors,errors
 
 
