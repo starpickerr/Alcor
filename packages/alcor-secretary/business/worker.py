@@ -462,16 +462,6 @@ class Business:
         from business.briefing.domain.incremental import source_cursors
         return source_cursors(self.briefing.store, source, account_id, configuration)
 
-    def list_inbound_recoveries(self, domain):
-        if domain not in ('tasks', 'calendar'):
-            raise ValueError('Unknown recovery domain')
-        return getattr(self, domain).list_apple_inbound_recoveries()
-
-    def restore_inbound_recovery(self, domain, recovery_id):
-        if domain not in ('tasks', 'calendar') or not isinstance(recovery_id, str) or not recovery_id:
-            raise ValueError('Invalid recovery request')
-        return getattr(self, domain).restore_apple_inbound_recovery(recovery_id)
-
     def prepare_delete_receipt(self, domain, method, arguments, operation_id, confirmed_fingerprint=None):
         from business.delete_receipt import prepare
         if domain not in ('tasks', 'calendar'): raise ValueError('Unknown deletion domain')
@@ -585,10 +575,6 @@ def main():
             action = request['action']
             if action == 'briefing_run':
                 value = business.briefing_runs.invoke(**request['input'])
-            elif action == 'list_inbound_recoveries':
-                value = business.list_inbound_recoveries(**request['input'])
-            elif action == 'restore_inbound_recovery':
-                value = business.restore_inbound_recovery(**request['input'])
             elif action == 'prepare_delete_receipt':
                 value = business.prepare_delete_receipt(**request['input'])
             elif action in ('prepare_import_category_delete', 'commit_import_category_delete'):

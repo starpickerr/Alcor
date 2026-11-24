@@ -206,30 +206,6 @@ export default class Organizer extends TypertRemoteService {
     return this.serialize(() => this.businessWorker.call('invoke', { domain: input.domain, method: input.method, arguments: input.arguments, request_id: input.requestId }))
   }
 
-  @Remote
-  async listInboundRecoveries(request) {
-    const input = schemas.listInboundRecoveries[0].parse(request)
-    const invocation = this.ctx.invocation
-    if (invocation?.peer.principal.kind !== 'owner') throw new Error('恢复记录仅供所有者页面查看。')
-    const signal = AbortSignal.any([invocation.signal, invocation.peer.signal])
-    return this.serialize(() => {
-      signal.throwIfAborted()
-      return this.businessWorker.call('list_inbound_recoveries', { domain: input.domain })
-    })
-  }
-
-  @Remote
-  async restoreInboundRecovery(request) {
-    const input = schemas.restoreInboundRecovery[0].parse(request)
-    const invocation = this.ctx.invocation
-    if (invocation?.peer.principal.kind !== 'owner') throw new Error('恢复操作仅供所有者页面使用。')
-    const signal = AbortSignal.any([invocation.signal, invocation.peer.signal])
-    return this.serialize(() => {
-      signal.throwIfAborted()
-      return this.businessWorker.call('restore_inbound_recovery', { domain: input.domain, recovery_id: input.recoveryId })
-    })
-  }
-
   // Host-only path: never expose an approval callback or prepared snapshot over Typert.
   approvedBillDelete(request, authorize) {
     if (this.ctx.invocation || typeof authorize !== 'function') throw new Error('删除需要真实会话的具体单次审批。')

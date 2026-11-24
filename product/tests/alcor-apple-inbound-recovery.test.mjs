@@ -34,20 +34,6 @@ with tempfile.TemporaryDirectory(prefix='alcor-inbound-snapshot-') as root:
   assert len(tables['reminder_deliveries'])==1 and len(tables['reminder_route_deliveries'])==1
   assert db.execute('SELECT 1 FROM todos WHERE id=?',(parent['id'],)).fetchone() is None
   assert db.execute('SELECT 1 FROM todos WHERE id=?',(outside['id'],)).fetchone()
- recovery=tasks.list_apple_inbound_recoveries()[0]['id']
- tasks.create_category({'name':'Synthetic category'}) # A recreated name cannot be overwritten.
- result=tasks.restore_apple_inbound_recovery(recovery)
- assert result['sync']=='local_only' and len(result['ids'])==2 and len(result['categoryIds'])==1
- assert any(x['kind']=='category_renamed' for x in result['conflicts'])
- assert any(x['kind']=='external_dependency_not_relinked' for x in result['conflicts'])
- restored=[tasks.get_todo(identity) for identity in result['ids']]
- assert all(row['source_type']=='apple_recovered' and row['remind_at'] is None for row in restored)
- assert sum(row['parent_id'] in result['ids'] for row in restored)==1
- assert tasks.apple_local_only_categories()==result['categoryIds']
- replay=tasks.restore_apple_inbound_recovery(recovery);assert replay['replayed'] and replay['ids']==result['ids'] and not replay['currentConflict']
- with tasks._connect() as db:
-  assert db.execute('SELECT count(*) FROM reminder_occurrences WHERE todo_id IN (?,?) AND state!=?',(*result['ids'],'cancelled')).fetchone()[0]==0
-  assert db.execute('SELECT count(*) FROM apple_completion_history WHERE local_id IN (?,?)',result['ids']).fetchone()[0]==1
  calendar=CalendarService(Path(root)/'calendar.sqlite3')
  event=calendar.create_event({'title':'Synthetic event','start_at':'2026-11-01T09:00:00+00:00','end_at':'2026-11-01T10:00:00+00:00'})
  calendar.apple_bind('item',event['id'],{'apple_id':'native','can_delete':True})
@@ -59,12 +45,6 @@ with tempfile.TemporaryDirectory(prefix='alcor-inbound-snapshot-') as root:
   data=json.loads(db.execute('SELECT document FROM apple_inbound_recovery').fetchone()[0])['tables']
   assert len(data['calendar_events'])==1 and len(data['calendar_occurrence_exclusions'])==1 and len(data['agenda_handoffs'])==1 and len(data['apple_bindings'])==1
   assert db.execute('SELECT 1 FROM calendar_events WHERE id=?',(event['id'],)).fetchone() is None
- recovery=calendar.list_apple_inbound_recoveries()[0]['id']
- result=calendar.restore_apple_inbound_recovery(recovery)
- assert result['sync']=='local_only' and len(result['ids'])==1
- restored=calendar.get_event(result['ids'][0]);assert restored['source_type']=='apple_recovered' and restored['title']==event['title']
- assert any(x['kind']=='handoff_not_relinked' for x in result['conflicts'])
- assert calendar.restore_apple_inbound_recovery(recovery)['replayed']
 `])
 })
 
@@ -90,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix='alcor-inbound-rollback-') as root:
 `])
 })
 
-test('restored inbound items remain local through the next real synthetic Apple sync', () => {
+test('items restored by an earlier version remain local after sync', () => {
   execFileSync(testPython, ['-B', '-c', `
 import copy,runpy
 from datetime import datetime,timedelta,timezone
@@ -110,16 +90,18 @@ for kind in ('calendar','reminders'):
    assert owner.apple_remove_calendar_inbound(expected,binding['source_id'],binding['group_id'],binding['apple_id'],expected['generation'],missing['deletion_snapshot'])
   else:
    assert result['deleted_local']==1
-  record=owner.list_apple_inbound_recoveries()[0]; restored=owner.restore_apple_inbound_recovery(record['id'])
-  assert restored['sync']=='local_only' and restored['ids']
+  payload={'title':'Previously restored'}
+  legacy=(owner.create_event({**payload,'start_at':'2026-11-01T09:00:00Z','end_at':'2026-11-01T10:00:00Z'}) if kind=='calendar' else owner.create_todo(payload))
+  with owner._connect() as db:
+   db.execute(f"UPDATE {owner.APPLE_ITEMS} SET source_type='apple_recovered' WHERE id=?", (legacy['id'],))
   bridge.calls.clear();sync.sync()
   assert all(op not in ('upsert','reminder_upsert','create_calendar','reminder_list_create','delete','reminder_delete') for op,_ in bridge.calls), bridge.calls
-  row=(owner.get_event if kind=='calendar' else owner.get_todo)(restored['ids'][0]);assert row['source_type']=='apple_recovered'
+  row=(owner.get_event if kind=='calendar' else owner.get_todo)(legacy['id']);assert row['source_type']=='apple_recovered'
  finally:fixture.tearDown()
 `])
 })
 
-test('restored inbound categories never create a new Apple source automatically', () => {
+test('categories restored by an earlier version never create an Apple source', () => {
   execFileSync(testPython, ['-B', '-c', `
 import runpy
 m=runpy.run_path('product/tests/apple-contracts.py')
@@ -129,15 +111,14 @@ for kind in ('calendar','reminders'):
   bridge=m['NativeBridge'](kind);sync=fixture.calendar(bridge) if kind=='calendar' else fixture.reminder(bridge)
   owner=fixture.business.calendar if kind=='calendar' else fixture.business.tasks
   sync.start_sync();category=owner.create_category({'name':'Synthetic recovered category'})
-  if kind=='calendar': owner.create_event({'title':'Synthetic','category_id':category['id'],'start_at':'2026-11-01T09:00:00+00:00','end_at':'2026-11-01T10:00:00+00:00'})
-  else: owner.create_todo({'title':'Synthetic','category_id':category['id']})
-  owner.apple_remove_category(category['id']);record=owner.list_apple_inbound_recoveries()[0]
-  result=owner.restore_apple_inbound_recovery(record['id']);assert result['categoryIds']
+  with owner._connect() as db:
+   db.execute('CREATE TABLE IF NOT EXISTS apple_inbound_local_only (entity TEXT NOT NULL, local_id TEXT NOT NULL, PRIMARY KEY(entity,local_id))')
+   db.execute('INSERT INTO apple_inbound_local_only VALUES (?,?)', ('category',category['id']))
   bridge.calls.clear();sync.sync()
   assert not any(op in ('create_calendar','reminder_list_create','upsert','reminder_upsert') for op,_ in bridge.calls),bridge.calls
-  assert result['categoryIds'][0] in owner.apple_local_only_categories()
+  assert category['id'] in owner.apple_local_only_categories()
   bridge.calls.clear()
-  try: sync.replace_links([{'apple_id':'a','alcor_id':result['categoryIds'][0],'direction':'bidirectional','enabled':True}])
+  try: sync.replace_links([{'apple_id':'a','alcor_id':category['id'],'direction':'bidirectional','enabled':True}])
   except ValueError as error: assert '本机分类' in str(error)
   else: raise AssertionError('local-only category accepted for Apple link')
   assert not bridge.calls

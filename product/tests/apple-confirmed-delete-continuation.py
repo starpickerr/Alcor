@@ -1,4 +1,5 @@
 """One stored user intent across manager restart; synthetic Host, owner and EventKit."""
+from apple_archive_fixture import deletion_snapshots
 import copy,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -39,7 +40,7 @@ class Continuation(unittest.TestCase):
                     plan,_=helper.setup(s,o,b,kind,entity,confirmed=True);s=self.restart(s,o,b,kind)
                     active,calls=self.host(s,o,b,kind);s.sync();s.sync()
                     self.assertEqual(helper.writes(b),['delete_calendar' if kind=='calendar' else 'reminder_list_delete'] if entity=='category' else ['delete' if kind=='calendar' else 'reminder_delete'])
-                    self.assertFalse(active);self.assertFalse(o.apple_operations());self.assertTrue(o.list_apple_inbound_recoveries())
+                    self.assertFalse(active);self.assertFalse(o.apple_operations());self.assertTrue(deletion_snapshots(o))
                     self.assertEqual(sum(c.get('phase')=='begin' for c in calls),1)
     def test_proven_unsent_retry_after_restart_ignores_mapping_read_timestamp(self):
         helper=M['ApprovedDelete']()

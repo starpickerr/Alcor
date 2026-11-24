@@ -1,4 +1,5 @@
 """Explicit existing selections retain missing containers without guessing identity."""
+from apple_archive_fixture import deletion_snapshots
 import copy,runpy,unittest
 from pathlib import Path
 M=runpy.run_path(str(Path(__file__).with_name('apple-import-unlink-run.py')))
@@ -27,7 +28,7 @@ class MissingSelection(unittest.TestCase):
       self.assertEqual([{k:r[k] for k in ('apple_id','alcor_id','direction','enabled')} for r in s._stored_links()],[{k:r[k] for k in ('apple_id','alcor_id','direction','enabled')} for r in links])
       self.assertIn('a',result['result']['failed_calendar_ids' if kind=='calendar' else 'failed_list_ids'])
       self.assertTrue(any(r['title']=='Healthy after offline' for r in (o.list_events() if kind=='calendar' else o.list_todos())))
-      self.assertFalse(helper.writes(b));self.assertFalse(o.list_apple_inbound_recoveries())
+      self.assertFalse(helper.writes(b));self.assertFalse(deletion_snapshots(o))
  def test_unavailable_new_or_reassigned_identity_is_not_treated_as_old_selection(self):
   helper=M['ImportUnlink']()
   for kind in ('calendar','reminders'):

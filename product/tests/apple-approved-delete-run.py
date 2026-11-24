@@ -1,4 +1,5 @@
 """Real owner/manager deletion transactions, fake EventKit and live peer callback."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,runpy,unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -35,7 +36,7 @@ class ApprovedDelete(unittest.TestCase):
                     self.assertEqual(run(s,plan,lambda *a:True,owner)['state'],'done')
                     self.assertEqual(run(s,plan,lambda *a:False,owner)['state'],'done')
                     self.assertEqual(len(self.writes(b)),1);self.assertFalse(s.status()['scan_claims'])
-                    self.assertTrue(o.list_apple_inbound_recoveries())
+                    self.assertTrue(deletion_snapshots(o))
     def test_missing_live_approval_retains_pending_and_zero_native(self):
         for kind in ('calendar','reminders'):
             with self.subTest(kind=kind),M['case'](kind) as (s,o,b):

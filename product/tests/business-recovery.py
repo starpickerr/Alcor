@@ -184,9 +184,9 @@ class Recovery(unittest.TestCase):
                 self.assertEqual(result['deleted_categories'], 1)
                 with self.assertRaises(KeyError):
                     service.get_category(local['id'])
-                archives = [row for row in service.list_apple_inbound_recoveries()
-                            if row['entity'] == 'category' and row['target_id'] == local['id']]
-                self.assertEqual(len(archives), 1)
+                with service._connect() as db:
+                    count = db.execute("SELECT COUNT(*) FROM apple_inbound_recovery WHERE entity='category' AND target_id=?", (local['id'],)).fetchone()[0]
+                self.assertEqual(count, 1)
                 service.create_category({'name': 'Delete locally'})
                 sync.sync()
                 local = next(row for row in service.categories() if row['name'] == 'Delete locally')

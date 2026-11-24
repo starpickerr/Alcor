@@ -1,4 +1,5 @@
 """Native-origin occurrence range deletion over approved owner/manager actions."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,runpy,unittest
 from contextlib import contextmanager
 from datetime import datetime
@@ -111,13 +112,14 @@ class NativeRanges(unittest.TestCase):
             result=run(s,plan,lambda *a:False,lambda action,**kw:getattr(o,action)(**kw))
             self.assertEqual(result['state'],'done');self.assertEqual(len(o.list_events()),1)
             self.assertFalse(s.status()['scan_claims']);self.assertEqual(sum(op=='delete' for op,_ in b.calls),1)
-    def test_archives_cover_each_deleted_member_and_restore_stays_local(self):
+    def test_archives_cover_each_deleted_member_without_recreating_any_on_sync(self):
         with case() as (s,o,b):
             item,op,args,local,plan=preview(s,o,'future');owner_commit(o,'calendar','delete_event',args,op,local['snapshot'],plan['native'])
             run(s,plan,lambda *a:True,lambda action,**kw:getattr(o,action)(**kw))
-            recoveries=o.list_apple_inbound_recoveries();self.assertEqual({r['target_id'] for r in recoveries},{r['id'] for r in local['targets']})
-            restored=[o.restore_apple_inbound_recovery(r['id'])['ids'][0] for r in recoveries];b.calls.clear();s.sync();s.sync()
-            self.assertTrue(all(o.get_event(identity) for identity in restored));self.assertFalse(any(op in ('upsert','delete') for op,_ in b.calls))
+            recoveries=deletion_snapshots(o);self.assertEqual({r['target_id'] for r in recoveries},{r['id'] for r in local['targets']})
+            b.calls.clear();s.sync();s.sync()
+            self.assertTrue(all(s._local(r['target_id']) is None for r in recoveries))
+            self.assertFalse(any(op in ('upsert','delete') for op,_ in b.calls))
     def test_ambiguous_native_range_is_not_guessed(self):
         for change in ('external','detached','duplicate'):
             with self.subTest(change=change),case() as (s,o,b):

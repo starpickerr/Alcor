@@ -1,4 +1,5 @@
 """Pause/restart/reconnect using real managers, synthetic owners and fake EventKit."""
+from apple_archive_fixture import deletion_snapshots
 import copy,json,runpy,unittest
 from pathlib import Path
 M=runpy.run_path(str(Path(__file__).with_name('apple-category-connection-cas.py')))
@@ -64,7 +65,7 @@ class ReconnectConsistency(unittest.TestCase):
                 if kind=='calendar':
                     self.assertIsNotNone(s._local(identity));self.assertEqual(next(r['state'] for r in s._maps() if r[key]==identity),'conflict')
                 else:
-                    self.assertIsNone(s._local(identity));self.assertTrue(o.list_apple_inbound_recoveries())
+                    self.assertIsNone(s._local(identity));self.assertTrue(deletion_snapshots(o))
                 self.assertFalse(any(op in ('delete','delete_calendar','reminder_delete','reminder_list_delete') for op,_ in b.calls))
 
     def test_apple_category_deleted_offline_keeps_unsynced_local_changes(self):
@@ -87,7 +88,7 @@ class ReconnectConsistency(unittest.TestCase):
                     s.clock=lambda:'2026-11-07T00:02:00Z';s.sync();s.sync()
                     self.assertEqual(s._local(identity),before)
                     self.assertTrue(any(row['id']==link['alcor_id'] for row in o.categories()))
-                    self.assertTrue(s.status()['category_conflicts']);self.assertFalse(o.list_apple_inbound_recoveries())
+                    self.assertTrue(s.status()['category_conflicts']);self.assertFalse(deletion_snapshots(o))
                     self.assertFalse(any(op in ('delete','delete_calendar','reminder_delete','reminder_list_delete','upsert','reminder_upsert') for op,_ in b.calls))
 
     def test_existing_explicit_reconnect_preserves_true_and_false_delete_setting(self):

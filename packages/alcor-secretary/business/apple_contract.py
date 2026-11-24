@@ -2,7 +2,7 @@
 import json
 import uuid
 from datetime import datetime, timezone,timedelta
-from business.apple_recovery import capture_inbound_delete, list_inbound_recoveries, restore_inbound_recovery
+from business.apple_recovery import capture_inbound_delete
 
 
 def _pending_delete_message(state):
@@ -513,15 +513,6 @@ class AppleContract:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='apple_inbound_local_only'").fetchone():
                 return []
             return [row[0] for row in db.execute("SELECT local_id FROM apple_inbound_local_only WHERE entity='category'")]
-
-    def list_apple_inbound_recoveries(self):
-        with self._connect() as db:
-            return list_inbound_recoveries(db, 'calendar' if self.APPLE_ITEMS == 'calendar_events' else 'tasks')
-
-    def restore_apple_inbound_recovery(self, recovery_id):
-        with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE')
-            return restore_inbound_recovery(db, 'calendar' if self.APPLE_ITEMS == 'calendar_events' else 'tasks', recovery_id)
 
     def apple_remove_item(self,identity,preserve_children=False):
         with self._connect() as db:

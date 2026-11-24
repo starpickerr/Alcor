@@ -1,4 +1,5 @@
 """Bounded native lookup is not deletion proof; synthetic stores only."""
+from apple_archive_fixture import deletion_snapshots
 import copy
 import runpy
 import unittest
@@ -20,7 +21,7 @@ class MissingEvidence(unittest.TestCase):
         self.local = self.owner.get_event(self.id)
         self.mapping = self.sync._maps()[0]
         self.baseline = self.sync._get('item-metadata:' + self.id)
-        self.archives = self.owner.list_apple_inbound_recoveries()
+        self.archives = deletion_snapshots(self.owner)
         with self.sync._connect() as db:
             db.execute("UPDATE mappings SET missing_since='2026-11-06T00:00:00+00:00' WHERE alcor_id=?", (self.id,))
 
@@ -43,7 +44,7 @@ class MissingEvidence(unittest.TestCase):
         self.assertEqual(self.owner.get_event(self.id)['title'], title or self.local['title'])
         self.assertEqual(next(row for row in self.sync._maps() if row['alcor_id'] == self.id)['state'], 'conflict')
         self.assertEqual(self.sync._get('item-metadata:' + self.id), self.baseline)
-        self.assertEqual(self.owner.list_apple_inbound_recoveries(), self.archives)
+        self.assertEqual(deletion_snapshots(self.owner), self.archives)
         self.assertTrue(self.sync._get('auto_enabled', True))
         self.assertTrue(self.sync._get('sync_deletions'))
 
@@ -74,7 +75,7 @@ class MissingEvidence(unittest.TestCase):
         self.assertEqual(result['deleted_local'], 0)
         self.assertEqual(self.owner.get_event(self.id)['title'], 'verified remote update')
         self.assertEqual(self.sync._maps()[0]['state'], 'active')
-        self.assertEqual(self.owner.list_apple_inbound_recoveries(), self.archives)
+        self.assertEqual(deletion_snapshots(self.owner), self.archives)
 
     def test_elapsed_time_and_manual_confirmation_do_not_turn_null_into_proof(self):
         self.bridge.rows = []
@@ -95,7 +96,7 @@ class MissingEvidence(unittest.TestCase):
     def test_absent_local_id_recreated_during_lookup_is_not_marked_deleted(self):
         self.bridge.rows = []
         self.owner.apple_remove_item(self.id)
-        self.archives = self.owner.list_apple_inbound_recoveries()
+        self.archives = deletion_snapshots(self.owner)
         self.null_lookup(lambda: self.owner.create_event({'id': self.id, 'title': 'new incarnation',
                          'start_at': '2026-11-05T01:00:00Z', 'end_at': '2026-11-05T02:00:00Z'}))
         self.assert_preserved(self.sync.sync(), title='new incarnation')
@@ -110,7 +111,7 @@ class MissingEvidence(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '无法确认'):
                     self.sync.resolve_conflict(self.id, choice)
                 self.assertEqual(self.owner.get_event(self.id)['title'], self.local['title'])
-                self.assertEqual(self.owner.list_apple_inbound_recoveries(), self.archives)
+                self.assertEqual(deletion_snapshots(self.owner), self.archives)
         self.assertFalse(any(op in ('upsert', 'delete') for op, _ in self.bridge.calls[before_calls:]))
         self.assertEqual(self.sync._maps()[0]['state'], 'conflict')
 
@@ -169,7 +170,7 @@ class MissingEvidence(unittest.TestCase):
         self.assertEqual(result['status'], 'error', result)
         self.assertEqual(result['deleted_local'], 0)
         self.assertEqual(self.owner.get_event(self.id)['title'], self.local['title'])
-        self.assertEqual(self.owner.list_apple_inbound_recoveries(), [])
+        self.assertEqual(deletion_snapshots(self.owner), [])
         self.assertTrue(self.sync.status()['scan_claims'])
 
     def test_denied_access_never_archives_local_data(self):
@@ -180,7 +181,7 @@ class MissingEvidence(unittest.TestCase):
         self.assertEqual(result['status'], 'denied')
         self.assertEqual(result['deleted_local'], 0)
         self.assertEqual(self.owner.get_event(self.id)['title'], self.local['title'])
-        self.assertEqual(self.owner.list_apple_inbound_recoveries(), [])
+        self.assertEqual(deletion_snapshots(self.owner), [])
 
 
 if __name__ == '__main__':
