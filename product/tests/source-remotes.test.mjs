@@ -7,9 +7,8 @@ import * as Gateway from '@deepseek-ai/dsh-api-gateway/client'
 import { remote as secretary } from '../../packages/alcor-secretary/src/remote.js'
 import { remote as organizer } from '../../packages/alcor-organizer/src/remote.js'
 import { remote as apple } from '../../../dsh-apple-sync/src/remote.js'
-import { build } from 'esbuild'
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
 test('Stella plugin APIs mount on the real DSH client gateway without namespace conflicts', async t => {
@@ -28,8 +27,7 @@ test('installing the school bundle preserves an existing manual connection and i
   const local = fileURLToPath(new URL('../../.local/', import.meta.url)); await mkdir(local, { recursive: true })
   const folder = await mkdtemp(join(local, 'school-compat-'))
   t.after(() => rm(folder, { recursive: true, force: true }))
-  await build({ entryPoints: [fileURLToPath(new URL('../../../dsh-fudan-elearning/plugin/src/index.ts', import.meta.url))], outfile: join(folder, 'index.mjs'), bundle: true, packages: 'external', platform: 'node', format: 'esm', target: 'node24' })
-  const plugin = await import(pathToFileURL(join(folder, 'index.mjs')).href)
+  const plugin = await loadSourceModule(t, 'elearning', 'index.ts')
   const ctx = new Context(); t.after(() => ctx.fiber.dispose())
   const legacy = { state: async () => ({ installed: true, configured: false, connected: false, writable: true }) }
   const warnings = []
