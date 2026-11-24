@@ -122,6 +122,39 @@ def check(path, version):
         assert [row["title"] for row in titles] == ["提纲", "提纲补充"]
         assert titles[0] == {"id": "old", "title": "提纲", "collection": "课程/数据结构"}
         assert call("graph_titles", query="找不到") == []
+        renamed = call("rename", id=syllabus["id"], revision=4, name="最终大纲")
+        assert renamed["title"] == "最终大纲" and renamed["note"] == "第三章"
+        try:
+            call("rename", id=sid, revision=4, name="过期的修改")
+        except ValueError as error:
+            assert "资料已变化" in str(error)
+        else:
+            raise AssertionError("stale rename accepted")
+        assert call("read", id=sid, revision=4)["title"] == "新名称"
+        assert sid in {x["id"] for x in call("links", id=split["id"])["outgoing"]}
+        assert call("graph_titles", query="最终大纲")[0]["id"] == sid
+        file = call("rename", id=split["id"], revision=split["revision"], name="跨页说明")
+        assert call("original", id=file["id"])["filename"] == "多页.md"
+        assert call("read", id=file["id"], page=2)["text"] == pages[1]
+        call("create_folder", parent="课程", name="空目录")
+        for invalid in ("课程表", " ", "x/y", "..", "长" * 100):
+            try:
+                call("rename_folder", path="课程", name=invalid)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid or conflicting folder rename accepted")
+        before = call("read", id="old")
+        assert call("rename_folder", path="课程", name="新课程") == {"path": "新课程"}
+        assert set(call("collections")) == {"新课程", "新课程/数据结构", "新课程/空目录", "课程表"}
+        after = call("read", id="old")
+        assert after["collection"] == "新课程/数据结构" and after["revision"] == before["revision"] + 1
+        assert call("read", id="old", revision=before["revision"])["collection"] == "课程/数据结构"
+        assert call("search", collection="课程表")["items"][0]["title"] == "外部提纲"
+        # A collection introduced by an older save may only have its leaf stored.
+        call("save", title="日志", text="备注", collection="旧%_/子")
+        call("rename_folder", path="旧%_", name="新目录")
+        assert "新目录/子" in call("collections")
         assert not library.db.execute("PRAGMA foreign_key_check").fetchall()
     finally:
         library.close()
