@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -18,7 +18,12 @@ export const sharedSources = {
 export async function loadSourceModule(t, name, file) {
   const directory = await mkdtemp(resolve(root, '.source-test-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
-  const outfile = resolve(directory, 'source.mjs')
+  const outfile = resolve(directory, 'lib', 'source.mjs')
+  if (file === 'index.ts' && ['elearning', 'mail'].includes(name)) {
+    const server = resolve(directory, 'server')
+    await mkdir(server)
+    await writeFile(resolve(server, 'platform.json'), JSON.stringify({ target: `${process.platform}-${process.arch}` }))
+  }
   await build({ entryPoints: [resolve(root, packageDirectory(name), 'src', file)], outfile,
     plugins: [sharedSources], bundle: true, packages: 'external', platform: 'node', format: 'esm', target: 'node24' })
   return import(pathToFileURL(outfile))

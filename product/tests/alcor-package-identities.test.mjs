@@ -1,4 +1,4 @@
-import { packageDirectory } from './source-test-modules.mjs'
+import { loadSourceModule, packageDirectory } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -98,10 +98,8 @@ test('each new plugin rejects an old selected peer before registration', async t
   t.after(() => rm(directory, { recursive: true, force: true }))
   const profile = await readyProfile(directory)
   for (const name of ['secretary', 'organizer', 'apple-sync', 'elearning', 'mail', 'privacy']) {
-    const extension = name === 'privacy' ? 'js' : 'ts'
-    const output = join(directory, `${name}.mjs`)
-    await build({ entryPoints: [join(root, name === 'apple-sync' ? '../dsh-apple-sync/src/alcor-sync.ts' : `${packageDirectory(name)}/src/index.${extension}`)], outfile: output, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' })
-    const plugin = await import(pathToFileURL(output))
+    const entry = name === 'apple-sync' ? 'alcor-sync.ts' : name === 'privacy' ? 'index.js' : 'index.ts'
+    const plugin = await loadSourceModule(t, name, entry)
     const oldName = name === 'organizer' ? 'secretary' : name
     let sideEffect = false
     const touched = () => { sideEffect = true; throw Error('registration touched') }
