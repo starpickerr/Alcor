@@ -1,4 +1,4 @@
-import { packageDirectory } from './source-test-modules.mjs'
+import { packageDirectory, sharedSources } from './source-test-modules.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
@@ -6,10 +6,11 @@ import { execFileSync } from 'node:child_process'
 import { python } from './platform-python.mjs'
 
 test('every current plugin Host entry bundles without the retired application runtime', async () => {
-  const plugins = ['apple-sync', 'elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
+  const plugins = ['elearning', 'mail', 'organizer', 'plugin-info', 'secretary']
+  if (process.platform === 'darwin') plugins.push('apple-sync')
   const result = await build({
     entryPoints: [...plugins.map(name => `${packageDirectory(name)}/src/index.ts`), 'packages/alcor-privacy/src/index.js'],
-    bundle: true, packages: 'external', platform: 'node', format: 'esm',
+    plugins: [sharedSources], bundle: true, packages: 'external', platform: 'node', format: 'esm',
     outdir: 'out', write: false, metafile: true,
   })
   for (const name of Object.keys(result.metafile.inputs)) {
@@ -20,9 +21,13 @@ test('every current plugin Host entry bundles without the retired application ru
 test('shipped plugin Python sources never import the retired Core or Agent', () => {
   execFileSync(python, ['-B', '-c', `
 import ast
+import sys
 from pathlib import Path
 retired = {'agent', 'application', 'bridge', 'channel', 'core', 'models'}
-for package in ('packages/alcor-secretary', '../dsh-apple-sync/python'):
+packages = ['packages/alcor-secretary']
+if sys.platform == 'darwin':
+    packages.append('../dsh-apple-sync/python')
+for package in packages:
     for path in Path(package).rglob('*.py'):
         tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
         for node in ast.walk(tree):

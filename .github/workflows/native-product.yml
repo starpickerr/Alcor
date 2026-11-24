@@ -12,10 +12,14 @@ on:
 jobs:
   native-source-connectors:
     if: github.event_name != 'pull_request'
-    runs-on: macos-15
+    strategy:
+      matrix:
+        runner: [macos-15, windows-latest]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     defaults:
       run:
+        shell: bash
         working-directory: Alcor
     steps:
       - uses: actions/checkout@v7
@@ -30,7 +34,7 @@ jobs:
               for source in json.load(open('product/source-releases.lock.json'))['sources']:
                   name = source['module'].removesuffix('_mcp')
                   output.write(f'{name}_repository=starpickerr/{source["repo"]}\n')
-                  output.write(f'{name}_revision={source["pluginTag"]}\n')
+                  output.write(f'{name}_revision={source["pluginRevision"]}\n')
           PY
       - uses: actions/checkout@v7
         with:
@@ -55,13 +59,20 @@ jobs:
           cache-dependency-path: dsh-*/requirements.lock
       - name: Install fixed connector build dependencies
         run: |
-          npm ci --ignore-scripts
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            npm ci --force --ignore-scripts
+            interpreter=Scripts/python.exe
+          else
+            npm ci --ignore-scripts
+            interpreter=bin/python
+          fi
           for source in dsh-fudan-elearning dsh-email; do
             python -m venv "../$source/.venv"
-            "../$source/.venv/bin/python" -m pip install --require-hashes -r "../$source/requirements.lock"
-            "../$source/.venv/bin/python" -m pip install PyInstaller==6.22.3
+            "../$source/.venv/$interpreter" -m pip install --require-hashes -r "../$source/requirements.lock"
+            "../$source/.venv/$interpreter" -m pip install PyInstaller==6.22.3
             npm ci --prefix "../$source/plugin" --ignore-scripts
           done
+          echo "SOURCE_TEST_PYTHON=../dsh-fudan-elearning/.venv/$interpreter" >> "$GITHUB_ENV"
       - name: Verify pinned sources and package current connectors
         run: npm run product:sources:pack
       - name: Test actual frozen protocols without development paths or real accounts
@@ -71,7 +82,7 @@ jobs:
             archive=$(node -e 'const name=process.argv[1]; const path=name === "mail" ? "dsh-email" : "dsh-fudan-elearning"; const p=require("../"+path+"/plugin/package.json"); console.log("alcor-"+name+"-"+p.version+".tgz")' "$source")
             tar -xzf ".local/artifacts/$archive" --strip-components=1 -C ".local/source-check/@alcor/$source"
           done
-          ../dsh-fudan-elearning/.venv/bin/python product/tests/source-protocol-check.py .local/source-check
+          "$SOURCE_TEST_PYTHON" product/tests/source-protocol-check.py .local/source-check
   linux-native-plugin:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -82,21 +93,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: Alcor
-      - name: Read pinned connector plugin tags
+      - name: Read pinned connector revisions
         id: connectors
         shell: bash
         run: |
-          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_tag=${source.pluginTag}`)' >> "$GITHUB_OUTPUT"
+          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_revision=${source.pluginRevision}`)' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-email
-          ref: ${{ steps.connectors.outputs.email_tag }}
+          ref: ${{ steps.connectors.outputs.email_revision }}
           path: dsh-email
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-fudan-elearning
-          ref: ${{ steps.connectors.outputs.elearning_tag }}
+          ref: ${{ steps.connectors.outputs.elearning_revision }}
           path: dsh-fudan-elearning
           persist-credentials: false
       - name: Read pinned Apple plugin revision
@@ -141,21 +152,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: Alcor
-      - name: Read pinned connector plugin tags
+      - name: Read pinned connector revisions
         id: connectors
         shell: bash
         run: |
-          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_tag=${source.pluginTag}`)' >> "$GITHUB_OUTPUT"
+          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_revision=${source.pluginRevision}`)' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-email
-          ref: ${{ steps.connectors.outputs.email_tag }}
+          ref: ${{ steps.connectors.outputs.email_revision }}
           path: dsh-email
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-fudan-elearning
-          ref: ${{ steps.connectors.outputs.elearning_tag }}
+          ref: ${{ steps.connectors.outputs.elearning_revision }}
           path: dsh-fudan-elearning
           persist-credentials: false
       - name: Read pinned Apple plugin revision
@@ -200,21 +211,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: Alcor
-      - name: Read pinned connector plugin tags
+      - name: Read pinned connector revisions
         id: connectors
         shell: bash
         run: |
-          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_tag=${source.pluginTag}`)' >> "$GITHUB_OUTPUT"
+          node -e 'for (const source of require("./product/source-releases.lock.json").sources) console.log(`${source.module.replace(/_mcp$/, "")}_revision=${source.pluginRevision}`)' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-email
-          ref: ${{ steps.connectors.outputs.email_tag }}
+          ref: ${{ steps.connectors.outputs.email_revision }}
           path: dsh-email
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
           repository: starpickerr/dsh-fudan-elearning
-          ref: ${{ steps.connectors.outputs.elearning_tag }}
+          ref: ${{ steps.connectors.outputs.elearning_revision }}
           path: dsh-fudan-elearning
           persist-credentials: false
       - name: Read pinned Apple plugin revision
