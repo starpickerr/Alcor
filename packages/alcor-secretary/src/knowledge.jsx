@@ -1137,7 +1137,7 @@ export function KnowledgePage({ api }) {
             </> : <>
               <GraphTitleFinder key={graphFolder} api={api} collection={graphFolder} revision={revision}
                 disabled={!result} onLocate={(row) => locateGraphNode.current?.(row)} />
-              {folders.length > 0 && <select aria-label="筛选图谱文件夹" value={graphFolder}
+              {folders.length > 0 && <select aria-label="筛选图谱文件夹" title={graphFolder ? displayLocation(graphFolder) : '全部文件夹'} value={graphFolder}
                 onChange={(event) => {
                   overviewCamera.current = null
                   setResult(null)

@@ -1,4 +1,5 @@
 import React, { useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Button, IconCloseOutlineRegular, IconFolderOpenRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { select as d3Select } from 'd3-selection'
 import { drag } from 'd3-drag'
@@ -8,7 +9,6 @@ import { forceCenter, forceSimulation, forceManyBody, forceLink, forceX, forceY,
 
 const folderColors = ['#3f65ed', '#009984', '#8b53d9', '#df7426', '#548c32', '#ca4e89', '#1889bc', '#c29506', '#d85751', '#7168b7']
 const folder = (node) => node.collection?.split('/')[0] || ''
-const byDegree = (first, second) => second.degree - first.degree
 
 // Adapted from CowAgent (MIT, Copyright 2022 zhayujie).
 // https://github.com/zhayujie/CowAgent/blob/4d0ee4d2c5a709562551b8f209dfe679fa7c2094/channel/web/static/js/views/knowledge.js#L850-L999
@@ -60,11 +60,11 @@ function renderPositions(model, positions) {
   return { ...model, nodes, edges }
 }
 
-function GraphInspector({ graph, selected, onSelect, onOpen, onFocus, focusId, color, panel }) {
+function GraphInspector({ graph, selected, onSelect, onClose, onOpen, onFocus, focusId, color, panel }) {
   const outgoing = [], incoming = []
   for (const { source, target } of graph.edges) {
-    if (source.id === selected?.id) outgoing.push(target)
-    if (target.id === selected?.id) incoming.push(source)
+    if (source.id === selected.id) outgoing.push(target)
+    if (target.id === selected.id) incoming.push(source)
   }
   function list(items, follow = false) {
     return <ul>{items.map((node) => (
@@ -75,17 +75,10 @@ function GraphInspector({ graph, selected, onSelect, onOpen, onFocus, focusId, c
       </button></li>
     ))}</ul>
   }
-  if (!selected) {
-    const hubs = [...graph.nodes].sort(byDegree).slice(0, 6)
-    return <aside ref={panel} className="alcor-graph-inspector" aria-label="资料关系">
-      <h2>{graph.edges.length ? '关联最多的资料' : '当前资料'}</h2>
-      {list(hubs)}
-    </aside>
-  }
   return <aside ref={panel} className="alcor-graph-inspector" aria-label="资料关系">
     <div className="alcor-graph-inspector-heading">
       <h2>{selected.title}</h2>
-      <Button size="sm" variant="ghost" aria-label="清除选择" title="清除选择" onClick={() => onSelect(null)}>
+      <Button size="sm" variant="ghost" aria-label="清除选择" title="清除选择" onClick={onClose}>
         <IconCloseOutlineRegular size={14} aria-hidden="true" />
       </Button>
     </div>
@@ -161,13 +154,14 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
     }
     const { width, height } = element.getBoundingClientRect()
     let lastWidth = width, lastHeight = height
-    const observer = new ResizeObserver(() => {
+    function resize() {
       const { width, height } = element.getBoundingClientRect()
       if (!width || !height || (Math.abs(width - lastWidth) < 0.5 && Math.abs(height - lastHeight) < 0.5)) return
       lastWidth = width
       lastHeight = height
       fit()
-    })
+    }
+    const observer = new ResizeObserver(resize)
     observer.observe(element)
 
     simulation.alphaDecay(0.1).on('tick', () => setFrame({ model, positions: nodePositions(nodes) }))
@@ -197,7 +191,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
       }))
 
     controls.current = {
-      fit,
+      resize, fit,
       scaleBy: (factor) => canvas.interrupt().call(behavior.scaleBy, factor),
       pan: (x, y) => canvas.interrupt().call(behavior.translateBy, x / canvas.property('__zoom').k, y / canvas.property('__zoom').k),
       center: (node) => canvas.interrupt().call(behavior.translateTo, node.x, node.y),
@@ -212,8 +206,12 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
   }, [model, camera, showUnlinked])
 
   function select(id, { center = false, revealInspector = true } = {}) {
-    setSelectedId(id)
-    setHover(null)
+    // Measure the canvas and inspector after the selection changes their layout.
+    flushSync(() => {
+      setSelectedId(id)
+      setHover(null)
+    })
+    controls.current?.resize()
     if (center) {
       const node = graph.nodes.find((item) => item.id === id)
       if (node) controls.current?.center(node)
@@ -223,8 +221,8 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
       if (below) panel.current.scrollIntoView({ block: 'nearest' })
     }
   }
-  function snapshot(id = selectedId) {
-    return { view, fitScale, selectedId: id, positions: nodePositions(model.nodes), showUnlinked }
+  function snapshot() {
+    return { view, fitScale, selectedId, positions: nodePositions(model.nodes), showUnlinked }
   }
   function openFocus(node) {
     onFocus(node, snapshot())
@@ -267,7 +265,7 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
       <div className="alcor-graph-body">
         <div className="alcor-graph-stage">
           <svg ref={svg} className="alcor-graph-canvas" aria-label="资料引用网络" role="group" tabIndex={0}
-            aria-description="拖动空白平移。滚轮围绕光标缩放。单击节点或按回车打开资料，按空格查看引用关系。"
+            aria-description="拖动空白平移。滚轮围绕光标缩放。单击节点或按回车、空格查看资料关系。"
             data-dragging={dragging || undefined} data-labels-visible={labelsVisible}
             onKeyDown={(event) => {
               const step = { ArrowLeft: [35, 0], ArrowRight: [-35, 0], ArrowUp: [0, 35], ArrowDown: [0, -35] }[event.key]
@@ -289,18 +287,17 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
               })}
               {graph.nodes.map((node) => (
                 <g key={node.id} role="button" tabIndex={0} data-node-id={node.id}
-                  aria-label={'打开资料：' + node.title} aria-pressed={selectedId === node.id}
+                  aria-label={'查看资料关系：' + node.title} aria-pressed={selectedId === node.id}
                   className="alcor-graph-node" style={{ '--node-color': color(node) }}
                   data-active={node.id === active} data-matched={node.matched} data-dim={!!active && !related.has(node.id)}
                   transform={`translate(${node.x},${node.y})`}
                   onPointerEnter={(event) => hoverNode(event, node)} onPointerMove={(event) => hoverNode(event, node)}
                   onPointerLeave={() => setHover(null)}
-                  onClick={() => onOpen(node, snapshot(node.id))}
+                  onClick={() => select(node.id)}
                   onKeyDown={(event) => {
                     if (!['Enter', ' '].includes(event.key)) return
                     event.preventDefault()
-                    if (event.key === 'Enter') onOpen(node, snapshot(node.id))
-                    else select(node.id)
+                    select(node.id)
                   }}>
                   <circle r={Math.max(node.radius, 11 / view.k)} fill="transparent" className="alcor-graph-hit" />
                   <circle r={dotRadius(node)} vectorEffect="non-scaling-stroke" className="alcor-graph-dot" />
@@ -321,9 +318,13 @@ export function KnowledgeGraph({ data, onOpen, onFocus, focusId, camera, locateR
             <span>{hover.node.collection?.replaceAll('/', ' / ') || '顶层'}</span>
           </div>}
         </div>
-        <GraphInspector graph={graph} selected={selected} onSelect={select} panel={panel}
-          onOpen={(node) => onOpen(node, snapshot(node.id))} onFocus={openFocus}
-          focusId={focusId} color={color} />
+        {selected && <GraphInspector graph={graph} selected={selected} onSelect={select} panel={panel}
+          onClose={() => {
+            svg.current?.querySelector('[aria-pressed="true"]')?.focus()
+            select(null)
+          }}
+          onOpen={(node) => onOpen(node, snapshot())} onFocus={openFocus}
+          focusId={focusId} color={color} />}
       </div>
       <footer className="alcor-graph-legend">
         {groups.map((group, index) => <span key={group}><i style={{ background: folderColors[index % folderColors.length] }} />{group || '顶层'}</span>)}
