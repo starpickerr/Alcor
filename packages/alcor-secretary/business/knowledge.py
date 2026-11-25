@@ -69,8 +69,8 @@ class Knowledge:
     def invoke(self, method, args, key):
         if method in ("save", "store_file", "create_note"):
             return self.save(args, key, method == "store_file", allow_empty=method == "create_note")
-        if method in ("plan_folder_delete", "delete_folder"):
-            return self.folder_delete(args, method == "delete_folder")
+        if method in ("plan_folder_delete", "delete_folder", "delete_empty_folder"):
+            return self.folder_delete(args, method != "plan_folder_delete", empty_only=method == "delete_empty_folder")
         if method == "search":
             return self.search(args)
         if method in ("graph", "graph_view", "graph_titles"):
@@ -324,7 +324,7 @@ class Knowledge:
             self.db.execute("DELETE FROM asset_pages WHERE hash=?", (asset,))
             self.db.execute("DELETE FROM assets WHERE hash=?", (asset,))
 
-    def folder_delete(self, args, commit):
+    def folder_delete(self, args, commit, *, empty_only=False):
         path = string(args.get("path"), 100, "文件夹路径", True)
         params = (path, path, path)
         with self.db:
@@ -339,6 +339,11 @@ class Knowledge:
                 """SELECT id,revision,asset_hash,title,filename FROM sources WHERE collection=?
                    OR substr(collection,1,length(?)+1)=?||'/' ORDER BY id""", params
             ).fetchall()
+            if empty_only:
+                if sources or folders != [path]:
+                    raise ValueError("文件夹内有资料或子文件夹，只能删除空文件夹。")
+                self.db.execute("DELETE FROM library_folders WHERE path=?", (path,))
+                return {"removed": True}
             revisions = [(source["id"], source["revision"]) for source in sources]
             fingerprint = hashlib.sha256(json.dumps([folders, revisions]).encode()).hexdigest()
             if not commit:

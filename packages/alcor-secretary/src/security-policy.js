@@ -52,7 +52,7 @@ export function classifyCapability(name, args = {}) {
   if (typeof name !== 'string' || !name.startsWith('alcor_')) return { kind: 'not-alcor' }
   if (name === 'alcor_knowledge') {
     if (['collections','search','read','links','graph'].includes(args?.action)) return { kind:'read' }
-    if (['save', 'edit'].includes(args?.action)) return { kind:'local' }
+    if (['save', 'edit', 'delete_empty_folder'].includes(args?.action)) return { kind:'local' }
     return { kind:args?.action === 'import' ? 'file' : 'unclassified' }
   }
   if (name === 'alcor_overview') return { kind: 'overview' }
