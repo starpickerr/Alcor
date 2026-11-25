@@ -30,7 +30,10 @@ class Provider(BaseHTTPRequestHandler):
         if "alcor_knowledge" in tools:
             if last["role"] == "tool":
                 result = json.loads(last["content"])
-                if "edges" in result:
+                if "removed" in result:
+                    assert result["removed"] is True, result
+                    delta = {"content": "已删除空文件夹。"}
+                elif "edges" in result:
                     names = {r["id"]: r["title"] for r in result["nodes"]}
                     assert any(names[e["source"]] == "复习提纲" and names[e["target"]] == "期末通知.png" for e in result["edges"]), result
                     delta = {"content": "复习提纲引用了期末通知。"}
@@ -38,7 +41,13 @@ class Provider(BaseHTTPRequestHandler):
                     assert any(row["title"] == "期末通知.png" for row in result["items"]), result
                     delta = {"content": "已找到考试范围原图。"}
             else:
-                action = {"action": "graph"} if "查图谱" in str(last["content"]) else {"action": "search", "query": "Chapter five"}
+                prompt = str(last["content"])
+                if "删除空文件夹" in prompt:
+                    action = {"action": "delete_empty_folder", "path": "对话清理测试"}
+                elif "查图谱" in prompt:
+                    action = {"action": "graph"}
+                else:
+                    action = {"action": "search", "query": "Chapter five"}
                 delta = {
                     "tool_calls": [
                         {
@@ -527,6 +536,12 @@ def check(page, docs):
     dialog.get_by_role("button", name="保存", exact=True).click()
     expect(directory.get_by_role("button", name="文档 学期总结.txt")).to_be_in_viewport()
     page.set_viewport_size({"width": 1280, "height": 850})
+    folder_tools.get_by_role("button", name="新建文件夹", exact=True).click()
+    dialog.get_by_label("保存位置").select_option("")
+    dialog.get_by_label("文件夹名称").fill("对话清理测试")
+    dialog.get_by_role("button", name="新建", exact=True).click()
+    empty_folder = directory.get_by_role("button", name="对话清理测试", exact=True)
+    expect(empty_folder).to_be_visible()
     page.locator(".alcor-sidebar-chat").click()
     composer = page.locator('[data-composer-input][contenteditable="true"]')
     composer.fill("从知识库给我找出考试范围的原图。")
@@ -539,6 +554,12 @@ def check(page, docs):
     composer.fill("查图谱，复习提纲引用了哪张通知？")
     composer.press("Enter")
     expect(page.get_by_text("复习提纲引用了期末通知。", exact=True)).to_be_visible(timeout=60000)
+    composer.fill("删除空文件夹「对话清理测试」。")
+    composer.press("Enter")
+    expect(page.get_by_text("已删除空文件夹。", exact=True)).to_be_visible(timeout=60000)
+    page.get_by_role("group", name="应用", exact=True).get_by_role("button", name="知识库").click()
+    expect(directory.get_by_role("button", name="课程", exact=True)).to_be_visible()
+    expect(empty_folder).to_have_count(0)
 
 
 if __name__ == "__main__":
@@ -559,7 +580,7 @@ if __name__ == "__main__":
                 check(page, docs)
                 assert not errors, errors
             print(
-                "PASS: split reader, file and folder rename, drag and undo, recursive deletion, OCR, original download, graph, references and narrow layout"
+                "PASS: split reader, file and folder rename, drag and undo, recursive deletion, OCR, original download, graph, references, narrow layout and chat empty-folder deletion"
             )
     finally:
         server.shutdown()

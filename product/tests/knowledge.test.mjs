@@ -104,6 +104,45 @@ test('folder deletion checks its confirmed scope and preserves shared originals'
   await assert.rejects(call('create_note', draft, 'new-empty-note'), /文件夹已不可用/)
 })
 
+test('the personal knowledge tool deletes only empty folders by exact path', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'alcor-knowledge-empty-folder-'))
+  const worker = new BusinessWorker(dir, {
+    worker: new URL('../../packages/alcor-secretary/business/knowledge_worker.py', import.meta.url),
+  })
+  t.after(async () => {
+    await worker.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+  const call = (method, args, request_id) =>
+    worker.call('invoke', { domain: 'knowledge', method, arguments: args, request_id })
+  const owner = { session: { id: 'owner', header: {} } }
+  let tool
+  registerKnowledgeTool({
+    tools: { register: (value) => { tool = value } },
+    alcorOrganizer: { business: ({ method, arguments: args, requestId }) => call(method, args, requestId) },
+  }, (agent) => agent === owner)
+  const execute = (args, agent = owner) => tool.execute(args, { agent, callId: 'folder-test' })
+  const action = 'delete_empty_folder'
+  await call('create_folder', { name: '整理' })
+  await call('create_folder', { parent: '整理', name: '空目录' })
+  const saved = await execute({ action: 'save', title: '保留资料', text: '内容', collection: '整理备份' })
+
+  assert.equal(classifyCapability('alcor_knowledge', { action }).kind, 'local')
+  await assert.rejects(execute({ action, path: '整理/空目录' }, { session: { id: 'scheduled', header: {} } }), /主对话/)
+  await assert.rejects(execute({ action, path: '' }), /文件夹路径/)
+  await assert.rejects(execute({ action, path: '整理' }), /子文件夹/)
+  await assert.rejects(execute({ action, path: '整理备份' }), /资料/)
+  assert.deepEqual((await execute({ action: 'collections' })).collections, ['整理', '整理/空目录', '整理备份'])
+
+  assert.deepEqual(await execute({ action, path: '整理/空目录' }), { removed: true })
+  assert.deepEqual(await execute({ action, path: '整理' }), { removed: true })
+  await assert.rejects(execute({ action, path: '整理' }), /已不存在/)
+  assert.deepEqual((await execute({ action: 'collections' })).collections, ['整理备份'])
+  assert.equal((await execute({ action: 'read', id: saved.id })).text, '内容')
+  await execute({ action: 'edit', id: saved.id, revision: saved.revision, title: saved.title, text: '更新后的内容' })
+  assert.equal((await execute({ action: 'search', query: '更新后', collection: '整理备份' })).items[0].id, saved.id)
+})
+
 test('knowledge import reads bounded bytes through the active filesystem, and search never exposes the file payload', async () => {
   let tool, saved
   const ctx = {
