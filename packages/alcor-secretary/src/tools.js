@@ -28,8 +28,9 @@ export function apply(ctx) {
     return saved && saved.session === agent.session && saved.start === boundary?.openTurnStartSeq
       && saved.turn === boundary?.lastTurn ? saved.source : undefined
   }
-  const personalTurn = agent => turnSource(agent) === 'user'
-  const businessTurn = agent => ['user', 'schedule'].includes(turnSource(agent))
+  // A live channel grant attests the remote actor without promoting its message to user.
+  const personalTurn = agent => turnSource(agent) === 'user' || ctx.get('dshMessageChannels')?.agentAuthorized?.(agent) === true
+  const businessTurn = agent => personalTurn(agent) || turnSource(agent) === 'schedule'
   ctx.on('agent/pre-step', ({ agent, messages }, next) => {
     if (messages.length) {
       const boundary = agent?.session && ctx.get('agents')?.turnBoundaryOf(agent.session)
