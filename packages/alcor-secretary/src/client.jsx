@@ -8,6 +8,7 @@ import automationAnchorStyle from './automation-anchor.css'
 import sharedSidebarStyle from './shared-sidebar.css'
 import { Notice } from './notice.jsx'
 import { PluginBriefingSources, BriefingPluginReturn } from './briefing-sources.jsx'
+import { startBriefingRun } from './briefing-task.js'
 import { BearLogo } from './bear-logo.jsx'
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 import { remote } from './remote.js'
@@ -147,7 +148,7 @@ export async function apply(ctx) {
       openSession: id => ctx.uiWorkspace.openSession(id),
       view: canonicalPanel(panel),
       business: ctx.remote.alcorOrganizer,
-      startBriefing: date => ctx.remote.alcorOrganizer.startBriefing({ date, notes: '', requestId: crypto.randomUUID(), ...briefingContext() }),
+      startBriefing: date => startBriefingRun({ api: ctx.remote.alcorOrganizer, context: briefingContext(), date }),
       workspaces: ctx.workspaces.list,
       briefingView:() => briefingVisit?.returning ? briefingVisit.view : undefined,
       openPlugins: (name, view) => {

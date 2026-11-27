@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { briefingPrompt, startBriefingConversation } from '../../packages/alcor-secretary/src/briefing-task.js'
+import { briefingPrompt, startBriefingConversation, startBriefingRun } from '../../packages/alcor-secretary/src/briefing-task.js'
 
 const api = preferences => ({ business: async () => ({ ok: true, value: { task_target: 'new', task_prompt: briefingPrompt, task_workspace_id: '', ...preferences } }) })
 
@@ -56,4 +56,17 @@ test('reuse sends the prompt to the Host-owned briefing session, never the curre
   assert.equal(calls.length, 2, 'Reusing a briefing session must not open it automatically')
   organizer.briefingConversation = async () => ({ ok: false, error: { message: 'Host unavailable' } })
   await assert.rejects(startBriefingConversation({ session, api: organizer }), /Host unavailable/)
+})
+
+test('briefing page regeneration follows its saved workspace instead of the active QQ workspace', async () => {
+  for (const target of ['new', 'new_once', 'current']) {
+    const calls = [], organizer = api({ task_target: target, task_workspace_id: 'briefing-workspace' })
+    organizer.startBriefing = async request => { calls.push(request); return { ok: true, value: { requestId: request.requestId } } }
+    await startBriefingRun({ api: organizer, context: { workspaceId: 'qq-workspace' }, date: '2026-11-27' })
+    assert.equal(calls[0].workspaceId, target === 'current' ? 'qq-workspace' : 'briefing-workspace')
+  }
+  let started = false
+  await assert.rejects(startBriefingRun({ api: { business: async () => ({ ok: false, error: { message: 'preferences unavailable' } }),
+    startBriefing: () => { started = true } } }), /preferences unavailable/)
+  assert.equal(started, false)
 })
