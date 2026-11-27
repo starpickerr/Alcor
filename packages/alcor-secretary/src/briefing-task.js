@@ -23,3 +23,10 @@ export async function startBriefingConversation({ session, api, context, current
   await unwrap(session.prompt({ sessionId, requestId: crypto.randomUUID(), mode: 'queue', content: [{ type: 'text', text: preferences.task_prompt || briefingPrompt }], clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }))
   return sessionId
 }
+
+export async function startBriefingRun({ api, context, date }) {
+  const preferences = await unwrap(api.business({ domain: 'briefing', method: 'get_preferences', arguments: {} }))
+  const placement = preferences.task_target !== 'current' && preferences.task_workspace_id
+    ? { workspaceId: preferences.task_workspace_id } : context
+  return api.startBriefing({ date, notes: '', requestId: crypto.randomUUID(), ...placement })
+}
